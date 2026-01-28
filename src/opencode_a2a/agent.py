@@ -48,9 +48,10 @@ class OpencodeAgentExecutor(AgentExecutor):
 
         session_id = await self._get_or_create_session(context_id, user_text)
 
+        streaming_request = self._should_stream(context)
         stop_event = asyncio.Event()
         stream_task: asyncio.Task[None] | None = None
-        if self._should_stream(context):
+        if streaming_request:
             stream_task = asyncio.create_task(
                 self._consume_opencode_stream(
                     session_id=session_id,
@@ -77,28 +78,47 @@ class OpencodeAgentExecutor(AgentExecutor):
                 context_id=context_id,
                 text=response_text,
             )
-            artifact = Artifact(
-                artifact_id=str(uuid.uuid4()),
-                name="response",
-                parts=[TextPart(text=response_text)],
-            )
-            history = _build_history(context)
-            task = Task(
-                id=task_id,
-                context_id=context_id,
-                status=TaskStatus(state=TaskState.input_required),
-                history=history,
-                artifacts=[artifact],
-                metadata={
-                    "opencode": {
-                        "session_id": response.session_id,
-                        "message_id": response.message_id,
-                    }
-                },
-            )
-            # Attach the assistant message as the current status message.
-            task.status.message = assistant_message
-            await event_queue.enqueue_event(task)
+            if streaming_request:
+                await event_queue.enqueue_event(
+                    TaskStatusUpdateEvent(
+                        task_id=task_id,
+                        context_id=context_id,
+                        status=TaskStatus(
+                            state=TaskState.input_required,
+                            message=assistant_message,
+                        ),
+                        final=True,
+                        metadata={
+                            "opencode": {
+                                "session_id": response.session_id,
+                                "message_id": response.message_id,
+                            }
+                        },
+                    )
+                )
+            else:
+                artifact = Artifact(
+                    artifact_id=str(uuid.uuid4()),
+                    name="response",
+                    parts=[TextPart(text=response_text)],
+                )
+                history = _build_history(context)
+                task = Task(
+                    id=task_id,
+                    context_id=context_id,
+                    status=TaskStatus(state=TaskState.input_required),
+                    history=history,
+                    artifacts=[artifact],
+                    metadata={
+                        "opencode": {
+                            "session_id": response.session_id,
+                            "message_id": response.message_id,
+                        }
+                    },
+                )
+                # Attach the assistant message as the current status message.
+                task.status.message = assistant_message
+                await event_queue.enqueue_event(task)
         except Exception as exc:
             logger.exception("OpenCode request failed")
             await self._emit_error(
