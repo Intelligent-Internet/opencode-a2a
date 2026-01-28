@@ -71,7 +71,7 @@
 - `A2A_HOST`：A2A 监听地址，默认 `127.0.0.1`（也可通过 `deploy.sh` 的 `a2a_host=...` 参数设置）
 - `A2A_PORT`：A2A 监听端口，默认 `8000`（多实例时需为每个项目分配不同端口）
 - `A2A_PUBLIC_URL`：对外可访问的 A2A URL，默认 `http://<A2A_HOST>:<A2A_PORT>`
-- `A2A_LOG_LEVEL`：A2A 日志级别，默认 `info`
+- `A2A_LOG_LEVEL`：A2A 日志级别，默认 `INFO`
 - `A2A_STREAMING`：是否启用 SSE streaming（`/v1/message:stream`），默认 `true`
 
 ### 实例配置文件

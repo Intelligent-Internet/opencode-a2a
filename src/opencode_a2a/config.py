@@ -70,6 +70,7 @@ class Settings:
     a2a_version: str
     a2a_protocol_version: str
     a2a_streaming: bool
+    a2a_log_level: str
     a2a_host: str
     a2a_port: int
     a2a_bearer_token: str | None
@@ -95,6 +96,7 @@ class Settings:
             a2a_version=_get_env("A2A_VERSION", "0.1.0"),
             a2a_protocol_version=_get_env("A2A_PROTOCOL_VERSION", "0.3.0"),
             a2a_streaming=_get_bool("A2A_STREAMING", True),
+            a2a_log_level=_get_env("A2A_LOG_LEVEL", "INFO"),
             a2a_host=_get_env("A2A_HOST", "127.0.0.1"),
             a2a_port=_get_int("A2A_PORT", 8000),
             a2a_bearer_token=_get_env("A2A_BEARER_TOKEN"),

@@ -169,9 +169,26 @@ def create_app(settings: Settings) -> FastAPI:
 settings = Settings.from_env()
 app = create_app(settings)
 
+def _normalize_log_level(value: str) -> str:
+    normalized = (value or "").strip().upper()
+    if normalized in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
+        return normalized
+    return "INFO"
+
+
+def _configure_logging(level: str) -> None:
+    logging.basicConfig(
+        level=getattr(logging, level, logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    logging.getLogger("uvicorn.error").setLevel(level)
+    logging.getLogger("uvicorn.access").setLevel(level)
+
 
 def main() -> None:
-    uvicorn.run(app, host=settings.a2a_host, port=settings.a2a_port)
+    log_level = _normalize_log_level(settings.a2a_log_level)
+    _configure_logging(log_level)
+    uvicorn.run(app, host=settings.a2a_host, port=settings.a2a_port, log_level=log_level.lower())
 
 
 if __name__ == "__main__":

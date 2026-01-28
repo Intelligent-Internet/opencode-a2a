@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 
 A2A_PORT="${A2A_PORT:-8000}"
 OPENCODE_LOG_LEVEL="${OPENCODE_LOG_LEVEL:-DEBUG}"
-A2A_LOG_LEVEL="${A2A_LOG_LEVEL:-debug}"
+A2A_LOG_LEVEL="${A2A_LOG_LEVEL:-DEBUG}"
 LOG_ROOT="${LOG_ROOT:-${ROOT_DIR}/logs}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 LOG_DIR="${LOG_DIR:-${LOG_ROOT}/${TIMESTAMP}}"
@@ -74,6 +74,7 @@ echo "opencode serve pid: ${OPENCODE_PID} (log: $OPENCODE_LOG)"
 echo "Starting A2A server on ${TAILSCALE_IP}:${A2A_PORT}..."
 A2A_HOST="$TAILSCALE_IP" \
 A2A_PUBLIC_URL="http://${TAILSCALE_IP}:${A2A_PORT}" \
+A2A_LOG_LEVEL="$A2A_LOG_LEVEL" \
 uv run opencode-a2a --log-level "$A2A_LOG_LEVEL" >"$A2A_LOG" 2>&1 &
 A2A_PID=$!
 echo "opencode-a2a pid: ${A2A_PID} (log: $A2A_LOG)"

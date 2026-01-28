@@ -60,6 +60,7 @@ systemd 部署流程详见 `docs/deployment.md`。
 - `A2A_PORT`：监听端口，默认 `8000`
 - `A2A_BEARER_TOKEN`：必填；用于 Bearer Token 校验，未设置则服务拒绝启动
 - `A2A_STREAMING`：是否启用 SSE streaming（`/v1/message:stream`），默认 `true`
+- `A2A_LOG_LEVEL`：A2A 服务日志级别（`DEBUG/INFO/WARNING/ERROR`），默认 `INFO`
 - `A2A_OAUTH_AUTHORIZATION_URL`：OAuth2 授权地址（预留配置）
 - `A2A_OAUTH_TOKEN_URL`：OAuth2 token 地址（预留配置）
 - `A2A_OAUTH_METADATA_URL`：OAuth2 元数据地址（可选，预留配置）

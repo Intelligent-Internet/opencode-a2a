@@ -49,6 +49,14 @@ class OpencodeAgentExecutor(AgentExecutor):
             )
             return
 
+        logger.debug(
+            "Received message task_id=%s context_id=%s streaming=%s text=%s",
+            task_id,
+            context_id,
+            streaming_request,
+            user_text,
+        )
+
         session_id = await self._get_or_create_session(context_id, user_text)
 
         stream_artifact_id = f"{task_id}:stream"
@@ -77,6 +85,13 @@ class OpencodeAgentExecutor(AgentExecutor):
             )
             response = await self._client.send_message(session_id, user_text)
             response_text = response.text or "(No text content returned by OpenCode.)"
+            logger.debug(
+                "OpenCode response task_id=%s session_id=%s message_id=%s text=%s",
+                task_id,
+                response.session_id,
+                response.message_id,
+                response_text,
+            )
             assistant_message = _build_assistant_message(
                 task_id=task_id,
                 context_id=context_id,
@@ -238,6 +253,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         buffered_text = ""
         backoff = 0.5
         max_backoff = 5.0
+        sent_chunk = False
         try:
             while not stop_event.is_set():
                 try:
@@ -276,6 +292,9 @@ class OpencodeAgentExecutor(AgentExecutor):
                                 buffered_text = next_text
                         if not chunk_text:
                             continue
+                        if not sent_chunk:
+                            append = False
+                            sent_chunk = True
                         await _enqueue_artifact_update(
                             event_queue=event_queue,
                             task_id=task_id,
@@ -284,6 +303,13 @@ class OpencodeAgentExecutor(AgentExecutor):
                             text=chunk_text,
                             append=append,
                             last_chunk=False,
+                        )
+                        logger.debug(
+                            "Stream chunk task_id=%s session_id=%s append=%s text=%s",
+                            task_id,
+                            session_id,
+                            append,
+                            chunk_text,
                         )
                     break
                 except Exception:
