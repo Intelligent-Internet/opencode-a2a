@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Deploy an isolated OpenCode + A2A instance (systemd services).
 # Usage: ./deploy.sh <project_name> <github_token> <a2a_bearer_token> [a2a_port] [a2a_host]
+# Or:    ./deploy.sh project:<name> github_token:<token> a2a_bearer_token:<token> [a2a_port:<port>] [a2a_host:<host>]
 # Requires: sudo access to write systemd units and create users/directories.
 #
 # Key environment variables (optional):
@@ -14,14 +15,67 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-PROJECT_NAME="${1:-}"
-GH_TOKEN="${2:-}"
-A2A_BEARER_TOKEN="${3:-}"
-A2A_PORT_INPUT="${4:-}"
-A2A_HOST_INPUT="${5:-}"
+PROJECT_NAME=""
+GH_TOKEN=""
+A2A_BEARER_TOKEN=""
+A2A_PORT_INPUT=""
+A2A_HOST_INPUT=""
+POSITIONAL_ARGS=()
+
+for arg in "$@"; do
+  if [[ "$arg" == *:* ]]; then
+    key="${arg%%:*}"
+    value="${arg#*:}"
+  elif [[ "$arg" == *=* ]]; then
+    key="${arg%%=*}"
+    value="${arg#*=}"
+  else
+    POSITIONAL_ARGS+=("$arg")
+    continue
+  fi
+
+  case "${key,,}" in
+    project|project_name)
+      PROJECT_NAME="$value"
+      ;;
+    github_token|gh_token)
+      GH_TOKEN="$value"
+      ;;
+    a2a_bearer_token|bearer_token)
+      A2A_BEARER_TOKEN="$value"
+      ;;
+    a2a_port)
+      A2A_PORT_INPUT="$value"
+      ;;
+    a2a_host)
+      A2A_HOST_INPUT="$value"
+      ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$PROJECT_NAME" && ${#POSITIONAL_ARGS[@]} -gt 0 ]]; then
+  PROJECT_NAME="${POSITIONAL_ARGS[0]}"
+fi
+if [[ -z "$GH_TOKEN" && ${#POSITIONAL_ARGS[@]} -gt 1 ]]; then
+  GH_TOKEN="${POSITIONAL_ARGS[1]}"
+fi
+if [[ -z "$A2A_BEARER_TOKEN" && ${#POSITIONAL_ARGS[@]} -gt 2 ]]; then
+  A2A_BEARER_TOKEN="${POSITIONAL_ARGS[2]}"
+fi
+if [[ -z "$A2A_PORT_INPUT" && ${#POSITIONAL_ARGS[@]} -gt 3 ]]; then
+  A2A_PORT_INPUT="${POSITIONAL_ARGS[3]}"
+fi
+if [[ -z "$A2A_HOST_INPUT" && ${#POSITIONAL_ARGS[@]} -gt 4 ]]; then
+  A2A_HOST_INPUT="${POSITIONAL_ARGS[4]}"
+fi
 
 if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" || -z "$A2A_BEARER_TOKEN" ]]; then
   echo "Usage: $0 <project_name> <github_token> <a2a_bearer_token> [a2a_port] [a2a_host]" >&2
+  echo "   or: $0 project:<name> github_token:<token> a2a_bearer_token:<token> [a2a_port:<port>] [a2a_host:<host>]" >&2
   exit 1
 fi
 

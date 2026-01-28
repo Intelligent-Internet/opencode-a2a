@@ -33,6 +33,14 @@
 ./scripts/deploy.sh <project_name> <github_token> <a2a_bearer_token> [a2a_port] [a2a_host]
 ```
 
+也可以使用 `key:value`（或 `key=value`）形式，避免依赖参数顺序：
+
+```bash
+./scripts/deploy.sh project:alpha github_token:ghp_xxx a2a_bearer_token:a2a_xxx a2a_port:8010 a2a_host:127.0.0.1
+```
+
+支持的 key（不区分大小写）：`project`/`project_name`、`github_token`/`gh_token`、`a2a_bearer_token`、`a2a_port`、`a2a_host`。
+
 > `github_token` 强烈建议使用 **repo 专属的 Fine-grained personal access token**，并严格限制权限范围（仅授予该项目仓库所需的最小读写权限）。
 
 示例：
