@@ -86,6 +86,18 @@ ENV
 sudo install -m 600 -o root -g root "$a2a_env_tmp" "$CONFIG_DIR/a2a.env"
 rm -f "$a2a_env_tmp"
 
+if command -v gh >/dev/null 2>&1; then
+  sudo install -d -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" \
+    "${PROJECT_DIR}/.config" "${PROJECT_DIR}/.config/gh"
+  if ! printf '%s' "$GH_TOKEN" | sudo -u "$PROJECT_NAME" -H \
+    gh auth login --hostname github.com --with-token >/dev/null 2>&1; then
+    echo "gh auth login failed for ${PROJECT_NAME}" >&2
+    exit 1
+  fi
+else
+  echo "gh not found; skipping gh auth setup." >&2
+fi
+
 if [[ -n "${REPO_URL:-}" ]]; then
   if sudo -u "$PROJECT_NAME" -H test -d "${WORKSPACE_DIR}/.git"; then
     echo "Workspace already initialized; skipping clone."

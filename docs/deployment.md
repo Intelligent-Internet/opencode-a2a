@@ -83,6 +83,8 @@
 
 为保障私有仓库访问，`github_token` 会写入 `config/opencode.env`，并结合 `GIT_ASKPASS` 注入到 OpenCode 进程中使用。该文件权限为 600（root-only）。
 
+部署脚本会为项目用户执行 `gh auth login --with-token`，写入 `/data/projects/<project>/.config/gh/hosts.yml`（权限 600，项目用户私有），确保 OpenCode 调用 `gh` 时可用。
+
 如需使用 `gh` CLI，服务默认将 `PATH` 包含 `/usr/bin`，并显式允许读取 `/usr/bin/gh`。若 `gh` 安装在其他路径，可通过软链接放入 `${OPENCODE_CORE_DIR}/bin`。
 
 若 systemd 不支持 `set-property Environment`，脚本会退化为临时设置 systemd manager 环境变量并立即启动服务，随后清理该环境变量，避免长期暴露。
