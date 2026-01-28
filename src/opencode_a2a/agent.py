@@ -24,8 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 class OpencodeAgentExecutor(AgentExecutor):
-    def __init__(self, client: OpencodeClient) -> None:
+    def __init__(self, client: OpencodeClient, *, streaming_enabled: bool) -> None:
         self._client = client
+        self._streaming_enabled = streaming_enabled
         self._sessions: dict[str, str] = {}
         self._lock = asyncio.Lock()
 
@@ -48,15 +49,17 @@ class OpencodeAgentExecutor(AgentExecutor):
         session_id = await self._get_or_create_session(context_id, user_text)
 
         stop_event = asyncio.Event()
-        stream_task = asyncio.create_task(
-            self._consume_opencode_stream(
-                session_id=session_id,
-                task_id=task_id,
-                context_id=context_id,
-                event_queue=event_queue,
-                stop_event=stop_event,
+        stream_task: asyncio.Task[None] | None = None
+        if self._should_stream(context):
+            stream_task = asyncio.create_task(
+                self._consume_opencode_stream(
+                    session_id=session_id,
+                    task_id=task_id,
+                    context_id=context_id,
+                    event_queue=event_queue,
+                    stop_event=stop_event,
+                )
             )
-        )
 
         try:
             await event_queue.enqueue_event(
@@ -106,9 +109,10 @@ class OpencodeAgentExecutor(AgentExecutor):
             )
         finally:
             stop_event.set()
-            stream_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await stream_task
+            if stream_task:
+                stream_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await stream_task
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id
@@ -157,6 +161,14 @@ class OpencodeAgentExecutor(AgentExecutor):
         )
         await event_queue.enqueue_event(task)
 
+    def _should_stream(self, context: RequestContext) -> bool:
+        if not self._streaming_enabled:
+            return False
+        call_context = context.call_context
+        if not call_context:
+            return False
+        return bool(call_context.state.get("a2a_streaming_request"))
+
     async def _consume_opencode_stream(
         self,
         *,
@@ -168,46 +180,60 @@ class OpencodeAgentExecutor(AgentExecutor):
     ) -> None:
         buffered_text = ""
         current_message_id: str | None = None
+        fallback_message_id = f"{task_id}:stream"
+        backoff = 0.5
+        max_backoff = 5.0
         try:
-            async for event in self._client.stream_events(stop_event=stop_event):
-                if stop_event.is_set():
+            while not stop_event.is_set():
+                try:
+                    async for event in self._client.stream_events(stop_event=stop_event):
+                        if stop_event.is_set():
+                            break
+                        event_type = event.get("type")
+                        if event_type != "message.part.updated":
+                            continue
+                        props = event.get("properties", {})
+                        part = props.get("part") or {}
+                        if part.get("sessionID") != session_id:
+                            continue
+                        message_id = part.get("messageID")
+                        if isinstance(message_id, str):
+                            current_message_id = message_id
+                        delta = props.get("delta")
+                        updated = False
+                        if isinstance(delta, str) and delta:
+                            buffered_text += delta
+                            updated = True
+                        elif part.get("type") == "text" and isinstance(
+                            part.get("text"), str
+                        ):
+                            if part["text"] != buffered_text:
+                                buffered_text = part["text"]
+                                updated = True
+                        if not updated:
+                            continue
+                        assistant_message = Message(
+                            message_id=current_message_id or fallback_message_id,
+                            role=Role.agent,
+                            parts=[TextPart(text=buffered_text)],
+                            task_id=task_id,
+                            context_id=context_id,
+                        )
+                        await event_queue.enqueue_event(
+                            TaskStatusUpdateEvent(
+                                task_id=task_id,
+                                context_id=context_id,
+                                status=TaskStatus(state=TaskState.working, message=assistant_message),
+                                final=False,
+                            )
+                        )
                     break
-                event_type = event.get("type")
-                if event_type != "message.part.updated":
-                    continue
-                props = event.get("properties", {})
-                part = props.get("part") or {}
-                if part.get("sessionID") != session_id:
-                    continue
-                message_id = part.get("messageID")
-                if isinstance(message_id, str):
-                    current_message_id = message_id
-                delta = props.get("delta")
-                updated = False
-                if isinstance(delta, str) and delta:
-                    buffered_text += delta
-                    updated = True
-                elif part.get("type") == "text" and isinstance(part.get("text"), str):
-                    if part["text"] != buffered_text:
-                        buffered_text = part["text"]
-                        updated = True
-                if not updated:
-                    continue
-                assistant_message = Message(
-                    message_id=current_message_id or str(uuid.uuid4()),
-                    role=Role.agent,
-                    parts=[TextPart(text=buffered_text)],
-                    task_id=task_id,
-                    context_id=context_id,
-                )
-                await event_queue.enqueue_event(
-                    TaskStatusUpdateEvent(
-                        task_id=task_id,
-                        context_id=context_id,
-                        status=TaskStatus(state=TaskState.working, message=assistant_message),
-                        final=False,
-                    )
-                )
+                except Exception:
+                    if stop_event.is_set():
+                        break
+                    logger.exception("OpenCode event stream failed; retrying")
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, max_backoff)
         except Exception:
             logger.exception("OpenCode event stream failed")
 

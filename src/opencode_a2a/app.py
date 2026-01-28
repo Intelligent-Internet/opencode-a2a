@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 import secrets
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 import uvicorn
+from a2a.server.apps.jsonrpc.jsonrpc_app import DefaultCallContextBuilder
 from a2a.server.apps.rest.fastapi_app import A2ARESTFastAPIApplication
 from a2a.server.request_handlers.default_request_handler import DefaultRequestHandler
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
@@ -28,6 +30,17 @@ from .config import Settings
 from .opencode_client import OpencodeClient
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from a2a.server.context import ServerCallContext
+
+
+class StreamingCallContextBuilder(DefaultCallContextBuilder):
+    def build(self, request: Request) -> "ServerCallContext":
+        context = super().build(request)
+        if request.url.path.endswith("/v1/message:stream"):
+            context.state["a2a_streaming_request"] = True
+        return context
 
 
 def build_agent_card(settings: Settings) -> AgentCard:
@@ -119,7 +132,7 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
 
 def create_app(settings: Settings) -> FastAPI:
     client = OpencodeClient(settings)
-    executor = OpencodeAgentExecutor(client)
+    executor = OpencodeAgentExecutor(client, streaming_enabled=settings.a2a_streaming)
     task_store = InMemoryTaskStore()
     handler = DefaultRequestHandler(
         agent_executor=executor,
@@ -134,6 +147,7 @@ def create_app(settings: Settings) -> FastAPI:
     app = A2ARESTFastAPIApplication(
         agent_card=build_agent_card(settings),
         http_handler=handler,
+        context_builder=StreamingCallContextBuilder(),
     ).build(title=settings.a2a_title, version=settings.a2a_version, lifespan=lifespan)
 
     add_auth_middleware(app, settings)
