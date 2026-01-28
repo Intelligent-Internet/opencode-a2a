@@ -93,7 +93,7 @@
 GOOGLE_GENERATIVE_AI_API_KEY=AIzxxx ./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx a2a_port=8010 a2a_host=127.0.0.1 opencode_provider_id=google opencode_model_id=gemini-3-flash-preview repo_url=https://github.com/org/repo.git repo_branch=main
 ```
 
-如需自动初始化仓库，可传 `repo_url`（可选 `repo_branch`），脚本会在首次部署时将仓库克隆到 `workspace/`；如果 `workspace/.git` 已存在则跳过。
+如需自动初始化仓库，可传 `repo_url`（可选 `repo_branch`），脚本会在首次部署时将仓库克隆到 `workspace/`；如果 `workspace/.git` 已存在或目录非空则跳过。
 
 如需更新 token 或端口，修改 env 文件后重启服务：
 

@@ -89,6 +89,8 @@ rm -f "$a2a_env_tmp"
 if [[ -n "${REPO_URL:-}" ]]; then
   if [[ -d "${WORKSPACE_DIR}/.git" ]]; then
     echo "Workspace already initialized; skipping clone."
+  elif [[ -n "$(ls -A "$WORKSPACE_DIR")" ]]; then
+    echo "Workspace is not empty; skipping clone." >&2
   else
     clone_args=("$REPO_URL" "$WORKSPACE_DIR")
     if [[ -n "${REPO_BRANCH:-}" ]]; then
