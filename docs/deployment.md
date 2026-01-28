@@ -33,6 +33,8 @@
 ./scripts/deploy.sh <project_name> <github_token> <a2a_bearer_token> [a2a_port]
 ```
 
+> `github_token` 强烈建议使用 **repo 专属的 Fine-grained personal access token**，并严格限制权限范围（仅授予该项目仓库所需的最小读写权限）。
+
 示例：
 
 ```bash
