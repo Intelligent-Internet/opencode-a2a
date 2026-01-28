@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy an isolated OpenCode + A2A instance (systemd services).
-# Usage: ./deploy.sh project=<name> github_token=<token> a2a_bearer_token=<token> [a2a_port=<port>] [a2a_host=<host>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>]
+# Usage: ./deploy.sh project=<name> github_token=<token> a2a_bearer_token=<token> [a2a_port=<port>] [a2a_host=<host>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>]
 # Optional: GOOGLE_GENERATIVE_AI_API_KEY=<key> to inject runtime-only API key into opencode@ service.
 # Requires: sudo access to write systemd units and create users/directories.
 #
@@ -25,6 +25,7 @@ OPENCODE_MODEL_ID_INPUT=""
 GOOGLE_API_KEY_INPUT="${GOOGLE_GENERATIVE_AI_API_KEY:-}"
 REPO_URL_INPUT=""
 REPO_BRANCH_INPUT=""
+OPENCODE_TIMEOUT_INPUT=""
 
 for arg in "$@"; do
   if [[ "$arg" == *=* ]]; then
@@ -66,6 +67,9 @@ for arg in "$@"; do
     repo_branch)
       REPO_BRANCH_INPUT="$value"
       ;;
+    opencode_timeout)
+      OPENCODE_TIMEOUT_INPUT="$value"
+      ;;
     *)
       echo "Unknown argument: $arg" >&2
       exit 1
@@ -97,6 +101,9 @@ if [[ -n "$REPO_URL_INPUT" ]]; then
 fi
 if [[ -n "$REPO_BRANCH_INPUT" ]]; then
   export REPO_BRANCH="$REPO_BRANCH_INPUT"
+fi
+if [[ -n "$OPENCODE_TIMEOUT_INPUT" ]]; then
+  export OPENCODE_TIMEOUT="$OPENCODE_TIMEOUT_INPUT"
 fi
 
 export OPENCODE_BIND_HOST="${OPENCODE_BIND_HOST:-127.0.0.1}"
