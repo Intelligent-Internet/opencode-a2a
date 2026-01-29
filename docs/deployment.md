@@ -5,13 +5,40 @@
 ## 前置条件
 
 - 具备 `sudo` 权限（写入 systemd unit、创建用户与目录）。
-- OpenCode 核心已安装在共享目录（默认 `/opt/.opencode`，可用 `OPENCODE_CORE_DIR` 覆盖）。
-- 本仓库已部署在共享目录（默认 `/opt/opencode-a2a/opencode-a2a-serve`，可用 `OPENCODE_A2A_DIR` 覆盖）。
+- OpenCode 核心已安装在共享目录（默认 `/opt/.opencode`，如需改路径请修改 `scripts/init_system.sh` 顶部变量）。
+- 本仓库已部署在共享目录（默认 `/opt/opencode-a2a/opencode-a2a-serve`，如需改路径请修改 `scripts/init_system.sh` 顶部变量）。
 - A2A 的 venv 已准备好（默认 `${OPENCODE_A2A_DIR}/.venv/bin/opencode-a2a`）。
-- uv Python 池已准备好（默认 `/opt/uv-python`，可用 `UV_PYTHON_DIR` 覆盖）。
+- uv Python 池已准备好（默认 `/opt/uv-python`，如需改路径请修改 `scripts/init_system.sh` 顶部变量）。
 - systemd 可用。
 
-> 目录默认值可通过环境变量覆盖，见下文配置说明。
+> 路径配置请直接修改 `scripts/init_system.sh` 顶部变量。
+
+## 系统环境初始化（可选）
+
+如需一键准备上述基础环境，可先运行：
+
+```bash
+./scripts/init_system.sh
+```
+
+脚本特点：
+- 可重复执行，已满足的步骤会自动跳过。
+- 与 `deploy.sh` 解耦，仅负责系统与共享环境准备。
+
+默认行为：
+- 安装基础工具（`htop`、`vim`、`curl`、`wget`、`git`、`net-tools`、`lsblk`、`ca-certificates`）与 `gh`（添加官方源）。
+- 安装 Node.js ≥ 20（含 `npm`/`npx`，下载 NodeSource 安装脚本、校验后执行，或使用系统包）。
+- 安装 `uv`（若未安装，下载脚本校验后执行），并预下载 Python 版本 `3.10/3.11/3.12/3.13`（若缺失才安装）。
+- 创建共享目录（`/opt/.opencode`、`/opt/opencode-a2a`、`/opt/uv-python`、`/data/projects`），并为 `/opt/uv-python` 设置权限（先 `777`，预下载完成后递归调整为 `755`）。
+- 若系统缺少 systemd（`systemctl` 不存在），脚本将直接失败退出。
+- 克隆 `opencode-a2a-serve` 仓库到共享目录（若不存在，默认使用 SSH 地址）。
+- 创建 A2A venv（`uv sync --all-extras`）。
+
+常用参数/环境变量：
+
+> 若服务器未配置 SSH key，请先配置 SSH key，或在脚本顶部修改 `OPENCODE_A2A_REPO` 使用 HTTPS 克隆；否则脚本会提示手动 clone。
+
+> 脚本无运行参数，默认行为（含 Node 版本/安装开关）请直接修改 `scripts/init_system.sh` 顶部的变量。
 
 ## 目录结构
 
