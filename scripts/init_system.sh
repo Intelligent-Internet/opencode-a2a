@@ -10,6 +10,7 @@ SHARED_WRAPPER_DIR="/opt/opencode-a2a"
 OPENCODE_A2A_DIR="${SHARED_WRAPPER_DIR}/opencode-a2a-serve"
 UV_PYTHON_DIR="/opt/uv-python"
 UV_PYTHON_DIR_MODE="777"
+UV_PYTHON_DIR_FINAL_MODE="755"
 UV_PYTHON_DIR_GROUP=""
 UV_PYTHON_INSTALL_DIR="$UV_PYTHON_DIR"
 DATA_ROOT="/data/projects"
@@ -497,7 +498,10 @@ if command -v uv >/dev/null 2>&1; then
     log_done "All uv Python versions already installed; skip."
   fi
   log_start "Setting uv python directory permissions..."
-  $SUDO chmod -R 755 "$UV_PYTHON_DIR"
+  if [[ -n "$UV_PYTHON_DIR_GROUP" ]]; then
+    $SUDO chgrp -R "$UV_PYTHON_DIR_GROUP" "$UV_PYTHON_DIR"
+  fi
+  $SUDO chmod -R "$UV_PYTHON_DIR_FINAL_MODE" "$UV_PYTHON_DIR"
   log_done "uv python directory permissions set."
 else
   warn "uv not available; skipping uv python install."
@@ -564,11 +568,20 @@ elif command -v opencode >/dev/null 2>&1; then
 else
   if [[ -n "$OPENCODE_INSTALL_CMD" ]]; then
     log_start "Running OPENCODE_INSTALL_CMD..."
-    OPENCODE_CORE_DIR="$OPENCODE_CORE_DIR" bash -lc "$OPENCODE_INSTALL_CMD"
+    if [[ -n "$SUDO" ]]; then
+      $SUDO env OPENCODE_CORE_DIR="$OPENCODE_CORE_DIR" bash -lc "$OPENCODE_INSTALL_CMD"
+    else
+      OPENCODE_CORE_DIR="$OPENCODE_CORE_DIR" bash -lc "$OPENCODE_INSTALL_CMD"
+    fi
     log_done "OPENCODE_INSTALL_CMD completed."
     if [[ ! -d "$OPENCODE_CORE_DIR" && -d "/root/.opencode" ]]; then
       log_start "Relocating OpenCode from /root/.opencode to $OPENCODE_CORE_DIR..."
       $SUDO mv /root/.opencode "$OPENCODE_CORE_DIR"
+      $SUDO ln -sf "${OPENCODE_CORE_DIR}/bin/opencode" /usr/local/bin/opencode
+      log_done "OpenCode relocated and symlinked."
+    elif [[ ! -d "$OPENCODE_CORE_DIR" && -n "${HOME:-}" && -d "${HOME}/.opencode" ]]; then
+      log_start "Relocating OpenCode from ${HOME}/.opencode to $OPENCODE_CORE_DIR..."
+      $SUDO mv "${HOME}/.opencode" "$OPENCODE_CORE_DIR"
       $SUDO ln -sf "${OPENCODE_CORE_DIR}/bin/opencode" /usr/local/bin/opencode
       log_done "OpenCode relocated and symlinked."
     fi

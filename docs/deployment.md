@@ -11,7 +11,7 @@
 - uv Python 池已准备好（默认 `/opt/uv-python`，如需改路径请修改 `scripts/init_system.sh` 顶部变量）。
 - systemd 可用。
 
-> 路径配置请直接修改 `scripts/init_system.sh` 顶部变量。
+> 共享路径默认值在 `scripts/init_system.sh` 顶部变量；`deploy.sh` 仍支持通过环境变量覆盖（需确保与实际目录一致）。
 
 ## 系统环境初始化（可选）
 
@@ -29,7 +29,7 @@
 - 安装基础工具（`htop`、`vim`、`curl`、`wget`、`git`、`net-tools`、`lsblk`、`ca-certificates`）与 `gh`（添加官方源）。
 - 安装 Node.js ≥ 20（含 `npm`/`npx`，下载 NodeSource 安装脚本、校验后执行，或使用系统包）。
 - 安装 `uv`（若未安装，下载脚本校验后执行），并预下载 Python 版本 `3.10/3.11/3.12/3.13`（若缺失才安装）。
-- 创建共享目录（`/opt/.opencode`、`/opt/opencode-a2a`、`/opt/uv-python`、`/data/projects`），并为 `/opt/uv-python` 设置权限（先 `777`，预下载完成后递归调整为 `755`）。
+- 创建共享目录（`/opt/.opencode`、`/opt/opencode-a2a`、`/opt/uv-python`、`/data/projects`），并为 `/opt/uv-python` 设置权限（默认先 `777`，预下载完成后递归调整为 `755`；可在 `scripts/init_system.sh` 顶部变量中调整）。
 - 若系统缺少 systemd（`systemctl` 不存在），脚本将直接失败退出。
 - 克隆 `opencode-a2a-serve` 仓库到共享目录（若不存在，默认使用 SSH 地址）。
 - 创建 A2A venv（`uv sync --all-extras`）。
@@ -104,7 +104,7 @@
 - `A2A_LOG_PAYLOADS`：是否记录 A2A 与 OpenCode 请求/响应正文，默认 `true`（脚本内默认）
 - `A2A_LOG_BODY_LIMIT`：日志正文最大长度，默认 `0`（不截断）
 
-> 共享路径（`OPENCODE_A2A_DIR`/`OPENCODE_CORE_DIR`/`UV_PYTHON_DIR`/`DATA_ROOT`）请修改 `scripts/init_system.sh` 顶部变量；`deploy.sh` 仅读取这些值。
+> 共享路径（`OPENCODE_A2A_DIR`/`OPENCODE_CORE_DIR`/`UV_PYTHON_DIR`/`DATA_ROOT`）默认从 `scripts/init_system.sh` 顶部变量读取；`deploy.sh` 仍支持环境变量覆盖（需确保与实际目录一致）。
 - `A2A_STREAMING`：是否启用 SSE streaming（`/v1/message:stream`），默认 `true`
 
 ### 实例配置文件
