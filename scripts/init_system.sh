@@ -112,20 +112,48 @@ install_packages() {
     warn "No supported package manager found; install manually: ${pkgs[*]}"
     return 1
   fi
+  local missing=()
+  for pkg in "${pkgs[@]}"; do
+    case "$PKG_MANAGER" in
+      apt)
+        if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+          missing+=("$pkg")
+        fi
+        ;;
+      dnf|yum)
+        if ! rpm -q "$pkg" >/dev/null 2>&1; then
+          missing+=("$pkg")
+        fi
+        ;;
+      pacman)
+        if ! pacman -Qi "$pkg" >/dev/null 2>&1; then
+          missing+=("$pkg")
+        fi
+        ;;
+      *)
+        missing+=("$pkg")
+        ;;
+    esac
+  done
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    log_done "Packages already installed; skip."
+    return 0
+  fi
+  log_start "Packages missing: ${missing[*]}"
   log_start "Installing packages: ${pkgs[*]}"
   case "$PKG_MANAGER" in
     apt)
       $SUDO apt-get update
-      $SUDO apt-get install -y "${pkgs[@]}"
+      $SUDO apt-get install -y "${missing[@]}"
       ;;
     dnf)
-      $SUDO dnf install -y "${pkgs[@]}"
+      $SUDO dnf install -y "${missing[@]}"
       ;;
     yum)
-      $SUDO yum install -y "${pkgs[@]}"
+      $SUDO yum install -y "${missing[@]}"
       ;;
     pacman)
-      $SUDO pacman -Syu --noconfirm "${pkgs[@]}"
+      $SUDO pacman -Syu --noconfirm "${missing[@]}"
       ;;
     *)
       warn "Unsupported package manager: $PKG_MANAGER"
