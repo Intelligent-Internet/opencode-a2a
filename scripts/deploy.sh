@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy an isolated OpenCode + A2A instance (systemd services).
-# Usage: ./deploy.sh project=<name> github_token=<token> a2a_bearer_token=<token> [a2a_port=<port>] [a2a_host=<host>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [update_a2a=true] [force_restart=true]
+# Usage: ./deploy.sh project=<name> github_token=<token> a2a_bearer_token=<token> [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [update_a2a=true] [force_restart=true]
 # Optional: GOOGLE_GENERATIVE_AI_API_KEY=<key> to inject runtime-only API key into opencode@ service.
 # Requires: sudo access to write systemd units and create users/directories.
 #
@@ -10,7 +10,7 @@
 # - UV_PYTHON_DIR: path to uv python pool (default: /opt/uv-python)
 # - DATA_ROOT: projects root (default: /data/projects)
 # - OPENCODE_BIND_HOST/OPENCODE_BIND_PORT/OPENCODE_LOG_LEVEL/OPENCODE_EXTRA_ARGS
-# - A2A_HOST/A2A_PORT/A2A_PUBLIC_URL/A2A_LOG_LEVEL
+# - A2A_HOST/A2A_PORT/A2A_LOG_LEVEL
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,6 +20,7 @@ GH_TOKEN=""
 A2A_BEARER_TOKEN=""
 A2A_PORT_INPUT=""
 A2A_HOST_INPUT=""
+A2A_PUBLIC_URL_INPUT=""
 OPENCODE_PROVIDER_ID_INPUT=""
 OPENCODE_MODEL_ID_INPUT=""
 GOOGLE_API_KEY_INPUT="${GOOGLE_GENERATIVE_AI_API_KEY:-}"
@@ -54,6 +55,9 @@ for arg in "$@"; do
       ;;
     a2a_host)
       A2A_HOST_INPUT="$value"
+      ;;
+    a2a_public_url)
+      A2A_PUBLIC_URL_INPUT="$value"
       ;;
     opencode_provider_id)
       OPENCODE_PROVIDER_ID_INPUT="$value"
@@ -90,7 +94,7 @@ for arg in "$@"; do
 done
 
 if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" || -z "$A2A_BEARER_TOKEN" ]]; then
-  echo "Usage: $0 project=<name> github_token=<token> a2a_bearer_token=<token> [a2a_port=<port>] [a2a_host=<host>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [update_a2a=true] [force_restart=true]" >&2
+  echo "Usage: $0 project=<name> github_token=<token> a2a_bearer_token=<token> [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [update_a2a=true] [force_restart=true]" >&2
   exit 1
 fi
 
@@ -143,7 +147,11 @@ if [[ -z "${OPENCODE_BIND_PORT:-}" ]]; then
     export OPENCODE_BIND_PORT="4096"
   fi
 fi
-export A2A_PUBLIC_URL="${A2A_PUBLIC_URL:-http://${A2A_HOST}:${A2A_PORT}}"
+if [[ -n "$A2A_PUBLIC_URL_INPUT" ]]; then
+  export A2A_PUBLIC_URL="$A2A_PUBLIC_URL_INPUT"
+else
+  export A2A_PUBLIC_URL="http://${A2A_HOST}:${A2A_PORT}"
+fi
 export A2A_LOG_LEVEL="${A2A_LOG_LEVEL:-DEBUG}"
 export A2A_STREAMING="${A2A_STREAMING:-true}"
 export A2A_LOG_PAYLOADS="${A2A_LOG_PAYLOADS:-true}"

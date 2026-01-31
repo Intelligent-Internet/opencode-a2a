@@ -60,7 +60,13 @@
 ./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx a2a_port=8010 a2a_host=127.0.0.1 opencode_provider_id=google opencode_model_id=gemini-3-flash-preview
 ```
 
-支持的 key（不区分大小写）：`project`/`project_name`、`github_token`/`gh_token`、`a2a_bearer_token`、`a2a_port`、`a2a_host`、`opencode_provider_id`、`opencode_model_id`、`repo_url`、`repo_branch`、`opencode_timeout`、`opencode_timeout_stream`、`google_generative_ai_api_key`（可用 `google_api_key` 作为别名）、`update_a2a`、`force_restart`。
+HTTPS 域名示例（避免 root 多实例环境变量互相干扰）：  
+
+```bash
+./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx a2a_port=8010 a2a_host=127.0.0.1 a2a_public_url=https://a2a.example.com
+```
+
+支持的 key（不区分大小写）：`project`/`project_name`、`github_token`/`gh_token`、`a2a_bearer_token`、`a2a_port`、`a2a_host`、`a2a_public_url`、`opencode_provider_id`、`opencode_model_id`、`repo_url`、`repo_branch`、`opencode_timeout`、`opencode_timeout_stream`、`google_generative_ai_api_key`（可用 `google_api_key` 作为别名）、`update_a2a`、`force_restart`。
 
 > `github_token` **必须使用项目专属的 Fine-grained personal access token**，并严格限制权限范围（**不得跨仓授权**，仅授予该项目仓库所需的最小读写权限）。
 
@@ -99,12 +105,12 @@
 
 - `A2A_HOST`：A2A 监听地址，默认 `127.0.0.1`（也可通过 `deploy.sh` 的 `a2a_host=...` 参数设置）
 - `A2A_PORT`：A2A 监听端口，默认 `8000`（多实例时需为每个项目分配不同端口）
-- `A2A_PUBLIC_URL`：对外可访问的 A2A URL，默认 `http://<A2A_HOST>:<A2A_PORT>`
 - `A2A_LOG_LEVEL`：A2A 日志级别，默认 `DEBUG`（脚本内默认）
 - `A2A_LOG_PAYLOADS`：是否记录 A2A 与 OpenCode 请求/响应正文，默认 `true`（脚本内默认）
 - `A2A_LOG_BODY_LIMIT`：日志正文最大长度，默认 `0`（不截断）
 
 > 共享路径（`OPENCODE_A2A_DIR`/`OPENCODE_CORE_DIR`/`UV_PYTHON_DIR`/`DATA_ROOT`）默认从 `scripts/init_system.sh` 顶部变量读取；`deploy.sh` 仍支持环境变量覆盖（需确保与实际目录一致）。
+- `A2A_PUBLIC_URL` 仅通过 `deploy.sh` 的 `a2a_public_url=...` 参数设置；未提供时自动拼接为 `http://<A2A_HOST>:<A2A_PORT>`。
 - `A2A_STREAMING`：是否启用 SSE streaming（`/v1/message:stream`），默认 `true`
 
 ### 实例配置文件
