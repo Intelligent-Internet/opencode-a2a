@@ -10,9 +10,18 @@ if [[ ! -x "$A2A_BIN" ]]; then
   exit 1
 fi
 
-if [[ -z "${A2A_BEARER_TOKEN:-}" ]]; then
-  echo "A2A_BEARER_TOKEN is required" >&2
-  exit 1
+A2A_AUTH_MODE="${A2A_AUTH_MODE:-bearer}"
+
+if [[ "$A2A_AUTH_MODE" == "bearer" ]]; then
+  if [[ -z "${A2A_BEARER_TOKEN:-}" ]]; then
+    echo "A2A_BEARER_TOKEN is required when A2A_AUTH_MODE is bearer" >&2
+    exit 1
+  fi
+elif [[ "$A2A_AUTH_MODE" == "jwt" ]]; then
+  if [[ -z "${A2A_JWT_SECRET:-}" ]]; then
+    echo "A2A_JWT_SECRET is required when A2A_AUTH_MODE is jwt" >&2
+    exit 1
+  fi
 fi
 
 exec "$A2A_BIN"
