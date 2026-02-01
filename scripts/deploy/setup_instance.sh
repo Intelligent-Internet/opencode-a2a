@@ -9,8 +9,8 @@ PROJECT_NAME="${1:-}"
 GH_TOKEN="${2:-}"
 A2A_BEARER_TOKEN="${3:-}"
 
-if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" || -z "$A2A_BEARER_TOKEN" ]]; then
-  echo "Usage: $0 <project_name> <github_token> <a2a_bearer_token>" >&2
+if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" ]]; then
+  echo "Usage: $0 <project_name> <github_token> [a2a_bearer_token]" >&2
   exit 1
 fi
 
@@ -79,7 +79,20 @@ a2a_env_tmp="$(mktemp)"
   echo "A2A_HOST=${A2A_HOST}"
   echo "A2A_PORT=${A2A_PORT}"
   echo "A2A_PUBLIC_URL=${A2A_PUBLIC_URL}"
-  echo "A2A_BEARER_TOKEN=${A2A_BEARER_TOKEN}"
+  echo "A2A_AUTH_MODE=${A2A_AUTH_MODE:-bearer}"
+  if [[ -n "${A2A_BEARER_TOKEN:-}" ]]; then
+    echo "A2A_BEARER_TOKEN=${A2A_BEARER_TOKEN}"
+  fi
+  if [[ -n "${A2A_JWT_SECRET:-}" ]]; then
+    echo "A2A_JWT_SECRET=${A2A_JWT_SECRET}"
+    echo "A2A_JWT_ALGORITHM=${A2A_JWT_ALGORITHM:-HS256}"
+  fi
+  if [[ -n "${A2A_JWT_ISSUER:-}" ]]; then
+    echo "A2A_JWT_ISSUER=${A2A_JWT_ISSUER}"
+  fi
+  if [[ -n "${A2A_JWT_AUDIENCE:-}" ]]; then
+    echo "A2A_JWT_AUDIENCE=${A2A_JWT_AUDIENCE}"
+  fi
   echo "A2A_STREAMING=${A2A_STREAMING}"
   echo "A2A_LOG_LEVEL=${A2A_LOG_LEVEL:-INFO}"
   echo "A2A_LOG_PAYLOADS=${A2A_LOG_PAYLOADS:-false}"

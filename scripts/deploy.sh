@@ -18,6 +18,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_NAME=""
 GH_TOKEN=""
 A2A_BEARER_TOKEN=""
+A2A_AUTH_MODE="bearer"
+A2A_JWT_SECRET=""
+A2A_JWT_ALGORITHM="HS256"
+A2A_JWT_ISSUER=""
+A2A_JWT_AUDIENCE=""
 A2A_PORT_INPUT=""
 A2A_HOST_INPUT=""
 OPENCODE_PROVIDER_ID_INPUT=""
@@ -48,6 +53,21 @@ for arg in "$@"; do
       ;;
     a2a_bearer_token|bearer_token)
       A2A_BEARER_TOKEN="$value"
+      ;;
+    a2a_auth_mode)
+      A2A_AUTH_MODE="$value"
+      ;;
+    a2a_jwt_secret)
+      A2A_JWT_SECRET="$value"
+      ;;
+    a2a_jwt_algorithm)
+      A2A_JWT_ALGORITHM="$value"
+      ;;
+    a2a_jwt_issuer)
+      A2A_JWT_ISSUER="$value"
+      ;;
+    a2a_jwt_audience)
+      A2A_JWT_AUDIENCE="$value"
       ;;
     a2a_port)
       A2A_PORT_INPUT="$value"
@@ -89,8 +109,18 @@ for arg in "$@"; do
   esac
 done
 
-if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" || -z "$A2A_BEARER_TOKEN" ]]; then
-  echo "Usage: $0 project=<name> github_token=<token> a2a_bearer_token=<token> [a2a_port=<port>] [a2a_host=<host>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [update_a2a=true] [force_restart=true]" >&2
+if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" ]]; then
+  echo "Usage: $0 project=<name> github_token=<token> [a2a_auth_mode=bearer|jwt] [a2a_bearer_token=<token>] [a2a_jwt_secret=<key>] ..." >&2
+  exit 1
+fi
+
+if [[ "$A2A_AUTH_MODE" == "bearer" && -z "$A2A_BEARER_TOKEN" ]]; then
+  echo "a2a_bearer_token is required when a2a_auth_mode is bearer" >&2
+  exit 1
+fi
+
+if [[ "$A2A_AUTH_MODE" == "jwt" && -z "$A2A_JWT_SECRET" ]]; then
+  echo "a2a_jwt_secret is required when a2a_auth_mode is jwt" >&2
   exit 1
 fi
 
@@ -168,6 +198,12 @@ fi
 if [[ "$UPDATE_A2A" == "true" ]]; then
   "${SCRIPT_DIR}/deploy/update_a2a.sh"
 fi
+
+export A2A_AUTH_MODE
+export A2A_JWT_SECRET
+export A2A_JWT_ALGORITHM
+export A2A_JWT_ISSUER
+export A2A_JWT_AUDIENCE
 
 "${SCRIPT_DIR}/deploy/install_units.sh"
 "${SCRIPT_DIR}/deploy/setup_instance.sh" "$PROJECT_NAME" "$GH_TOKEN" "$A2A_BEARER_TOKEN"
