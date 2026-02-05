@@ -50,6 +50,15 @@ SCRIPT
 sudo install -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" "$askpass_tmp" "$ASKPASS_SCRIPT"
 rm -f "$askpass_tmp"
 
+git_author_name="OpenCode-${PROJECT_NAME}"
+git_author_email="${PROJECT_NAME}@internal"
+if [[ -n "${GIT_IDENTITY_NAME:-}" ]]; then
+  git_author_name="${GIT_IDENTITY_NAME}"
+fi
+if [[ -n "${GIT_IDENTITY_EMAIL:-}" ]]; then
+  git_author_email="${GIT_IDENTITY_EMAIL}"
+fi
+
 opencode_env_tmp="$(mktemp)"
 {
   echo "OPENCODE_LOG_LEVEL=${OPENCODE_LOG_LEVEL}"
@@ -60,10 +69,10 @@ opencode_env_tmp="$(mktemp)"
   echo "GIT_ASKPASS=${ASKPASS_SCRIPT}"
   echo "GIT_ASKPASS_REQUIRE=force"
   echo "GIT_TERMINAL_PROMPT=0"
-  echo "GIT_AUTHOR_NAME=OpenCode-${PROJECT_NAME}"
-  echo "GIT_COMMITTER_NAME=OpenCode-${PROJECT_NAME}"
-  echo "GIT_AUTHOR_EMAIL=${PROJECT_NAME}@internal"
-  echo "GIT_COMMITTER_EMAIL=${PROJECT_NAME}@internal"
+  echo "GIT_AUTHOR_NAME=${git_author_name}"
+  echo "GIT_COMMITTER_NAME=${git_author_name}"
+  echo "GIT_AUTHOR_EMAIL=${git_author_email}"
+  echo "GIT_COMMITTER_EMAIL=${git_author_email}"
   if [[ -n "${OPENCODE_PROVIDER_ID:-}" ]]; then
     echo "OPENCODE_PROVIDER_ID=${OPENCODE_PROVIDER_ID}"
   fi
