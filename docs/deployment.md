@@ -125,6 +125,8 @@ HTTPS 域名示例（避免 root 多实例环境变量互相干扰）：
 
 `GOOGLE_GENERATIVE_AI_API_KEY` 可在部署时通过环境变量或 `google_generative_ai_api_key` 参数提供，脚本会将其写入 `config/opencode.secret.env`（权限 `600`，`root:root`），并由 `opencode@.service` 通过 `EnvironmentFile` 持久加载。服务重启或服务器重启后无需重新注入。
 
+> 风险提示：由于 key 注入到 `opencode` 运行进程，`opencode agent` 可能通过套话/拼接等方式泄露敏感值。本方案不提供“agent 无法获知 provider key”的安全保证。
+
 为保障私有仓库访问，`github_token` 会写入 `config/opencode.env`，并结合 `GIT_ASKPASS` 注入到 OpenCode 进程中使用。该文件权限为 600（root-only）。
 
 部署脚本会为项目用户执行 `gh auth login --with-token`，写入 `/data/projects/<project>/.config/gh/hosts.yml`（权限 600，项目用户私有），确保 OpenCode 调用 `gh` 时可用。
@@ -213,6 +215,12 @@ systemd 单元已启用：
 - `NoNewPrivileges=true`
 
 OpenCode 与 A2A 分离运行：`A2A_BEARER_TOKEN` 仅注入 A2A，`GH_TOKEN`/Git 凭证仅注入 OpenCode，避免跨进程继承。
+
+关键风险与适用范围：
+
+- 当前实现下，LLM provider token（如 `GOOGLE_GENERATIVE_AI_API_KEY`）对 `opencode` 进程可见，存在被 agent 侧间接获取的风险。
+- 因此本仓当前能力仅建议部署在内部实例，且由少数可信成员共用 repo 与 LLM key。
+- 若要作为 cgnext 的通用能力对外提供，必须先完成 token 安全方案定义（至少覆盖租户隔离、权限边界、审计、轮换与应急撤销）。
 
 ## Streaming 说明
 
