@@ -120,9 +120,12 @@ HTTPS 域名示例（避免 root 多实例环境变量互相干扰）：
 每个项目会生成（路径位于 `/data/projects/<project>/config/`，不同项目不会重名）：
 
 - `config/opencode.env`：仅 OpenCode 读取（包含 `GH_TOKEN` 与 Git 身份配置）
+- `config/opencode.secret.env`：仅 OpenCode 读取的敏感配置（可选，包含 `GOOGLE_GENERATIVE_AI_API_KEY`）
 - `config/a2a.env`：仅 A2A 读取（包含 `A2A_BEARER_TOKEN`，以及 `OPENCODE_PROVIDER_ID/OPENCODE_MODEL_ID` 等模型配置）
 
-`GOOGLE_GENERATIVE_AI_API_KEY` 不会写入任何配置文件。可在部署时通过环境变量或 `google_generative_ai_api_key` 参数注入，并以 systemd runtime 方式仅作用于 `opencode@` 进程。系统重启后需重新注入。
+`GOOGLE_GENERATIVE_AI_API_KEY` 可在部署时通过环境变量或 `google_generative_ai_api_key` 参数提供，脚本会将其写入 `config/opencode.secret.env`（权限 `600`，`root:root`），并由 `opencode@.service` 通过 `EnvironmentFile` 持久加载。服务重启或服务器重启后无需重新注入。
+
+> 风险提示：由于 key 注入到 `opencode` 运行进程，`opencode agent` 可能通过套话/拼接等方式泄露敏感值。本方案不提供“agent 无法获知 provider key”的安全保证。
 
 为保障私有仓库访问，`github_token` 会写入 `config/opencode.env`，并结合 `GIT_ASKPASS` 注入到 OpenCode 进程中使用。该文件权限为 600（root-only）。
 
@@ -130,12 +133,18 @@ HTTPS 域名示例（避免 root 多实例环境变量互相干扰）：
 
 如需使用 `gh` CLI，服务默认将 `PATH` 包含 `/usr/bin`，并显式允许读取 `/usr/bin/gh`。若 `gh` 安装在其他路径，可通过软链接放入 `${OPENCODE_CORE_DIR}/bin`。
 
-若 systemd 不支持 `set-property Environment`，脚本会退化为临时设置 systemd manager 环境变量并立即启动服务，随后清理该环境变量，避免长期暴露。
+未提供 `GOOGLE_GENERATIVE_AI_API_KEY` 时，部署脚本不会覆盖已有 `config/opencode.secret.env`，便于已部署实例在常规升级时保持现有密钥配置。
 
 示例（推荐用环境变量避免写入 shell 历史）：
 
 ```bash
 GOOGLE_GENERATIVE_AI_API_KEY=AIzxxx ./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx a2a_port=8010 a2a_host=127.0.0.1 opencode_provider_id=google opencode_model_id=gemini-3-flash-preview repo_url=https://github.com/org/repo.git repo_branch=main
+```
+
+轮换 Gemini key（推荐）：
+
+```bash
+GOOGLE_GENERATIVE_AI_API_KEY=AIz_new ./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx force_restart=true
 ```
 
 如需自动初始化仓库，可传 `repo_url`（可选 `repo_branch`），脚本会在首次部署时将仓库克隆到 `workspace/`；如果 `workspace/.git` 已存在或目录非空则跳过。
@@ -146,6 +155,13 @@ GOOGLE_GENERATIVE_AI_API_KEY=AIzxxx ./scripts/deploy.sh project=alpha github_tok
 sudo systemctl restart opencode@<project>.service
 sudo systemctl restart opencode-a2a@<project>.service
 ```
+
+### Gemini Key 验收 Checklist
+
+- 首次部署：提供 `GOOGLE_GENERATIVE_AI_API_KEY`，确认 `config/opencode.secret.env` 已生成且权限为 `600`（owner/group 为 `root`）。
+- 服务重启：执行 `sudo systemctl restart opencode@<project>.service` 后，Gemini 请求仍可成功。
+- 服务器重启：系统重启后确认 `opencode@<project>.service` 恢复运行且 Gemini 请求仍可成功。
+- 密钥轮换：使用新 key 重新执行 `deploy.sh`（可带 `force_restart=true`），确认新 key 生效且服务可用。
 
 ## 服务管理
 
@@ -199,6 +215,12 @@ systemd 单元已启用：
 - `NoNewPrivileges=true`
 
 OpenCode 与 A2A 分离运行：`A2A_BEARER_TOKEN` 仅注入 A2A，`GH_TOKEN`/Git 凭证仅注入 OpenCode，避免跨进程继承。
+
+关键风险与适用范围：
+
+- 当前实现下，LLM provider token（如 `GOOGLE_GENERATIVE_AI_API_KEY`）对 `opencode` 进程可见，存在被 agent 侧间接获取的风险。
+- 因此本仓当前能力仅建议部署在内部实例，且由少数可信成员共用 repo 与 LLM key。
+- 若要作为 cgnext 的通用能力对外提供，必须先完成 token 安全方案定义（至少覆盖租户隔离、权限边界、审计、轮换与应急撤销）。
 
 ## Streaming 说明
 

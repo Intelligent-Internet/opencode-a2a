@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy an isolated OpenCode + A2A instance (systemd services).
 # Usage: ./deploy.sh project=<name> github_token=<token> a2a_bearer_token=<token> [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
-# Optional: GOOGLE_GENERATIVE_AI_API_KEY=<key> to inject runtime-only API key into opencode@ service.
+# Optional: GOOGLE_GENERATIVE_AI_API_KEY=<key> to persist API key into opencode.secret.env for opencode@ service.
 # Requires: sudo access to write systemd units and create users/directories.
 #
 # Key environment variables (optional):

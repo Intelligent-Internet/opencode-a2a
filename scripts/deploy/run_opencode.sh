@@ -8,10 +8,22 @@ OPENCODE_LOG_LEVEL="${OPENCODE_LOG_LEVEL:-INFO}"
 OPENCODE_BIND_HOST="${OPENCODE_BIND_HOST:-127.0.0.1}"
 OPENCODE_BIND_PORT="${OPENCODE_BIND_PORT:-4096}"
 OPENCODE_EXTRA_ARGS="${OPENCODE_EXTRA_ARGS:-}"
+OPENCODE_PROVIDER_ID="${OPENCODE_PROVIDER_ID:-}"
+OPENCODE_MODEL_ID="${OPENCODE_MODEL_ID:-}"
+GOOGLE_GENERATIVE_AI_API_KEY="${GOOGLE_GENERATIVE_AI_API_KEY:-}"
 
 if [[ ! -x "$OPENCODE_BIN" ]]; then
   echo "opencode binary not found at $OPENCODE_BIN" >&2
   exit 1
+fi
+
+provider_lc="${OPENCODE_PROVIDER_ID,,}"
+model_lc="${OPENCODE_MODEL_ID,,}"
+if [[ "$provider_lc" == "google" || "$model_lc" == *"gemini"* ]]; then
+  if [[ -z "$GOOGLE_GENERATIVE_AI_API_KEY" ]]; then
+    echo "GOOGLE_GENERATIVE_AI_API_KEY is required when using Google/Gemini model settings" >&2
+    exit 1
+  fi
 fi
 
 cmd=("$OPENCODE_BIN" serve --log-level "$OPENCODE_LOG_LEVEL" --print-logs)

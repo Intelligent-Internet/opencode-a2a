@@ -30,6 +30,7 @@ Environment=OPENCODE_A2A_DIR=${OPENCODE_A2A_DIR}
 Environment=UV_PYTHON_DIR=${UV_PYTHON_DIR}
 Environment=PATH=${OPENCODE_CORE_DIR}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EnvironmentFile=${DATA_ROOT}/%i/config/opencode.env
+EnvironmentFile=-${DATA_ROOT}/%i/config/opencode.secret.env
 Environment=HOME=${DATA_ROOT}/%i
 
 ExecStart=${OPENCODE_A2A_DIR}/scripts/deploy/run_opencode.sh
