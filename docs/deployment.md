@@ -187,7 +187,7 @@ sudo systemctl status opencode-a2a@<project>.service
 注意：
 - `uninstall.sh` **永远不会**删除 systemd 模板单元（`/etc/systemd/system/opencode@.service` 与 `opencode-a2a@.service`），因为它们是全局共享的，删除会影响其它实例。
 - 该脚本仅针对单个 `project` 的实例单元（`opencode@<project>`、`opencode-a2a@<project>`）及其专有目录/用户/组做清理。
-- 出于安全考虑，脚本会校验 `project` 名称（对齐常见 Linux 用户名约束），并在执行删除前检查 `${DATA_ROOT}/<project>/config/` 下的 marker env 文件（如 `a2a.env` / `opencode.env`）。若不满足将拒绝执行删除。
+- 出于安全考虑：apply 模式（`confirm=UNINSTALL`）会校验 `project` 名称（对齐常见 Linux 用户名约束），并在执行删除前检查 `${DATA_ROOT}/<project>/config/` 下的 marker env 文件（如 `a2a.env` / `opencode.env`）。若不满足将拒绝执行删除（此时需人工确认后手工清理目录）。脚本会使用 `sudo`，在非交互环境下要求 `sudo -n` 可用以避免卡住。
 
 ## 日志查看
 

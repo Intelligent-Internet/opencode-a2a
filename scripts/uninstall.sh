@@ -71,10 +71,6 @@ if [[ "$PROJECT_NAME" =~ [[:space:]] ]]; then
   echo "Invalid project name (whitespace not allowed): ${PROJECT_NAME}" >&2
   exit 1
 fi
-if [[ ! "$PROJECT_NAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
-  echo "Invalid project name (expected: ^[a-z_][a-z0-9_-]{0,31}$): ${PROJECT_NAME}" >&2
-  exit 1
-fi
 if [[ "$DATA_ROOT" != /* || "$DATA_ROOT" == "/" ]]; then
   echo "Invalid DATA_ROOT (must be an absolute path, not /): ${DATA_ROOT}" >&2
   exit 1
@@ -121,6 +117,34 @@ echo "Project dir: ${PROJECT_DIR}"
 echo "Note: systemd template units will NOT be removed."
 echo "Mode: $([[ "$APPLY" == "true" ]] && echo apply || echo preview)"
 
+# In apply mode, enforce strict project name constraints to match typical Linux
+# username rules (deploy.sh uses PROJECT_NAME as the system user/group name).
+if [[ "$APPLY" == "true" ]]; then
+  if [[ ! "$PROJECT_NAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+    echo "Invalid project name for apply mode (expected: ^[a-z_][a-z0-9_-]{0,31}$): ${PROJECT_NAME}" >&2
+    exit 1
+  fi
+fi
+
+# Apply mode requires sudo; avoid hanging in non-interactive environments.
+if [[ "$APPLY" == "true" ]]; then
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "sudo not found; cannot apply uninstall." >&2
+    exit 1
+  fi
+  if [[ -t 0 ]]; then
+    # Interactive terminal: refresh credentials (may prompt).
+    sudo -v
+  else
+    # Non-interactive: require non-prompting sudo.
+    if ! sudo -n true 2>/dev/null; then
+      echo "sudo requires a password or is not permitted (non-interactive). Refusing to apply." >&2
+      echo "Run in an interactive shell, or configure NOPASSWD for required commands." >&2
+      exit 1
+    fi
+  fi
+fi
+
 # Refuse to delete an unexpected directory layout (defense in depth).
 if [[ "$PROJECT_DIR" != "${DATA_ROOT}/"* ]]; then
   echo "Internal error: project dir is not under DATA_ROOT: ${PROJECT_DIR}" >&2
@@ -129,16 +153,11 @@ fi
 
 # If the directory exists, require a marker file that deploy.sh creates.
 if [[ "$APPLY" == "true" && -e "${PROJECT_DIR}" ]]; then
-  if command -v sudo >/dev/null 2>&1; then
-    if ! sudo test -f "${PROJECT_DIR}/config/a2a.env" && ! sudo test -f "${PROJECT_DIR}/config/opencode.env"; then
-      echo "Refusing to delete ${PROJECT_DIR}: missing marker env files under config/." >&2
-      echo "Expected one of:" >&2
-      echo "  ${PROJECT_DIR}/config/a2a.env" >&2
-      echo "  ${PROJECT_DIR}/config/opencode.env" >&2
-      exit 1
-    fi
-  else
-    echo "sudo not found; cannot verify marker files safely. Refusing to apply." >&2
+  if ! sudo test -f "${PROJECT_DIR}/config/a2a.env" && ! sudo test -f "${PROJECT_DIR}/config/opencode.env"; then
+    echo "Refusing to delete ${PROJECT_DIR}: missing marker env files under config/." >&2
+    echo "Expected one of:" >&2
+    echo "  ${PROJECT_DIR}/config/a2a.env" >&2
+    echo "  ${PROJECT_DIR}/config/opencode.env" >&2
     exit 1
   fi
 fi
@@ -163,6 +182,7 @@ if id "${PROJECT_NAME}" &>/dev/null; then
   user_home="$(getent passwd "${PROJECT_NAME}" | cut -d: -f6 || true)"
   if [[ -n "$user_home" && "$user_home" != "${PROJECT_DIR}" ]]; then
     warn "User ${PROJECT_NAME} home mismatch (expected ${PROJECT_DIR}, got ${user_home}); refusing to delete user automatically."
+    HAD_NONFATAL_FAILURE="true"
   else
   if command -v userdel >/dev/null 2>&1; then
     run_ignore sudo userdel "${PROJECT_NAME}"
@@ -170,6 +190,7 @@ if id "${PROJECT_NAME}" &>/dev/null; then
     run_ignore sudo deluser "${PROJECT_NAME}"
   else
     echo "Neither userdel nor deluser found; cannot remove user ${PROJECT_NAME} automatically." >&2
+    HAD_NONFATAL_FAILURE="true"
   fi
   fi
 else
@@ -181,6 +202,7 @@ if getent group "${PROJECT_NAME}" >/dev/null 2>&1; then
   primary_group="$(id -gn "${PROJECT_NAME}" 2>/dev/null || true)"
   if [[ -n "$primary_group" && "$primary_group" != "${PROJECT_NAME}" ]]; then
     warn "User ${PROJECT_NAME} primary group is ${primary_group}; refusing to delete group ${PROJECT_NAME} automatically."
+    HAD_NONFATAL_FAILURE="true"
   else
   if command -v groupdel >/dev/null 2>&1; then
     run_ignore sudo groupdel "${PROJECT_NAME}"
@@ -188,6 +210,7 @@ if getent group "${PROJECT_NAME}" >/dev/null 2>&1; then
     run_ignore sudo delgroup "${PROJECT_NAME}"
   else
     echo "Neither groupdel nor delgroup found; cannot remove group ${PROJECT_NAME} automatically." >&2
+    HAD_NONFATAL_FAILURE="true"
   fi
   fi
 else
@@ -197,6 +220,7 @@ fi
 if [[ "$APPLY" == "true" ]]; then
   if [[ "$HAD_NONFATAL_FAILURE" == "true" ]]; then
     warn "Uninstall completed with non-fatal failures. See WARN lines above."
+    exit 2
   else
     echo "Uninstall completed."
   fi
