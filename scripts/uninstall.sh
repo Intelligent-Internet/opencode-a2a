@@ -205,6 +205,37 @@ run_ignore() {
   fi
 }
 
+run_reset_failed() {
+  # systemctl reset-failed is best-effort cleanup. If the unit is not loaded/not
+  # found, treat it as informational (do not affect exit code).
+  echo "+ $*"
+  if [[ "$APPLY" != "true" ]]; then
+    return 0
+  fi
+
+  local out=""
+  if out="$("$@" 2>&1)"; then
+    if [[ -n "$out" ]]; then
+      echo "$out"
+    fi
+    return 0
+  fi
+
+  local rc=$?
+  if [[ -n "$out" ]]; then
+    echo "$out" >&2
+  fi
+
+  if [[ "$out" == *"not loaded"* || "$out" == *"not found"* ]]; then
+    echo "INFO: systemctl reset-failed skipped (unit not loaded/not found)." >&2
+    return 0
+  fi
+
+  HAD_NONFATAL_FAILURE="true"
+  warn "Command failed (ignored): $* (exit=$rc)"
+  return 0
+}
+
 echo "Project: ${PROJECT_NAME}"
 echo "DATA_ROOT: ${DATA_ROOT}"
 echo "Project dir: ${PROJECT_DIR}"
@@ -259,7 +290,7 @@ fi
 # Stop/disable instance units (idempotent).
 if command -v systemctl >/dev/null 2>&1; then
   run_ignore sudo systemctl disable --now "${UNIT_A2A}" "${UNIT_OPENCODE}"
-  run_ignore sudo systemctl reset-failed "${UNIT_A2A}" "${UNIT_OPENCODE}"
+  run_reset_failed sudo systemctl reset-failed "${UNIT_A2A}" "${UNIT_OPENCODE}"
 else
   echo "systemctl not found; skipping systemd unit disable/stop." >&2
 fi
