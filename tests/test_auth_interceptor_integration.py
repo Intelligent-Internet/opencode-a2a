@@ -15,9 +15,9 @@ from opencode_a2a.a2a_client import connect_with_patched_rest
 @pytest.mark.asyncio
 async def test_auth_interceptor_integration_returns_404_after_auth():
     """Ensure AuthInterceptor allows authorized requests to reach 404 instead of 401."""
-    token = os.environ.get("A2A_BEARER_TOKEN")
+    token = os.environ.get("A2A_JWT_TOKEN")
     if not token:
-        pytest.skip("A2A_BEARER_TOKEN not set")
+        pytest.skip("A2A_JWT_TOKEN not set")
 
     base_url = os.environ.get("A2A_URL")
     if not base_url:

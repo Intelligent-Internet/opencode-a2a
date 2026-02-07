@@ -21,14 +21,10 @@
 - `A2A_PROTOCOL_VERSION`：A2A 协议版本，默认 `0.3.0`
 - `A2A_HOST`：监听地址，默认 `127.0.0.1`
 - `A2A_PORT`：监听端口，默认 `8000`
-- `A2A_AUTH_MODE`：鉴权模式，可选 `bearer` 或 `jwt`，默认 `bearer`
-- `A2A_BEARER_TOKEN`：当 `A2A_AUTH_MODE=bearer` 时必填；用于静态 Bearer Token 校验
-- `A2A_JWT_SECRET`：当 `A2A_AUTH_MODE=jwt` 时必填；JWT 签名密钥
-- 说明：当 `A2A_JWT_ALGORITHM` 为 `HS256/HS384/HS512` 时，`A2A_JWT_SECRET` 必须为高熵随机值且长度不少于 32 bytes（否则服务拒绝启动）
-- `A2A_JWT_ALGORITHM`：JWT 签名算法，默认 `HS256`
-- `A2A_JWT_ISSUER`：JWT 签发者校验（可选；若启用 `A2A_JWT_REQUIRE_ISSUER=true` 则必填）
-- `A2A_JWT_AUDIENCE`：JWT 受众校验（当 `A2A_AUTH_MODE=jwt` 时必填）
-- `A2A_JWT_REQUIRE_ISSUER`：是否强制要求并校验 `iss`（默认 `false`）
+- `A2A_JWT_SECRET`：JWT 验签 key（建议使用非对称算法的 **public key PEM**）
+- `A2A_JWT_ALGORITHM`：JWT 签名算法（**仅支持非对称算法**），默认 `RS256`
+- `A2A_JWT_ISSUER`：JWT 签发者校验（必填）
+- `A2A_JWT_AUDIENCE`：JWT 受众校验（必填）
 - `A2A_JWT_SCOPE_MATCH`：当设置了 `A2A_OAUTH_SCOPES` 时的 scopes 匹配规则，可选 `any`/`all`，默认 `any`
 - `A2A_STREAMING`：是否启用 SSE streaming（`/v1/message:stream`），默认 `true`
 - `A2A_LOG_LEVEL`：A2A 服务日志级别（`DEBUG/INFO/WARNING/ERROR`），默认 `INFO`
@@ -45,7 +41,7 @@
 - 任务状态默认返回 `input-required`，便于继续多轮对话。
 - Streaming（`/v1/message:stream`）会输出 `TaskArtifactUpdateEvent` 增量（`append=true`），结束时发送 `TaskStatusUpdateEvent(final=true)`；完整内容由 artifact 承载，非 streaming 调用仍返回 `Task`。
 - 需在请求中携带 `Authorization: Bearer <token>`，否则返回 401（Agent Card 不受鉴权限制）。
-- 支持 JWT 无状态鉴权：当启用 JWT 模式时，会校验签名、过期时间（exp，必填）与受众（audience），并可选校验签发者（issuer）及 Scopes（scope/scp，字符串或数组）。
+- 支持 JWT 无状态鉴权：会校验签名算法（仅非对称）、签发者（issuer，必填）、受众（audience，必填）、过期时间（exp，必填），并可选校验 Scopes（scope/scp，字符串或数组）。
 - OAuth2 URLs（Authorization/Token URL）目前主要用于 Agent Card 声明。
 
 ## 鉴权示例（curl）
@@ -65,12 +61,9 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 ## 鉴权示例（JWT 模式）
 
-若启用 `A2A_AUTH_MODE=jwt`，Token 需为合法的 JWT 且必须包含 `exp`，并且服务端必须配置 `A2A_JWT_AUDIENCE`。若设置了 `A2A_OAUTH_SCOPES`，Token 的 `scope` 或 `scp` 声明需满足 `A2A_JWT_SCOPE_MATCH` 规则（支持字符串或数组）。
+Token 需为合法的 JWT 且必须包含 `exp`。服务端必须配置 `A2A_JWT_ISSUER` 与 `A2A_JWT_AUDIENCE`。若设置了 `A2A_OAUTH_SCOPES`，Token 的 `scope` 或 `scp` 声明需满足 `A2A_JWT_SCOPE_MATCH` 规则（支持字符串或数组）。
 
 ```bash
-# 生成 Token 示例（Python）
-# python -c "import jwt, time; print(jwt.encode({'iss': 'my-issuer', 'aud': 'my-audience', 'exp': int(time.time()) + 3600, 'scope': 'opencode'}, 'my-secret', algorithm='HS256'))"
-
 curl -sS http://127.0.0.1:8000/v1/message:send \
   -H 'Authorization: Bearer <your-jwt-token>' \
   ...
@@ -100,7 +93,7 @@ from opencode_a2a.a2a_client import connect_with_patched_rest
 
 async def main() -> None:
     base_url = "http://127.0.0.1:8000"
-    token = os.environ["A2A_BEARER_TOKEN"]
+    token = os.environ["A2A_JWT_TOKEN"]
 
     store = InMemoryContextCredentialStore()
     session_id = "auth-demo"

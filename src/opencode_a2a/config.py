@@ -96,13 +96,10 @@ class Settings:
     a2a_log_body_limit: int
     a2a_host: str
     a2a_port: int
-    a2a_bearer_token: str | None
-    a2a_auth_mode: str
     a2a_jwt_secret: str | None
     a2a_jwt_algorithm: str
     a2a_jwt_issuer: str | None
     a2a_jwt_audience: str | None
-    a2a_jwt_require_issuer: bool
     a2a_jwt_scope_match: str
     a2a_oauth_authorization_url: str | None
     a2a_oauth_token_url: str | None
@@ -132,13 +129,10 @@ class Settings:
             a2a_log_body_limit=_get_int("A2A_LOG_BODY_LIMIT", 0),
             a2a_host=str(_get_env("A2A_HOST", "127.0.0.1")),
             a2a_port=_get_int("A2A_PORT", 8000),
-            a2a_bearer_token=_get_env("A2A_BEARER_TOKEN"),
-            a2a_auth_mode=str(_get_env("A2A_AUTH_MODE", "bearer")),
             a2a_jwt_secret=_get_env("A2A_JWT_SECRET"),
-            a2a_jwt_algorithm=str(_get_env("A2A_JWT_ALGORITHM", "HS256")),
+            a2a_jwt_algorithm=str(_get_env("A2A_JWT_ALGORITHM", "RS256")),
             a2a_jwt_issuer=_get_env("A2A_JWT_ISSUER"),
             a2a_jwt_audience=_get_env("A2A_JWT_AUDIENCE"),
-            a2a_jwt_require_issuer=_get_bool("A2A_JWT_REQUIRE_ISSUER", False),
             a2a_jwt_scope_match=_get_normalized_choice(
                 "A2A_JWT_SCOPE_MATCH",
                 default="any",

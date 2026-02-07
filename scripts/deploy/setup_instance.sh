@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Create project user, directories, and env files for systemd services.
-# Usage: ./setup_instance.sh <project_name> <github_token> <a2a_bearer_token>
+# Usage: ./setup_instance.sh <project_name> <github_token>
 # Requires env: DATA_ROOT, OPENCODE_BIND_HOST, OPENCODE_BIND_PORT, OPENCODE_LOG_LEVEL,
 #               A2A_HOST, A2A_PORT, A2A_PUBLIC_URL.
 # Optional env: GOOGLE_GENERATIVE_AI_API_KEY (persisted into config/opencode.secret.env when provided).
@@ -8,10 +8,9 @@ set -euo pipefail
 
 PROJECT_NAME="${1:-}"
 GH_TOKEN="${2:-}"
-A2A_BEARER_TOKEN="${3:-}"
 
 if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" ]]; then
-  echo "Usage: $0 <project_name> <github_token> [a2a_bearer_token]" >&2
+  echo "Usage: $0 <project_name> <github_token>" >&2
   exit 1
 fi
 
@@ -99,22 +98,11 @@ a2a_env_tmp="$(mktemp)"
   echo "A2A_HOST=${A2A_HOST}"
   echo "A2A_PORT=${A2A_PORT}"
   echo "A2A_PUBLIC_URL=${A2A_PUBLIC_URL}"
-  echo "A2A_AUTH_MODE=${A2A_AUTH_MODE:-bearer}"
-  if [[ -n "${A2A_BEARER_TOKEN:-}" ]]; then
-    echo "A2A_BEARER_TOKEN=${A2A_BEARER_TOKEN}"
-  fi
-  if [[ -n "${A2A_JWT_SECRET:-}" ]]; then
-    echo "A2A_JWT_SECRET=${A2A_JWT_SECRET}"
-    echo "A2A_JWT_ALGORITHM=${A2A_JWT_ALGORITHM:-HS256}"
-    echo "A2A_JWT_REQUIRE_ISSUER=${A2A_JWT_REQUIRE_ISSUER:-false}"
-    echo "A2A_JWT_SCOPE_MATCH=${A2A_JWT_SCOPE_MATCH:-any}"
-  fi
-  if [[ -n "${A2A_JWT_ISSUER:-}" ]]; then
-    echo "A2A_JWT_ISSUER=${A2A_JWT_ISSUER}"
-  fi
-  if [[ -n "${A2A_JWT_AUDIENCE:-}" ]]; then
-    echo "A2A_JWT_AUDIENCE=${A2A_JWT_AUDIENCE}"
-  fi
+  echo "A2A_JWT_SECRET=${A2A_JWT_SECRET}"
+  echo "A2A_JWT_ALGORITHM=${A2A_JWT_ALGORITHM:-RS256}"
+  echo "A2A_JWT_ISSUER=${A2A_JWT_ISSUER}"
+  echo "A2A_JWT_AUDIENCE=${A2A_JWT_AUDIENCE}"
+  echo "A2A_JWT_SCOPE_MATCH=${A2A_JWT_SCOPE_MATCH:-any}"
   echo "A2A_STREAMING=${A2A_STREAMING}"
   echo "A2A_LOG_LEVEL=${A2A_LOG_LEVEL:-INFO}"
   echo "A2A_LOG_PAYLOADS=${A2A_LOG_PAYLOADS:-false}"

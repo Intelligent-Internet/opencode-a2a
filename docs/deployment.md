@@ -57,32 +57,25 @@
 ## 快速部署
 
 ```bash
-./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx a2a_port=8010 a2a_host=127.0.0.1 opencode_provider_id=google opencode_model_id=gemini-3-flash-preview
+./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_jwt_secret=jwt_public_key_pem a2a_jwt_issuer=compass a2a_jwt_audience=opencode-a2a:alpha a2a_port=8010 a2a_host=127.0.0.1 opencode_provider_id=google opencode_model_id=gemini-3-flash-preview
 ```
 
-JWT 鉴权示例（推荐生产使用；需配置 `a2a_jwt_audience`）：
-
-```bash
-./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_auth_mode=jwt a2a_jwt_secret=jwt_xxx a2a_jwt_audience=opencode-a2a:alpha a2a_port=8010 a2a_host=127.0.0.1
-```
+说明：该项目仅支持 JWT 鉴权（非对称算法 `RS*`/`ES*`），已移除静态 Bearer Token 模式。
 
 HTTPS 域名示例（避免 root 多实例环境变量互相干扰）：
 
 ```bash
-./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx a2a_port=8010 a2a_host=127.0.0.1 a2a_public_url=https://a2a.example.com
+./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_jwt_secret=jwt_public_key_pem a2a_jwt_issuer=compass a2a_jwt_audience=opencode-a2a:alpha a2a_port=8010 a2a_host=127.0.0.1 a2a_public_url=https://a2a.example.com
 ```
 
 支持的 key（不区分大小写）：
 
 - `project`/`project_name`
 - `github_token`/`gh_token`
-- `a2a_auth_mode`
-- `a2a_bearer_token`
 - `a2a_jwt_secret`
 - `a2a_jwt_algorithm`
 - `a2a_jwt_issuer`
 - `a2a_jwt_audience`
-- `a2a_jwt_require_issuer`
 - `a2a_jwt_scope_match`
 - `a2a_port`
 - `a2a_host`
@@ -104,13 +97,13 @@ HTTPS 域名示例（避免 root 多实例环境变量互相干扰）：
 示例：
 
 ```bash
-./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx a2a_port=8010
+./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_jwt_secret=jwt_public_key_pem a2a_jwt_issuer=compass a2a_jwt_audience=opencode-a2a:alpha a2a_port=8010
 ```
 
 已部署实例升级（更新共享代码后）：
 
 ```bash
-./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx update_a2a=true force_restart=true
+./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_jwt_secret=jwt_public_key_pem a2a_jwt_issuer=compass a2a_jwt_audience=opencode-a2a:alpha update_a2a=true force_restart=true
 ```
 
 脚本会：
@@ -152,7 +145,7 @@ HTTPS 域名示例（避免 root 多实例环境变量互相干扰）：
 
 - `config/opencode.env`：仅 OpenCode 读取（包含 `GH_TOKEN` 与 Git 身份配置）
 - `config/opencode.secret.env`：仅 OpenCode 读取的敏感配置（可选，包含 `GOOGLE_GENERATIVE_AI_API_KEY`）
-- `config/a2a.env`：仅 A2A 读取（包含 `A2A_AUTH_MODE`；当 `bearer` 模式时包含 `A2A_BEARER_TOKEN`；当 `jwt` 模式时包含 `A2A_JWT_*`；以及 `OPENCODE_PROVIDER_ID/OPENCODE_MODEL_ID` 等模型配置）
+- `config/a2a.env`：仅 A2A 读取（包含 `A2A_JWT_*`，以及 `OPENCODE_PROVIDER_ID/OPENCODE_MODEL_ID` 等模型配置）
 
 `GOOGLE_GENERATIVE_AI_API_KEY` 可在部署时通过环境变量或 `google_generative_ai_api_key` 参数提供，脚本会将其写入 `config/opencode.secret.env`（权限 `600`，`root:root`），并由 `opencode@.service` 通过 `EnvironmentFile` 持久加载。服务重启或服务器重启后无需重新注入。
 
@@ -169,13 +162,13 @@ HTTPS 域名示例（避免 root 多实例环境变量互相干扰）：
 示例（推荐用环境变量避免写入 shell 历史）：
 
 ```bash
-GOOGLE_GENERATIVE_AI_API_KEY=AIzxxx ./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx a2a_port=8010 a2a_host=127.0.0.1 opencode_provider_id=google opencode_model_id=gemini-3-flash-preview repo_url=https://github.com/org/repo.git repo_branch=main
+GOOGLE_GENERATIVE_AI_API_KEY=AIzxxx ./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_jwt_secret=jwt_public_key_pem a2a_jwt_issuer=compass a2a_jwt_audience=opencode-a2a:alpha a2a_port=8010 a2a_host=127.0.0.1 opencode_provider_id=google opencode_model_id=gemini-3-flash-preview repo_url=https://github.com/org/repo.git repo_branch=main
 ```
 
 轮换 Gemini key（推荐）：
 
 ```bash
-GOOGLE_GENERATIVE_AI_API_KEY=AIz_new ./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx force_restart=true
+GOOGLE_GENERATIVE_AI_API_KEY=AIz_new ./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_jwt_secret=jwt_public_key_pem a2a_jwt_issuer=compass a2a_jwt_audience=opencode-a2a:alpha force_restart=true
 ```
 
 如需自动初始化仓库，可传 `repo_url`（可选 `repo_branch`），脚本会在首次部署时将仓库克隆到 `workspace/`；如果 `workspace/.git` 已存在或目录非空则跳过。
@@ -264,7 +257,7 @@ systemd 单元已启用：
 - `PrivateTmp=true`
 - `NoNewPrivileges=true`
 
-OpenCode 与 A2A 分离运行：`A2A_BEARER_TOKEN` 仅注入 A2A，`GH_TOKEN`/Git 凭证仅注入 OpenCode，避免跨进程继承。
+OpenCode 与 A2A 分离运行：JWT 校验相关配置仅注入 A2A，`GH_TOKEN`/Git 凭证仅注入 OpenCode，避免跨进程继承。
 
 关键风险与适用范围：
 

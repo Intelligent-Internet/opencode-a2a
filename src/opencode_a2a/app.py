@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import secrets
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -32,11 +31,7 @@ from .config import Settings
 from .opencode_client import OpencodeClient
 
 logger = logging.getLogger(__name__)
-ALLOWED_AUTH_MODES = {"bearer", "jwt"}
 ALLOWED_JWT_ALGORITHMS = {
-    "HS256",
-    "HS384",
-    "HS512",
     "RS256",
     "RS384",
     "RS512",
@@ -44,7 +39,6 @@ ALLOWED_JWT_ALGORITHMS = {
     "ES384",
     "ES512",
 }
-MIN_HS_SECRET_BYTES = 32
 
 if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
@@ -77,22 +71,13 @@ def build_agent_card(settings: Settings) -> AgentCard:
     security_schemes: dict[str, SecurityScheme] = {}
     security: list[dict[str, list[str]]] = []
 
-    if settings.a2a_auth_mode == "jwt":
-        security_schemes["bearerAuth"] = SecurityScheme(
-            root=HTTPAuthSecurityScheme(
-                description="JWT Bearer token authentication",
-                scheme="bearer",
-                bearer_format="JWT",
-            )
+    security_schemes["bearerAuth"] = SecurityScheme(
+        root=HTTPAuthSecurityScheme(
+            description="JWT Bearer token authentication",
+            scheme="bearer",
+            bearer_format="JWT",
         )
-    else:
-        security_schemes["bearerAuth"] = SecurityScheme(
-            root=HTTPAuthSecurityScheme(
-                description="Opaque Bearer token authentication",
-                scheme="bearer",
-                bearer_format="opaque",
-            )
-        )
+    )
     security.append({"bearerAuth": []})
 
     if settings.a2a_oauth_authorization_url and settings.a2a_oauth_token_url:
@@ -181,104 +166,63 @@ async def get_auth_dependency(
 
     token = auth.credentials
 
-    if settings.a2a_auth_mode == "jwt":
-        if not settings.a2a_jwt_secret:
-            logger.error("A2A_JWT_SECRET is not set but A2A_AUTH_MODE is 'jwt'")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Server authentication configuration error",
-            )
-        try:
-            # Basic JWT validation
-            decode_options: dict[str, Any] = {"require": ["exp"]}
-            if not settings.a2a_jwt_issuer:
-                decode_options["verify_iss"] = False
-            payload = jwt.decode(
-                token,
-                settings.a2a_jwt_secret,
-                algorithms=[settings.a2a_jwt_algorithm],
-                audience=settings.a2a_jwt_audience,
-                issuer=settings.a2a_jwt_issuer,
-                options=decode_options,
-            )
-            # You could add further checks here, e.g., verifying scopes
-            if settings.a2a_oauth_scopes:
-                required_scopes = set(settings.a2a_oauth_scopes.keys())
-                token_scopes = _normalize_token_scopes(payload)
-                if settings.a2a_jwt_scope_match == "all":
-                    ok = required_scopes.issubset(token_scopes)
-                else:
-                    ok = bool(required_scopes.intersection(token_scopes))
-                if not ok:
-                    logger.warning(
-                        "Token missing required scopes: %s; token_scopes=%s",
-                        sorted(required_scopes),
-                        sorted(token_scopes),
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Token missing required scopes",
-                    )
-            return payload
-        except jwt.PyJWTError as e:
-            logger.warning("Invalid JWT token: %s", str(e))
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-                headers={"WWW-Authenticate": "Bearer"},
-            ) from e
-    elif settings.a2a_auth_mode == "bearer":
-        # Fallback to static bearer token
-        expected_token = settings.a2a_bearer_token
-        if not expected_token:
-            logger.error("A2A_BEARER_TOKEN is not set but A2A_AUTH_MODE is 'bearer'")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Server authentication configuration error",
-            )
-        if not secrets.compare_digest(token, expected_token):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return None
-    logger.error("Unsupported A2A_AUTH_MODE: %s", settings.a2a_auth_mode)
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="Server authentication configuration error",
-    )
+    if not settings.a2a_jwt_secret:
+        logger.error("A2A_JWT_SECRET is not set")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server authentication configuration error",
+        )
+    try:
+        decode_options: dict[str, Any] = {"require": ["exp"]}
+        payload = jwt.decode(
+            token,
+            settings.a2a_jwt_secret,
+            algorithms=[settings.a2a_jwt_algorithm],
+            audience=settings.a2a_jwt_audience,
+            issuer=settings.a2a_jwt_issuer,
+            options=decode_options,
+        )
+        if settings.a2a_oauth_scopes:
+            required_scopes = set(settings.a2a_oauth_scopes.keys())
+            token_scopes = _normalize_token_scopes(payload)
+            if settings.a2a_jwt_scope_match == "all":
+                ok = required_scopes.issubset(token_scopes)
+            else:
+                ok = bool(required_scopes.intersection(token_scopes))
+            if not ok:
+                logger.warning(
+                    "Token missing required scopes: %s; token_scopes=%s",
+                    sorted(required_scopes),
+                    sorted(token_scopes),
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Token missing required scopes",
+                )
+        return payload
+    except jwt.PyJWTError as e:
+        logger.warning("Invalid JWT token: %s", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from e
 
 
 def create_app(settings: Settings) -> FastAPI:
     # Validate auth configuration
-    if settings.a2a_auth_mode not in ALLOWED_AUTH_MODES:
-        raise RuntimeError(f"A2A_AUTH_MODE must be one of {sorted(ALLOWED_AUTH_MODES)}")
-    if settings.a2a_auth_mode == "jwt":
-        if not settings.a2a_jwt_secret:
-            raise RuntimeError("A2A_JWT_SECRET must be set when A2A_AUTH_MODE is 'jwt'")
-        if settings.a2a_jwt_scope_match not in {"any", "all"}:
-            raise RuntimeError("A2A_JWT_SCOPE_MATCH must be 'any' or 'all'")
-        if settings.a2a_jwt_algorithm not in ALLOWED_JWT_ALGORITHMS:
-            raise RuntimeError(
-                f"A2A_JWT_ALGORITHM must be one of {sorted(ALLOWED_JWT_ALGORITHMS)}"
-            )
-        if not settings.a2a_jwt_audience:
-            raise RuntimeError("A2A_JWT_AUDIENCE must be set when A2A_AUTH_MODE is 'jwt'")
-        if settings.a2a_jwt_require_issuer and not settings.a2a_jwt_issuer:
-            raise RuntimeError(
-                "A2A_JWT_ISSUER must be set when A2A_JWT_REQUIRE_ISSUER is true"
-            )
-        if settings.a2a_jwt_algorithm.startswith("HS"):
-            secret_len = len(settings.a2a_jwt_secret.encode("utf-8"))
-            if secret_len < MIN_HS_SECRET_BYTES:
-                raise RuntimeError(
-                    f"A2A_JWT_SECRET must be at least {MIN_HS_SECRET_BYTES} bytes for "
-                    f"{settings.a2a_jwt_algorithm}"
-                )
-    elif settings.a2a_auth_mode == "bearer":
-        if not settings.a2a_bearer_token:
-            raise RuntimeError("A2A_BEARER_TOKEN must be set when A2A_AUTH_MODE is 'bearer'")
+    if not settings.a2a_jwt_secret:
+        raise RuntimeError("A2A_JWT_SECRET must be set")
+    if settings.a2a_jwt_scope_match not in {"any", "all"}:
+        raise RuntimeError("A2A_JWT_SCOPE_MATCH must be 'any' or 'all'")
+    if settings.a2a_jwt_algorithm not in ALLOWED_JWT_ALGORITHMS:
+        raise RuntimeError(
+            f"A2A_JWT_ALGORITHM must be one of {sorted(ALLOWED_JWT_ALGORITHMS)}"
+        )
+    if not settings.a2a_jwt_audience:
+        raise RuntimeError("A2A_JWT_AUDIENCE must be set")
+    if not settings.a2a_jwt_issuer:
+        raise RuntimeError("A2A_JWT_ISSUER must be set")
 
     client = OpencodeClient(settings)
     executor = OpencodeAgentExecutor(client, streaming_enabled=settings.a2a_streaming)
