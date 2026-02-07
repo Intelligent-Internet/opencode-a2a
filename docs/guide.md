@@ -32,10 +32,10 @@
 - `A2A_LOG_LEVEL`：A2A 服务日志级别（`DEBUG/INFO/WARNING/ERROR`），默认 `INFO`
 - `A2A_LOG_PAYLOADS`：是否记录 A2A 与 OpenCode 的请求/响应正文，默认 `false`
 - `A2A_LOG_BODY_LIMIT`：日志正文最大长度，默认 `0`（不截断）
-- `A2A_OAUTH_AUTHORIZATION_URL`：OAuth2 授权地址（预留配置）
-- `A2A_OAUTH_TOKEN_URL`：OAuth2 token 地址（预留配置）
-- `A2A_OAUTH_METADATA_URL`：OAuth2 元数据地址（可选，预留配置）
-- `A2A_OAUTH_SCOPES`：OAuth2 scopes，逗号分隔（可选；用于 Agent Card 声明，并可用于 JWT 的 scope/scp 校验）
+- `A2A_OAUTH_AUTHORIZATION_URL`：OAuth2 授权地址（预留配置；当前不会写入 Agent Card，也不会启用 OAuth2 流程）
+- `A2A_OAUTH_TOKEN_URL`：OAuth2 token 地址（预留配置；当前不会写入 Agent Card，也不会启用 OAuth2 流程）
+- `A2A_OAUTH_METADATA_URL`：OAuth2 元数据地址（可选，预留配置；当前不会写入 Agent Card）
+- `A2A_OAUTH_SCOPES`：Scopes，逗号分隔（可选；用于 JWT 的 scope/scp 校验）
 
 ## 服务行为说明
 
@@ -44,7 +44,7 @@
 - Streaming（`/v1/message:stream`）会输出 `TaskArtifactUpdateEvent` 增量（`append=true`），结束时发送 `TaskStatusUpdateEvent(final=true)`；完整内容由 artifact 承载，非 streaming 调用仍返回 `Task`。
 - 需在请求中携带 `Authorization: Bearer <token>`，否则返回 401（Agent Card 不受鉴权限制）。
 - 支持 JWT 无状态鉴权：会校验签名算法（仅非对称）、签发者（issuer，必填）、受众（audience，必填）、过期时间（exp，必填），并可选校验 Scopes（scope/scp，字符串或数组）。
-- OAuth2 URLs（Authorization/Token URL）目前主要用于 Agent Card 声明。
+- OAuth2 URLs（Authorization/Token URL）目前不启用，服务也不会在 Agent Card 中声明 OAuth2 scheme，以避免客户端误判。
 
 ## 鉴权示例（curl）
 

@@ -15,10 +15,7 @@ from a2a.types import (
     AgentCard,
     AgentInterface,
     AgentSkill,
-    AuthorizationCodeOAuthFlow,
     HTTPAuthSecurityScheme,
-    OAuth2SecurityScheme,
-    OAuthFlows,
     SecurityScheme,
     TransportProtocol,
 )
@@ -67,7 +64,6 @@ def build_agent_card(settings: Settings) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     base_url = public_url
 
-    # Define security scheme based on auth mode
     security_schemes: dict[str, SecurityScheme] = {}
     security: list[dict[str, list[str]]] = []
 
@@ -79,24 +75,6 @@ def build_agent_card(settings: Settings) -> AgentCard:
         )
     )
     security.append({"bearerAuth": []})
-
-    if settings.a2a_oauth_authorization_url and settings.a2a_oauth_token_url:
-        security_schemes = security_schemes or {}
-        security_schemes["oauth2"] = SecurityScheme(
-            root=OAuth2SecurityScheme(
-                oauth2_metadata_url=settings.a2a_oauth_metadata_url,
-                flows=OAuthFlows(
-                    authorization_code=AuthorizationCodeOAuthFlow(
-                        authorization_url=settings.a2a_oauth_authorization_url,
-                        token_url=settings.a2a_oauth_token_url,
-                        refresh_url=None,
-                        scopes=settings.a2a_oauth_scopes,
-                    )
-                ),
-            )
-        )
-        security = security or []
-        security.append({"oauth2": list(settings.a2a_oauth_scopes.keys())})
 
     return AgentCard(
         name=settings.a2a_title,
