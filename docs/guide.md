@@ -39,6 +39,27 @@
 - 需在请求中携带 `Authorization: Bearer <token>`，否则返回 401（Agent Card 不受鉴权限制）。
 - OAuth2 相关配置目前仅用于 Agent Card 声明，鉴权校验需后续接入。
 
+## OpenCode 会话查询（REST 代理）
+
+除 A2A 协议接口外，本服务还提供只读 REST 路由，用于代理 OpenCode serve 的会话列表与历史消息查询。
+
+- 鉴权：复用同一个 `Authorization: Bearer <token>`。
+- 安全：即使开启 `A2A_LOG_PAYLOADS=true`，这些路由也不会将响应 body 写入日志（避免泄露聊天历史）。
+
+### 会话列表
+
+```bash
+curl -sS http://127.0.0.1:8000/v1/opencode/sessions \
+  -H 'Authorization: Bearer <your-token>'
+```
+
+### 会话消息历史
+
+```bash
+curl -sS http://127.0.0.1:8000/v1/opencode/sessions/<session_id>/messages \
+  -H 'Authorization: Bearer <your-token>'
+```
+
 ## 鉴权示例（curl）
 
 ```bash

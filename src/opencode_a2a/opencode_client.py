@@ -51,6 +51,17 @@ class OpencodeClient:
             return {}
         return {"directory": self._directory}
 
+    def _merge_params(self, extra: dict[str, Any] | None) -> dict[str, Any]:
+        params: dict[str, Any] = dict(self._query_params())
+        if not extra:
+            return params
+        for key, value in extra.items():
+            if value is None:
+                continue
+            # FastAPI query params are strings; keep them as-is. Coerce other primitives to str.
+            params[key] = value if isinstance(value, str) else str(value)
+        return params
+
     async def stream_events(
         self, stop_event: asyncio.Event | None = None
     ) -> AsyncIterator[dict[str, Any]]:
@@ -98,6 +109,27 @@ class OpencodeClient:
         if not session_id:
             raise RuntimeError("OpenCode session response missing id")
         return session_id
+
+    async def list_sessions(self, *, params: dict[str, Any] | None = None) -> Any:
+        """List sessions from OpenCode.
+
+        OpenCode server is the source of truth for schema; we return the JSON payload as-is.
+        """
+        response = await self._client.get("/session", params=self._merge_params(params))
+        response.raise_for_status()
+        return response.json()
+
+    async def list_messages(self, session_id: str, *, params: dict[str, Any] | None = None) -> Any:
+        """List messages for a session from OpenCode.
+
+        OpenCode server is the source of truth for schema; we return the JSON payload as-is.
+        """
+        response = await self._client.get(
+            f"/session/{session_id}/message",
+            params=self._merge_params(params),
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def send_message(
         self,

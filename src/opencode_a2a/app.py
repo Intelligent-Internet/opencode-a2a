@@ -5,6 +5,7 @@ import secrets
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
+import httpx
 import uvicorn
 from a2a.server.apps.jsonrpc.jsonrpc_app import DefaultCallContextBuilder
 from a2a.server.apps.rest.fastapi_app import A2ARESTFastAPIApplication
@@ -167,6 +168,25 @@ def create_app(settings: Settings) -> FastAPI:
         if not settings.a2a_log_payloads:
             return await call_next(request)
 
+        path = request.url.path
+        # These endpoints may return full chat histories; never print bodies to logs.
+        sensitive_path = path.startswith("/v1/opencode/")
+
+        if sensitive_path:
+            logger.debug("A2A request %s %s", request.method, path)
+            response = await call_next(request)
+            if isinstance(response, StreamingResponse):
+                logger.debug("A2A response %s streaming", path)
+                return response
+            response_body = getattr(response, "body", b"") or b""
+            logger.debug(
+                "A2A response %s status=%s bytes=%s",
+                path,
+                response.status_code,
+                len(response_body),
+            )
+            return response
+
         body = await request.body()
         request._body = body  # allow downstream to read again
         body_text = body.decode("utf-8", errors="replace")
@@ -199,11 +219,43 @@ def create_app(settings: Settings) -> FastAPI:
 
     add_auth_middleware(app, settings)
 
+    @app.get("/v1/opencode/sessions")
+    async def opencode_list_sessions(request: Request):
+        try:
+            data = await client.list_sessions(params=dict(request.query_params))
+            return JSONResponse(data, headers={"Cache-Control": "no-store"})
+        except httpx.HTTPStatusError as exc:
+            return JSONResponse(
+                {"error": "Upstream OpenCode error", "status_code": exc.response.status_code},
+                status_code=exc.response.status_code,
+                headers={"Cache-Control": "no-store"},
+            )
+        except httpx.HTTPError:
+            return JSONResponse(
+                {"error": "Upstream OpenCode unreachable"},
+                status_code=502,
+                headers={"Cache-Control": "no-store"},
+            )
+
+    @app.get("/v1/opencode/sessions/{session_id}/messages")
+    async def opencode_list_messages(session_id: str, request: Request):
+        try:
+            data = await client.list_messages(session_id, params=dict(request.query_params))
+            return JSONResponse(data, headers={"Cache-Control": "no-store"})
+        except httpx.HTTPStatusError as exc:
+            return JSONResponse(
+                {"error": "Upstream OpenCode error", "status_code": exc.response.status_code},
+                status_code=exc.response.status_code,
+                headers={"Cache-Control": "no-store"},
+            )
+        except httpx.HTTPError:
+            return JSONResponse(
+                {"error": "Upstream OpenCode unreachable"},
+                status_code=502,
+                headers={"Cache-Control": "no-store"},
+            )
+
     return app
-
-
-settings = Settings.from_env()
-app = create_app(settings)
 
 
 def _normalize_log_level(value: str) -> str:
@@ -223,6 +275,8 @@ def _configure_logging(level: str) -> None:
 
 
 def main() -> None:
+    settings = Settings.from_env()
+    app = create_app(settings)
     log_level = _normalize_log_level(settings.a2a_log_level)
     _configure_logging(log_level)
     uvicorn.run(app, host=settings.a2a_host, port=settings.a2a_port, log_level=log_level.lower())
