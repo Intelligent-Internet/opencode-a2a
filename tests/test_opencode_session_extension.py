@@ -10,15 +10,19 @@ class DummyOpencodeClient:
     def __init__(self, _settings: Settings) -> None:
         self._sessions_payload = {"items": [{"id": "s-1"}]}
         self._messages_payload = {"items": [{"id": "m-1", "text": "SECRET_HISTORY"}]}
+        self.last_sessions_params = None
+        self.last_messages_params = None
 
     async def close(self) -> None:
         return None
 
     async def list_sessions(self, *, params=None):
+        self.last_sessions_params = params
         return self._sessions_payload
 
     async def list_messages(self, session_id: str, *, params=None):
         assert session_id
+        self.last_messages_params = params
         return self._messages_payload
 
 
@@ -84,7 +88,8 @@ async def test_session_query_extension_requires_bearer_token(monkeypatch):
 async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
     import opencode_a2a.app as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyOpencodeClient)
+    dummy = DummyOpencodeClient(_settings(token="t-1", log_payloads=False))
+    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
     app = app_module.create_app(_settings(token="t-1", log_payloads=False))
 
     transport = httpx.ASGITransport(app=app)
@@ -93,13 +98,21 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
         resp = await client.post(
             "/",
             headers=headers,
-            json={"jsonrpc": "2.0", "id": 1, "method": "opencode.sessions.list", "params": {}},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "opencode.sessions.list",
+                "params": {"page": 1, "size": 10},
+            },
         )
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["jsonrpc"] == "2.0"
         assert payload["id"] == 1
         assert payload["result"]["items"][0]["id"] == "s-1"
+        assert dummy.last_sessions_params is not None
+        assert dummy.last_sessions_params.get("page") == 1
+        assert dummy.last_sessions_params.get("size") == 10
 
         resp = await client.post(
             "/",
@@ -108,7 +121,7 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
                 "jsonrpc": "2.0",
                 "id": 2,
                 "method": "opencode.sessions.messages.list",
-                "params": {"session_id": "s-1"},
+                "params": {"session_id": "s-1", "page": 2, "size": 5},
             },
         )
         assert resp.status_code == 200
@@ -116,6 +129,37 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
         assert payload["jsonrpc"] == "2.0"
         assert payload["id"] == 2
         assert payload["result"]["items"][0]["text"] == "SECRET_HISTORY"
+        assert dummy.last_messages_params is not None
+        assert dummy.last_messages_params.get("page") == 2
+        assert dummy.last_messages_params.get("size") == 5
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_rejects_cursor_limit(monkeypatch):
+    import opencode_a2a.app as app_module
+
+    dummy = DummyOpencodeClient(_settings(token="t-1", log_payloads=False))
+    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    app = app_module.create_app(_settings(token="t-1", log_payloads=False))
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "opencode.sessions.list",
+                "params": {"cursor": "abc", "limit": 10},
+            },
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 1
+        assert payload["error"]["code"] == -32602
 
 
 @pytest.mark.asyncio

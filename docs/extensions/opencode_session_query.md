@@ -21,7 +21,7 @@ Agent Card 的 `capabilities.extensions[]` 会声明：
 - `required`: `false`
 - `params.methods.list_sessions`: JSON-RPC method 名（默认 `opencode.sessions.list`）
 - `params.methods.get_session_messages`: JSON-RPC method 名（默认 `opencode.sessions.messages.list`）
-- `params.pagination`: 当前实现为透传式（可传 `page/size` 或 `cursor/limit`，服务端会作为 query params 透传给 OpenCode serve）
+- `params.pagination`: 当前实现为透传式（仅支持 `page/size`，服务端会作为 query params 透传给 OpenCode serve）
 - `params.result_schema`: 可选；当前为空（客户端按 JSON 透传处理）
 
 ## 请求格式（JSON-RPC）
@@ -35,7 +35,7 @@ method: `opencode.sessions.list`
 params（可选）：
 
 - `query`: object，可选；透传 query params 给 OpenCode serve（key/value 建议为字符串）
-- `page/size` 或 `cursor/limit`: 可选；作为 query params 透传
+- `page/size`: 可选；作为 query params 透传
 
 示例：
 
@@ -58,7 +58,7 @@ params：
 
 - `session_id`: string，必填
 - `query`: object，可选
-- `page/size` 或 `cursor/limit`: 可选
+- `page/size`: 可选
 
 示例：
 

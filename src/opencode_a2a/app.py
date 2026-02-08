@@ -120,7 +120,7 @@ def build_agent_card(settings: Settings) -> AgentCard:
                         "pagination": {
                             "style": "passthrough",
                             "supported": True,
-                            "params": ["page", "size", "cursor", "limit"],
+                            "params": ["page", "size"],
                         },
                         "result_schema": None,
                     },

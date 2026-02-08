@@ -27,14 +27,20 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
     not require additional private REST endpoints.
     """
 
-    def __init__(self, *args: Any, opencode_client: OpencodeClient, methods: dict[str, str], **kwargs: Any):
+    def __init__(
+        self,
+        *args: Any,
+        opencode_client: OpencodeClient,
+        methods: dict[str, str],
+        **kwargs: Any,
+    ):
         super().__init__(*args, **kwargs)
         self._opencode_client = opencode_client
         self._method_list_sessions = methods["list_sessions"]
         self._method_get_session_messages = methods["get_session_messages"]
 
     async def _handle_requests(self, request: Request) -> Response:
-        # Fast path: sniff method first (without double parsing) then either handle here or delegate.
+        # Fast path: sniff method first then either handle here or delegate.
         request_id: str | int | None = None
         try:
             body = await request.json()
@@ -72,8 +78,20 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         if isinstance(raw_query, dict):
             query.update(raw_query)
 
-        # Optional pagination hints; passed through to OpenCode as query params.
-        for key in ("page", "size", "cursor", "limit"):
+        # Pagination contract: page/size only.
+        if "cursor" in params or "limit" in params:
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message=(
+                            "Only page/size pagination is supported (cursor/limit not supported)."
+                        )
+                    )
+                ),
+            )
+
+        for key in ("page", "size"):
             value = params.get(key)
             if value is None:
                 continue
