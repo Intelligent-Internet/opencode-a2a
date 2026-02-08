@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import uvicorn
 from a2a.server.apps.jsonrpc.jsonrpc_app import DefaultCallContextBuilder
-from a2a.server.apps.rest.fastapi_app import A2ARESTFastAPIApplication
+from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.request_handlers.default_request_handler import DefaultRequestHandler
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
@@ -30,12 +30,18 @@ from starlette.responses import StreamingResponse
 
 from .agent import OpencodeAgentExecutor
 from .config import Settings
+from .jsonrpc_ext import OpencodeSessionQueryJSONRPCApplication
 from .opencode_client import OpencodeClient
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
+
+SESSION_QUERY_METHODS = {
+    "list_sessions": "opencode.sessions.list",
+    "get_session_messages": "opencode.sessions.messages.list",
+}
 
 
 class StreamingCallContextBuilder(DefaultCallContextBuilder):
@@ -103,17 +109,20 @@ def build_agent_card(settings: Settings) -> AgentCard:
             streaming=settings.a2a_streaming,
             extensions=[
                 AgentExtension(
-                    uri="urn:opencode-a2a:opencode-session-query:1",
+                    uri="urn:opencode-a2a:opencode-session-query/v1",
                     required=False,
                     description=(
-                        "Support OpenCode session list/history queries via DataPart operations "
-                        "on the standard A2A message:send endpoint."
+                        "Support OpenCode session list/history queries via custom JSON-RPC methods "
+                        "on the agent's A2A JSON-RPC interface."
                     ),
                     params={
-                        "operations": [
-                            "opencode.sessions.list",
-                            "opencode.sessions.messages.list",
-                        ]
+                        "methods": SESSION_QUERY_METHODS,
+                        "pagination": {
+                            "style": "passthrough",
+                            "supported": True,
+                            "params": ["page", "size", "cursor", "limit"],
+                        },
+                        "result_schema": None,
                     },
                 )
             ],
@@ -133,17 +142,20 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 id="opencode.sessions.query",
                 name="OpenCode Sessions Query",
                 description=(
-                    "Query OpenCode server sessions and message histories via a DataPart request "
-                    "(see documentationUrl / extensions)."
+                    "Query OpenCode server sessions and message histories via JSON-RPC extension "
+                    "methods (see documentationUrl / extensions)."
                 ),
                 tags=["opencode", "sessions", "history"],
                 examples=[
-                    "List OpenCode sessions (DataPart opencode.sessions.list).",
-                    "List messages for a session (DataPart opencode.sessions.messages.list).",
+                    "List OpenCode sessions (method opencode.sessions.list).",
+                    "List messages for a session (method opencode.sessions.messages.list).",
                 ],
             ),
         ],
-        additional_interfaces=[AgentInterface(transport=TransportProtocol.http_json, url=base_url)],
+        additional_interfaces=[
+            AgentInterface(transport=TransportProtocol.http_json, url=base_url),
+            AgentInterface(transport=TransportProtocol.jsonrpc, url=base_url),
+        ],
         security_schemes=security_schemes,
         security=security,
     )
@@ -156,7 +168,10 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
 
     @app.middleware("http")
     async def bearer_auth(request: Request, call_next):
-        if request.method == "OPTIONS" or request.url.path == "/.well-known/agent-card.json":
+        if request.method == "OPTIONS" or request.url.path in {
+            "/.well-known/agent-card.json",
+            "/.well-known/agent.json",
+        }:
             return await call_next(request)
 
         auth_header = request.headers.get("authorization", "")
@@ -190,37 +205,37 @@ def create_app(settings: Settings) -> FastAPI:
         yield
         await client.close()
 
-    app = A2ARESTFastAPIApplication(
-        agent_card=build_agent_card(settings),
+    agent_card = build_agent_card(settings)
+
+    # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.
+    app = OpencodeSessionQueryJSONRPCApplication(
+        agent_card=agent_card,
         http_handler=handler,
-        context_builder=StreamingCallContextBuilder(),
+        context_builder=DefaultCallContextBuilder(),
+        opencode_client=client,
+        methods=SESSION_QUERY_METHODS,
     ).build(title=settings.a2a_title, version=settings.a2a_version, lifespan=lifespan)
 
-    def _detect_opencode_session_query_op(body_bytes: bytes) -> str | None:
+    rest_adapter = RESTAdapter(
+        agent_card=agent_card,
+        http_handler=handler,
+        context_builder=StreamingCallContextBuilder(),
+    )
+    for route, callback in rest_adapter.routes().items():
+        app.add_api_route(route[0], callback, methods=[route[1]])
+
+    def _detect_opencode_session_query_method(body_bytes: bytes) -> str | None:
         try:
             payload = json.loads(body_bytes.decode("utf-8", errors="replace"))
         except Exception:
             return None
         if not isinstance(payload, dict):
             return None
-        msg = payload.get("message")
-        if not isinstance(msg, dict):
+        method = payload.get("method")
+        if not isinstance(method, str):
             return None
-        content = msg.get("content")
-        if not isinstance(content, list):
-            return None
-        for part in content:
-            if not isinstance(part, dict):
-                continue
-            data_part = part.get("data")
-            if not isinstance(data_part, dict):
-                continue
-            data = data_part.get("data")
-            if not isinstance(data, dict):
-                continue
-            op = data.get("op")
-            if isinstance(op, str) and op.startswith("opencode.sessions."):
-                return op
+        if method.startswith("opencode.sessions."):
+            return method
         return None
 
     @app.middleware("http")
@@ -231,23 +246,23 @@ def create_app(settings: Settings) -> FastAPI:
         body = await request.body()
         request._body = body  # allow downstream to read again
         path = request.url.path
-        sensitive_op = None
-        if path.endswith("/v1/message:send") or path.endswith("/v1/message:stream"):
-            sensitive_op = _detect_opencode_session_query_op(body)
+        sensitive_method = None
+        if path == "/":
+            sensitive_method = _detect_opencode_session_query_method(body)
 
-        if sensitive_op:
-            logger.debug("A2A request %s %s op=%s", request.method, path, sensitive_op)
+        if sensitive_method:
+            logger.debug("A2A request %s %s method=%s", request.method, path, sensitive_method)
             response = await call_next(request)
             if isinstance(response, StreamingResponse):
-                logger.debug("A2A response %s streaming op=%s", path, sensitive_op)
+                logger.debug("A2A response %s streaming method=%s", path, sensitive_method)
                 return response
             response_body = getattr(response, "body", b"") or b""
             logger.debug(
-                "A2A response %s status=%s bytes=%s op=%s",
+                "A2A response %s status=%s bytes=%s method=%s",
                 path,
                 response.status_code,
                 len(response_body),
-                sensitive_op,
+                sensitive_method,
             )
             return response
 

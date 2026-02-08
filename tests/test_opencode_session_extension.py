@@ -63,47 +63,25 @@ async def test_session_query_extension_requires_bearer_token(monkeypatch):
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
-            "/v1/message:send",
-            json={
-                "message": {
-                    "messageId": "msg-1",
-                    "role": "ROLE_USER",
-                    "content": [
-                        {
-                            "data": {
-                                "data": {"op": "opencode.sessions.list", "params": {}},
-                            }
-                        }
-                    ],
-                }
-            },
+            "/",
+            json={"jsonrpc": "2.0", "id": 1, "method": "opencode.sessions.list", "params": {}},
         )
         assert resp.status_code == 401
 
         resp = await client.post(
-            "/v1/message:send",
+            "/",
             json={
-                "message": {
-                    "messageId": "msg-2",
-                    "role": "ROLE_USER",
-                    "content": [
-                        {
-                            "data": {
-                                "data": {
-                                    "op": "opencode.sessions.messages.list",
-                                    "params": {"session_id": "s-1"},
-                                }
-                            }
-                        }
-                    ],
-                }
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "opencode.sessions.messages.list",
+                "params": {"session_id": "s-1"},
             },
         )
         assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_session_query_extension_returns_data_part(monkeypatch):
+async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
     import opencode_a2a.app as app_module
 
     monkeypatch.setattr(app_module, "OpencodeClient", DummyOpencodeClient)
@@ -113,57 +91,31 @@ async def test_session_query_extension_returns_data_part(monkeypatch):
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         headers = {"Authorization": "Bearer t-1"}
         resp = await client.post(
-            "/v1/message:send",
+            "/",
             headers=headers,
-            json={
-                "message": {
-                    "messageId": "msg-1",
-                    "role": "ROLE_USER",
-                    "content": [
-                        {
-                            "data": {
-                                "data": {"op": "opencode.sessions.list", "params": {}},
-                            }
-                        }
-                    ],
-                }
-            },
+            json={"jsonrpc": "2.0", "id": 1, "method": "opencode.sessions.list", "params": {}},
         )
         assert resp.status_code == 200
-        task = resp.json()["task"]
-        assert task["artifacts"][0]["parts"][0]["data"]["data"]["op"] == "opencode.sessions.list"
-        assert task["artifacts"][0]["parts"][0]["data"]["data"]["result"]["items"][0]["id"] == "s-1"
+        payload = resp.json()
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 1
+        assert payload["result"]["items"][0]["id"] == "s-1"
 
         resp = await client.post(
-            "/v1/message:send",
+            "/",
             headers=headers,
             json={
-                "message": {
-                    "messageId": "msg-2",
-                    "role": "ROLE_USER",
-                    "content": [
-                        {
-                            "data": {
-                                "data": {
-                                    "op": "opencode.sessions.messages.list",
-                                    "params": {"session_id": "s-1"},
-                                }
-                            }
-                        }
-                    ],
-                }
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "opencode.sessions.messages.list",
+                "params": {"session_id": "s-1"},
             },
         )
         assert resp.status_code == 200
-        task = resp.json()["task"]
-        assert (
-            task["artifacts"][0]["parts"][0]["data"]["data"]["op"]
-            == "opencode.sessions.messages.list"
-        )
-        assert (
-            task["artifacts"][0]["parts"][0]["data"]["data"]["result"]["items"][0]["text"]
-            == "SECRET_HISTORY"
-        )
+        payload = resp.json()
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 2
+        assert payload["result"]["items"][0]["text"] == "SECRET_HISTORY"
 
 
 @pytest.mark.asyncio
@@ -179,23 +131,13 @@ async def test_session_query_extension_does_not_log_response_bodies(monkeypatch,
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         headers = {"Authorization": "Bearer t-1"}
         resp = await client.post(
-            "/v1/message:send",
+            "/",
             headers=headers,
             json={
-                "message": {
-                    "messageId": "msg-1",
-                    "role": "ROLE_USER",
-                    "content": [
-                        {
-                            "data": {
-                                "data": {
-                                    "op": "opencode.sessions.messages.list",
-                                    "params": {"session_id": "s-1"},
-                                }
-                            }
-                        }
-                    ],
-                }
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "opencode.sessions.messages.list",
+                "params": {"session_id": "s-1"},
             },
         )
         assert resp.status_code == 200

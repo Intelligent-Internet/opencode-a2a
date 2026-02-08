@@ -9,9 +9,7 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
     Artifact,
-    DataPart,
     Message,
-    Part,
     Role,
     Task,
     TaskArtifactUpdateEvent,
@@ -41,26 +39,6 @@ class OpencodeAgentExecutor(AgentExecutor):
 
         streaming_request = self._should_stream(context)
         user_text = context.get_user_input().strip()
-
-        data_request = _get_opencode_extension_request(context)
-        if data_request is not None:
-            if streaming_request:
-                await self._emit_error(
-                    event_queue,
-                    task_id=task_id,
-                    context_id=context_id,
-                    message="Streaming is not supported for opencode session queries.",
-                    streaming_request=streaming_request,
-                )
-                return
-            await self._handle_opencode_extension_request(
-                event_queue,
-                task_id=task_id,
-                context_id=context_id,
-                request=data_request,
-                context=context,
-            )
-            return
 
         if not user_text:
             await self._emit_error(
@@ -261,117 +239,17 @@ class OpencodeAgentExecutor(AgentExecutor):
         )
         await event_queue.enqueue_event(task)
 
-    async def _handle_opencode_extension_request(
-        self,
-        event_queue: EventQueue,
-        *,
-        task_id: str,
-        context_id: str,
-        request: dict[str, object],
-        context: RequestContext,
-    ) -> None:
-        op = request.get("op")
-        params = request.get("params")
-        if not isinstance(op, str) or not op:
-            await self._emit_error(
-                event_queue,
-                task_id=task_id,
-                context_id=context_id,
-                message="Invalid opencode session query request: missing 'op'.",
-                streaming_request=False,
-            )
-            return
-        if params is None:
-            params_dict: dict[str, object] = {}
-        elif isinstance(params, dict):
-            params_dict = params
-        else:
-            await self._emit_error(
-                event_queue,
-                task_id=task_id,
-                context_id=context_id,
-                message="Invalid opencode session query request: 'params' must be an object.",
-                streaming_request=False,
-            )
-            return
-
-        query = params_dict.get("query")
-        query_params = query if isinstance(query, dict) else None
-
-        try:
-            if op == "opencode.sessions.list":
-                result = await self._client.list_sessions(params=query_params)
-            elif op == "opencode.sessions.messages.list":
-                session_id = params_dict.get("session_id")
-                if not isinstance(session_id, str) or not session_id:
-                    await self._emit_error(
-                        event_queue,
-                        task_id=task_id,
-                        context_id=context_id,
-                        message="Missing required params.session_id.",
-                        streaming_request=False,
-                    )
-                    return
-                result = await self._client.list_messages(session_id, params=query_params)
-            else:
-                await self._emit_error(
-                    event_queue,
-                    task_id=task_id,
-                    context_id=context_id,
-                    message=f"Unsupported opencode session query op: {op}",
-                    streaming_request=False,
-                )
-                return
-        except Exception as exc:
-            logger.exception("OpenCode session query failed")
-            await self._emit_error(
-                event_queue,
-                task_id=task_id,
-                context_id=context_id,
-                message=f"OpenCode error: {exc}",
-                streaming_request=False,
-            )
-            return
-
-        artifact = Artifact(
-            artifact_id=str(uuid.uuid4()),
-            name="opencode_session_query_result",
-            parts=[
-                DataPart(
-                    data={
-                        "op": op,
-                        "result": result,
-                    }
-                )
-            ],
-        )
-        history = _build_history(context)
-        task = Task(
-            id=task_id,
-            context_id=context_id,
-            status=TaskStatus(state=TaskState.input_required),
-            history=history,
-            artifacts=[artifact],
-            metadata={
-                "opencode_session_query": {
-                    "op": op,
-                }
-            },
-        )
-        task.status.message = _build_assistant_message(
-            task_id=task_id,
-            context_id=context_id,
-            text="OK",
-        )
-        await event_queue.enqueue_event(task)
-
     def _should_stream(self, context: RequestContext) -> bool:
         if not self._streaming_enabled:
             return False
         call_context = context.call_context
         if not call_context:
             return False
-        return bool(call_context.state.get("a2a_streaming_request"))
+        if call_context.state.get("a2a_streaming_request"):
+            return True
+        # JSON-RPC transport sets method in call context state.
+        method = call_context.state.get("method")
+        return method == "message/stream"
 
     async def _consume_opencode_stream(
         self,
@@ -505,22 +383,3 @@ def _build_history(context: RequestContext) -> list[Message]:
             history.append(context.message)
     # Do not append assistant message to history; it lives in status.message.
     return history
-
-
-def _get_opencode_extension_request(context: RequestContext) -> dict[str, object] | None:
-    """Extract an opencode session query request from an A2A message DataPart.
-
-    Request shape (DataPart.data):
-      {"op": "opencode.sessions.list", "params": {...}}
-      {"op": "opencode.sessions.messages.list", "params": {"session_id": "...", "query": {...}}}
-    """
-    message = context.message
-    if not message or not message.parts:
-        return None
-    for part in message.parts:
-        root = part.root if isinstance(part, Part) else part
-        if isinstance(root, DataPart) and isinstance(root.data, dict):
-            op = root.data.get("op")
-            if isinstance(op, str) and op.startswith("opencode.sessions."):
-                return root.data  # type: ignore[return-value]
-    return None

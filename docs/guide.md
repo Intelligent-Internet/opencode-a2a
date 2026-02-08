@@ -44,56 +44,36 @@
 
 本服务通过 A2A Extension 的方式暴露“OpenCode 会话列表/历史消息查询”能力，不额外提供自定义 REST 端点。
 
-- 触发方式：在标准 `POST /v1/message:send` 请求中携带一个 `content` 项（Part.data），并在 `data.op` 指定操作。
+- 触发方式：通过 **A2A JSON-RPC**（默认 `POST /`）调用扩展方法。
 - 鉴权：复用同一个 `Authorization: Bearer <token>`。
-- 安全：即使开启 `A2A_LOG_PAYLOADS=true`，当检测到 `opencode.sessions.*` 的 DataPart 请求时，服务也不会将请求/响应 body 写入日志（避免泄露聊天历史）。
+- 安全：即使开启 `A2A_LOG_PAYLOADS=true`，当检测到 `method=opencode.sessions.*` 的 JSON-RPC 请求时，服务也不会将请求/响应 body 写入日志（避免泄露聊天历史）。
 
-### 会话列表（opencode.sessions.list）
+### 会话列表（method: opencode.sessions.list）
 
 ```bash
-curl -sS http://127.0.0.1:8000/v1/message:send \
+curl -sS http://127.0.0.1:8000/ \
   -H 'content-type: application/json' \
   -H 'Authorization: Bearer <your-token>' \
   -d '{
-    "message": {
-      "messageId": "msg-1",
-      "role": "ROLE_USER",
-      "content": [
-        {
-          "data": {
-            "data": {
-              "op": "opencode.sessions.list",
-              "params": {}
-            }
-          }
-        }
-      ]
-    }
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "opencode.sessions.list",
+    "params": {}
   }'
 ```
 
-### 会话消息历史（opencode.sessions.messages.list）
+### 会话消息历史（method: opencode.sessions.messages.list）
 
 ```bash
-curl -sS http://127.0.0.1:8000/v1/message:send \
+curl -sS http://127.0.0.1:8000/ \
   -H 'content-type: application/json' \
   -H 'Authorization: Bearer <your-token>' \
   -d '{
-    "message": {
-      "messageId": "msg-1",
-      "role": "ROLE_USER",
-      "content": [
-        {
-          "data": {
-            "data": {
-              "op": "opencode.sessions.messages.list",
-              "params": {
-                "session_id": "<session_id>"
-              }
-            }
-          }
-        }
-      ]
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "opencode.sessions.messages.list",
+    "params": {
+      "session_id": "<session_id>"
     }
   }'
 ```
