@@ -54,6 +54,8 @@ def _settings(*, token: str, log_payloads: bool) -> Settings:
         a2a_oauth_token_url=None,
         a2a_oauth_metadata_url=None,
         a2a_oauth_scopes={},
+        a2a_session_cache_ttl_seconds=3600,
+        a2a_session_cache_maxsize=10_000,
     )
 
 
@@ -134,6 +136,36 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
         assert dummy.last_messages_params is not None
         assert dummy.last_messages_params.get("page") == 2
         assert dummy.last_messages_params.get("size") == 5
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_items_is_always_array(monkeypatch):
+    import opencode_a2a.app as app_module
+
+    class WeirdPayloadClient(DummyOpencodeClient):
+        def __init__(self, _settings: Settings) -> None:
+            super().__init__(_settings)
+            self._sessions_payload = {"foo": "bar"}  # no items
+
+    monkeypatch.setattr(app_module, "OpencodeClient", WeirdPayloadClient)
+    app = app_module.create_app(_settings(token="t-1", log_payloads=False))
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "opencode.sessions.list",
+                "params": {},
+            },
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["result"]["items"] == []
 
 
 @pytest.mark.asyncio

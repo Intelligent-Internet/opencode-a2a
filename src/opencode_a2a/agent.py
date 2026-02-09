@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from contextlib import suppress
 
@@ -24,12 +25,82 @@ from .opencode_client import OpencodeClient
 logger = logging.getLogger(__name__)
 
 
+class _TTLSessions:
+    """Bounded TTL cache for context_id -> session_id.
+
+    This is intentionally tiny and dependency-free. It provides best-effort cleanup:
+    - Expired entries are removed on get/set.
+    - When maxsize is exceeded, we evict expired entries first, then arbitrary entries.
+    """
+
+    def __init__(
+        self,
+        *,
+        ttl_seconds: int,
+        maxsize: int,
+        now: callable[[], float] = time.monotonic,
+    ) -> None:
+        self._ttl_seconds = int(ttl_seconds)
+        self._maxsize = int(maxsize)
+        self._now = now
+        # value: (session_id, expires_at_monotonic)
+        self._store: dict[str, tuple[str, float]] = {}
+
+    def get(self, key: str) -> str | None:
+        if self._ttl_seconds <= 0 or self._maxsize <= 0:
+            return None
+        item = self._store.get(key)
+        if not item:
+            return None
+        value, expires_at = item
+        if expires_at <= self._now():
+            self._store.pop(key, None)
+            return None
+        return value
+
+    def set(self, key: str, value: str) -> None:
+        if self._ttl_seconds <= 0 or self._maxsize <= 0:
+            return
+        now = self._now()
+        expires_at = now + float(self._ttl_seconds)
+        self._store[key] = (value, expires_at)
+        self._evict_if_needed(now=now)
+
+    def pop(self, key: str) -> None:
+        self._store.pop(key, None)
+
+    def _evict_if_needed(self, *, now: float) -> None:
+        if len(self._store) <= self._maxsize:
+            return
+        # 1) Drop expired.
+        expired = [k for k, (_, exp) in self._store.items() if exp <= now]
+        for k in expired:
+            self._store.pop(k, None)
+        if len(self._store) <= self._maxsize:
+            return
+        # 2) Still too big: drop arbitrary entries to cap memory usage.
+        overflow = len(self._store) - self._maxsize
+        for k in list(self._store.keys())[:overflow]:
+            self._store.pop(k, None)
+
+
 class OpencodeAgentExecutor(AgentExecutor):
-    def __init__(self, client: OpencodeClient, *, streaming_enabled: bool) -> None:
+    def __init__(
+        self,
+        client: OpencodeClient,
+        *,
+        streaming_enabled: bool,
+        session_cache_ttl_seconds: int = 3600,
+        session_cache_maxsize: int = 10_000,
+    ) -> None:
         self._client = client
         self._streaming_enabled = streaming_enabled
-        self._sessions: dict[str, str] = {}
+        self._sessions = _TTLSessions(
+            ttl_seconds=session_cache_ttl_seconds,
+            maxsize=session_cache_maxsize,
+        )
         self._lock = asyncio.Lock()
+        self._inflight_session_creates: dict[str, asyncio.Task[str]] = {}
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id
@@ -39,6 +110,7 @@ class OpencodeAgentExecutor(AgentExecutor):
 
         streaming_request = self._should_stream(context)
         user_text = context.get_user_input().strip()
+        bound_session_id = _extract_opencode_session_id(context)
 
         if not user_text:
             await self._emit_error(
@@ -58,7 +130,11 @@ class OpencodeAgentExecutor(AgentExecutor):
             user_text,
         )
 
-        session_id = await self._get_or_create_session(context_id, user_text)
+        session_id = await self._get_or_create_session(
+            context_id,
+            user_text,
+            preferred_session_id=bound_session_id,
+        )
 
         stream_artifact_id = f"{task_id}:stream"
         stop_event = asyncio.Event()
@@ -185,16 +261,51 @@ class OpencodeAgentExecutor(AgentExecutor):
         )
         await event_queue.enqueue_event(event)
         await event_queue.close()
-        self._sessions.pop(context_id, None)
+        async with self._lock:
+            self._sessions.pop(context_id)
+            inflight = self._inflight_session_creates.pop(context_id, None)
+        if inflight:
+            inflight.cancel()
+            with suppress(asyncio.CancelledError):
+                await inflight
 
-    async def _get_or_create_session(self, context_id: str, title: str) -> str:
+    async def _get_or_create_session(
+        self,
+        context_id: str,
+        title: str,
+        *,
+        preferred_session_id: str | None = None,
+    ) -> str:
+        # Caller explicitly bound the request to a known OpenCode session.
+        if preferred_session_id:
+            async with self._lock:
+                self._sessions.set(context_id, preferred_session_id)
+            return preferred_session_id
+
+        task: asyncio.Task[str] | None = None
         async with self._lock:
             existing = self._sessions.get(context_id)
             if existing:
                 return existing
-            session_id = await self._client.create_session(title=title)
-            self._sessions[context_id] = session_id
-            return session_id
+            task = self._inflight_session_creates.get(context_id)
+            if task is None:
+                task = asyncio.create_task(self._client.create_session(title=title))
+                self._inflight_session_creates[context_id] = task
+
+        try:
+            session_id = await task
+        except Exception:
+            async with self._lock:
+                if self._inflight_session_creates.get(context_id) is task:
+                    self._inflight_session_creates.pop(context_id, None)
+            raise
+
+        async with self._lock:
+            # Session create finished; commit to cache and drop inflight marker.
+            self._sessions.set(context_id, session_id)
+            if self._inflight_session_creates.get(context_id) is task:
+                self._inflight_session_creates.pop(context_id, None)
+        return session_id
 
     async def _emit_error(
         self,
@@ -383,3 +494,24 @@ def _build_history(context: RequestContext) -> list[Message]:
             history.append(context.message)
     # Do not append assistant message to history; it lives in status.message.
     return history
+
+
+def _extract_opencode_session_id(context: RequestContext) -> str | None:
+    # Contract: clients may pass the binding at either request-level metadata
+    # (MessageSendParams.metadata) or message-level metadata (Message.metadata).
+    candidate = None
+    try:
+        meta = context.metadata or {}
+        candidate = meta.get("opencode_session_id")
+    except Exception:
+        candidate = None
+
+    if not candidate and context.message is not None:
+        msg_meta = getattr(context.message, "metadata", None) or {}
+        if isinstance(msg_meta, dict):
+            candidate = msg_meta.get("opencode_session_id")
+
+    if isinstance(candidate, str):
+        value = candidate.strip()
+        return value or None
+    return None

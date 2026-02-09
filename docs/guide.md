@@ -31,6 +31,8 @@
 - `A2A_OAUTH_TOKEN_URL`：OAuth2 token 地址（预留配置）
 - `A2A_OAUTH_METADATA_URL`：OAuth2 元数据地址（可选，预留配置）
 - `A2A_OAUTH_SCOPES`：OAuth2 scopes，逗号分隔（预留配置）
+- `A2A_SESSION_CACHE_TTL_SECONDS`：`contextId -> OpenCode session_id` 的内存缓存 TTL（秒），默认 `3600`
+- `A2A_SESSION_CACHE_MAXSIZE`：会话映射缓存最大条数，默认 `10000`
 
 ## 服务行为说明
 
@@ -39,6 +41,35 @@
 - Streaming（`/v1/message:stream`）会输出 `TaskArtifactUpdateEvent` 增量（`append=true`），结束时发送 `TaskStatusUpdateEvent(final=true)`；完整内容由 artifact 承载，非 streaming 调用仍返回 `Task`。
 - 需在请求中携带 `Authorization: Bearer <token>`，否则返回 401（Agent Card 不受鉴权限制）。
 - OAuth2 相关配置目前仅用于 Agent Card 声明，鉴权校验需后续接入。
+
+## 续聊契约（绑定到历史 OpenCode session）
+
+当下游希望“选择一个历史 OpenCode session 后继续对话”时，应在每次 invoke 的请求 `metadata` 中显式传入：
+
+- `metadata.opencode_session_id`: 目标 OpenCode session id（例如 `ses_xxx`）
+
+服务端行为：
+
+- 若提供 `metadata.opencode_session_id`：优先发送消息到该 session（不新建 session）。
+- 若未提供：服务端会创建新 session，并在内存中缓存 `contextId -> session_id`（带 TTL 与最大容量限制）。
+
+最小 curl 示例：
+
+```bash
+curl -sS http://127.0.0.1:8000/v1/message:send \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "message": {
+      "messageId": "msg-continue-1",
+      "role": "ROLE_USER",
+      "content": [{"text": "继续刚才的对话：请把上次的结论再总结一下"}]
+    },
+    "metadata": {
+      "opencode_session_id": "<session_id>"
+    }
+  }'
+```
 
 ## OpenCode 会话查询（A2A Extension）
 

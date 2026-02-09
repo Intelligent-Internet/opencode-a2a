@@ -47,6 +47,8 @@ SESSION_QUERY_METHODS = {
     "get_session_messages": "opencode.sessions.messages.list",
 }
 
+SESSION_BINDING_EXTENSION_URI = "urn:opencode-a2a:opencode-session-binding/v1"
+
 
 class StreamingCallContextBuilder(DefaultCallContextBuilder):
     def build(self, request: Request) -> ServerCallContext:
@@ -113,6 +115,29 @@ def build_agent_card(settings: Settings) -> AgentCard:
             streaming=settings.a2a_streaming,
             extensions=[
                 AgentExtension(
+                    uri=SESSION_BINDING_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Contract to bind A2A messages to an existing OpenCode session "
+                        "when continuing a previous chat. "
+                        "Clients should pass metadata.opencode_session_id."
+                    ),
+                    params={
+                        "metadata_key": "opencode_session_id",
+                        "behavior": "prefer_metadata_binding_else_create_session",
+                        "notes": [
+                            (
+                                "If metadata.opencode_session_id is provided, the server will "
+                                "send the message to that OpenCode session_id."
+                            ),
+                            (
+                                "Otherwise, the server will create a new OpenCode session and "
+                                "cache the contextId->session_id mapping in memory with TTL."
+                            ),
+                        ],
+                    },
+                ),
+                AgentExtension(
                     uri="urn:opencode-a2a:opencode-session-query/v1",
                     required=False,
                     description=(
@@ -149,7 +174,7 @@ def build_agent_card(settings: Settings) -> AgentCard:
                             "pagination_field": "pagination",
                         },
                     },
-                )
+                ),
             ],
         ),
         skills=[
@@ -218,7 +243,12 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
 
 def create_app(settings: Settings) -> FastAPI:
     client = OpencodeClient(settings)
-    executor = OpencodeAgentExecutor(client, streaming_enabled=settings.a2a_streaming)
+    executor = OpencodeAgentExecutor(
+        client,
+        streaming_enabled=settings.a2a_streaming,
+        session_cache_ttl_seconds=settings.a2a_session_cache_ttl_seconds,
+        session_cache_maxsize=settings.a2a_session_cache_maxsize,
+    )
     task_store = InMemoryTaskStore()
     handler = DefaultRequestHandler(
         agent_executor=executor,

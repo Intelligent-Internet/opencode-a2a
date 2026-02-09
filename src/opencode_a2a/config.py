@@ -92,6 +92,8 @@ class Settings:
     a2a_oauth_token_url: str | None
     a2a_oauth_metadata_url: str | None
     a2a_oauth_scopes: dict[str, str]
+    a2a_session_cache_ttl_seconds: int
+    a2a_session_cache_maxsize: int
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -122,4 +124,6 @@ class Settings:
             a2a_oauth_token_url=_get_env("A2A_OAUTH_TOKEN_URL"),
             a2a_oauth_metadata_url=_get_env("A2A_OAUTH_METADATA_URL"),
             a2a_oauth_scopes=_parse_scopes(_get_env("A2A_OAUTH_SCOPES")),
+            a2a_session_cache_ttl_seconds=_get_int("A2A_SESSION_CACHE_TTL_SECONDS", 3600),
+            a2a_session_cache_maxsize=_get_int("A2A_SESSION_CACHE_MAXSIZE", 10_000),
         )

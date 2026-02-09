@@ -108,7 +108,7 @@ params：
 其中：
 
 - `result.raw` 为 OpenCode serve 的 JSON 响应 **原样透传**（schema 以 OpenCode server 为准）。
-- `result.items` 为便利字段：若 upstream payload 包含 `items` 数组则透出，否则为 `null`。
+- `result.items` 为便利字段：**始终为数组**（上游 payload 包含 `items` 数组则透出，否则为 `[]`）。
 - `result.pagination` 为稳定的分页 envelope（page/size 为空表示本次请求未显式传入）。
 
 ## 日志与隐私

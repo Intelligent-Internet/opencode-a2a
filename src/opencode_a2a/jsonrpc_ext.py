@@ -214,6 +214,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         items = None
         if isinstance(raw_result, dict) and isinstance(raw_result.get("items"), list):
             items = raw_result.get("items")
+        else:
+            # Contract: result.items is always an array (never null) for easier client consumption.
+            items = []
 
         result = {
             "raw": raw_result,

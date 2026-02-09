@@ -32,6 +32,8 @@ def _settings(*, directory: str | None) -> Settings:
         a2a_oauth_token_url=None,
         a2a_oauth_metadata_url=None,
         a2a_oauth_scopes={},
+        a2a_session_cache_ttl_seconds=3600,
+        a2a_session_cache_maxsize=10_000,
     )
 
 
