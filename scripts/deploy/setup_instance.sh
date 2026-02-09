@@ -39,8 +39,8 @@ OPENCODE_BIN_DIR="${OPENCODE_LOCAL_SHARE_DIR}/bin"
 DATA_DIR="${PROJECT_DIR}/.local/share/opencode/storage/session"
 
 # DATA_ROOT must be traversable by the per-project system user. In hardened
-# deployments, using a personal directory like /data/projects (0700) will break
-# OpenCode writes to $HOME/.cache and $HOME/.local.
+# deployments, using a non-traversable DATA_ROOT (missing o+x) will break
+# OpenCode writes to $HOME/.cache, $HOME/.local/share, and $HOME/.local/state.
 ensure_data_root_accessible() {
   local root="$1"
   if ! sudo test -d "$root"; then
@@ -63,6 +63,38 @@ ensure_data_root_accessible() {
 
 ensure_data_root_accessible "$DATA_ROOT"
 
+get_user_home() {
+  getent passwd "$1" | awk -F: '{print $6}'
+}
+
+ensure_user_home_matches_project_dir() {
+  # This deploy workflow expects each instance user to have HOME=${DATA_ROOT}/<project>.
+  # If an operator previously deployed with a different DATA_ROOT, we fail fast to
+  # avoid subtle systemd/unit mismatches and permission issues.
+  local user="$1"
+  local expected_home="$2"
+  if ! id "$user" &>/dev/null; then
+    return 0
+  fi
+  local current_home
+  current_home="$(get_user_home "$user")"
+  if [[ -z "$current_home" ]]; then
+    echo "Unable to determine home directory for user: ${user}" >&2
+    exit 1
+  fi
+  if [[ "$current_home" != "$expected_home" ]]; then
+    echo "Existing user ${user} has a different home directory than expected:" >&2
+    echo "  current:  ${current_home}" >&2
+    echo "  expected: ${expected_home}" >&2
+    echo "" >&2
+    echo "This deploy script does not migrate instances automatically." >&2
+    echo "Fix: uninstall/recreate the instance user, or migrate explicitly, then re-run deploy." >&2
+    exit 1
+  fi
+}
+
+ensure_user_home_matches_project_dir "$PROJECT_NAME" "$PROJECT_DIR"
+
 if ! id "$PROJECT_NAME" &>/dev/null; then
   sudo adduser --system --group --home "$PROJECT_DIR" "$PROJECT_NAME"
 fi
@@ -79,7 +111,7 @@ sudo install -d -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" \
   "$OPENCODE_BIN_DIR"
 # If the directory existed with wrong ownership (e.g., started as root once),
 # fix it to avoid EACCES when opencode tries to mkdir under opencode/.
-sudo chown -R "$PROJECT_NAME:$PROJECT_NAME" "$LOCAL_DIR" "$CACHE_DIR"
+sudo chown -R "$PROJECT_NAME:$PROJECT_NAME" "$CACHE_DIR" "$STATE_DIR" "$OPENCODE_LOCAL_SHARE_DIR"
 
 askpass_tmp="$(mktemp)"
 cat <<'SCRIPT' >"$askpass_tmp"
