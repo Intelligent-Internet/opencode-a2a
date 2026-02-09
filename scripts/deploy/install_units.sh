@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Install systemd template units for OpenCode and A2A.
-# Requires env: OPENCODE_A2A_DIR, OPENCODE_CORE_DIR, UV_PYTHON_DIR.
+# Requires env: OPENCODE_A2A_DIR, OPENCODE_CORE_DIR, UV_PYTHON_DIR, DATA_ROOT.
 # Requires sudo to write /etc/systemd/system.
 set -euo pipefail
 
 : "${OPENCODE_A2A_DIR:?}"
 : "${OPENCODE_CORE_DIR:?}"
 : "${UV_PYTHON_DIR:?}"
+: "${DATA_ROOT:?}"
 
 UNIT_DIR="/etc/systemd/system"
 OPENCODE_UNIT="${UNIT_DIR}/opencode@.service"
@@ -23,14 +24,14 @@ After=network.target
 Type=simple
 User=%i
 Group=%i
-WorkingDirectory=%h
+WorkingDirectory=${DATA_ROOT}/%i
 Environment=OPENCODE_CORE_DIR=${OPENCODE_CORE_DIR}
 Environment=OPENCODE_A2A_DIR=${OPENCODE_A2A_DIR}
 Environment=UV_PYTHON_DIR=${UV_PYTHON_DIR}
 Environment=PATH=${OPENCODE_CORE_DIR}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-EnvironmentFile=%h/config/opencode.env
-EnvironmentFile=-%h/config/opencode.secret.env
-Environment=HOME=%h
+EnvironmentFile=${DATA_ROOT}/%i/config/opencode.env
+EnvironmentFile=-${DATA_ROOT}/%i/config/opencode.secret.env
+Environment=HOME=${DATA_ROOT}/%i
 
 ExecStart=${OPENCODE_A2A_DIR}/scripts/deploy/run_opencode.sh
 Restart=on-failure
@@ -40,7 +41,7 @@ UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=%h
+ReadWritePaths=${DATA_ROOT}/%i
 ReadOnlyPaths=${OPENCODE_CORE_DIR}
 ReadOnlyPaths=${OPENCODE_A2A_DIR}
 ReadOnlyPaths=${UV_PYTHON_DIR}
@@ -60,12 +61,12 @@ Requires=opencode@%i.service
 Type=simple
 User=%i
 Group=%i
-WorkingDirectory=%h
+WorkingDirectory=${DATA_ROOT}/%i
 Environment=OPENCODE_A2A_DIR=${OPENCODE_A2A_DIR}
 Environment=OPENCODE_CORE_DIR=${OPENCODE_CORE_DIR}
 Environment=UV_PYTHON_DIR=${UV_PYTHON_DIR}
-EnvironmentFile=%h/config/a2a.env
-Environment=HOME=%h
+EnvironmentFile=${DATA_ROOT}/%i/config/a2a.env
+Environment=HOME=${DATA_ROOT}/%i
 
 ExecStart=${OPENCODE_A2A_DIR}/scripts/deploy/run_a2a.sh
 Restart=on-failure
@@ -75,7 +76,7 @@ UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=%h
+ReadWritePaths=${DATA_ROOT}/%i
 ReadOnlyPaths=${OPENCODE_A2A_DIR}
 ReadOnlyPaths=${OPENCODE_CORE_DIR}
 ReadOnlyPaths=${UV_PYTHON_DIR}

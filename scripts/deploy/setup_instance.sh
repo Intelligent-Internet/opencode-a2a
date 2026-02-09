@@ -59,49 +59,6 @@ ensure_data_root_accessible() {
 
 ensure_data_root_accessible "$DATA_ROOT"
 
-get_user_home() {
-  getent passwd "$1" | awk -F: '{print $6}'
-}
-
-ensure_user_home_matches_project_dir() {
-  local user="$1"
-  local expected_home="$2"
-  if ! id "$user" &>/dev/null; then
-    return 0
-  fi
-  local current_home
-  current_home="$(get_user_home "$user")"
-  if [[ -z "$current_home" ]]; then
-    echo "Unable to determine home directory for user: ${user}" >&2
-    exit 1
-  fi
-  if [[ "$current_home" == "$expected_home" ]]; then
-    return 0
-  fi
-
-  # If the existing home is non-empty, do not migrate automatically. This is
-  # a potentially destructive change and should be an explicit operator action.
-  if sudo test -d "$current_home" && sudo test -n "$(sudo ls -A "$current_home" 2>/dev/null || true)"; then
-    echo "Existing user ${user} has a different home directory:" >&2
-    echo "  current:  ${current_home}" >&2
-    echo "  expected: ${expected_home}" >&2
-    echo "" >&2
-    echo "Refusing to change home automatically because current home is not empty." >&2
-    echo "Options:" >&2
-    echo "1) Uninstall the instance, then re-deploy with the desired DATA_ROOT." >&2
-    echo "2) Migrate explicitly (example):" >&2
-    echo "   sudo systemctl stop opencode-a2a@${user}.service opencode@${user}.service" >&2
-    echo "   sudo usermod -d '${expected_home}' -m '${user}'" >&2
-    echo "   sudo chown -R '${user}:${user}' '${expected_home}'" >&2
-    exit 1
-  fi
-
-  echo "Updating user home for ${user}: ${current_home} -> ${expected_home}" >&2
-  sudo usermod -d "$expected_home" "$user"
-}
-
-ensure_user_home_matches_project_dir "$PROJECT_NAME" "$PROJECT_DIR"
-
 if ! id "$PROJECT_NAME" &>/dev/null; then
   sudo adduser --system --group --home "$PROJECT_DIR" "$PROJECT_NAME"
 fi
