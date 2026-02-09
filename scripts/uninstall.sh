@@ -11,7 +11,7 @@
 # shared globally across all instances.
 #
 # Usage:
-#   ./scripts/uninstall.sh project=<name> [data_root=/data/projects] [confirm=UNINSTALL]
+#   ./scripts/uninstall.sh project=<name> [data_root=/data/opencode-a2a] [confirm=UNINSTALL]
 #
 # Examples:
 #   ./scripts/uninstall.sh project=alpha
@@ -49,11 +49,11 @@ for arg in "$@"; do
 done
 
 if [[ -z "$PROJECT_NAME" ]]; then
-  echo "Usage: $0 project=<name> [data_root=/data/projects] [confirm=UNINSTALL]" >&2
+  echo "Usage: $0 project=<name> [data_root=/data/opencode-a2a] [confirm=UNINSTALL]" >&2
   exit 1
 fi
 
-DATA_ROOT="${DATA_ROOT_INPUT:-${DATA_ROOT:-/data/projects}}"
+DATA_ROOT="${DATA_ROOT_INPUT:-${DATA_ROOT:-/data/opencode-a2a}}"
 
 # Basic guardrails to prevent path traversal and dangerous deletes.
 #
