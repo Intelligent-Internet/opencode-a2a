@@ -105,7 +105,7 @@ params：
 其中：
 
 - `result.items` 始终为数组：
-  - `opencode.sessions.list`：items 为 **A2A Task** 数组（`task.id == task.contextId == opencode session_id`；`status.state` 固定为 `unknown`）。
+  - `opencode.sessions.list`：items 为 **A2A Task** 数组（`task.id == task.contextId == opencode session_id`；`status.state` 固定为 `completed`）。
   - `opencode.sessions.messages.list`：items 为 **A2A Message** 数组（`message.contextId == opencode session_id`）。
   - OpenCode 原始 item 不丢弃，放在 `metadata.opencode.raw` 中。
 - `result.pagination` 为稳定的分页 envelope（page/size 为空表示本次请求未显式传入）。

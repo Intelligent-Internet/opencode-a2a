@@ -79,7 +79,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 - 鉴权：复用同一个 `Authorization: Bearer <token>`。
 - 安全：即使开启 `A2A_LOG_PAYLOADS=true`，当检测到 `method=opencode.sessions.*` 的 JSON-RPC 请求时，服务也不会将请求/响应 body 写入日志（避免泄露聊天历史）。
 - 调用 URL：建议从 Agent Card 的 `additional_interfaces[]` 中选择 `transport=jsonrpc` 的 `url`，避免自行拼接推导。
-- 返回格式：`result.items` 始终为数组，且 item 为 A2A 标准对象（会话列表为 Task；消息历史为 Message）。OpenCode 原始 item 放在 `metadata.opencode.raw`。
+- 返回格式：`result.items` 始终为数组，且 item 为 A2A 标准对象（会话列表为 Task，且 `status.state=completed`；消息历史为 Message）。OpenCode 原始 item 放在 `metadata.opencode.raw`。
 
 ### 会话列表（method: opencode.sessions.list）
 

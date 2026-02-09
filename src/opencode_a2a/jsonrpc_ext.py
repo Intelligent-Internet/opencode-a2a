@@ -63,9 +63,8 @@ def _as_a2a_session_task(session: Any) -> dict[str, Any] | None:
     task = Task(
         id=session_id,
         context_id=session_id,
-        # Session list is not an agent "task" that requires user input; we model it as A2A Task
-        # purely to reuse the A2A schema for downstream adapters.
-        status=TaskStatus(state=TaskState.unknown),
+        # Model OpenCode sessions as completed A2A Tasks for stable downstream rendering.
+        status=TaskStatus(state=TaskState.completed),
         metadata={"opencode": {"raw": session}},
     )
     return task.model_dump(by_alias=True, exclude_none=True)
