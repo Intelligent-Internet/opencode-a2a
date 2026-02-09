@@ -29,7 +29,7 @@
 - 安装基础工具（`htop`、`vim`、`curl`、`wget`、`git`、`net-tools`、`lsblk`、`ca-certificates`）与 `gh`（添加官方源）。
 - 安装 Node.js ≥ 20（含 `npm`/`npx`，下载 NodeSource 安装脚本、校验后执行，或使用系统包）。
 - 安装 `uv`（若未安装，下载脚本校验后执行），并预下载 Python 版本 `3.10/3.11/3.12/3.13`（若缺失才安装）。
-- 创建共享目录（`/opt/.opencode`、`/opt/opencode-a2a`、`/opt/uv-python`、`/data/projects`），并为 `/opt/uv-python` 设置权限（默认先 `777`，预下载完成后递归调整为 `755`；可在 `scripts/init_system.sh` 顶部变量中调整）。
+- 创建共享目录（`/opt/.opencode`、`/opt/opencode-a2a`、`/opt/uv-python`、`/data/opencode-a2a`），并为 `/opt/uv-python` 设置权限（默认先 `777`，预下载完成后递归调整为 `755`；可在 `scripts/init_system.sh` 顶部变量中调整）。
 - 若系统缺少 systemd（`systemctl` 不存在），脚本将直接失败退出。
 - 克隆 `opencode-a2a-serve` 仓库到共享目录（若不存在，默认使用 SSH 地址）。
 - 创建 A2A venv（`uv sync --all-extras`）。
@@ -42,7 +42,7 @@
 
 ## 目录结构
 
-每个项目实例在 `DATA_ROOT` 下有独立目录（默认 `/data/projects/<project>`）：
+每个项目实例在 `DATA_ROOT` 下有独立目录（默认 `/data/opencode-a2a/<project>`）：
 
 - `workspace/`：OpenCode 仅能写入的工作区
 - `config/`：root-only 的配置目录，存放 env 文件
@@ -112,12 +112,14 @@ HTTPS 域名示例（避免 root 多实例环境变量互相干扰）：
 - `A2A_LOG_BODY_LIMIT`：日志正文最大长度，默认 `0`（不截断）
 
 > 共享路径（`OPENCODE_A2A_DIR`/`OPENCODE_CORE_DIR`/`UV_PYTHON_DIR`/`DATA_ROOT`）默认从 `scripts/init_system.sh` 顶部变量读取；`deploy.sh` 仍支持环境变量覆盖（需确保与实际目录一致）。
+>
+> 注意：`DATA_ROOT` 需要对每个项目系统用户可遍历（至少包含 `o+x`），否则 OpenCode 无法写入 `$HOME/.cache` / `$HOME/.local`，将导致 `/session` 500（EACCES）。
 - `A2A_PUBLIC_URL` 仅通过 `deploy.sh` 的 `a2a_public_url=...` 参数设置；未提供时自动拼接为 `http://<A2A_HOST>:<A2A_PORT>`。
 - `A2A_STREAMING`：是否启用 SSE streaming（`/v1/message:stream`），默认 `true`
 
 ### 实例配置文件
 
-每个项目会生成（路径位于 `/data/projects/<project>/config/`，不同项目不会重名）：
+每个项目会生成（路径位于 `/data/opencode-a2a/<project>/config/`，不同项目不会重名）：
 
 - `config/opencode.env`：仅 OpenCode 读取（包含 `GH_TOKEN` 与 Git 身份配置）
 - `config/opencode.secret.env`：仅 OpenCode 读取的敏感配置（可选，包含 `GOOGLE_GENERATIVE_AI_API_KEY`）
@@ -129,7 +131,7 @@ HTTPS 域名示例（避免 root 多实例环境变量互相干扰）：
 
 为保障私有仓库访问，`github_token` 会写入 `config/opencode.env`，并结合 `GIT_ASKPASS` 注入到 OpenCode 进程中使用。该文件权限为 600（root-only）。
 
-部署脚本会为项目用户执行 `gh auth login --with-token`，写入 `/data/projects/<project>/.config/gh/hosts.yml`（权限 600，项目用户私有），确保 OpenCode 调用 `gh` 时可用。
+部署脚本会为项目用户执行 `gh auth login --with-token`，写入 `${DATA_ROOT}/<project>/.config/gh/hosts.yml`（权限 600，项目用户私有），确保 OpenCode 调用 `gh` 时可用。
 
 如需使用 `gh` CLI，服务默认将 `PATH` 包含 `/usr/bin`，并显式允许读取 `/usr/bin/gh`。若 `gh` 安装在其他路径，可通过软链接放入 `${OPENCODE_CORE_DIR}/bin`。
 
@@ -229,7 +231,7 @@ sudo systemctl stop opencode@<project>.service
 systemd 单元已启用：
 
 - `ProtectSystem=strict`
-- `ReadWritePaths=/data/projects/%i`
+- `ReadWritePaths=${DATA_ROOT}/%i`
 - `PrivateTmp=true`
 - `NoNewPrivileges=true`
 
