@@ -31,6 +31,8 @@ OPENCODE_SECRET_ENV_FILE="${CONFIG_DIR}/opencode.secret.env"
 LOG_DIR="${PROJECT_DIR}/logs"
 RUN_DIR="${PROJECT_DIR}/run"
 ASKPASS_SCRIPT="${RUN_DIR}/git-askpass.sh"
+CACHE_DIR="${PROJECT_DIR}/.cache/opencode"
+DATA_DIR="${PROJECT_DIR}/.local/share/opencode/storage/session"
 
 # DATA_ROOT must be traversable by the per-project system user. In hardened
 # deployments, using a personal directory like /data/projects (0700) will break
@@ -63,6 +65,9 @@ fi
 
 sudo install -d -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" "$PROJECT_DIR" "$WORKSPACE_DIR" "$LOG_DIR" "$RUN_DIR"
 sudo install -d -m 700 -o root -g root "$CONFIG_DIR"
+# Ensure OpenCode can write its XDG cache/data paths under $HOME even if the
+# instance was previously started with a different user (stale root-owned dirs).
+sudo install -d -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" "$CACHE_DIR" "$DATA_DIR"
 
 askpass_tmp="$(mktemp)"
 cat <<'SCRIPT' >"$askpass_tmp"
