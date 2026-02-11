@@ -107,10 +107,10 @@ HTTPS 域名示例（避免 root 多实例环境变量互相干扰）：
 
 - `A2A_HOST`：A2A 监听地址，默认 `127.0.0.1`（也可通过 `deploy.sh` 的 `a2a_host=...` 参数设置）
 - `A2A_PORT`：A2A 监听端口，默认 `8000`（多实例时需为每个项目分配不同端口）
-- `A2A_JWT_AUDIENCE`：JWT audience；可通过 `deploy.sh` 参数 `a2a_jwt_audience=...` 设置。未设置时默认等于 `A2A_PUBLIC_URL`。
-- `A2A_JWT_ISSUER`：JWT issuer；可通过 `deploy.sh` 参数 `a2a_jwt_issuer=...` 设置。未设置时默认等于 `A2A_PUBLIC_URL`。
-- `A2A_JWT_ALGORITHM`：JWT 算法；可通过 `deploy.sh` 参数 `a2a_jwt_algorithm=...` 设置，默认 `RS256`。
-- `A2A_JWT_SCOPE_MATCH`：scope 匹配策略（`any|all`）；可通过 `deploy.sh` 参数 `a2a_jwt_scope_match=...` 设置，默认 `any`。
+- `A2A_JWT_AUDIENCE`：JWT audience；必须显式设置（可通过 `deploy.sh` 参数 `a2a_jwt_audience=...` 或环境变量提供），脚本不再自动填默认值。
+- `A2A_JWT_ISSUER`：JWT issuer；必须显式设置（可通过 `deploy.sh` 参数 `a2a_jwt_issuer=...` 或环境变量提供），脚本不再自动填默认值。
+- `A2A_JWT_ALGORITHM`：JWT 算法；可通过 `deploy.sh` 参数 `a2a_jwt_algorithm=...` 显式设置。未提供时由应用配置默认值处理（`RS256`）。
+- `A2A_JWT_SCOPE_MATCH`：scope 匹配策略（`any|all`）；可通过 `deploy.sh` 参数 `a2a_jwt_scope_match=...` 显式设置。未提供时由应用配置默认值处理（`any`）。
 - `A2A_LOG_LEVEL`：A2A 日志级别，默认 `DEBUG`（脚本内默认）
 - `A2A_LOG_PAYLOADS`：是否记录 A2A 与 OpenCode 请求/响应正文，默认 `true`（脚本内默认）
 - `A2A_LOG_BODY_LIMIT`：日志正文最大长度，默认 `0`（不截断）

@@ -185,23 +185,20 @@ fi
 
 if [[ -n "$A2A_JWT_AUDIENCE_INPUT" ]]; then
   export A2A_JWT_AUDIENCE="$A2A_JWT_AUDIENCE_INPUT"
-else
-  export A2A_JWT_AUDIENCE="${A2A_JWT_AUDIENCE:-$A2A_PUBLIC_URL}"
 fi
 if [[ -n "$A2A_JWT_ISSUER_INPUT" ]]; then
   export A2A_JWT_ISSUER="$A2A_JWT_ISSUER_INPUT"
-else
-  export A2A_JWT_ISSUER="${A2A_JWT_ISSUER:-$A2A_PUBLIC_URL}"
 fi
 if [[ -n "$A2A_JWT_ALGORITHM_INPUT" ]]; then
   export A2A_JWT_ALGORITHM="$A2A_JWT_ALGORITHM_INPUT"
-else
-  export A2A_JWT_ALGORITHM="${A2A_JWT_ALGORITHM:-RS256}"
 fi
 if [[ -n "$A2A_JWT_SCOPE_MATCH_INPUT" ]]; then
   export A2A_JWT_SCOPE_MATCH="$A2A_JWT_SCOPE_MATCH_INPUT"
-else
-  export A2A_JWT_SCOPE_MATCH="${A2A_JWT_SCOPE_MATCH:-any}"
+fi
+
+if [[ -z "${A2A_JWT_AUDIENCE:-}" || -z "${A2A_JWT_ISSUER:-}" ]]; then
+  echo "A2A_JWT_AUDIENCE and A2A_JWT_ISSUER must be explicitly provided via args or env." >&2
+  exit 1
 fi
 
 export A2A_LOG_LEVEL="${A2A_LOG_LEVEL:-DEBUG}"
