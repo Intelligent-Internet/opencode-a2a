@@ -1,4 +1,3 @@
-import dataclasses
 import time
 
 import jwt
@@ -109,7 +108,7 @@ def test_public_route_no_auth(jwt_settings):
 
 def test_jwt_auth_failure_missing_scope(jwt_settings, rsa_keypair_pem):
     # Setup settings with required scopes
-    jwt_settings = dataclasses.replace(jwt_settings, a2a_required_scopes={"required-scope"})
+    jwt_settings = jwt_settings.model_copy(update={"a2a_required_scopes": {"required-scope"}})
     app = create_app(jwt_settings)
     client = TestClient(app)
     # Token with wrong scope
@@ -125,7 +124,7 @@ def test_jwt_auth_failure_missing_scope(jwt_settings, rsa_keypair_pem):
 
 def test_jwt_auth_success_with_scope(jwt_settings, rsa_keypair_pem):
     # Setup settings with required scopes
-    jwt_settings = dataclasses.replace(jwt_settings, a2a_required_scopes={"required-scope"})
+    jwt_settings = jwt_settings.model_copy(update={"a2a_required_scopes": {"required-scope"}})
     app = create_app(jwt_settings)
     client = TestClient(app)
     # Token with correct scope
@@ -155,7 +154,7 @@ def test_jwt_auth_failure_missing_exp(jwt_settings, rsa_keypair_pem):
 
 
 def test_jwt_auth_success_with_scope_list(jwt_settings, rsa_keypair_pem):
-    jwt_settings = dataclasses.replace(jwt_settings, a2a_required_scopes={"required-scope"})
+    jwt_settings = jwt_settings.model_copy(update={"a2a_required_scopes": {"required-scope"}})
     app = create_app(jwt_settings)
     client = TestClient(app)
     private_pem, _public_pem = rsa_keypair_pem
@@ -170,7 +169,7 @@ def test_jwt_auth_success_with_scope_list(jwt_settings, rsa_keypair_pem):
 
 
 def test_jwt_auth_success_with_scp_claim(jwt_settings, rsa_keypair_pem):
-    jwt_settings = dataclasses.replace(jwt_settings, a2a_required_scopes={"required-scope"})
+    jwt_settings = jwt_settings.model_copy(update={"a2a_required_scopes": {"required-scope"}})
     app = create_app(jwt_settings)
     client = TestClient(app)
     private_pem, _public_pem = rsa_keypair_pem
@@ -185,16 +184,14 @@ def test_jwt_auth_success_with_scp_claim(jwt_settings, rsa_keypair_pem):
 
 
 def test_jwt_mode_requires_audience(jwt_settings):
-    settings = dataclasses.replace(jwt_settings, a2a_jwt_audience=None)
+    settings = jwt_settings.model_copy(update={"a2a_jwt_audience": None})
     with pytest.raises(RuntimeError):
         create_app(settings)
 
 
 def test_jwt_scope_match_all_requires_all_scopes(jwt_settings, rsa_keypair_pem):
-    jwt_settings = dataclasses.replace(
-        jwt_settings,
-        a2a_required_scopes={"scope-a", "scope-b"},
-        a2a_jwt_scope_match="all",
+    jwt_settings = jwt_settings.model_copy(
+        update={"a2a_required_scopes": {"scope-a", "scope-b"}, "a2a_jwt_scope_match": "all"}
     )
     app = create_app(jwt_settings)
     client = TestClient(app)

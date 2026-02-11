@@ -1,164 +1,107 @@
 from __future__ import annotations
 
 import base64
-import os
-from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated, Any
+
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
-def _get_env(name: str, default: str | None = None) -> str | None:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return value
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="",
+        case_sensitive=False,
+        env_file=".env",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
+    # OpenCode settings
+    opencode_base_url: str = Field(default="http://127.0.0.1:4096", alias="OPENCODE_BASE_URL")
+    opencode_directory: str | None = Field(default=None, alias="OPENCODE_DIRECTORY")
+    opencode_provider_id: str | None = Field(default=None, alias="OPENCODE_PROVIDER_ID")
+    opencode_model_id: str | None = Field(default=None, alias="OPENCODE_MODEL_ID")
+    opencode_agent: str | None = Field(default=None, alias="OPENCODE_AGENT")
+    opencode_system: str | None = Field(default=None, alias="OPENCODE_SYSTEM")
+    opencode_variant: str | None = Field(default=None, alias="OPENCODE_VARIANT")
+    opencode_timeout: float = Field(default=120.0, alias="OPENCODE_TIMEOUT")
+    opencode_timeout_stream: float | None = Field(default=None, alias="OPENCODE_TIMEOUT_STREAM")
 
-def _get_int(name: str, default: int) -> int:
-    value = _get_env(name)
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        return default
+    # A2A settings
+    a2a_public_url: str = Field(default="http://127.0.0.1:8000", alias="A2A_PUBLIC_URL")
+    a2a_title: str = Field(default="OpenCode A2A", alias="A2A_TITLE")
+    a2a_description: str = Field(
+        default="A2A wrapper service for OpenCode", alias="A2A_DESCRIPTION"
+    )
+    a2a_version: str = Field(default="0.1.0", alias="A2A_VERSION")
+    a2a_protocol_version: str = Field(default="0.3.0", alias="A2A_PROTOCOL_VERSION")
+    a2a_streaming: bool = Field(default=True, alias="A2A_STREAMING")
+    a2a_log_level: str = Field(default="INFO", alias="A2A_LOG_LEVEL")
+    a2a_log_payloads: bool = Field(default=False, alias="A2A_LOG_PAYLOADS")
+    a2a_log_body_limit: int = Field(default=0, alias="A2A_LOG_BODY_LIMIT")
+    a2a_documentation_url: str | None = Field(default=None, alias="A2A_DOCUMENTATION_URL")
+    a2a_allow_directory_override: bool = Field(default=True, alias="A2A_ALLOW_DIRECTORY_OVERRIDE")
+    a2a_host: str = Field(default="127.0.0.1", alias="A2A_HOST")
+    a2a_port: int = Field(default=8000, alias="A2A_PORT")
 
+    # Legacy bearer env kept as optional for compatibility with older scripts/tests.
+    a2a_bearer_token: str | None = Field(default=None, alias="A2A_BEARER_TOKEN")
 
-def _get_float(name: str, default: float) -> float:
-    value = _get_env(name)
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except ValueError:
-        return default
+    # JWT settings (active auth mode)
+    a2a_jwt_secret: str | None = Field(default=None, alias="A2A_JWT_SECRET")
+    a2a_jwt_secret_b64: str | None = Field(default=None, alias="A2A_JWT_SECRET_B64")
+    a2a_jwt_secret_file: str | None = Field(default=None, alias="A2A_JWT_SECRET_FILE")
+    a2a_jwt_algorithm: str = Field(default="RS256", alias="A2A_JWT_ALGORITHM")
+    a2a_jwt_issuer: str | None = Field(default=None, alias="A2A_JWT_ISSUER")
+    a2a_jwt_audience: str | None = Field(default=None, alias="A2A_JWT_AUDIENCE")
+    a2a_required_scopes: Annotated[set[str], NoDecode] = Field(
+        default_factory=set, alias="A2A_REQUIRED_SCOPES"
+    )
+    a2a_jwt_scope_match: str = Field(default="any", alias="A2A_JWT_SCOPE_MATCH")
 
+    # Session cache settings
+    a2a_session_cache_ttl_seconds: int = Field(default=3600, alias="A2A_SESSION_CACHE_TTL_SECONDS")
+    a2a_session_cache_maxsize: int = Field(default=10_000, alias="A2A_SESSION_CACHE_MAXSIZE")
 
-def _get_optional_float(name: str) -> float | None:
-    value = _get_env(name)
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except ValueError:
-        return None
-
-
-def _get_bool(name: str, default: bool) -> bool:
-    value = _get_env(name)
-    if value is None:
-        return default
-    normalized = value.strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    return default
-
-
-def _parse_csv_set(value: str | None) -> set[str]:
-    if not value:
+    @field_validator("a2a_required_scopes", mode="before")
+    @classmethod
+    def parse_required_scopes(cls, v: Any) -> set[str]:
+        if v is None:
+            return set()
+        if isinstance(v, set):
+            return {str(item).strip() for item in v if str(item).strip()}
+        if isinstance(v, (list, tuple)):
+            return {str(item).strip() for item in v if str(item).strip()}
+        if isinstance(v, str):
+            return {item.strip() for item in v.split(",") if item.strip()}
         return set()
-    out: set[str] = set()
-    for raw in value.split(","):
-        v = raw.strip()
-        if v:
-            out.add(v)
-    return out
 
+    @field_validator("a2a_jwt_scope_match", mode="before")
+    @classmethod
+    def normalize_scope_match(cls, v: Any) -> str:
+        if not isinstance(v, str) or not v.strip():
+            return "any"
+        return v.strip().lower()
 
-def _read_text_file(path: str) -> str:
-    return Path(path).expanduser().read_text(encoding="utf-8")
+    @model_validator(mode="after")
+    def resolve_jwt_secret(self) -> Settings:
+        if self.a2a_jwt_secret_b64:
+            try:
+                decoded = base64.b64decode(self.a2a_jwt_secret_b64.strip(), validate=True)
+            except ValueError as exc:
+                raise ValueError("A2A_JWT_SECRET_B64 must be valid base64") from exc
+            self.a2a_jwt_secret = decoded.decode("utf-8")
+            return self
 
+        if self.a2a_jwt_secret_file:
+            self.a2a_jwt_secret = (
+                Path(self.a2a_jwt_secret_file).expanduser().read_text(encoding="utf-8")
+            )
+            return self
 
-def _get_b64_decoded_env(name: str) -> str | None:
-    raw = _get_env(name)
-    if raw is None:
-        return None
-    raw = raw.strip()
-    try:
-        decoded = base64.b64decode(raw, validate=True)
-    except ValueError as e:
-        raise ValueError(f"{name} must be valid base64") from e
-    return decoded.decode("utf-8")
-
-
-def _get_normalized_choice(name: str, default: str, choices: set[str]) -> str:
-    value = _get_env(name)
-    if value is None:
-        return default
-    normalized = value.strip().lower()
-    if normalized in choices:
-        return normalized
-    return default
-
-
-@dataclass(frozen=True)
-class Settings:
-    opencode_base_url: str
-    opencode_directory: str | None
-    opencode_provider_id: str | None
-    opencode_model_id: str | None
-    opencode_agent: str | None
-    opencode_system: str | None
-    opencode_variant: str | None
-    opencode_timeout: float
-    opencode_timeout_stream: float | None
-    a2a_public_url: str
-    a2a_title: str
-    a2a_description: str
-    a2a_version: str
-    a2a_protocol_version: str
-    a2a_streaming: bool
-    a2a_log_level: str
-    a2a_log_payloads: bool
-    a2a_log_body_limit: int
-    a2a_host: str
-    a2a_port: int
-    a2a_jwt_secret: str | None
-    a2a_jwt_algorithm: str
-    a2a_jwt_issuer: str | None
-    a2a_jwt_audience: str | None
-    a2a_jwt_scope_match: str
-    a2a_required_scopes: set[str]
+        return self
 
     @classmethod
     def from_env(cls) -> Settings:
-        jwt_secret = _get_b64_decoded_env("A2A_JWT_SECRET_B64")
-        if jwt_secret is None:
-            jwt_secret_file = _get_env("A2A_JWT_SECRET_FILE")
-            if jwt_secret_file:
-                jwt_secret = _read_text_file(jwt_secret_file)
-            else:
-                jwt_secret = _get_env("A2A_JWT_SECRET")
-        return cls(
-            opencode_base_url=str(_get_env("OPENCODE_BASE_URL", "http://127.0.0.1:4096")),
-            opencode_directory=_get_env("OPENCODE_DIRECTORY"),
-            opencode_provider_id=_get_env("OPENCODE_PROVIDER_ID"),
-            opencode_model_id=_get_env("OPENCODE_MODEL_ID"),
-            opencode_agent=_get_env("OPENCODE_AGENT"),
-            opencode_system=_get_env("OPENCODE_SYSTEM"),
-            opencode_variant=_get_env("OPENCODE_VARIANT"),
-            opencode_timeout=_get_float("OPENCODE_TIMEOUT", 120.0),
-            opencode_timeout_stream=_get_optional_float("OPENCODE_TIMEOUT_STREAM"),
-            a2a_public_url=str(_get_env("A2A_PUBLIC_URL", "http://127.0.0.1:8000")),
-            a2a_title=str(_get_env("A2A_TITLE", "OpenCode A2A")),
-            a2a_description=str(_get_env("A2A_DESCRIPTION", "A2A wrapper service for OpenCode")),
-            a2a_version=str(_get_env("A2A_VERSION", "0.1.0")),
-            a2a_protocol_version=str(_get_env("A2A_PROTOCOL_VERSION", "0.3.0")),
-            a2a_streaming=_get_bool("A2A_STREAMING", True),
-            a2a_log_level=str(_get_env("A2A_LOG_LEVEL", "INFO")),
-            a2a_log_payloads=_get_bool("A2A_LOG_PAYLOADS", False),
-            a2a_log_body_limit=_get_int("A2A_LOG_BODY_LIMIT", 0),
-            a2a_host=str(_get_env("A2A_HOST", "127.0.0.1")),
-            a2a_port=_get_int("A2A_PORT", 8000),
-            a2a_jwt_secret=jwt_secret,
-            a2a_jwt_algorithm=str(_get_env("A2A_JWT_ALGORITHM", "RS256")),
-            a2a_jwt_issuer=_get_env("A2A_JWT_ISSUER"),
-            a2a_jwt_audience=_get_env("A2A_JWT_AUDIENCE"),
-            a2a_jwt_scope_match=_get_normalized_choice(
-                "A2A_JWT_SCOPE_MATCH",
-                default="any",
-                choices={"any", "all"},
-            ),
-            a2a_required_scopes=_parse_csv_set(_get_env("A2A_REQUIRED_SCOPES")),
-        )
+        return cls()

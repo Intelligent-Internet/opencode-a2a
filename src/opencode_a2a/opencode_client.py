@@ -24,6 +24,7 @@ class OpencodeMessage:
 
 class OpencodeClient:
     def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         self._base_url = settings.opencode_base_url.rstrip("/")
         self._directory = settings.opencode_directory
         self._provider_id = settings.opencode_provider_id
@@ -46,15 +47,40 @@ class OpencodeClient:
     def stream_timeout(self) -> float | None:
         return self._stream_timeout
 
-    def _query_params(self) -> dict[str, str]:
-        if not self._directory:
+    @property
+    def directory(self) -> str | None:
+        return self._directory
+
+    @property
+    def settings(self) -> Settings:
+        return self._settings
+
+    def _query_params(self, directory: str | None = None) -> dict[str, str]:
+        d = directory or self._directory
+        if not d:
             return {}
-        return {"directory": self._directory}
+        return {"directory": d}
+
+    def _merge_params(
+        self, extra: dict[str, Any] | None, *, directory: str | None = None
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = dict(self._query_params(directory=directory))
+        if not extra:
+            return params
+        for key, value in extra.items():
+            if value is None:
+                continue
+            # "directory" is server-controlled. Client overrides are handled via explicit parameter.
+            if key == "directory":
+                continue
+            # FastAPI query params are strings; keep them as-is. Coerce other primitives to str.
+            params[key] = value if isinstance(value, str) else str(value)
+        return params
 
     async def stream_events(
-        self, stop_event: asyncio.Event | None = None
+        self, stop_event: asyncio.Event | None = None, *, directory: str | None = None
     ) -> AsyncIterator[dict[str, Any]]:
-        params = self._query_params()
+        params = self._query_params(directory=directory)
         async with self._client.stream(
             "GET",
             "/event",
@@ -87,11 +113,15 @@ class OpencodeClient:
                     data_lines.append(line[5:].lstrip())
                     continue
 
-    async def create_session(self, title: str | None = None) -> str:
+    async def create_session(
+        self, title: str | None = None, *, directory: str | None = None
+    ) -> str:
         payload: dict[str, Any] = {}
         if title:
             payload["title"] = title
-        response = await self._client.post("/session", params=self._query_params(), json=payload)
+        response = await self._client.post(
+            "/session", params=self._query_params(directory=directory), json=payload
+        )
         response.raise_for_status()
         data = response.json()
         session_id = data.get("id")
@@ -99,11 +129,29 @@ class OpencodeClient:
             raise RuntimeError("OpenCode session response missing id")
         return session_id
 
+    async def list_sessions(self, *, params: dict[str, Any] | None = None) -> Any:
+        """List sessions from OpenCode."""
+        # Note: directory override is not explicitly supported by list_sessions params yet.
+        # If needed, we can add it later. For now we use the default.
+        response = await self._client.get("/session", params=self._merge_params(params))
+        response.raise_for_status()
+        return response.json()
+
+    async def list_messages(self, session_id: str, *, params: dict[str, Any] | None = None) -> Any:
+        """List messages for a session from OpenCode."""
+        response = await self._client.get(
+            f"/session/{session_id}/message",
+            params=self._merge_params(params),
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def send_message(
         self,
         session_id: str,
         text: str,
         *,
+        directory: str | None = None,
         timeout_override: float | None | object = _UNSET,
     ) -> OpencodeMessage:
         payload: dict[str, Any] = {
@@ -136,7 +184,7 @@ class OpencodeClient:
 
         response = await self._client.post(
             f"/session/{session_id}/message",
-            params=self._query_params(),
+            params=self._query_params(directory=directory),
             json=payload,
             **request_kwargs,
         )

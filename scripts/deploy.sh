@@ -8,7 +8,7 @@
 # - OPENCODE_A2A_DIR: path to opencode-a2a-serve repo (default: /opt/opencode-a2a/opencode-a2a-serve)
 # - OPENCODE_CORE_DIR: path to opencode core (default: /opt/.opencode)
 # - UV_PYTHON_DIR: path to uv python pool (default: /opt/uv-python)
-# - DATA_ROOT: projects root (default: /data/projects)
+# - DATA_ROOT: instance root directory (default: /data/opencode-a2a)
 # - OPENCODE_BIND_HOST/OPENCODE_BIND_PORT/OPENCODE_LOG_LEVEL/OPENCODE_EXTRA_ARGS
 # - A2A_HOST/A2A_PORT/A2A_LOG_LEVEL
 set -euo pipefail
@@ -161,7 +161,7 @@ fi
 export OPENCODE_A2A_DIR="${OPENCODE_A2A_DIR:-/opt/opencode-a2a/opencode-a2a-serve}"
 export OPENCODE_CORE_DIR="${OPENCODE_CORE_DIR:-/opt/.opencode}"
 export UV_PYTHON_DIR="${UV_PYTHON_DIR:-/opt/uv-python}"
-export DATA_ROOT="${DATA_ROOT:-/data/projects}"
+export DATA_ROOT="${DATA_ROOT:-/data/opencode-a2a}"
 
 if [[ -n "$OPENCODE_PROVIDER_ID_INPUT" ]]; then
   export OPENCODE_PROVIDER_ID="$OPENCODE_PROVIDER_ID_INPUT"
@@ -218,6 +218,7 @@ if [[ -n "$A2A_PUBLIC_URL_INPUT" ]]; then
 else
   export A2A_PUBLIC_URL="http://${A2A_HOST}:${A2A_PORT}"
 fi
+
 export A2A_LOG_LEVEL="${A2A_LOG_LEVEL:-DEBUG}"
 export A2A_STREAMING="${A2A_STREAMING:-true}"
 export A2A_LOG_PAYLOADS="${A2A_LOG_PAYLOADS:-true}"

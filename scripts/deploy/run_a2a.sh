@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Wrapper to run opencode-a2a from the shared venv.
+# Wrapper to run opencode-a2a-serve from the shared venv.
 set -euo pipefail
 
 OPENCODE_A2A_DIR="${OPENCODE_A2A_DIR:-/opt/opencode-a2a/opencode-a2a-serve}"
-A2A_BIN="${A2A_BIN:-${OPENCODE_A2A_DIR}/.venv/bin/opencode-a2a}"
+A2A_BIN="${A2A_BIN:-${OPENCODE_A2A_DIR}/.venv/bin/opencode-a2a-serve}"
 
 if [[ ! -x "$A2A_BIN" ]]; then
-  echo "opencode-a2a entrypoint not found at $A2A_BIN" >&2
+  echo "opencode-a2a-serve entrypoint not found at $A2A_BIN" >&2
   exit 1
 fi
 

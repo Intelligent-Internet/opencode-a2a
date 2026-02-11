@@ -1,30 +1,37 @@
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Any
 
 import jwt
 import uvicorn
 from a2a.server.apps.jsonrpc.jsonrpc_app import DefaultCallContextBuilder
-from a2a.server.apps.rest.fastapi_app import A2ARESTFastAPIApplication
+from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.request_handlers.default_request_handler import DefaultRequestHandler
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
+    AgentExtension,
     AgentInterface,
     AgentSkill,
     HTTPAuthSecurityScheme,
     SecurityScheme,
     TransportProtocol,
 )
-from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
 from .agent import OpencodeAgentExecutor
 from .config import Settings
+from .jsonrpc_ext import (
+    SESSION_QUERY_PAGINATION_DEFAULT_SIZE,
+    SESSION_QUERY_PAGINATION_MAX_SIZE,
+    OpencodeSessionQueryJSONRPCApplication,
+)
 from .opencode_client import OpencodeClient
 
 logger = logging.getLogger(__name__)
@@ -40,8 +47,15 @@ ALLOWED_JWT_ALGORITHMS = {
 if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
 
+SESSION_QUERY_METHODS = {
+    "list_sessions": "opencode.sessions.list",
+    "get_session_messages": "opencode.sessions.messages.list",
+}
 
-class StreamingCallContextBuilder(DefaultCallContextBuilder):
+SESSION_BINDING_EXTENSION_URI = "urn:opencode-a2a:opencode-session-binding/v1"
+
+
+class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
     def build(self, request: Request) -> ServerCallContext:
         context = super().build(request)
         path = request.url.path
@@ -57,6 +71,11 @@ class StreamingCallContextBuilder(DefaultCallContextBuilder):
         )
         if is_stream:
             context.state["a2a_streaming_request"] = True
+
+        identity = getattr(request.state, "user_identity", None)
+        if identity:
+            context.state["identity"] = identity
+
         return context
 
 
@@ -64,28 +83,87 @@ def build_agent_card(settings: Settings) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     base_url = public_url
 
-    security_schemes: dict[str, SecurityScheme] = {}
-    security: list[dict[str, list[str]]] = []
-
-    security_schemes["bearerAuth"] = SecurityScheme(
-        root=HTTPAuthSecurityScheme(
-            description="JWT Bearer token authentication",
-            scheme="bearer",
-            bearer_format="JWT",
+    security_schemes: dict[str, SecurityScheme] = {
+        "bearerAuth": SecurityScheme(
+            root=HTTPAuthSecurityScheme(
+                description="JWT Bearer token authentication",
+                scheme="bearer",
+                bearer_format="JWT",
+            )
         )
-    )
-    security.append({"bearerAuth": []})
+    }
+    security: list[dict[str, list[str]]] = [{"bearerAuth": []}]
 
     return AgentCard(
         name=settings.a2a_title,
         description=settings.a2a_description,
         url=base_url,
+        documentation_url=settings.a2a_documentation_url,
         version=settings.a2a_version,
         protocol_version=settings.a2a_protocol_version,
         preferred_transport=TransportProtocol.http_json,
         default_input_modes=["text/plain"],
         default_output_modes=["text/plain"],
-        capabilities=AgentCapabilities(streaming=settings.a2a_streaming),
+        capabilities=AgentCapabilities(
+            streaming=settings.a2a_streaming,
+            extensions=[
+                AgentExtension(
+                    uri=SESSION_BINDING_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Contract to bind A2A messages to an existing OpenCode session "
+                        "when continuing a previous chat. "
+                        "Clients should pass metadata.opencode_session_id."
+                    ),
+                    params={
+                        "metadata_key": "opencode_session_id",
+                        "behavior": "prefer_metadata_binding_else_create_session",
+                        "notes": [
+                            (
+                                "If metadata.opencode_session_id is provided, the server will "
+                                "send the message to that OpenCode session_id."
+                            ),
+                            (
+                                "Otherwise, the server will create a new OpenCode session and "
+                                "cache the (identity, contextId)->session_id mapping in memory "
+                                "with TTL."
+                            ),
+                        ],
+                    },
+                ),
+                AgentExtension(
+                    uri="urn:opencode-a2a:opencode-session-query/v1",
+                    required=False,
+                    description=(
+                        "Support OpenCode session list/history queries via custom JSON-RPC methods "
+                        "on the agent's A2A JSON-RPC interface."
+                    ),
+                    params={
+                        "methods": SESSION_QUERY_METHODS,
+                        "pagination": {
+                            "mode": "page_size",
+                            "behavior": "passthrough",
+                            "params": ["page", "size"],
+                            "default_size": SESSION_QUERY_PAGINATION_DEFAULT_SIZE,
+                            "max_size": SESSION_QUERY_PAGINATION_MAX_SIZE,
+                        },
+                        "errors": {
+                            "business_codes": {
+                                "SESSION_NOT_FOUND": -32001,
+                                "UPSTREAM_UNREACHABLE": -32002,
+                                "UPSTREAM_HTTP_ERROR": -32003,
+                            },
+                            "error_data_fields": ["type", "session_id", "upstream_status"],
+                        },
+                        "result_envelope": {
+                            "fields": ["items", "pagination"],
+                            "items_field": "items",
+                            "pagination_field": "pagination",
+                        },
+                    },
+                ),
+            ],
+        ),
         skills=[
             AgentSkill(
                 id="opencode.chat",
@@ -96,15 +174,28 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     "Explain what this repository does.",
                     "Summarize the API endpoints in this project.",
                 ],
-            )
+            ),
+            AgentSkill(
+                id="opencode.sessions.query",
+                name="OpenCode Sessions Query",
+                description=(
+                    "Query OpenCode server sessions and message histories via JSON-RPC extension "
+                    "methods (see documentationUrl / extensions)."
+                ),
+                tags=["opencode", "sessions", "history"],
+                examples=[
+                    "List OpenCode sessions (method opencode.sessions.list).",
+                    "List messages for a session (method opencode.sessions.messages.list).",
+                ],
+            ),
         ],
-        additional_interfaces=[AgentInterface(transport=TransportProtocol.http_json, url=base_url)],
+        additional_interfaces=[
+            AgentInterface(transport=TransportProtocol.http_json, url=base_url),
+            AgentInterface(transport=TransportProtocol.jsonrpc, url=base_url),
+        ],
         security_schemes=security_schemes,
         security=security,
     )
-
-
-auth_scheme = HTTPBearer(auto_error=False)
 
 
 def _normalize_token_scopes(payload: dict[str, Any]) -> set[str]:
@@ -126,40 +217,42 @@ def _normalize_token_scopes(payload: dict[str, Any]) -> set[str]:
     return set()
 
 
-async def get_auth_dependency(
-    request: Request,
-    auth: Annotated[HTTPAuthorizationCredentials | None, Security(auth_scheme)],
-) -> Any:
-    settings: Settings = request.app.state.settings
-    # Public routes
-    if request.url.path == "/.well-known/agent-card.json" or request.method == "OPTIONS":
-        return None
+def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
+    @app.middleware("http")
+    async def bearer_auth(request: Request, call_next):
+        if request.method == "OPTIONS" or request.url.path in {
+            "/.well-known/agent-card.json",
+            "/.well-known/agent.json",
+        }:
+            return await call_next(request)
 
-    if not auth:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header.lower().startswith("bearer "):
+            return JSONResponse(
+                {"detail": "Missing authentication credentials"},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-    token = auth.credentials
+        token = auth_header.split(" ", 1)[1].strip()
 
-    if not settings.a2a_jwt_secret:
-        logger.error("A2A_JWT_SECRET is not set")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server authentication configuration error",
-        )
-    try:
-        decode_options: dict[str, Any] = {"require": ["exp"]}
-        payload = jwt.decode(
-            token,
-            settings.a2a_jwt_secret,
-            algorithms=[settings.a2a_jwt_algorithm],
-            audience=settings.a2a_jwt_audience,
-            issuer=settings.a2a_jwt_issuer,
-            options=decode_options,
-        )
+        try:
+            payload = jwt.decode(
+                token,
+                settings.a2a_jwt_secret,
+                algorithms=[settings.a2a_jwt_algorithm],
+                audience=settings.a2a_jwt_audience,
+                issuer=settings.a2a_jwt_issuer,
+                options={"require": ["exp"]},
+            )
+        except jwt.PyJWTError as exc:
+            logger.warning("Invalid JWT token: %s", str(exc))
+            return JSONResponse(
+                {"detail": "Invalid or expired token"},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         if settings.a2a_required_scopes:
             required_scopes = set(settings.a2a_required_scopes)
             token_scopes = _normalize_token_scopes(payload)
@@ -173,22 +266,20 @@ async def get_auth_dependency(
                     sorted(required_scopes),
                     sorted(token_scopes),
                 )
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Token missing required scopes",
+                return JSONResponse(
+                    {"detail": "Token missing required scopes"},
+                    status_code=403,
+                    headers={"WWW-Authenticate": "Bearer"},
                 )
-        return payload
-    except jwt.PyJWTError as e:
-        logger.warning("Invalid JWT token: %s", str(e))
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from e
+
+        identity = payload.get("sub") or payload.get("client_id") or payload.get("uid")
+        if isinstance(identity, str) and identity.strip():
+            request.state.user_identity = identity.strip()
+
+        return await call_next(request)
 
 
 def create_app(settings: Settings) -> FastAPI:
-    # Validate auth configuration
     if not settings.a2a_jwt_secret:
         raise RuntimeError("A2A_JWT_SECRET must be set")
     if settings.a2a_jwt_scope_match not in {"any", "all"}:
@@ -201,7 +292,12 @@ def create_app(settings: Settings) -> FastAPI:
         raise RuntimeError("A2A_JWT_ISSUER must be set")
 
     client = OpencodeClient(settings)
-    executor = OpencodeAgentExecutor(client, streaming_enabled=settings.a2a_streaming)
+    executor = OpencodeAgentExecutor(
+        client,
+        streaming_enabled=settings.a2a_streaming,
+        session_cache_ttl_seconds=settings.a2a_session_cache_ttl_seconds,
+        session_cache_maxsize=settings.a2a_session_cache_maxsize,
+    )
     task_store = InMemoryTaskStore()
     handler = DefaultRequestHandler(
         agent_executor=executor,
@@ -213,17 +309,37 @@ def create_app(settings: Settings) -> FastAPI:
         yield
         await client.close()
 
-    app = A2ARESTFastAPIApplication(
-        agent_card=build_agent_card(settings),
+    agent_card = build_agent_card(settings)
+
+    app = OpencodeSessionQueryJSONRPCApplication(
+        agent_card=agent_card,
         http_handler=handler,
-        context_builder=StreamingCallContextBuilder(),
-    ).build(
-        title=settings.a2a_title,
-        version=settings.a2a_version,
-        lifespan=lifespan,
-        dependencies=[Depends(get_auth_dependency)],
+        context_builder=IdentityAwareCallContextBuilder(),
+        opencode_client=client,
+        methods=SESSION_QUERY_METHODS,
+    ).build(title=settings.a2a_title, version=settings.a2a_version, lifespan=lifespan)
+
+    rest_adapter = RESTAdapter(
+        agent_card=agent_card,
+        http_handler=handler,
+        context_builder=IdentityAwareCallContextBuilder(),
     )
-    app.state.settings = settings
+    for route, callback in rest_adapter.routes().items():
+        app.add_api_route(route[0], callback, methods=[route[1]])
+
+    def _detect_opencode_session_query_method(body_bytes: bytes) -> str | None:
+        try:
+            payload = json.loads(body_bytes.decode("utf-8", errors="replace"))
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        method = payload.get("method")
+        if not isinstance(method, str):
+            return None
+        if method.startswith("opencode.sessions."):
+            return method
+        return None
 
     @app.middleware("http")
     async def log_payloads(request: Request, call_next):
@@ -231,7 +347,26 @@ def create_app(settings: Settings) -> FastAPI:
             return await call_next(request)
 
         body = await request.body()
-        request._body = body  # allow downstream to read again
+        request._body = body
+        path = request.url.path
+        sensitive_method = _detect_opencode_session_query_method(body)
+
+        if sensitive_method:
+            logger.debug("A2A request %s %s method=%s", request.method, path, sensitive_method)
+            response = await call_next(request)
+            if isinstance(response, StreamingResponse):
+                logger.debug("A2A response %s streaming method=%s", path, sensitive_method)
+                return response
+            response_body = getattr(response, "body", b"") or b""
+            logger.debug(
+                "A2A response %s status=%s bytes=%s method=%s",
+                path,
+                response.status_code,
+                len(response_body),
+                sensitive_method,
+            )
+            return response
+
         body_text = body.decode("utf-8", errors="replace")
         limit = settings.a2a_log_body_limit
         if limit > 0 and len(body_text) > limit:
@@ -260,19 +395,9 @@ def create_app(settings: Settings) -> FastAPI:
         )
         return response
 
+    add_auth_middleware(app, settings)
+
     return app
-
-
-try:
-    _default_settings = Settings.from_env()
-    app = create_app(_default_settings)
-    _default_app_error: Exception | None = None
-except Exception as e:
-    # Allow importing without env vars for tests, but fail fast in main().
-    _default_settings = None
-    _default_app_error = e
-    logger.warning("Could not create default app: %s", e)
-    app = None  # type: ignore[assignment]
 
 
 def _normalize_log_level(value: str) -> str:
@@ -292,35 +417,11 @@ def _configure_logging(level: str) -> None:
 
 
 def main() -> None:
-    settings = _default_settings
-    if settings is None:
-        try:
-            settings = Settings.from_env()
-        except Exception as e:
-            # Prefer the original import-time error if present.
-            if _default_app_error is not None:
-                logger.error("Failed to load settings: %s", _default_app_error)
-            else:
-                logger.error("Failed to load settings: %s", e)
-            raise SystemExit(1) from e
-
+    settings = Settings.from_env()
+    app = create_app(settings)
     log_level = _normalize_log_level(settings.a2a_log_level)
     _configure_logging(log_level)
-
-    runtime_app = app
-    if runtime_app is None:
-        try:
-            runtime_app = create_app(settings)
-        except Exception as e:
-            logger.error("Failed to create app: %s", e)
-            raise SystemExit(1) from e
-
-    uvicorn.run(
-        runtime_app,
-        host=settings.a2a_host,
-        port=settings.a2a_port,
-        log_level=log_level.lower(),
-    )
+    uvicorn.run(app, host=settings.a2a_host, port=settings.a2a_port, log_level=log_level.lower())
 
 
 if __name__ == "__main__":

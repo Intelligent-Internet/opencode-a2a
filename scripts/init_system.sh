@@ -13,7 +13,7 @@ UV_PYTHON_DIR_MODE="777"
 UV_PYTHON_DIR_FINAL_MODE="755"
 UV_PYTHON_DIR_GROUP=""
 UV_PYTHON_INSTALL_DIR="$UV_PYTHON_DIR"
-DATA_ROOT="/data/projects"
+DATA_ROOT="/data/opencode-a2a"
 OPENCODE_A2A_REPO="git@github.com:Intelligent-Internet/opencode-a2a-serve.git"
 OPENCODE_A2A_BRANCH="main"
 OPENCODE_INSTALL_CMD="curl -fsSL https://opencode.ai/install | bash"
@@ -537,7 +537,7 @@ fi
 log_done "Repository check completed."
 
 log_start "Checking A2A virtual environment..."
-if [[ -x "${OPENCODE_A2A_DIR}/.venv/bin/opencode-a2a" ]]; then
+if [[ -x "${OPENCODE_A2A_DIR}/.venv/bin/opencode-a2a-serve" ]]; then
   log_done "A2A venv already initialized; skip."
 else
   if ! command -v uv >/dev/null 2>&1; then

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Update the shared opencode-a2a environment (no git operations).
+# Update the shared opencode-a2a-serve environment (no git operations).
 # Requires env: OPENCODE_A2A_DIR.
 set -euo pipefail
 
@@ -20,7 +20,7 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Syncing opencode-a2a venv in ${OPENCODE_A2A_DIR}..."
+echo "Syncing opencode-a2a-serve venv in ${OPENCODE_A2A_DIR}..."
 (
   cd "$OPENCODE_A2A_DIR"
   uv sync --all-extras

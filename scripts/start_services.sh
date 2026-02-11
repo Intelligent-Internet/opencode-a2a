@@ -64,7 +64,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 kill_existing "${OPENCODE_CMD} serve" "opencode serve"
-kill_existing "uv run opencode-a2a" "opencode-a2a"
+kill_existing "uv run opencode-a2a-serve" "opencode-a2a-serve"
 
 echo "Starting opencode serve..."
 "$OPENCODE_CMD" serve --log-level "$OPENCODE_LOG_LEVEL" --print-logs >"$OPENCODE_LOG" 2>&1 &
@@ -75,9 +75,9 @@ echo "Starting A2A server on ${TAILSCALE_IP}:${A2A_PORT}..."
 A2A_HOST="$TAILSCALE_IP" \
 A2A_PUBLIC_URL="http://${TAILSCALE_IP}:${A2A_PORT}" \
 A2A_LOG_LEVEL="$A2A_LOG_LEVEL" \
-uv run opencode-a2a --log-level "$A2A_LOG_LEVEL" >"$A2A_LOG" 2>&1 &
+uv run opencode-a2a-serve --log-level "$A2A_LOG_LEVEL" >"$A2A_LOG" 2>&1 &
 A2A_PID=$!
-echo "opencode-a2a pid: ${A2A_PID} (log: $A2A_LOG)"
+echo "opencode-a2a-serve pid: ${A2A_PID} (log: $A2A_LOG)"
 
 cleanup() {
   echo "Stopping services..."
