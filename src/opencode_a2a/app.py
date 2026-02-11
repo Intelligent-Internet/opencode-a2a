@@ -4,6 +4,7 @@ import json
 import logging
 import secrets
 from contextlib import asynccontextmanager
+from hashlib import sha256
 from typing import TYPE_CHECKING
 
 import uvicorn
@@ -50,7 +51,12 @@ SESSION_QUERY_METHODS = {
 SESSION_BINDING_EXTENSION_URI = "urn:opencode-a2a:opencode-session-binding/v1"
 
 
-class StreamingCallContextBuilder(DefaultCallContextBuilder):
+def _token_fingerprint(token: str) -> str:
+    digest = sha256(token.encode("utf-8")).hexdigest()
+    return digest[:16]
+
+
+class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
     def build(self, request: Request) -> ServerCallContext:
         context = super().build(request)
         path = request.url.path
@@ -241,10 +247,9 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Set user identity for ownership validation.
-        # Even with a static token, we can use the token hash or just "default".
-        # If the token were a JWT, we would use the 'sub' claim here.
-        request.state.user_identity = "default"
+        # Identity for session ownership checks.
+        # Current auth is opaque bearer token, so we derive a stable non-reversible fingerprint.
+        request.state.user_identity = f"opaque:{_token_fingerprint(provided)}"
         return await call_next(request)
 
 
@@ -273,7 +278,7 @@ def create_app(settings: Settings) -> FastAPI:
     app = OpencodeSessionQueryJSONRPCApplication(
         agent_card=agent_card,
         http_handler=handler,
-        context_builder=DefaultCallContextBuilder(),
+        context_builder=IdentityAwareCallContextBuilder(),
         opencode_client=client,
         methods=SESSION_QUERY_METHODS,
     ).build(title=settings.a2a_title, version=settings.a2a_version, lifespan=lifespan)
@@ -281,7 +286,7 @@ def create_app(settings: Settings) -> FastAPI:
     rest_adapter = RESTAdapter(
         agent_card=agent_card,
         http_handler=handler,
-        context_builder=StreamingCallContextBuilder(),
+        context_builder=IdentityAwareCallContextBuilder(),
     )
     for route, callback in rest_adapter.routes().items():
         app.add_api_route(route[0], callback, methods=[route[1]])
