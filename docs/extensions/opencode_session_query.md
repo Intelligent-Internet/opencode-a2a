@@ -1,49 +1,56 @@
 # OpenCode Session Query Extension
 
-本扩展用于在不增加自定义 REST 端点的前提下，通过 **A2A JSON-RPC** 暴露 OpenCode serve 的：
+This extension exposes OpenCode session-query capabilities through **A2A
+JSON-RPC**, without adding custom REST endpoints:
 
-- 会话列表（sessions）
-- 指定会话的历史消息（messages）
+- session list
+- message history for a specific session
 
 ## Extension URI
 
 `urn:opencode-a2a:opencode-session-query/v1`
 
-## 鉴权
+## Authentication
 
-复用 A2A 服务本身的鉴权方式（本仓库默认 `Authorization: Bearer <A2A_BEARER_TOKEN>`）。
+Uses the same A2A auth mechanism as the service itself
+(default: `Authorization: Bearer <A2A_BEARER_TOKEN>`).
 
-## 最小 params 契约（Agent Card）
+## Minimal `params` Contract (Agent Card)
 
-Agent Card 的 `capabilities.extensions[]` 会声明：
+`capabilities.extensions[]` in Agent Card declares:
 
 - `uri`: `urn:opencode-a2a:opencode-session-query/v1`
 - `required`: `false`
-- `params.methods.list_sessions`: JSON-RPC method 名（默认 `opencode.sessions.list`）
-- `params.methods.get_session_messages`: JSON-RPC method 名（默认 `opencode.sessions.messages.list`）
-- `params.pagination`: 明确分页契约（见下方说明），仅支持 `page/size`
-- `params.errors`: 业务错误码与 error.data 的稳定字段
-- `params.result_envelope`: 返回 envelope 契约（避免客户端绑定 OpenCode 私有 schema）
+- `params.methods.list_sessions`: JSON-RPC method name
+  (default `opencode.sessions.list`)
+- `params.methods.get_session_messages`: JSON-RPC method name
+  (default `opencode.sessions.messages.list`)
+- `params.pagination`: explicit pagination contract (`page/size` only)
+- `params.errors`: business error codes and stable `error.data` fields
+- `params.result_envelope`: stable response envelope contract
 
-说明：
+Notes:
 
-- `directory` 参数由服务端配置（`OPENCODE_DIRECTORY`）控制，客户端通过 `query` 传入的 `directory` 会被忽略（不可覆盖）。
-- JSON-RPC 调用 URL 不建议由 base_url 推导：应从 Agent Card 的 `additional_interfaces[]` 中选择 `transport==jsonrpc` 的 `url`。
+- `directory` is controlled by server config (`OPENCODE_DIRECTORY`); client
+  `query.directory` is ignored.
+- Do not infer JSON-RPC URL from a base URL string. Read it from Agent Card
+  `additional_interfaces[]` where `transport == jsonrpc`.
 
-## 请求格式（JSON-RPC）
+## Request Format (JSON-RPC)
 
-客户端使用 A2A JSON-RPC（默认 `POST /`），调用 extension 声明的方法。
+Use A2A JSON-RPC (default `POST /`) and call extension methods.
 
-### 1) list_sessions
+### 1) `list_sessions`
 
 method: `opencode.sessions.list`
 
-params（可选）：
+params (optional):
 
-- `query`: object，可选；透传 query params 给 OpenCode serve（key/value 建议为字符串）
-- `page/size`: 可选；作为 query params 透传（仅支持 page/size；`size` 最大值见 Agent Card `params.pagination.max_size`）
+- `query`: object, forwarded as query params to OpenCode
+- `page/size`: forwarded query params (`size` max is exposed via
+  Agent Card `params.pagination.max_size`)
 
-示例：
+Example:
 
 ```json
 {
@@ -58,17 +65,17 @@ params（可选）：
 }
 ```
 
-### 2) get_session_messages
+### 2) `get_session_messages`
 
 method: `opencode.sessions.messages.list`
 
-params：
+params:
 
-- `session_id`: string，必填
-- `query`: object，可选
-- `page/size`: 可选
+- `session_id`: string, required
+- `query`: object, optional
+- `page/size`: optional
 
-示例：
+Example:
 
 ```json
 {
@@ -83,9 +90,9 @@ params：
 }
 ```
 
-## 响应格式（JSON-RPC）
+## Response Format (JSON-RPC)
 
-服务端返回标准 JSON-RPC response：
+Standard JSON-RPC response:
 
 ```json
 {
@@ -102,15 +109,22 @@ params：
 }
 ```
 
-其中：
+Where:
 
-- `result.items` 始终为数组：
-  - `opencode.sessions.list`：items 为 **A2A Task** 数组（`task.id == task.contextId == opencode session_id`；`status.state` 固定为 `completed`）。
-  - `opencode.sessions.messages.list`：items 为 **A2A Message** 数组（`message.contextId == opencode session_id`）。
-  - OpenCode 原始 item 不丢弃，放在 `metadata.opencode.raw` 中。
-  - 会话标题：`opencode.sessions.list` 会在 `metadata.opencode.title` 提供一个可直接渲染的标题；优先从 OpenCode session payload 提取，若无则为占位值 `Untitled session`。
-- `result.pagination` 为稳定的分页 envelope（page/size 为空表示本次请求未显式传入）。
+- `result.items` is always an array:
+  - `opencode.sessions.list`: **A2A Task** array
+    (`task.id == task.contextId == opencode session_id`,
+    `status.state == completed`)
+  - `opencode.sessions.messages.list`: **A2A Message** array
+    (`message.contextId == opencode session_id`)
+  - raw OpenCode items are preserved in `metadata.opencode.raw`
+  - session title is exposed in `metadata.opencode.title` (fallback:
+    `Untitled session`)
+- `result.pagination` is a stable pagination envelope
+  (null `page/size` means caller did not pass those params)
 
-## 日志与隐私
+## Logging and Privacy
 
-当 `A2A_LOG_PAYLOADS=true` 时，若检测到 `method=opencode.sessions.*` 的 JSON-RPC 请求，本服务不会将请求/响应 body 写入日志，以避免泄露聊天历史内容。
+When `A2A_LOG_PAYLOADS=true`, if request method matches
+`opencode.sessions.*`, this service suppresses request/response body logging to
+reduce chat-history exposure risk.

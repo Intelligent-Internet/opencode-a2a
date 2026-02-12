@@ -1,58 +1,75 @@
 # opencode-a2a-serve
 
-这是一个将 OpenCode 服务封装为 A2A 服务的适配层（FastAPI + A2A SDK），对外提供：
+`opencode-a2a-serve` is an adapter layer that exposes OpenCode as an A2A service
+(FastAPI + A2A SDK). It provides:
 
-- A2A HTTP+JSON（REST）：`/v1/message:send`、`/v1/message:stream`、`/v1/tasks/{task_id}:resubscribe` 等
-- A2A JSON-RPC：`POST /`（用于扩展能力，例如会话查询）
+- A2A HTTP+JSON (REST): `/v1/message:send`, `/v1/message:stream`,
+  `/v1/tasks/{task_id}:resubscribe`, and related endpoints
+- A2A JSON-RPC: `POST /` (used for extensions such as session queries)
 
-它本质上是一个“协议桥接”与“安全边界收口”：将 A2A 的 message/task 语义转发到 OpenCode 的 session/message/event 接口，并补齐鉴权、可观测与续聊契约。
+In practice, this service is a protocol bridge and security boundary:
+it maps A2A message/task semantics to OpenCode session/message/event APIs,
+while adding authentication, observability, and session-continuation contracts.
 
-> 重要：服务启动 **必须** 设置 `A2A_BEARER_TOKEN`（见 `docs/guide.md`）。
+> Important: `A2A_BEARER_TOKEN` is required for startup.
+> See `docs/guide.md`.
 
-## 安全边界（必须阅读）
+## Security Boundary (Read First)
 
-- 当前实现与部署方式下，`opencode` 进程需要读取 LLM provider API token（例如 `GOOGLE_GENERATIVE_AI_API_KEY`）。
-- 这意味着 `opencode agent` 存在通过套话、拼接等方式泄露敏感环境变量的风险，**不能视为“agent 无法获知 key”**。
-- 因此，`opencode-a2a-serve` 当前仅建议用于内部实例：少数可信成员共用 repo 与 LLM key。
-- 若要引入到 cgnext 作为通用能力，必须先审视并定义 LLM provider token 的安全方案（如租户隔离、代理托管、审计与轮换策略）。
+- In the current architecture, the `opencode` process must read LLM provider API
+  credentials (for example `GOOGLE_GENERATIVE_AI_API_KEY`).
+- Because of that, an `opencode agent` may leak sensitive environment values
+  through prompt injection or indirect exfiltration patterns.
+- Do not treat this deployment model as a hard guarantee that provider keys are
+  inaccessible to agent behavior.
+- This project is best suited for trusted/internal environments until a stronger
+  token isolation model is implemented (for example tenant isolation, hosted
+  proxy credentials, auditing, and rotation/revocation strategy).
 
-额外说明：
-- A2A 服务侧使用 Bearer Token 做最小鉴权收口（`A2A_BEARER_TOKEN`）。
-- 开启 `A2A_LOG_PAYLOADS=true` 可能记录请求/响应正文；但对 `opencode.sessions.*` 的 JSON-RPC 会话查询，服务会自动避免写入 body 日志（防止泄露聊天历史）。
+Additional notes:
 
-## 能力概览
+- The A2A layer enforces bearer-token authentication via `A2A_BEARER_TOKEN`.
+- When `A2A_LOG_PAYLOADS=true`, payload logs may include request/response
+  bodies. For `opencode.sessions.*` JSON-RPC queries, request/response body
+  logging is intentionally suppressed to reduce chat-history exposure risk.
 
-- A2A 标准对话：将 `message:send` / `message:stream` 转发到 OpenCode session/message。
-- SSE Streaming：`/v1/message:stream` 输出 `TaskArtifactUpdateEvent` 增量，结束时发送 `TaskStatusUpdateEvent(final=true)`。
-- 断线续订：SSE 断线后可 `POST /v1/tasks/{task_id}:resubscribe` 重新订阅事件流（task 未进入终态时）。
-- 续聊契约（绑定历史 OpenCode session）：客户端通过 `metadata.opencode_session_id` 显式指定目标 session（见下文与 `docs/guide.md`）。
-- OpenCode 会话查询（A2A Extension via JSON-RPC）：`opencode.sessions.list` / `opencode.sessions.messages.list`（见 `docs/guide.md`）。
+## Capabilities
 
-## 快速启动
+- Standard A2A chat: forwards `message:send` / `message:stream` to OpenCode.
+- SSE streaming: `/v1/message:stream` emits incremental
+  `TaskArtifactUpdateEvent`, then `TaskStatusUpdateEvent(final=true)`.
+- Re-subscribe after disconnect: `POST /v1/tasks/{task_id}:resubscribe`
+  (available while the task is not in a terminal state).
+- Session continuation contract: clients can explicitly bind to an existing
+  OpenCode session via `metadata.opencode_session_id`.
+- OpenCode session query extension (JSON-RPC):
+  `opencode.sessions.list` / `opencode.sessions.messages.list`.
 
-1) 先启动 OpenCode：
+## Quick Start
+
+1. Start OpenCode:
 
 ```bash
 opencode serve
 ```
 
-2) 安装依赖：
+2. Install dependencies:
 
 ```bash
 uv sync --all-extras
 ```
 
-3) 启动 A2A 服务：
+3. Start A2A service:
 
 ```bash
 A2A_BEARER_TOKEN=dev-token uv run opencode-a2a-serve
 ```
 
-默认监听：`http://127.0.0.1:8000`
+Default listen address: `http://127.0.0.1:8000`
 
-A2A Agent Card：`http://127.0.0.1:8000/.well-known/agent-card.json`
+A2A Agent Card: `http://127.0.0.1:8000/.well-known/agent-card.json`
 
-最小调用示例：
+Minimal request example:
 
 ```bash
 curl -sS http://127.0.0.1:8000/v1/message:send \
@@ -62,34 +79,40 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
     "message": {
       "messageId": "msg-1",
       "role": "ROLE_USER",
-      "content": [{"text": "你好，介绍下这个仓库"}]
+      "content": [{"text": "Explain what this repository does."}]
     }
   }'
 ```
 
-## 配置速览
+## Key Configuration
 
-完整配置见 `docs/guide.md`。这里列出最关键的几项：
+For full configuration, see `docs/guide.md`.
+Most commonly used options:
 
-- `OPENCODE_BASE_URL`：OpenCode 地址（默认 `http://127.0.0.1:4096`）
-- `OPENCODE_DIRECTORY`：OpenCode 的 directory 参数（可选；服务端控制，客户端不可覆盖）
-- `A2A_BEARER_TOKEN`：必填；用于 Bearer Token 校验
-- `A2A_PUBLIC_URL`：对外可访问的 A2A 地址前缀（用于 Agent Card 的 `url`/interfaces；反代/域名场景建议设置）
-- `A2A_STREAMING`：是否启用 SSE streaming（默认 `true`）
-- `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`：`(identity, contextId) -> session_id` 内存映射缓存配置（用于未显式绑定 session 的续聊）
+- `OPENCODE_BASE_URL`: OpenCode base URL (default: `http://127.0.0.1:4096`)
+- `OPENCODE_DIRECTORY`: OpenCode `directory` parameter (optional; controlled by
+  server and cannot be overridden by clients)
+- `A2A_BEARER_TOKEN`: required bearer token for authentication
+- `A2A_PUBLIC_URL`: externally reachable URL prefix exposed in Agent Card
+- `A2A_STREAMING`: enables SSE streaming (default: `true`)
+- `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`:
+  in-memory `(identity, contextId) -> session_id` mapping cache settings
 
-## 续聊契约（绑定到历史 OpenCode session）
+## Session Continuation Contract
 
-当下游希望“选择一个历史 OpenCode session 后继续对话”时，应在每次 invoke 的请求 `metadata` 中显式传入：
+To continue an existing OpenCode conversation, pass this metadata key on every
+invoke request:
 
-- `metadata.opencode_session_id`: 目标 OpenCode session id（例如 `ses_xxx`）
+- `metadata.opencode_session_id`: target OpenCode session ID (for example
+  `ses_xxx`)
 
-服务端行为：
+Server behavior:
 
-- 若提供 `metadata.opencode_session_id`：优先发送消息到该 session（不新建 session）。
-- 若未提供：服务端会创建新 session，并在内存中缓存 `(identity, contextId) -> session_id`（带 TTL 与最大容量限制）。
+- If provided, the server sends the message to the specified session.
+- If omitted, the server creates a new session and caches
+  `(identity, contextId) -> session_id` with TTL and max-size bounds.
 
-最小 curl 示例：
+Example:
 
 ```bash
 curl -sS http://127.0.0.1:8000/v1/message:send \
@@ -99,7 +122,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
     "message": {
       "messageId": "msg-continue-1",
       "role": "ROLE_USER",
-      "content": [{"text": "继续刚才的对话：请把上次的结论再总结一下"}]
+      "content": [{"text": "Continue our previous conversation and summarize the last conclusion."}]
     },
     "metadata": {
       "opencode_session_id": "<session_id>"
@@ -107,15 +130,18 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
   }'
 ```
 
-## OpenCode 会话查询（A2A Extension via JSON-RPC）
+## OpenCode Session Query (A2A Extension via JSON-RPC)
 
-本服务通过 A2A Extension 的方式暴露“OpenCode 会话列表/历史消息查询”能力，不额外提供自定义 REST 端点。
+The service exposes OpenCode session list/history queries through A2A extension
+methods on the JSON-RPC endpoint (`POST /`), without introducing custom REST
+endpoints.
 
-- 调用方式：通过 A2A JSON-RPC（默认 `POST /`）调用扩展方法
-- 鉴权：复用同一个 `Authorization: Bearer <token>`
-- 返回：`result.items` 为 A2A 标准对象（会话列表为 Task；消息历史为 Message）；OpenCode 原始 item 放在 `metadata.opencode.raw`
+- Auth: same `Authorization: Bearer <token>`
+- Result: `result.items` always contains A2A standard objects
+  (Task for session list, Message for history)
+- OpenCode raw records are preserved in `metadata.opencode.raw`
 
-会话列表（`opencode.sessions.list`）：
+List sessions (`opencode.sessions.list`):
 
 ```bash
 curl -sS http://127.0.0.1:8000/ \
@@ -129,7 +155,7 @@ curl -sS http://127.0.0.1:8000/ \
   }'
 ```
 
-会话消息历史（`opencode.sessions.messages.list`）：
+List messages in a session (`opencode.sessions.messages.list`):
 
 ```bash
 curl -sS http://127.0.0.1:8000/ \
@@ -147,13 +173,16 @@ curl -sS http://127.0.0.1:8000/ \
   }'
 ```
 
-## 文档
+## Documentation
 
-- 使用指南（配置/鉴权/Streaming/客户端示例）：`docs/guide.md`
-- 部署（systemd 多实例）：`docs/deployment.md`
-- 本地/临时脚本：`scripts/README.md`
+- Usage guide (configuration, auth, streaming, client examples):
+  `docs/guide.md`
+- systemd multi-instance deployment:
+  `docs/deployment.md`
+- local and operational scripts:
+  `scripts/README.md`
 
-## 开发与回归
+## Development & Validation
 
 ```bash
 uv run pre-commit run --all-files

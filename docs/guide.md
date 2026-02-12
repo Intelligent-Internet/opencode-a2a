@@ -1,69 +1,86 @@
-# 使用指南
+# Usage Guide
 
-本指南集中说明配置、鉴权、接口行为、Streaming 断线续订，以及 A2A 客户端示例。
+This guide covers configuration, authentication, API behavior, streaming
+re-subscription, and A2A client usage examples.
 
-## 环境变量
+## Environment Variables
 
-- `OPENCODE_BASE_URL`：OpenCode 地址，默认 `http://127.0.0.1:4096`
-- `OPENCODE_DIRECTORY`：OpenCode directory 参数（可选）
-- `OPENCODE_PROVIDER_ID`：模型 providerID（可选）
-- `OPENCODE_MODEL_ID`：模型 modelID（可选）
-- `OPENCODE_AGENT`：OpenCode agent 名称（可选）
-- `OPENCODE_SYSTEM`：system prompt（可选）
-- `OPENCODE_VARIANT`：variant（可选）
-- `OPENCODE_TIMEOUT`：请求超时秒数，默认 `120`（systemd 部署模板默认写入 `300`）
-- `OPENCODE_TIMEOUT_STREAM`：streaming 请求超时秒数（可选；不设置则不限制）
+- `OPENCODE_BASE_URL`: OpenCode base URL, default `http://127.0.0.1:4096`
+- `OPENCODE_DIRECTORY`: OpenCode `directory` parameter (optional)
+- `OPENCODE_PROVIDER_ID`: model `providerID` (optional)
+- `OPENCODE_MODEL_ID`: model `modelID` (optional)
+- `OPENCODE_AGENT`: OpenCode agent name (optional)
+- `OPENCODE_SYSTEM`: system prompt (optional)
+- `OPENCODE_VARIANT`: variant (optional)
+- `OPENCODE_TIMEOUT`: request timeout in seconds, default `120`
+  (systemd deployment template writes `300` by default)
+- `OPENCODE_TIMEOUT_STREAM`: streaming request timeout in seconds (optional;
+  unset means no explicit stream timeout)
 
-- `A2A_PUBLIC_URL`：对外可访问的 A2A 地址前缀，默认 `http://127.0.0.1:8000`
-- `A2A_TITLE`：Agent 名称，默认 `OpenCode A2A`
-- `A2A_DESCRIPTION`：Agent 描述
-- `A2A_VERSION`：Agent 版本号
-- `A2A_PROTOCOL_VERSION`：A2A 协议版本，默认 `0.3.0`
-- `A2A_HOST`：监听地址，默认 `127.0.0.1`
-- `A2A_PORT`：监听端口，默认 `8000`
-- `A2A_BEARER_TOKEN`：必填；用于 Bearer Token 校验，未设置则服务拒绝启动
-- `A2A_STREAMING`：是否启用 SSE streaming（`/v1/message:stream`），默认 `true`
-- `A2A_LOG_LEVEL`：A2A 服务日志级别（`DEBUG/INFO/WARNING/ERROR`），默认 `INFO`
-- `A2A_LOG_PAYLOADS`：是否记录 A2A 与 OpenCode 的请求/响应正文，默认 `false`
-- `A2A_LOG_BODY_LIMIT`：日志正文最大长度，默认 `0`（不截断）
-- `A2A_DOCUMENTATION_URL`：可选；用于在 Agent Card 的 `documentationUrl` 字段中暴露文档地址（建议指向本仓库或内部文档站点）
-- `A2A_OAUTH_AUTHORIZATION_URL`：OAuth2 授权地址（预留配置）
-- `A2A_OAUTH_TOKEN_URL`：OAuth2 token 地址（预留配置）
-- `A2A_OAUTH_METADATA_URL`：OAuth2 元数据地址（可选，预留配置）
-- `A2A_OAUTH_SCOPES`：OAuth2 scopes，逗号分隔（预留配置）
-- `A2A_SESSION_CACHE_TTL_SECONDS`：`(identity, contextId) -> OpenCode session_id` 的内存缓存 TTL（秒），默认 `3600`
-- `A2A_SESSION_CACHE_MAXSIZE`：会话映射缓存最大条数，默认 `10000`
+- `A2A_PUBLIC_URL`: externally reachable A2A URL prefix,
+  default `http://127.0.0.1:8000`
+- `A2A_TITLE`: agent name, default `OpenCode A2A`
+- `A2A_DESCRIPTION`: agent description
+- `A2A_VERSION`: agent version
+- `A2A_PROTOCOL_VERSION`: A2A protocol version, default `0.3.0`
+- `A2A_HOST`: bind host, default `127.0.0.1`
+- `A2A_PORT`: bind port, default `8000`
+- `A2A_BEARER_TOKEN`: required; service fails fast if unset
+- `A2A_STREAMING`: enable SSE streaming (`/v1/message:stream`), default `true`
+- `A2A_LOG_LEVEL`: `DEBUG/INFO/WARNING/ERROR`, default `INFO`
+- `A2A_LOG_PAYLOADS`: log A2A/OpenCode payload bodies, default `false`
+- `A2A_LOG_BODY_LIMIT`: payload log body size limit, default `0` (no truncation)
+- `A2A_DOCUMENTATION_URL`: optional URL exposed via Agent Card
+  `documentationUrl`
+- `A2A_OAUTH_AUTHORIZATION_URL`: OAuth2 authorization URL (declarative only)
+- `A2A_OAUTH_TOKEN_URL`: OAuth2 token URL (declarative only)
+- `A2A_OAUTH_METADATA_URL`: OAuth2 metadata URL (optional)
+- `A2A_OAUTH_SCOPES`: comma-separated OAuth2 scopes (declarative only)
+- `A2A_SESSION_CACHE_TTL_SECONDS`: in-memory TTL for
+  `(identity, contextId) -> OpenCode session_id`, default `3600`
+- `A2A_SESSION_CACHE_MAXSIZE`: max cache entries, default `10000`
 
-## 服务行为说明
+## Service Behavior
 
-- 该服务将 A2A 的 `message:send` 请求转发为 OpenCode 的 session/message 调用。
-- 任务状态默认返回 `input-required`，便于继续多轮对话。
-- Streaming（`/v1/message:stream`）会输出 `TaskArtifactUpdateEvent` 增量（`append=true`），结束时发送 `TaskStatusUpdateEvent(final=true)`；完整内容由 artifact 承载，非 streaming 调用仍返回 `Task`。
-- 需在请求中携带 `Authorization: Bearer <token>`，否则返回 401（Agent Card 不受鉴权限制）。
-- **错误处理与反馈**：
-  - 输入校验失败、上下文缺失（缺失 `task_id` 或 `context_id`）或内部处理异常时，服务会尽可能通过 `event_queue` 返回标准 A2A 失败事件。
-  - 失败事件将包含具体的错误信息，并根据请求类型返回 `failed` 状态。
-  - 这确保了调用方能够接收到明确的反馈，避免因未捕获异常导致的挂起或难以诊断的问题。
-- **目录校验与归一化**：
-  - 支持通过请求 `metadata.directory` 指定工作目录，但该路径必须落在 `${OPENCODE_DIRECTORY}`（或服务运行根目录）之内。
-  - 所有路径均会经过 `realpath` 归一化处理，防止通过 `..` 或符号链接绕过边界。
-  - 若 `A2A_ALLOW_DIRECTORY_OVERRIDE` 设置为 `false`（默认开启），则仅允许使用默认工作目录，任何不同的路径请求将被拒绝。
-  - 校验失败将通过事件队列反馈 `failed` 状态及错误说明。
-- OAuth2 相关配置目前仅用于 Agent Card 声明，鉴权校验需后续接入。
-- 仅当同时设置 `A2A_OAUTH_AUTHORIZATION_URL` 与 `A2A_OAUTH_TOKEN_URL` 时，Agent Card 才会声明 OAuth2 scheme。
+- The service forwards A2A `message:send` to OpenCode session/message calls.
+- Task state defaults to `input-required` to support multi-turn interactions.
+- Streaming (`/v1/message:stream`) emits incremental
+  `TaskArtifactUpdateEvent` (`append=true`) and then
+  `TaskStatusUpdateEvent(final=true)`. Full output content is carried in
+  artifacts; non-streaming requests return a `Task` directly.
+- Requests require `Authorization: Bearer <token>`; otherwise `401` is
+  returned. Agent Card endpoints are public.
+- Error handling:
+  - For validation failures, missing context (`task_id`/`context_id`), or
+    internal errors, the service attempts to return standard A2A failure events
+    via `event_queue`.
+  - Failure events include concrete error details with `failed` state.
+- Directory validation and normalization:
+  - Clients can pass `metadata.directory`, but it must stay inside
+    `${OPENCODE_DIRECTORY}` (or service runtime root if not configured).
+  - All paths are normalized with `realpath` to prevent `..` or symlink
+    boundary bypass.
+  - If `A2A_ALLOW_DIRECTORY_OVERRIDE=false`, only the default directory is
+    accepted.
+- OAuth2 settings are currently declarative in Agent Card only; runtime token
+  verification for OAuth2 is not implemented yet.
+- Agent Card declares OAuth2 only when both
+  `A2A_OAUTH_AUTHORIZATION_URL` and `A2A_OAUTH_TOKEN_URL` are set.
 
-## 续聊契约（绑定到历史 OpenCode session）
+## Session Continuation Contract
 
-当下游希望“选择一个历史 OpenCode session 后继续对话”时，应在每次 invoke 的请求 `metadata` 中显式传入：
+To continue a historical OpenCode session, include this metadata key in each
+invoke request:
 
-- `metadata.opencode_session_id`: 目标 OpenCode session id（例如 `ses_xxx`）
+- `metadata.opencode_session_id`: target OpenCode session ID
 
-服务端行为：
+Server behavior:
 
-- 若提供 `metadata.opencode_session_id`：优先发送消息到该 session（不新建 session）。
-- 若未提供：服务端会创建新 session，并在内存中缓存 `(identity, contextId) -> session_id`（带 TTL 与最大容量限制）。
+- If provided, the request is sent to that exact OpenCode session.
+- If omitted, a new session is created and cached by
+  `(identity, contextId) -> session_id`.
 
-最小 curl 示例：
+Minimal example:
 
 ```bash
 curl -sS http://127.0.0.1:8000/v1/message:send \
@@ -73,7 +90,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
     "message": {
       "messageId": "msg-continue-1",
       "role": "ROLE_USER",
-      "content": [{"text": "继续刚才的对话：请把上次的结论再总结一下"}]
+      "content": [{"text": "Continue the previous session and restate the key conclusion."}]
     },
     "metadata": {
       "opencode_session_id": "<session_id>"
@@ -81,17 +98,26 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
   }'
 ```
 
-## OpenCode 会话查询（A2A Extension）
+## OpenCode Session Query (A2A Extension)
 
-本服务通过 A2A Extension 的方式暴露“OpenCode 会话列表/历史消息查询”能力，不额外提供自定义 REST 端点。
+This service exposes OpenCode session list and message-history queries via A2A
+JSON-RPC extension methods (default endpoint: `POST /`). No extra custom REST
+endpoint is introduced.
 
-- 触发方式：通过 **A2A JSON-RPC**（默认 `POST /`）调用扩展方法。
-- 鉴权：复用同一个 `Authorization: Bearer <token>`。
-- 安全：即使开启 `A2A_LOG_PAYLOADS=true`，当检测到 `method=opencode.sessions.*` 的 JSON-RPC 请求时，服务也不会将请求/响应 body 写入日志（避免泄露聊天历史）。
-- 调用 URL：建议从 Agent Card 的 `additional_interfaces[]` 中选择 `transport=jsonrpc` 的 `url`，避免自行拼接推导。
-- 返回格式：`result.items` 始终为数组，且 item 为 A2A 标准对象（会话列表为 Task，且 `status.state=completed`；消息历史为 Message）。OpenCode 原始 item 放在 `metadata.opencode.raw`；会话标题可直接读取 `metadata.opencode.title`（无标题时为占位值 `Untitled session`）。
+- Trigger: call extension methods through A2A JSON-RPC
+- Auth: same `Authorization: Bearer <token>`
+- Privacy guard: when `A2A_LOG_PAYLOADS=true`, request/response bodies are still
+  suppressed for `method=opencode.sessions.*`
+- Endpoint discovery: prefer `additional_interfaces[]` with
+  `transport=jsonrpc` from Agent Card
+- Result format:
+  - `result.items` is always an array of A2A standard objects
+  - session list => `Task` with `status.state=completed`
+  - message history => `Message`
+  - raw upstream payload is preserved at `metadata.opencode.raw`
+  - session title is available at `metadata.opencode.title`
 
-### 会话列表（method: opencode.sessions.list）
+### Session List (`opencode.sessions.list`)
 
 ```bash
 curl -sS http://127.0.0.1:8000/ \
@@ -105,7 +131,7 @@ curl -sS http://127.0.0.1:8000/ \
   }'
 ```
 
-### 会话消息历史（method: opencode.sessions.messages.list）
+### Session Messages (`opencode.sessions.messages.list`)
 
 ```bash
 curl -sS http://127.0.0.1:8000/ \
@@ -123,7 +149,7 @@ curl -sS http://127.0.0.1:8000/ \
   }'
 ```
 
-## 鉴权示例（curl）
+## Authentication Example (curl)
 
 ```bash
 curl -sS http://127.0.0.1:8000/v1/message:send \
@@ -133,18 +159,20 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
     "message": {
       "messageId": "msg-1",
       "role": "ROLE_USER",
-      "content": [{"text": "你好，介绍下这个仓库"}]
+      "content": [{"text": "Explain what this repository does."}]
     }
   }'
 ```
 
-## Streaming 断线续订（resubscribe）
+## Streaming Re-Subscription (`resubscribe`)
 
-当 SSE 连接中断时，可通过 `POST /v1/tasks/{task_id}:resubscribe` 重新订阅事件流（需保持 task 未进入终态）。
+If an SSE connection drops, use `POST /v1/tasks/{task_id}:resubscribe` to
+re-subscribe while the task is still non-terminal.
 
-## A2A 客户端示例（a2a-sdk + AuthInterceptor）
+## A2A Client Example (`a2a-sdk` + `AuthInterceptor`)
 
-> 说明：a2a-sdk 0.3.17 的 REST transport 未应用 interceptors，本项目提供了修正封装。
+> Note: in `a2a-sdk 0.3.17`, the REST transport does not apply interceptors.
+> This project provides a patched wrapper.
 
 ```python
 import asyncio
@@ -196,7 +224,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-## 代码规范
+## Development Setup
 
 ```bash
 uv run pre-commit install
