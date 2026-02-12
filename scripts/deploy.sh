@@ -5,7 +5,7 @@
 # Optional env: GOOGLE_GENERATIVE_AI_API_KEY (persisted into opencode.secret.env for opencode@ service).
 # Requires: sudo access to write systemd units and create users/directories.
 #
-# Key environment variables (optional):
+# Key environment variables:
 # - GH_TOKEN/A2A_BEARER_TOKEN (required secrets)
 # - GOOGLE_GENERATIVE_AI_API_KEY (optional secret)
 # - OPENCODE_A2A_DIR: path to opencode-a2a-serve repo (default: /opt/opencode-a2a/opencode-a2a-serve)
