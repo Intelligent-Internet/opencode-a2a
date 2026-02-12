@@ -1,7 +1,6 @@
 # OpenCode Session Query Extension
 
-This extension exposes OpenCode session-query capabilities through **A2A
-JSON-RPC**, without adding custom REST endpoints:
+This extension exposes OpenCode session-query capabilities through **A2A JSON-RPC**, without adding custom REST endpoints:
 
 - session list
 - message history for a specific session
@@ -12,8 +11,7 @@ JSON-RPC**, without adding custom REST endpoints:
 
 ## Authentication
 
-Uses the same A2A auth mechanism as the service itself
-(default: `Authorization: Bearer <A2A_BEARER_TOKEN>`).
+Uses the same A2A auth mechanism as the service itself (default: `Authorization: Bearer <A2A_BEARER_TOKEN>`).
 
 ## Minimal `params` Contract (Agent Card)
 
@@ -125,6 +123,4 @@ Where:
 
 ## Logging and Privacy
 
-When `A2A_LOG_PAYLOADS=true`, if request method matches
-`opencode.sessions.*`, this service suppresses request/response body logging to
-reduce chat-history exposure risk.
+When `A2A_LOG_PAYLOADS=true`, if request method matches `opencode.sessions.*`, this service suppresses request/response body logging to reduce chat-history exposure risk.

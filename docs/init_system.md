@@ -1,8 +1,6 @@
 # System Bootstrap Script (`init_system.sh`)
 
-This document describes `scripts/init_system.sh`.
-The script prepares shared system prerequisites for systemd-based OpenCode + A2A
-deployment. It is idempotent: completed steps are automatically skipped.
+This document describes `scripts/init_system.sh`. The script prepares shared system prerequisites for systemd-based OpenCode + A2A deployment. It is idempotent: completed steps are automatically skipped.
 
 ## Usage
 
@@ -12,9 +10,7 @@ Run directly:
 ./scripts/init_system.sh
 ```
 
-The script does not accept runtime arguments.
-To adjust paths, feature toggles, or versions, edit the constants at the top of
-`scripts/init_system.sh`.
+The script does not accept runtime arguments. To adjust paths, feature toggles, or versions, edit the constants at the top of `scripts/init_system.sh`.
 
 ## What It Does
 
@@ -33,8 +29,7 @@ To adjust paths, feature toggles, or versions, edit the constants at the top of
 
 ## Customization
 
-Edit the constant block at the top of `scripts/init_system.sh`.
-Common values:
+Edit the constant block at the top of `scripts/init_system.sh`. Common values:
 
 - Paths: `OPENCODE_CORE_DIR`, `SHARED_WRAPPER_DIR`, `UV_PYTHON_DIR`,
   `DATA_ROOT`

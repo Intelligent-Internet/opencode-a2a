@@ -1,8 +1,6 @@
 # Deployment Guide (systemd Multi-Instance)
 
-This guide explains how to deploy OpenCode + A2A as isolated per-project
-instances (two processes per project) on one host while sharing core runtime
-artifacts.
+This guide explains how to deploy OpenCode + A2A as isolated per-project instances (two processes per project) on one host while sharing core runtime artifacts.
 
 ## Prerequisites
 
@@ -54,8 +52,7 @@ Notes:
 
 ## Directory Layout
 
-Each project instance gets an isolated directory under `DATA_ROOT`
-(default `/data/opencode-a2a/<project>`):
+Each project instance gets an isolated directory under `DATA_ROOT` (default `/data/opencode-a2a/<project>`):
 
 - `workspace/`: writable OpenCode workspace
 - `config/`: root-only config directory for env files
@@ -82,17 +79,11 @@ GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
 ./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1 a2a_public_url=https://a2a.example.com
 ```
 
-Supported CLI keys (case-insensitive):
-`project`/`project_name`, `a2a_port`, `a2a_host`, `a2a_public_url`,
-`opencode_provider_id`, `opencode_model_id`, `repo_url`, `repo_branch`,
-`opencode_timeout`, `opencode_timeout_stream`, `git_identity_name`,
-`git_identity_email`, `update_a2a`, `force_restart`.
+Supported CLI keys (case-insensitive): `project`/`project_name`, `a2a_port`, `a2a_host`, `a2a_public_url`, `opencode_provider_id`, `opencode_model_id`, `repo_url`, `repo_branch`, `opencode_timeout`, `opencode_timeout_stream`, `git_identity_name`, `git_identity_email`, `update_a2a`, `force_restart`.
 
-Required secret env vars:
-`GH_TOKEN`, `A2A_BEARER_TOKEN`
+Required secret env vars: `GH_TOKEN`, `A2A_BEARER_TOKEN`
 
-Optional secret env var:
-`GOOGLE_GENERATIVE_AI_API_KEY`
+Optional secret env var: `GOOGLE_GENERATIVE_AI_API_KEY`
 
 > Use a repository-scoped fine-grained personal access token with minimal
 > required permissions.
@@ -171,23 +162,17 @@ For each project (`/data/opencode-a2a/<project>/config/`):
   (`GOOGLE_GENERATIVE_AI_API_KEY`)
 - `a2a.env`: A2A-only settings (`A2A_BEARER_TOKEN`, model options, etc.)
 
-If provided during deploy, `GOOGLE_GENERATIVE_AI_API_KEY` is persisted into
-`opencode.secret.env` (`600`, `root:root`) and loaded by
-`opencode@.service` via `EnvironmentFile`.
+If provided during deploy, `GOOGLE_GENERATIVE_AI_API_KEY` is persisted into `opencode.secret.env` (`600`, `root:root`) and loaded by `opencode@.service` via `EnvironmentFile`.
 
 ### Token and Key Risk
 
-Because provider keys are injected into the running `opencode` process,
-`opencode agent` behavior may indirectly exfiltrate sensitive values.
+Because provider keys are injected into the running `opencode` process, `opencode agent` behavior may indirectly exfiltrate sensitive values.
 
-This architecture does not provide hard guarantees that provider keys are
-inaccessible to agents. Treat it as a trusted-environment setup unless stronger
-credential-isolation controls are added.
+This architecture does not provide hard guarantees that provider keys are inaccessible to agents. Treat it as a trusted-environment setup unless stronger credential-isolation controls are added.
 
 ### Recommended Secret Input Pattern
 
-Use single-command environment variable injection to avoid long-lived shell
-exports:
+Use single-command environment variable injection to avoid long-lived shell exports:
 
 ```bash
 GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' GOOGLE_GENERATIVE_AI_API_KEY='<google-key>' \
@@ -208,9 +193,7 @@ GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' GOOGLE_GENERATIVE_AI_API_KE
 ./scripts/deploy.sh project=alpha force_restart=true
 ```
 
-If `repo_url` is provided, first deploy can auto-clone into `workspace/`
-(optional `repo_branch`). Clone is skipped if `workspace/.git` already exists or
-workspace is non-empty.
+If `repo_url` is provided, first deploy can auto-clone into `workspace/` (optional `repo_branch`). Clone is skipped if `workspace/.git` already exists or workspace is non-empty.
 
 If you manually update env files, restart services:
 
@@ -241,8 +224,7 @@ To remove a single project instance (services, project dirs, user/group):
 ./scripts/uninstall.sh project=<project>
 ```
 
-By default it prints preview commands only.
-Apply requires explicit confirmation:
+By default it prints preview commands only. Apply requires explicit confirmation:
 
 ```bash
 ./scripts/uninstall.sh project=<project> confirm=UNINSTALL

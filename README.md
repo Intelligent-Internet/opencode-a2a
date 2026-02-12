@@ -1,15 +1,12 @@
 # opencode-a2a-serve
 
-`opencode-a2a-serve` is an adapter layer that exposes OpenCode as an A2A service
-(FastAPI + A2A SDK). It provides:
+`opencode-a2a-serve` is an adapter layer that exposes OpenCode as an A2A service (FastAPI + A2A SDK). It provides:
 
 - A2A HTTP+JSON (REST): `/v1/message:send`, `/v1/message:stream`,
   `/v1/tasks/{task_id}:resubscribe`, and related endpoints
 - A2A JSON-RPC: `POST /` (used for extensions such as session queries)
 
-In practice, this service is a protocol bridge and security boundary:
-it maps A2A message/task semantics to OpenCode session/message/event APIs,
-while adding authentication, observability, and session-continuation contracts.
+In practice, this service is a protocol bridge and security boundary: it maps A2A message/task semantics to OpenCode session/message/event APIs, while adding authentication, observability, and session-continuation contracts.
 
 > Important: `A2A_BEARER_TOKEN` is required for startup.
 > See `docs/guide.md`.
@@ -86,8 +83,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 ## Key Configuration
 
-For full configuration, see `docs/guide.md`.
-Most commonly used options:
+For full configuration, see `docs/guide.md`. Most commonly used options:
 
 - `OPENCODE_BASE_URL`: OpenCode base URL (default: `http://127.0.0.1:4096`)
 - `OPENCODE_DIRECTORY`: OpenCode `directory` parameter (optional; controlled by
@@ -100,8 +96,7 @@ Most commonly used options:
 
 ## Session Continuation Contract
 
-To continue an existing OpenCode conversation, pass this metadata key on every
-invoke request:
+To continue an existing OpenCode conversation, pass this metadata key on every invoke request:
 
 - `metadata.opencode_session_id`: target OpenCode session ID (for example
   `ses_xxx`)
@@ -132,9 +127,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 ## OpenCode Session Query (A2A Extension via JSON-RPC)
 
-The service exposes OpenCode session list/history queries through A2A extension
-methods on the JSON-RPC endpoint (`POST /`), without introducing custom REST
-endpoints.
+The service exposes OpenCode session list/history queries through A2A extension methods on the JSON-RPC endpoint (`POST /`), without introducing custom REST endpoints.
 
 - Auth: same `Authorization: Bearer <token>`
 - Result: `result.items` always contains A2A standard objects

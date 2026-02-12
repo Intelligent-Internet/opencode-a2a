@@ -1,7 +1,6 @@
 # Usage Guide
 
-This guide covers configuration, authentication, API behavior, streaming
-re-subscription, and A2A client usage examples.
+This guide covers configuration, authentication, API behavior, streaming re-subscription, and A2A client usage examples.
 
 ## Environment Variables
 
@@ -69,8 +68,7 @@ re-subscription, and A2A client usage examples.
 
 ## Session Continuation Contract
 
-To continue a historical OpenCode session, include this metadata key in each
-invoke request:
+To continue a historical OpenCode session, include this metadata key in each invoke request:
 
 - `metadata.opencode_session_id`: target OpenCode session ID
 
@@ -100,9 +98,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 ## OpenCode Session Query (A2A Extension)
 
-This service exposes OpenCode session list and message-history queries via A2A
-JSON-RPC extension methods (default endpoint: `POST /`). No extra custom REST
-endpoint is introduced.
+This service exposes OpenCode session list and message-history queries via A2A JSON-RPC extension methods (default endpoint: `POST /`). No extra custom REST endpoint is introduced.
 
 - Trigger: call extension methods through A2A JSON-RPC
 - Auth: same `Authorization: Bearer <token>`
@@ -166,8 +162,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 ## Streaming Re-Subscription (`resubscribe`)
 
-If an SSE connection drops, use `POST /v1/tasks/{task_id}:resubscribe` to
-re-subscribe while the task is still non-terminal.
+If an SSE connection drops, use `POST /v1/tasks/{task_id}:resubscribe` to re-subscribe while the task is still non-terminal.
 
 ## A2A Client Example (`a2a-sdk` + `AuthInterceptor`)
 

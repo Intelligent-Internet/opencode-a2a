@@ -45,12 +45,10 @@ Common environment variables:
 
 ## `init_system.sh` (host initialization)
 
-Prepares base host dependencies and shared directories for systemd deployment.
-See `docs/deployment.md` section "Optional System Bootstrap".
+Prepares base host dependencies and shared directories for systemd deployment. See `docs/deployment.md` section "Optional System Bootstrap".
 
 ## `deploy.sh` (systemd multi-instance deployment)
 
 See `docs/deployment.md`.
 
-The `deploy/` subdirectory contains systemd unit templates and instance setup
-scripts orchestrated by `deploy.sh`.
+The `deploy/` subdirectory contains systemd unit templates and instance setup scripts orchestrated by `deploy.sh`.
