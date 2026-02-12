@@ -1,7 +1,7 @@
 import pytest
 
-from opencode_a2a.config import Settings
-from opencode_a2a.opencode_client import OpencodeClient
+from opencode_a2a_serve.config import Settings
+from opencode_a2a_serve.opencode_client import OpencodeClient
 
 
 def _settings(*, directory: str | None) -> Settings:

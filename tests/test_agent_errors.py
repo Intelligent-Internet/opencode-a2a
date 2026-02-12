@@ -4,7 +4,7 @@ import pytest
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events.event_queue import EventQueue
 
-from opencode_a2a.agent import OpencodeAgentExecutor
+from opencode_a2a_serve.agent import OpencodeAgentExecutor
 
 
 @pytest.mark.asyncio

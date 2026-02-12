@@ -4,8 +4,8 @@ import pytest
 from a2a.server.agent_execution import RequestContext
 from a2a.types import Message, MessageSendParams, Role, TextPart
 
-from opencode_a2a.agent import OpencodeAgentExecutor
-from opencode_a2a.opencode_client import OpencodeMessage
+from opencode_a2a_serve.agent import OpencodeAgentExecutor
+from opencode_a2a_serve.opencode_client import OpencodeMessage
 
 
 class DummyEventQueue:
@@ -25,7 +25,7 @@ class DummyOpencodeClient:
         self.sent_session_ids: list[str] = []
         self.stream_timeout = None
         self.directory = None
-        from opencode_a2a.config import Settings
+        from opencode_a2a_serve.config import Settings
 
         self.settings = Settings(
             A2A_BEARER_TOKEN="test",

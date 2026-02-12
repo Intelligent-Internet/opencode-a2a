@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-opencode-a2a-serve = "opencode_a2a.app:main"
+opencode-a2a-serve = "opencode_a2a_serve.app:main"
 
 [tool.ruff]
 line-length = 100

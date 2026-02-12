@@ -6,9 +6,9 @@ from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.server.events.event_queue import EventQueue
 
-from opencode_a2a.agent import OpencodeAgentExecutor, _TTLCache
-from opencode_a2a.config import Settings
-from opencode_a2a.opencode_client import OpencodeClient
+from opencode_a2a_serve.agent import OpencodeAgentExecutor, _TTLCache
+from opencode_a2a_serve.config import Settings
+from opencode_a2a_serve.opencode_client import OpencodeClient
 
 
 @pytest.fixture
