@@ -11,13 +11,12 @@ from opencode_a2a.opencode_client import OpencodeMessage
 class DummyEventQueue:
     def __init__(self) -> None:
         self.events = []
-        self.closed = False
 
     async def enqueue_event(self, event) -> None:  # noqa: ANN001
         self.events.append(event)
 
     async def close(self) -> None:
-        self.closed = True
+        return None
 
 
 class DummyOpencodeClient:
