@@ -132,7 +132,7 @@ These can be set before running `deploy.sh` (defaults used if unset):
 - `GIT_IDENTITY_NAME`: optional git author/committer name override
   (default `OpenCode-<project>`)
 - `GIT_IDENTITY_EMAIL`: optional git author/committer email override
-  (default `<project>@internal`)
+  (default `<project>@example.com`)
 
 - `A2A_HOST`: A2A bind host, default `127.0.0.1`
 - `A2A_PORT`: A2A bind port, default `8000`

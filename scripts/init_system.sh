@@ -14,7 +14,7 @@ UV_PYTHON_DIR_FINAL_MODE="755"
 UV_PYTHON_DIR_GROUP=""
 UV_PYTHON_INSTALL_DIR="$UV_PYTHON_DIR"
 DATA_ROOT="/data/opencode-a2a"
-OPENCODE_A2A_REPO="git@github.com:Intelligent-Internet/opencode-a2a-serve.git"
+OPENCODE_A2A_REPO="https://github.com/Intelligent-Internet/opencode-a2a-serve.git"
 OPENCODE_A2A_BRANCH="main"
 OPENCODE_INSTALL_CMD="curl -fsSL https://opencode.ai/install | bash"
 

@@ -126,7 +126,7 @@ sudo install -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" "$askpass_tmp" "$ASKPA
 rm -f "$askpass_tmp"
 
 git_author_name="OpenCode-${PROJECT_NAME}"
-git_author_email="${PROJECT_NAME}@internal"
+git_author_email="${PROJECT_NAME}@example.com"
 if [[ -n "${GIT_IDENTITY_NAME:-}" ]]; then
   git_author_name="${GIT_IDENTITY_NAME}"
 fi
