@@ -125,6 +125,18 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
             "parts": [{"kind": "text", "text": "hello"}],
         }
     }
+    full_jsonrpc_envelope = {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "message/send",
+        "params": {
+            "message": {
+                "messageId": "m-rest-cross-envelope",
+                "role": "user",
+                "parts": [{"kind": "text", "text": "hello from envelope"}],
+            }
+        },
+    }
     rpc_with_rest_shape = {
         "jsonrpc": "2.0",
         "id": 2,
@@ -146,6 +158,14 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
         )
         assert rest_resp.status_code == 400
         assert "Invalid HTTP+JSON payload" in rest_resp.text
+
+        rest_envelope_resp = await client.post(
+            "/v1/message:send",
+            headers=headers,
+            json=full_jsonrpc_envelope,
+        )
+        assert rest_envelope_resp.status_code == 400
+        assert "Invalid HTTP+JSON payload" in rest_envelope_resp.text
 
         rpc_resp = await client.post("/", headers=headers, json=rpc_with_rest_shape)
         assert rpc_resp.status_code == 200

@@ -380,6 +380,17 @@ def create_app(settings: Settings) -> FastAPI:
         role = message.get("role")
         return isinstance(role, str) and role in {"user", "agent"}
 
+    def _looks_like_jsonrpc_envelope(raw: bytes) -> bool:
+        try:
+            payload = json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception:
+            return False
+        if not isinstance(payload, dict):
+            return False
+        method = payload.get("method")
+        version = payload.get("jsonrpc")
+        return isinstance(method, str) and isinstance(version, str)
+
     @app.middleware("http")
     async def guard_rest_payload_shape(request: Request, call_next):
         if request.method != "POST" or request.url.path not in {
@@ -390,7 +401,7 @@ def create_app(settings: Settings) -> FastAPI:
 
         body = await request.body()
         request._body = body  # allow downstream to read again
-        if _looks_like_jsonrpc_message_payload(body):
+        if _looks_like_jsonrpc_envelope(body) or _looks_like_jsonrpc_message_payload(body):
             return JSONResponse(
                 {
                     "error": (

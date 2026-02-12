@@ -384,7 +384,7 @@ Application-level safeguards:
 
 - A2A supports `POST /v1/message:stream` (SSE) when `A2A_STREAMING=true`
 - disconnected clients can re-subscribe via
-  `POST /v1/tasks/{task_id}:resubscribe`
+  `GET /v1/tasks/{task_id}:subscribe`
 - service subscribes to OpenCode `/event` stream and forwards filtered
   per-session updates
 - stream emits incremental `TaskArtifactUpdateEvent` (`append=true`) and closes
