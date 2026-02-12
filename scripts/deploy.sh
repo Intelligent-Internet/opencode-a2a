@@ -2,12 +2,17 @@
 # Deploy an isolated OpenCode + A2A instance (systemd services).
 # Usage: ./deploy.sh project=<name> [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
 # Required env: GH_TOKEN, A2A_BEARER_TOKEN
-# Optional env: GOOGLE_GENERATIVE_AI_API_KEY (persisted into opencode.secret.env for opencode@ service).
+# Optional provider secret env:
+# - GOOGLE_GENERATIVE_AI_API_KEY
+# - OPENAI_API_KEY
+# - ANTHROPIC_API_KEY
+# - AZURE_OPENAI_API_KEY
+# - OPENROUTER_API_KEY
 # Requires: sudo access to write systemd units and create users/directories.
 #
 # Key environment variables:
 # - GH_TOKEN/A2A_BEARER_TOKEN (required secrets)
-# - GOOGLE_GENERATIVE_AI_API_KEY (optional secret)
+# - Provider secret env vars listed above (optional)
 # - OPENCODE_A2A_DIR: path to opencode-a2a-serve repo (default: /opt/opencode-a2a/opencode-a2a-serve)
 # - OPENCODE_CORE_DIR: path to opencode core (default: /opt/.opencode)
 # - UV_PYTHON_DIR: path to uv python pool (default: /opt/uv-python)
@@ -109,11 +114,14 @@ done
 if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" || -z "$A2A_BEARER_TOKEN" ]]; then
   cat >&2 <<'USAGE'
 Usage:
-  GH_TOKEN=<token> A2A_BEARER_TOKEN=<token> [GOOGLE_GENERATIVE_AI_API_KEY=<key>] \
+  GH_TOKEN=<token> A2A_BEARER_TOKEN=<token> [<PROVIDER_SECRET_ENV>=<key>] \
   ./scripts/deploy.sh project=<name> [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
   [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] \
   [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] \
   [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
+
+Provider secret env vars:
+  GOOGLE_GENERATIVE_AI_API_KEY | OPENAI_API_KEY | ANTHROPIC_API_KEY | AZURE_OPENAI_API_KEY | OPENROUTER_API_KEY
 USAGE
   exit 1
 fi

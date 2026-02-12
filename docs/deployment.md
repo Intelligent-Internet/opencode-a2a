@@ -69,7 +69,7 @@ Default permissions:
 
 ```bash
 GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
-./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1 opencode_provider_id=google opencode_model_id=gemini-3-flash-preview
+./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
 ```
 
 HTTPS public URL example:
@@ -83,7 +83,7 @@ Supported CLI keys (case-insensitive): `project`/`project_name`, `a2a_port`, `a2
 
 Required secret env vars: `GH_TOKEN`, `A2A_BEARER_TOKEN`
 
-Optional secret env var: `GOOGLE_GENERATIVE_AI_API_KEY`
+Optional provider secret env vars: `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AZURE_OPENAI_API_KEY`, `OPENROUTER_API_KEY`
 
 > Use a repository-scoped fine-grained personal access token with minimal
 > required permissions.
@@ -102,6 +102,34 @@ GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
 ./scripts/deploy.sh project=alpha update_a2a=true force_restart=true
 ```
 
+### Provider Configuration Examples
+
+Gemini (Google):
+
+```bash
+GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' GOOGLE_GENERATIVE_AI_API_KEY='<google-key>' \
+./scripts/deploy.sh project=alpha opencode_provider_id=google opencode_model_id=gemini-3-flash-preview
+```
+
+OpenAI:
+
+```bash
+GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' OPENAI_API_KEY='<openai-key>' \
+./scripts/deploy.sh project=alpha opencode_provider_id=openai opencode_model_id='<openai-model-id>'
+```
+
+Anthropic:
+
+```bash
+GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' ANTHROPIC_API_KEY='<anthropic-key>' \
+./scripts/deploy.sh project=alpha opencode_provider_id=anthropic opencode_model_id='<anthropic-model-id>'
+```
+
+Notes:
+
+- Use model IDs that your OpenCode installation/provider mapping supports.
+- `run_opencode.sh` currently performs explicit key enforcement only for Google/Gemini (`GOOGLE_GENERATIVE_AI_API_KEY`).
+
 Script actions:
 
 1. install systemd template units `opencode@.service` and
@@ -114,12 +142,16 @@ Script actions:
 
 ### `deploy.sh` Environment Variables
 
-These can be set before running `deploy.sh` (defaults used if unset):
+Set these before running `deploy.sh`. Secret env vars are required/optional as marked below; most non-secret vars have defaults when unset:
 
 - `GH_TOKEN`: required GitHub token used by OpenCode and `gh auth login`
 - `A2A_BEARER_TOKEN`: required bearer token written to `a2a.env`
-- `GOOGLE_GENERATIVE_AI_API_KEY`: optional provider key persisted into
-  `opencode.secret.env`
+- optional provider keys persisted into `opencode.secret.env`:
+  - `GOOGLE_GENERATIVE_AI_API_KEY`
+  - `OPENAI_API_KEY`
+  - `ANTHROPIC_API_KEY`
+  - `AZURE_OPENAI_API_KEY`
+  - `OPENROUTER_API_KEY`
 
 - `OPENCODE_BIND_HOST`: OpenCode bind host, default `127.0.0.1`
 - `OPENCODE_BIND_PORT`: OpenCode bind port, default `4096`
@@ -159,10 +191,10 @@ For each project (`/data/opencode-a2a/<project>/config/`):
 
 - `opencode.env`: OpenCode-only settings (`GH_TOKEN`, git identity, etc.)
 - `opencode.secret.env`: optional sensitive OpenCode settings
-  (`GOOGLE_GENERATIVE_AI_API_KEY`)
+  (`GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AZURE_OPENAI_API_KEY`, `OPENROUTER_API_KEY`)
 - `a2a.env`: A2A-only settings (`A2A_BEARER_TOKEN`, model options, etc.)
 
-If provided during deploy, `GOOGLE_GENERATIVE_AI_API_KEY` is persisted into `opencode.secret.env` (`600`, `root:root`) and loaded by `opencode@.service` via `EnvironmentFile`.
+If provider keys are supplied during deploy, they are persisted into `opencode.secret.env` (`600`, `root:root`) and loaded by `opencode@.service` via `EnvironmentFile`.
 
 ### Token and Key Risk
 
@@ -173,6 +205,8 @@ This architecture does not provide hard guarantees that provider keys are inacce
 ### Recommended Secret Input Pattern
 
 Use single-command environment variable injection to avoid long-lived shell exports:
+
+> Note: if you type secrets directly in a shell command, they may still be recorded by shell history depending on your shell settings and operational practices.
 
 ```bash
 GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' GOOGLE_GENERATIVE_AI_API_KEY='<google-key>' \
