@@ -164,61 +164,6 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 If an SSE connection drops, use `POST /v1/tasks/{task_id}:resubscribe` to re-subscribe while the task is still non-terminal.
 
-## A2A Client Example (`a2a-sdk` + `AuthInterceptor`)
-
-> Note: in `a2a-sdk 0.3.17`, the REST transport does not apply interceptors.
-> This project provides a patched wrapper.
-
-```python
-import asyncio
-import os
-
-import httpx
-from a2a.client.auth.credentials import InMemoryContextCredentialStore
-from a2a.client.auth.interceptor import AuthInterceptor
-from a2a.client.client_factory import ClientConfig
-from a2a.client.middleware import ClientCallContext
-from a2a.types import Message, Role, TextPart, TransportProtocol
-
-from opencode_a2a.a2a_client import connect_with_patched_rest
-
-
-async def main() -> None:
-    base_url = "http://127.0.0.1:8000"
-    token = os.environ["A2A_BEARER_TOKEN"]
-
-    store = InMemoryContextCredentialStore()
-    session_id = "auth-demo"
-    await store.set_credentials(session_id, "bearerAuth", token)
-
-    context = ClientCallContext(state={"sessionId": session_id})
-    interceptors = [AuthInterceptor(store)]
-    config = ClientConfig(
-        supported_transports=[TransportProtocol.http_json],
-        httpx_client=httpx.AsyncClient(),
-        streaming=False,
-    )
-
-    client = await connect_with_patched_rest(
-        base_url, client_config=config, interceptors=interceptors
-    )
-
-    message = Message(
-        message_id="msg-1",
-        role=Role.user,
-        parts=[TextPart(text="hello")],
-    )
-
-    async for _ in client.send_message(message, context=context):
-        break
-
-    await config.httpx_client.aclose()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
 ## Development Setup
 
 ```bash
