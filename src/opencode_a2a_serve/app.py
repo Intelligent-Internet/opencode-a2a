@@ -48,6 +48,7 @@ SESSION_QUERY_METHODS = {
 }
 
 SESSION_BINDING_EXTENSION_URI = "urn:opencode-a2a:opencode-session-binding/v1"
+SESSION_QUERY_EXTENSION_URI = "urn:opencode-a2a:opencode-session-query/v1"
 
 
 class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
@@ -74,9 +75,68 @@ class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
         return context
 
 
+def _build_deployment_context(settings: Settings) -> dict[str, str | bool]:
+    context: dict[str, str | bool] = {
+        "allow_directory_override": settings.a2a_allow_directory_override,
+        "shared_workspace_across_consumers": True,
+    }
+    if settings.a2a_project:
+        context["project"] = settings.a2a_project
+    if settings.opencode_directory:
+        context["workspace_root"] = settings.opencode_directory
+    if settings.opencode_provider_id:
+        context["provider_id"] = settings.opencode_provider_id
+    if settings.opencode_model_id:
+        context["model_id"] = settings.opencode_model_id
+    if settings.opencode_agent:
+        context["agent"] = settings.opencode_agent
+    if settings.opencode_variant:
+        context["variant"] = settings.opencode_variant
+    return context
+
+
+def _build_agent_card_description(
+    settings: Settings, deployment_context: dict[str, str | bool]
+) -> str:
+    base = (settings.a2a_description or "").strip() or "A2A wrapper service for OpenCode."
+    summary = (
+        "Supports HTTP+JSON and JSON-RPC transports, standard A2A messaging "
+        "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
+        "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), and "
+        "OpenCode session-query extensions."
+    )
+    parts: list[str] = [base, summary]
+    parts.append(
+        "Within one opencode-a2a-serve instance, all consumers share the same "
+        "underlying OpenCode workspace/environment."
+    )
+    project = deployment_context.get("project")
+    if isinstance(project, str) and project.strip():
+        parts.append(f"Deployment project: {project}.")
+    workspace_root = deployment_context.get("workspace_root")
+    if isinstance(workspace_root, str) and workspace_root.strip():
+        parts.append(f"Workspace root: {workspace_root}.")
+    provider_id = deployment_context.get("provider_id")
+    model_id = deployment_context.get("model_id")
+    if isinstance(provider_id, str) and isinstance(model_id, str):
+        parts.append(f"Default upstream model: {provider_id}/{model_id}.")
+    return " ".join(parts)
+
+
+def _build_chat_examples(project: str | None) -> list[str]:
+    examples = [
+        "Explain what this repository does.",
+        "Summarize the API endpoints in this project.",
+    ]
+    if project:
+        examples.append(f"Summarize current work items for project {project}.")
+    return examples
+
+
 def build_agent_card(settings: Settings) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     base_url = public_url
+    deployment_context = _build_deployment_context(settings)
     security_schemes: dict[str, SecurityScheme] = {
         "bearerAuth": SecurityScheme(
             root=HTTPAuthSecurityScheme(
@@ -108,7 +168,7 @@ def build_agent_card(settings: Settings) -> AgentCard:
 
     return AgentCard(
         name=settings.a2a_title,
-        description=settings.a2a_description,
+        description=_build_agent_card_description(settings, deployment_context),
         url=base_url,
         documentation_url=settings.a2a_documentation_url,
         version=settings.a2a_version,
@@ -124,12 +184,18 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     required=False,
                     description=(
                         "Contract to bind A2A messages to an existing OpenCode session "
-                        "when continuing a previous chat. "
-                        "Clients should pass metadata.opencode_session_id."
+                        "when continuing a previous chat. Clients should pass "
+                        "metadata.opencode_session_id. The metadata.directory field is also "
+                        "supported under server-side directory boundary validation."
                     ),
                     params={
                         "metadata_key": "opencode_session_id",
                         "behavior": "prefer_metadata_binding_else_create_session",
+                        "supported_metadata": ["opencode_session_id", "directory"],
+                        "directory_override_enabled": settings.a2a_allow_directory_override,
+                        "shared_workspace_across_consumers": True,
+                        "tenant_isolation": "none",
+                        "deployment_context": deployment_context,
                         "notes": [
                             (
                                 "If metadata.opencode_session_id is provided, the server will "
@@ -144,7 +210,7 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     },
                 ),
                 AgentExtension(
-                    uri="urn:opencode-a2a:opencode-session-query/v1",
+                    uri=SESSION_QUERY_EXTENSION_URI,
                     required=False,
                     description=(
                         "Support OpenCode session list/history queries via custom JSON-RPC methods "
@@ -152,6 +218,9 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     ),
                     params={
                         "methods": SESSION_QUERY_METHODS,
+                        "shared_workspace_across_consumers": True,
+                        "tenant_isolation": "none",
+                        "deployment_context": deployment_context,
                         "pagination": {
                             # Explicit, discoverable contract for generic clients.
                             "mode": "page_size",
@@ -186,19 +255,19 @@ def build_agent_card(settings: Settings) -> AgentCard:
             AgentSkill(
                 id="opencode.chat",
                 name="OpenCode Chat",
-                description="Route user messages to an OpenCode session.",
+                description=(
+                    "Handle message/send and message/stream requests by routing user text to "
+                    "OpenCode sessions."
+                ),
                 tags=["assistant", "coding", "opencode"],
-                examples=[
-                    "Explain what this repository does.",
-                    "Summarize the API endpoints in this project.",
-                ],
+                examples=_build_chat_examples(settings.a2a_project),
             ),
             AgentSkill(
                 id="opencode.sessions.query",
                 name="OpenCode Sessions Query",
                 description=(
-                    "Query OpenCode server sessions and message histories via JSON-RPC extension "
-                    "methods (see documentationUrl / extensions)."
+                    "Query OpenCode sessions and message histories via JSON-RPC extension "
+                    "methods opencode.sessions.list and opencode.sessions.messages.list."
                 ),
                 tags=["opencode", "sessions", "history"],
                 examples=[
@@ -296,6 +365,55 @@ def create_app(settings: Settings) -> FastAPI:
         if method.startswith("opencode.sessions."):
             return method
         return None
+
+    def _looks_like_jsonrpc_message_payload(raw: bytes) -> bool:
+        try:
+            payload = json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception:
+            return False
+        if not isinstance(payload, dict):
+            return False
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            return False
+        if "parts" in message:
+            return True
+        role = message.get("role")
+        return isinstance(role, str) and role in {"user", "agent"}
+
+    def _looks_like_jsonrpc_envelope(raw: bytes) -> bool:
+        try:
+            payload = json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception:
+            return False
+        if not isinstance(payload, dict):
+            return False
+        method = payload.get("method")
+        version = payload.get("jsonrpc")
+        return isinstance(method, str) and isinstance(version, str)
+
+    @app.middleware("http")
+    async def guard_rest_payload_shape(request: Request, call_next):
+        if request.method != "POST" or request.url.path not in {
+            "/v1/message:send",
+            "/v1/message:stream",
+        }:
+            return await call_next(request)
+
+        body = await request.body()
+        request._body = body  # allow downstream to read again
+        if _looks_like_jsonrpc_envelope(body) or _looks_like_jsonrpc_message_payload(body):
+            return JSONResponse(
+                {
+                    "error": (
+                        "Invalid HTTP+JSON payload for REST endpoint. "
+                        "Use message.content with ROLE_* role values, or call "
+                        "POST / with method=message/send or method=message/stream."
+                    )
+                },
+                status_code=400,
+            )
+        return await call_next(request)
 
     @app.middleware("http")
     async def log_payloads(request: Request, call_next):

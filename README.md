@@ -3,8 +3,8 @@
 `opencode-a2a-serve` is an adapter layer that exposes OpenCode as an A2A service (FastAPI + A2A SDK). It provides:
 
 - A2A HTTP+JSON (REST): `/v1/message:send`, `/v1/message:stream`,
-  `/v1/tasks/{task_id}:resubscribe`, and related endpoints
-- A2A JSON-RPC: `POST /` (used for extensions such as session queries)
+  `GET /v1/tasks/{task_id}:subscribe`, and related endpoints
+- A2A JSON-RPC: `POST /` (for standard methods and extensions such as session queries)
 
 In practice, this service is a protocol bridge and security boundary: it maps A2A message/task semantics to OpenCode session/message/event APIs, while adding authentication, observability, and session-continuation contracts.
 
@@ -22,6 +22,9 @@ In practice, this service is a protocol bridge and security boundary: it maps A2
 - This project is best suited for trusted/internal environments until a stronger
   token isolation model is implemented (for example tenant isolation, hosted
   proxy credentials, auditing, and rotation/revocation strategy).
+- Within one `opencode-a2a-serve` instance, all consumers operate on the same
+  underlying OpenCode workspace/environment. It is not tenant-isolated by
+  default.
 
 Additional notes:
 
@@ -37,12 +40,20 @@ Additional notes:
 - Standard A2A chat: forwards `message:send` / `message:stream` to OpenCode.
 - SSE streaming: `/v1/message:stream` emits incremental
   `TaskArtifactUpdateEvent`, then `TaskStatusUpdateEvent(final=true)`.
-- Re-subscribe after disconnect: `POST /v1/tasks/{task_id}:resubscribe`
+- Re-subscribe after disconnect: `GET /v1/tasks/{task_id}:subscribe`
   (available while the task is not in a terminal state).
 - Session continuation contract: clients can explicitly bind to an existing
   OpenCode session via `metadata.opencode_session_id`.
 - OpenCode session query extension (JSON-RPC):
   `opencode.sessions.list` / `opencode.sessions.messages.list`.
+
+## Transport Notes
+
+- The service keeps dual-stack transport support: HTTP+JSON (REST routes) and JSON-RPC (`POST /`).
+- Agent Card sets `preferredTransport=HTTP+JSON` and still declares JSON-RPC via `additionalInterfaces`.
+- Request payloads are transport-specific and must not be mixed:
+  - REST (`/v1/message:send`): typically `message.content` with role values like `ROLE_USER`
+  - JSON-RPC (`method=message/send`): `params.message.parts` with role values `user` / `agent`
 
 ## Quick Start
 
@@ -92,6 +103,7 @@ For full configuration, see `docs/guide.md`. Most commonly used options:
   server and cannot be overridden by clients)
 - `A2A_BEARER_TOKEN`: required bearer token for authentication
 - `A2A_PUBLIC_URL`: externally reachable URL prefix exposed in Agent Card
+- `A2A_PROJECT`: optional project label injected into Agent Card metadata/examples
 - `A2A_STREAMING`: enables SSE streaming (default: `true`)
 - `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`:
   in-memory `(identity, contextId) -> session_id` mapping cache settings
@@ -177,7 +189,14 @@ curl -sS http://127.0.0.1:8000/ \
 - Systemd multi-instance deployment details:
   [`docs/deployment.md`](docs/deployment.md)
 
+## License
+
+This project is licensed under the Apache License 2.0.
+See [`LICENSE`](LICENSE).
+
 ## Development & Validation
+
+CI (`.github/workflows/ci.yml`) runs the same baseline checks on PRs and `main` pushes.
 
 ```bash
 uv run pre-commit run --all-files

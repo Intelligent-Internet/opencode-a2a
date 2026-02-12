@@ -79,9 +79,20 @@ GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
 ./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1 a2a_public_url=https://a2a.example.com
 ```
 
-Supported CLI keys (case-insensitive): `project`/`project_name`, `a2a_port`, `a2a_host`, `a2a_public_url`, `opencode_provider_id`, `opencode_model_id`, `repo_url`, `repo_branch`, `opencode_timeout`, `opencode_timeout_stream`, `git_identity_name`, `git_identity_email`, `update_a2a`, `force_restart`.
+Supported CLI keys (case-insensitive): `project`/`project_name`, `data_root`, `a2a_port`, `a2a_host`, `a2a_public_url`, `a2a_streaming`, `a2a_log_level`, `a2a_log_payloads`, `a2a_log_body_limit`, `opencode_provider_id`, `opencode_model_id`, `repo_url`, `repo_branch`, `opencode_timeout`, `opencode_timeout_stream`, `git_identity_name`, `git_identity_email`, `update_a2a`, `force_restart`.
 
 Required secret env vars: `GH_TOKEN`, `A2A_BEARER_TOKEN`
+
+Recommended style: keep only secret values in process env; pass non-secret overrides as CLI keys:
+
+```bash
+GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
+./scripts/deploy.sh \
+  project=alpha \
+  data_root=/data/opencode-a2a \
+  a2a_log_payloads=true \
+  a2a_log_body_limit=2000
+```
 
 Optional provider secret env vars: `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AZURE_OPENAI_API_KEY`, `OPENROUTER_API_KEY`
 
@@ -174,42 +185,58 @@ Script actions:
 
 ## Configuration Details
 
-### `deploy.sh` Environment Variables
+### `deploy.sh` Inputs and Generated Variables
 
-Set these before running `deploy.sh`. Secret env vars are required/optional as marked below; most non-secret vars have defaults when unset:
+For values that support both environment variables and CLI keys, precedence is:
+`CLI key=value` > environment variable > built-in default.
 
-- `GH_TOKEN`: required GitHub token used by OpenCode and `gh auth login`
-- `A2A_BEARER_TOKEN`: required bearer token written to `a2a.env`
-- optional provider keys persisted into `opencode.secret.env`:
-  - `GOOGLE_GENERATIVE_AI_API_KEY`
-  - `OPENAI_API_KEY`
-  - `ANTHROPIC_API_KEY`
-  - `AZURE_OPENAI_API_KEY`
-  - `OPENROUTER_API_KEY`
+Naming rule in the tables below:
+- `ENV Name` is the process environment variable name.
+- `CLI Key` is the `key=value` argument accepted by `deploy.sh`.
 
-- `OPENCODE_BIND_HOST`: OpenCode bind host, default `127.0.0.1`
-- `OPENCODE_BIND_PORT`: OpenCode bind port, default `4096`
-  (for multi-instance, each project should use a unique port; if unset,
-  script attempts `A2A_PORT + 1`)
-- `OPENCODE_LOG_LEVEL`: OpenCode log level, default `DEBUG`
-- `OPENCODE_EXTRA_ARGS`: extra OpenCode startup arguments (space-separated)
-- `OPENCODE_PROVIDER_ID`: default OpenCode provider (written to `a2a.env`)
-- `OPENCODE_MODEL_ID`: default OpenCode model (written to `a2a.env`)
-- `OPENCODE_TIMEOUT`: request timeout in seconds, default `300`
-- `OPENCODE_TIMEOUT_STREAM`: streaming timeout in seconds (optional)
-- `GIT_IDENTITY_NAME`: optional git author/committer name override
-  (default `OpenCode-<project>`)
-- `GIT_IDENTITY_EMAIL`: optional git author/committer email override
-  (default `<project>@example.com`)
+#### Secret Variables
 
-- `A2A_HOST`: A2A bind host, default `127.0.0.1`
-- `A2A_PORT`: A2A bind port, default `8000`
-- `A2A_LOG_LEVEL`: A2A log level, default `DEBUG`
-- `A2A_LOG_PAYLOADS`: payload logging switch, default `true`
-- `A2A_LOG_BODY_LIMIT`: payload body max length, default `0` (unbounded)
-- `A2A_PUBLIC_URL`: set by `a2a_public_url=...`; otherwise auto-generated as
-  `http://<A2A_HOST>:<A2A_PORT>`
-- `A2A_STREAMING`: SSE streaming switch, default `true`
+| ENV Name | Required | Default | CLI Support | Notes |
+| --- | --- | --- | --- | --- |
+| `GH_TOKEN` | Yes | None | No | Used by OpenCode and `gh auth login`. |
+| `A2A_BEARER_TOKEN` | Yes | None | No | Written to `a2a.env`. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Optional | None | No | Persisted into `opencode.secret.env` if provided. |
+| `OPENAI_API_KEY` | Optional | None | No | Persisted into `opencode.secret.env` if provided. |
+| `ANTHROPIC_API_KEY` | Optional | None | No | Persisted into `opencode.secret.env` if provided. |
+| `AZURE_OPENAI_API_KEY` | Optional | None | No | Persisted into `opencode.secret.env` if provided. |
+| `OPENROUTER_API_KEY` | Optional | None | No | Persisted into `opencode.secret.env` if provided. |
+
+#### Non-Secret Input Variables
+
+| ENV Name | CLI Key | Required | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `OPENCODE_A2A_DIR` | - | Optional | `/opt/opencode-a2a/opencode-a2a-serve` | Repo path for opencode-a2a-serve. |
+| `OPENCODE_CORE_DIR` | - | Optional | `/opt/.opencode` | OpenCode core path. |
+| `UV_PYTHON_DIR` | - | Optional | `/opt/uv-python` | uv Python cache path. |
+| `DATA_ROOT` | `data_root` | Optional | `/data/opencode-a2a` | Instance root directory. |
+| `OPENCODE_BIND_HOST` | - | Optional | `127.0.0.1` | OpenCode bind host. |
+| `OPENCODE_BIND_PORT` | - | Optional | `A2A_PORT + 1` fallback to `4096` | Multi-instance should use unique port. |
+| `OPENCODE_LOG_LEVEL` | - | Optional | `DEBUG` | OpenCode log level. |
+| `OPENCODE_EXTRA_ARGS` | - | Optional | empty | Extra OpenCode startup args. |
+| `OPENCODE_PROVIDER_ID` | `opencode_provider_id` | Optional | None | Written to `a2a.env`. |
+| `OPENCODE_MODEL_ID` | `opencode_model_id` | Optional | None | Written to `a2a.env`. |
+| `OPENCODE_TIMEOUT` | `opencode_timeout` | Optional | `300` | OpenCode request timeout (seconds). |
+| `OPENCODE_TIMEOUT_STREAM` | `opencode_timeout_stream` | Optional | None | OpenCode streaming timeout (seconds). |
+| `GIT_IDENTITY_NAME` | `git_identity_name` | Optional | `OpenCode-<project>` | Git author/committer name. |
+| `GIT_IDENTITY_EMAIL` | `git_identity_email` | Optional | `<project>@example.com` | Git author/committer email. |
+| `A2A_HOST` | `a2a_host` | Optional | `127.0.0.1` | A2A bind host. |
+| `A2A_PORT` | `a2a_port` | Optional | `8000` | A2A bind port. |
+| `A2A_PUBLIC_URL` | `a2a_public_url` | Optional | `http://<A2A_HOST>:<A2A_PORT>` | Public Agent Card URL. |
+| `A2A_STREAMING` | `a2a_streaming` | Optional | `true` | SSE streaming switch. |
+| `A2A_LOG_LEVEL` | `a2a_log_level` | Optional | `DEBUG` | A2A log level. |
+| `A2A_LOG_PAYLOADS` | `a2a_log_payloads` | Optional | `false` | Payload logging switch. |
+| `A2A_LOG_BODY_LIMIT` | `a2a_log_body_limit` | Optional | `0` | Payload body max length. |
+
+#### Auto-Generated Runtime Variables (Not `deploy.sh` Input ENV)
+
+| Generated Name | Source | Where Written | Notes |
+| --- | --- | --- | --- |
+| `A2A_PROJECT` | derived from `project=<name>` | `config/a2a.env` | Generated by `setup_instance.sh`; external env injection is not used in deploy flow. |
 
 > Shared paths (`OPENCODE_A2A_DIR`, `OPENCODE_CORE_DIR`, `UV_PYTHON_DIR`,
 > `DATA_ROOT`) default to `init_system.sh` constants; environment overrides are
@@ -366,7 +393,7 @@ Application-level safeguards:
 
 - A2A supports `POST /v1/message:stream` (SSE) when `A2A_STREAMING=true`
 - disconnected clients can re-subscribe via
-  `POST /v1/tasks/{task_id}:resubscribe`
+  `GET /v1/tasks/{task_id}:subscribe`
 - service subscribes to OpenCode `/event` stream and forwards filtered
   per-session updates
 - stream emits incremental `TaskArtifactUpdateEvent` (`append=true`) and closes
