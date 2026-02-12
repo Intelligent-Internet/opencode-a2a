@@ -5,17 +5,10 @@
 # Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
 # Requires: sudo access to write systemd units and create users/directories.
 #
-# Key environment variables:
-# - GH_TOKEN/A2A_BEARER_TOKEN (required secrets)
-# - Provider secret env vars listed above (optional)
-# - For non-secret options that support both env and CLI key=value, precedence is:
-#   CLI > env > default.
-# - OPENCODE_A2A_DIR: path to opencode-a2a-serve repo (default: /opt/opencode-a2a/opencode-a2a-serve)
-# - OPENCODE_CORE_DIR: path to opencode core (default: /opt/.opencode)
-# - UV_PYTHON_DIR: path to uv python pool (default: /opt/uv-python)
-# - DATA_ROOT: instance root directory (default: /data/opencode-a2a)
-# - OPENCODE_BIND_HOST/OPENCODE_BIND_PORT/OPENCODE_LOG_LEVEL/OPENCODE_EXTRA_ARGS
-# - A2A_HOST/A2A_PORT/A2A_LOG_LEVEL
+# Source of truth for all variable semantics/defaults:
+# - docs/deployment.md (section: "deploy.sh Inputs and Generated Variables")
+# Non-secret options that support both env and CLI key=value use precedence:
+# - CLI > env > default
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
