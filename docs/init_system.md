@@ -25,7 +25,7 @@ To adjust paths, feature toggles, or versions, edit the constants at the top of
 - Creates shared directories and applies permissions
   (`/opt/uv-python` starts as `777`, then becomes recursively `755` after
   pre-download).
-- Clones `opencode-a2a-serve` repository by default (SSH URL by default).
+- Clones `opencode-a2a-serve` repository by default (HTTPS URL by default).
 - Creates the A2A virtual environment (`uv sync --all-extras`).
 - Fails fast if `systemd` (`systemctl`) is unavailable.
 - If OpenCode installer places files in `/root/.opencode`, moves them to

@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # Create project user, directories, and env files for systemd services.
-# Usage: ./setup_instance.sh <project_name> <github_token> <a2a_bearer_token>
+# Usage: GH_TOKEN=<token> A2A_BEARER_TOKEN=<token> ./setup_instance.sh <project_name>
 # Requires env: DATA_ROOT, OPENCODE_BIND_HOST, OPENCODE_BIND_PORT, OPENCODE_LOG_LEVEL,
 #               A2A_HOST, A2A_PORT, A2A_PUBLIC_URL.
 # Optional env: GOOGLE_GENERATIVE_AI_API_KEY (persisted into config/opencode.secret.env when provided).
 set -euo pipefail
 
 PROJECT_NAME="${1:-}"
-GH_TOKEN="${2:-}"
-A2A_BEARER_TOKEN="${3:-}"
 
-if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" || -z "$A2A_BEARER_TOKEN" ]]; then
-  echo "Usage: $0 <project_name> <github_token> <a2a_bearer_token>" >&2
+if [[ "$#" -ne 1 || -z "$PROJECT_NAME" ]]; then
+  echo "Usage: GH_TOKEN=<token> A2A_BEARER_TOKEN=<token> $0 <project_name>" >&2
   exit 1
 fi
+
+: "${GH_TOKEN:?GH_TOKEN is required}"
+: "${A2A_BEARER_TOKEN:?A2A_BEARER_TOKEN is required}"
 
 : "${DATA_ROOT:?}"
 : "${OPENCODE_BIND_HOST:?}"

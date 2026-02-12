@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Deploy an isolated OpenCode + A2A instance (systemd services).
-# Usage: ./deploy.sh project=<name> github_token=<token> a2a_bearer_token=<token> [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
-# Optional: GOOGLE_GENERATIVE_AI_API_KEY=<key> to persist API key into opencode.secret.env for opencode@ service.
+# Usage: ./deploy.sh project=<name> [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
+# Required env: GH_TOKEN, A2A_BEARER_TOKEN
+# Optional env: GOOGLE_GENERATIVE_AI_API_KEY (persisted into opencode.secret.env for opencode@ service).
 # Requires: sudo access to write systemd units and create users/directories.
 #
 # Key environment variables (optional):
+# - GH_TOKEN/A2A_BEARER_TOKEN (required secrets)
+# - GOOGLE_GENERATIVE_AI_API_KEY (optional secret)
 # - OPENCODE_A2A_DIR: path to opencode-a2a-serve repo (default: /opt/opencode-a2a/opencode-a2a-serve)
 # - OPENCODE_CORE_DIR: path to opencode core (default: /opt/.opencode)
 # - UV_PYTHON_DIR: path to uv python pool (default: /opt/uv-python)
@@ -16,14 +19,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PROJECT_NAME=""
-GH_TOKEN=""
-A2A_BEARER_TOKEN=""
+GH_TOKEN="${GH_TOKEN:-}"
+A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN:-}"
 A2A_PORT_INPUT=""
 A2A_HOST_INPUT=""
 A2A_PUBLIC_URL_INPUT=""
 OPENCODE_PROVIDER_ID_INPUT=""
 OPENCODE_MODEL_ID_INPUT=""
-GOOGLE_API_KEY_INPUT="${GOOGLE_GENERATIVE_AI_API_KEY:-}"
 REPO_URL_INPUT=""
 REPO_BRANCH_INPUT=""
 OPENCODE_TIMEOUT_INPUT=""
@@ -47,10 +49,12 @@ for arg in "$@"; do
       PROJECT_NAME="$value"
       ;;
     github_token|gh_token)
-      GH_TOKEN="$value"
+      echo "Sensitive parameter '${key}' is not allowed via CLI. Use environment variable GH_TOKEN." >&2
+      exit 1
       ;;
     a2a_bearer_token|bearer_token)
-      A2A_BEARER_TOKEN="$value"
+      echo "Sensitive parameter '${key}' is not allowed via CLI. Use environment variable A2A_BEARER_TOKEN." >&2
+      exit 1
       ;;
     a2a_port)
       A2A_PORT_INPUT="$value"
@@ -68,7 +72,8 @@ for arg in "$@"; do
       OPENCODE_MODEL_ID_INPUT="$value"
       ;;
     google_generative_ai_api_key|google_api_key)
-      GOOGLE_API_KEY_INPUT="$value"
+      echo "Sensitive parameter '${key}' is not allowed via CLI. Use environment variable GOOGLE_GENERATIVE_AI_API_KEY." >&2
+      exit 1
       ;;
     repo_url)
       REPO_URL_INPUT="$value"
@@ -102,7 +107,14 @@ for arg in "$@"; do
 done
 
 if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" || -z "$A2A_BEARER_TOKEN" ]]; then
-  echo "Usage: $0 project=<name> github_token=<token> a2a_bearer_token=<token> [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [update_a2a=true] [force_restart=true]" >&2
+  cat >&2 <<'USAGE'
+Usage:
+  GH_TOKEN=<token> A2A_BEARER_TOKEN=<token> [GOOGLE_GENERATIVE_AI_API_KEY=<key>] \
+  ./scripts/deploy.sh project=<name> [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
+  [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] \
+  [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] \
+  [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
+USAGE
   exit 1
 fi
 
@@ -116,9 +128,6 @@ if [[ -n "$OPENCODE_PROVIDER_ID_INPUT" ]]; then
 fi
 if [[ -n "$OPENCODE_MODEL_ID_INPUT" ]]; then
   export OPENCODE_MODEL_ID="$OPENCODE_MODEL_ID_INPUT"
-fi
-if [[ -n "$GOOGLE_API_KEY_INPUT" ]]; then
-  export GOOGLE_GENERATIVE_AI_API_KEY="$GOOGLE_API_KEY_INPUT"
 fi
 if [[ -n "$REPO_URL_INPUT" ]]; then
   export REPO_URL="$REPO_URL_INPUT"
@@ -193,5 +202,5 @@ if [[ "$UPDATE_A2A" == "true" ]]; then
 fi
 
 "${SCRIPT_DIR}/deploy/install_units.sh"
-"${SCRIPT_DIR}/deploy/setup_instance.sh" "$PROJECT_NAME" "$GH_TOKEN" "$A2A_BEARER_TOKEN"
+"${SCRIPT_DIR}/deploy/setup_instance.sh" "$PROJECT_NAME"
 FORCE_RESTART="$FORCE_RESTART" "${SCRIPT_DIR}/deploy/enable_instance.sh" "$PROJECT_NAME"

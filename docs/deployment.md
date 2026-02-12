@@ -44,13 +44,11 @@ Default behavior:
   `/opt/uv-python`, `/data/opencode-a2a`)
 - sets `/opt/uv-python` permission from `777` to recursive `755`
 - fails if `systemctl` is unavailable
-- clones this repository to shared path (SSH URL by default)
+- clones this repository to shared path (HTTPS URL by default)
 - creates A2A virtualenv via `uv sync --all-extras`
 
 Notes:
 
-- If host has no SSH key configured, either set one up or edit
-  `OPENCODE_A2A_REPO` to use HTTPS clone URL.
 - `init_system.sh` has no runtime arguments; edit top constants to change
   defaults.
 
@@ -73,22 +71,28 @@ Default permissions:
 ## Quick Deploy
 
 ```bash
-./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx a2a_port=8010 a2a_host=127.0.0.1 opencode_provider_id=google opencode_model_id=gemini-3-flash-preview
+GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
+./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1 opencode_provider_id=google opencode_model_id=gemini-3-flash-preview
 ```
 
 HTTPS public URL example:
 
 ```bash
-./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx a2a_port=8010 a2a_host=127.0.0.1 a2a_public_url=https://a2a.example.com
+GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
+./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1 a2a_public_url=https://a2a.example.com
 ```
 
-Supported keys (case-insensitive):
-`project`/`project_name`, `github_token`/`gh_token`, `a2a_bearer_token`,
-`a2a_port`, `a2a_host`, `a2a_public_url`, `opencode_provider_id`,
-`opencode_model_id`, `repo_url`, `repo_branch`, `opencode_timeout`,
-`opencode_timeout_stream`, `git_identity_name`, `git_identity_email`,
-`google_generative_ai_api_key` (alias `google_api_key`), `update_a2a`,
-`force_restart`.
+Supported CLI keys (case-insensitive):
+`project`/`project_name`, `a2a_port`, `a2a_host`, `a2a_public_url`,
+`opencode_provider_id`, `opencode_model_id`, `repo_url`, `repo_branch`,
+`opencode_timeout`, `opencode_timeout_stream`, `git_identity_name`,
+`git_identity_email`, `update_a2a`, `force_restart`.
+
+Required secret env vars:
+`GH_TOKEN`, `A2A_BEARER_TOKEN`
+
+Optional secret env var:
+`GOOGLE_GENERATIVE_AI_API_KEY`
 
 > Use a repository-scoped fine-grained personal access token with minimal
 > required permissions.
@@ -96,13 +100,15 @@ Supported keys (case-insensitive):
 Minimal example:
 
 ```bash
-./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx a2a_port=8010
+GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
+./scripts/deploy.sh project=alpha a2a_port=8010
 ```
 
 Upgrade an existing instance after shared-code update:
 
 ```bash
-./scripts/deploy.sh project=alpha github_token=ghp_xxx a2a_bearer_token=a2a_xxx update_a2a=true force_restart=true
+GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
+./scripts/deploy.sh project=alpha update_a2a=true force_restart=true
 ```
 
 Script actions:
@@ -118,6 +124,11 @@ Script actions:
 ### `deploy.sh` Environment Variables
 
 These can be set before running `deploy.sh` (defaults used if unset):
+
+- `GH_TOKEN`: required GitHub token used by OpenCode and `gh auth login`
+- `A2A_BEARER_TOKEN`: required bearer token written to `a2a.env`
+- `GOOGLE_GENERATIVE_AI_API_KEY`: optional provider key persisted into
+  `opencode.secret.env`
 
 - `OPENCODE_BIND_HOST`: OpenCode bind host, default `127.0.0.1`
 - `OPENCODE_BIND_PORT`: OpenCode bind port, default `4096`
@@ -175,18 +186,13 @@ credential-isolation controls are added.
 
 ### Recommended Secret Input Pattern
 
-Prefer environment variables over command-line literals to reduce shell-history
-exposure:
+Use single-command environment variable injection to avoid long-lived shell
+exports:
 
 ```bash
-export GOOGLE_GENERATIVE_AI_API_KEY='AIza...'
-export GH_TOKEN='ghp_...'
-export A2A_BEARER_TOKEN='a2a_...'
-
+GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' GOOGLE_GENERATIVE_AI_API_KEY='<google-key>' \
 ./scripts/deploy.sh \
   project=alpha \
-  github_token="$GH_TOKEN" \
-  a2a_bearer_token="$A2A_BEARER_TOKEN" \
   a2a_port=8010 \
   a2a_host=127.0.0.1 \
   opencode_provider_id=google \
@@ -198,8 +204,8 @@ export A2A_BEARER_TOKEN='a2a_...'
 Rotate Gemini key:
 
 ```bash
-export GOOGLE_GENERATIVE_AI_API_KEY='AIza_new...'
-./scripts/deploy.sh project=alpha github_token="$GH_TOKEN" a2a_bearer_token="$A2A_BEARER_TOKEN" force_restart=true
+GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' GOOGLE_GENERATIVE_AI_API_KEY='<google-key-new>' \
+./scripts/deploy.sh project=alpha force_restart=true
 ```
 
 If `repo_url` is provided, first deploy can auto-clone into `workspace/`
