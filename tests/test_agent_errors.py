@@ -49,9 +49,9 @@ async def test_cancel_missing_ids():
     # This should no longer raise RuntimeError
     await executor.cancel(context, event_queue)
 
-    # Verify that an event was enqueued and queue was closed
+    # Verify that an event was enqueued and queue is not force-closed by executor.cancel
     event_queue.enqueue_event.assert_called()
-    event_queue.close.assert_called()
+    event_queue.close.assert_not_called()
 
 
 @pytest.mark.asyncio

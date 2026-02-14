@@ -190,6 +190,9 @@ class OpencodeAgentExecutor(AgentExecutor):
         self._lock = asyncio.Lock()
         self._inflight_session_creates: dict[tuple[str, str], asyncio.Task[str]] = {}
         self._session_locks: dict[str, asyncio.Lock] = {}
+        self._running_requests: dict[tuple[str, str], asyncio.Task[Any]] = {}
+        self._running_stop_events: dict[tuple[str, str], asyncio.Event] = {}
+        self._running_identities: dict[tuple[str, str], str] = {}
 
     def _resolve_and_validate_directory(self, requested: str | None) -> str | None:
         """Normalizes and validates the directory parameter against workspace boundaries.
@@ -310,6 +313,13 @@ class OpencodeAgentExecutor(AgentExecutor):
         pending_preferred_claim = False
         session_lock: asyncio.Lock | None = None
         session_id = ""
+        execution_key = (task_id, context_id)
+        current_task = asyncio.current_task()
+        if current_task is not None:
+            async with self._lock:
+                self._running_requests[execution_key] = current_task
+                self._running_stop_events[execution_key] = stop_event
+                self._running_identities[execution_key] = identity
 
         try:
             session_id, pending_preferred_claim = await self._get_or_create_session(
@@ -458,6 +468,10 @@ class OpencodeAgentExecutor(AgentExecutor):
                     await stream_task
             if session_lock and session_lock.locked():
                 session_lock.release()
+            async with self._lock:
+                self._running_requests.pop(execution_key, None)
+                self._running_stop_events.pop(execution_key, None)
+                self._running_identities.pop(execution_key, None)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id
@@ -484,9 +498,21 @@ class OpencodeAgentExecutor(AgentExecutor):
             )
             await event_queue.enqueue_event(event)
 
+            execution_key = (task_id, context_id)
             async with self._lock:
-                self._sessions.pop((identity, context_id))
-                inflight = self._inflight_session_creates.pop((identity, context_id), None)
+                running_identity = self._running_identities.get(execution_key, identity)
+                running_task = self._running_requests.get(execution_key)
+                stop_event = self._running_stop_events.get(execution_key)
+                self._sessions.pop((running_identity, context_id))
+                inflight = self._inflight_session_creates.pop((running_identity, context_id), None)
+            if stop_event:
+                stop_event.set()
+            if (
+                running_task
+                and running_task is not asyncio.current_task()
+                and not running_task.done()
+            ):
+                running_task.cancel()
             if inflight:
                 inflight.cancel()
                 with suppress(asyncio.CancelledError):
@@ -502,8 +528,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                         message=f"Cancel failed: {exc}",
                         streaming_request=False,
                     )
-        finally:
-            await event_queue.close()
 
     async def _get_or_create_session(
         self,
