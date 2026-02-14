@@ -732,75 +732,133 @@ class OpencodeAgentExecutor(AgentExecutor):
                             continue
                         channel = _classify_stream_channel(part, props)
                         delta = props.get("delta")
-                        chunk_text: str | None = None
-                        append = True
-                        source = "delta"
                         message_id = _extract_stream_message_id(part, props)
-                        buffer_key = f"{channel}:{message_id or 'unknown'}"
-                        previous = buffered_text.get(buffer_key, "")
-                        if isinstance(delta, str) and delta:
-                            chunk_text = delta
-                            buffered_text[buffer_key] = f"{previous}{delta}"
-                        elif part.get("type") == "text" and isinstance(part.get("text"), str):
-                            next_text = part["text"]
-                            if next_text != previous:
-                                if next_text.startswith(previous):
-                                    chunk_text = next_text[len(previous) :]
+
+                        chunks: list[_NormalizedStreamChunk] = []
+                        if channel == _STREAM_CHANNEL_FINAL_ANSWER and part.get("type") == "text":
+                            raw_key = f"raw:{message_id or 'unknown'}"
+                            previous_raw = buffered_text.get(raw_key, "")
+                            if isinstance(delta, str) and delta:
+                                next_raw = previous_raw + delta
+                            elif isinstance(part.get("text"), str):
+                                next_raw = part["text"]
+                            else:
+                                continue
+                            if next_raw == previous_raw:
+                                continue
+                            buffered_text[raw_key] = next_raw
+
+                            parsed_channels = _parse_embedded_channels(next_raw)
+                            for parsed_channel_name, current_parsed_text in parsed_channels.items():
+                                parsed_buffer_key = (
+                                    f"{parsed_channel_name}:{message_id or 'unknown'}"
+                                )
+                                previous_parsed_text = buffered_text.get(parsed_buffer_key, "")
+                                if not current_parsed_text and not previous_parsed_text:
+                                    continue
+                                if current_parsed_text == previous_parsed_text:
+                                    continue
+
+                                if current_parsed_text.startswith(previous_parsed_text):
+                                    chunk_text = current_parsed_text[len(previous_parsed_text) :]
                                     append = True
-                                    source = "part_text_diff"
+                                    source = "parsed_diff"
                                 else:
-                                    chunk_text = next_text
+                                    chunk_text = current_parsed_text
                                     append = False
-                                    source = "part_text_reset"
-                                buffered_text[buffer_key] = next_text
-                        if not chunk_text:
+                                    source = "parsed_reset"
+                                buffered_text[parsed_buffer_key] = current_parsed_text
+
+                                if chunk_text:
+                                    chunks.append(
+                                        _NormalizedStreamChunk(
+                                            text=chunk_text,
+                                            append=append,
+                                            channel=parsed_channel_name,
+                                            source=source,
+                                            event_type=event_type,
+                                            message_id=message_id,
+                                            role=role,
+                                        )
+                                    )
+                        else:
+                            chunk_text: str | None = None
+                            append = True
+                            source = "delta"
+                            buffer_key = f"{channel}:{message_id or 'unknown'}"
+                            previous = buffered_text.get(buffer_key, "")
+                            if isinstance(delta, str) and delta:
+                                chunk_text = delta
+                                buffered_text[buffer_key] = f"{previous}{delta}"
+                            elif part.get("type") == "text" and isinstance(part.get("text"), str):
+                                next_text = part["text"]
+                                if next_text != previous:
+                                    if next_text.startswith(previous):
+                                        chunk_text = next_text[len(previous) :]
+                                        append = True
+                                        source = "part_text_diff"
+                                    else:
+                                        chunk_text = next_text
+                                        append = False
+                                        source = "part_text_reset"
+                                    buffered_text[buffer_key] = next_text
+                            if chunk_text:
+                                chunks.append(
+                                    _NormalizedStreamChunk(
+                                        text=chunk_text,
+                                        append=append,
+                                        channel=channel,
+                                        source=source,
+                                        event_type=event_type,
+                                        message_id=message_id,
+                                        role=role,
+                                    )
+                                )
+
+                        if not chunks:
                             continue
-                        chunk = _NormalizedStreamChunk(
-                            text=chunk_text,
-                            append=append,
-                            channel=channel,
-                            source=source,
-                            event_type=event_type,
-                            message_id=message_id,
-                            role=role,
-                        )
-                        if not stream_state.matches_expected_message(chunk.message_id):
-                            continue
-                        if stream_state.should_drop_initial_user_echo(
-                            chunk.text, channel=chunk.channel, role=chunk.role
-                        ):
-                            continue
-                        should_emit, effective_append = stream_state.register_chunk(
-                            channel=chunk.channel,
-                            text=chunk.text,
-                            append=chunk.append,
-                        )
-                        if not should_emit:
-                            continue
-                        await _enqueue_artifact_update(
-                            event_queue=event_queue,
-                            task_id=task_id,
-                            context_id=context_id,
-                            artifact_id=_artifact_id_for_stream_channel(artifact_id, chunk.channel),
-                            text=chunk.text,
-                            append=effective_append,
-                            last_chunk=False,
-                            artifact_metadata=_build_stream_artifact_metadata(
+
+                        for chunk in chunks:
+                            if not stream_state.matches_expected_message(chunk.message_id):
+                                continue
+                            if stream_state.should_drop_initial_user_echo(
+                                chunk.text, channel=chunk.channel, role=chunk.role
+                            ):
+                                continue
+                            should_emit, effective_append = stream_state.register_chunk(
                                 channel=chunk.channel,
-                                source=chunk.source,
-                                event_type=chunk.event_type,
-                                message_id=chunk.message_id,
-                                role=chunk.role,
-                            ),
-                        )
-                        logger.debug(
-                            "Stream chunk task_id=%s session_id=%s channel=%s append=%s text=%s",
-                            task_id,
-                            session_id,
-                            chunk.channel,
-                            effective_append,
-                            chunk.text,
-                        )
+                                text=chunk.text,
+                                append=chunk.append,
+                            )
+                            if not should_emit:
+                                continue
+                            await _enqueue_artifact_update(
+                                event_queue=event_queue,
+                                task_id=task_id,
+                                context_id=context_id,
+                                artifact_id=_artifact_id_for_stream_channel(
+                                    artifact_id, chunk.channel
+                                ),
+                                text=chunk.text,
+                                append=effective_append,
+                                last_chunk=False,
+                                artifact_metadata=_build_stream_artifact_metadata(
+                                    channel=chunk.channel,
+                                    source=chunk.source,
+                                    event_type=chunk.event_type,
+                                    message_id=chunk.message_id,
+                                    role=chunk.role,
+                                ),
+                            )
+                            logger.debug(
+                                "Stream chunk task_id=%s session_id=%s "
+                                "channel=%s append=%s text=%s",
+                                task_id,
+                                session_id,
+                                chunk.channel,
+                                effective_append,
+                                chunk.text,
+                            )
                     break
                 except Exception:
                     if stop_event.is_set():
@@ -955,6 +1013,60 @@ def _extract_stream_message_id(part: Mapping[str, Any], props: Mapping[str, Any]
                     if normalized:
                         return normalized
     return None
+
+
+def _parse_embedded_channels(text: str) -> dict[str, str]:
+    channels = {
+        _STREAM_CHANNEL_FINAL_ANSWER: "",
+        _STREAM_CHANNEL_REASONING: "",
+        _STREAM_CHANNEL_TOOL_CALL: "",
+    }
+    i = 0
+
+    while i < len(text):
+        if text.startswith("<think>", i):
+            end = text.find("</think>", i + 7)
+            if end < 0:
+                # Keep incomplete reasoning tag in pending tail; wait for next chunk.
+                break
+            channels[_STREAM_CHANNEL_REASONING] += text[i + 7 : end]
+            i = end + 8
+            continue
+
+        if text.startswith("[tool_call:", i):
+            j = i + 11
+            depth = 1
+            while j < len(text) and depth > 0:
+                if text[j] == "[":
+                    depth += 1
+                elif text[j] == "]":
+                    depth -= 1
+                j += 1
+            if depth > 0:
+                # Keep incomplete tool call in pending tail; wait for next chunk.
+                break
+            channels[_STREAM_CHANNEL_TOOL_CALL] += text[i:j]
+            i = j
+            continue
+
+        remaining = text[i:]
+        if _is_partial_marker_prefix(remaining):
+            break
+
+        channels[_STREAM_CHANNEL_FINAL_ANSWER] += text[i]
+        i += 1
+
+    return channels
+
+
+def _is_partial_marker_prefix(remaining: str) -> bool:
+    if not remaining:
+        return False
+    if remaining != "<think>" and "<think>".startswith(remaining):
+        return True
+    if remaining != "[tool_call:" and "[tool_call:".startswith(remaining):
+        return True
+    return False
 
 
 def _classify_stream_channel(part: Mapping[str, Any], props: Mapping[str, Any]) -> str:

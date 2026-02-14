@@ -274,3 +274,46 @@ def _unique(items: list[str]) -> list[str]:
         seen.add(item)
         ordered.append(item)
     return ordered
+
+
+@pytest.mark.asyncio
+async def test_streaming_parses_embedded_reasoning_and_tool_calls() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="start "),
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="<thin"),
+            _event(
+                session_id="ses-1", role="assistant", part_type="text", delta="k>thinking</think> "
+            ),
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="middle "),
+            _event(
+                session_id="ses-1", role="assistant", part_type="text", delta='[tool_call: {"foo":'
+            ),
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="1}] end"),
+        ],
+        response_text="start  middle  end",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        _context(task_id="task-embedded", context_id="ctx-embedded", text="go"), queue
+    )
+
+    updates = _artifact_updates(queue)
+
+    def _final_state(channel: str) -> str:
+        parts = []
+        for ev in updates:
+            if ev.artifact.metadata["opencode"]["channel"] == channel:
+                if not ev.append:
+                    parts = [_part_text(ev)]
+                else:
+                    parts.append(_part_text(ev))
+        return "".join(parts)
+
+    assert _final_state("final_answer") == "start  middle  end"
+    assert _final_state("reasoning") == "thinking"
+    assert _final_state("tool_call") == '[tool_call: {"foo":1}]'
+    assert "<thin" not in _final_state("final_answer")
