@@ -127,7 +127,7 @@ def _part_text(event: TaskArtifactUpdateEvent) -> str:
 
 
 @pytest.mark.asyncio
-async def test_streaming_filters_user_echo_and_emits_structured_channels() -> None:
+async def test_streaming_filters_user_echo_and_emits_single_artifact_content_types() -> None:
     user_text = "who are you"
     client = DummyStreamingClient(
         stream_events_payload=[
@@ -153,8 +153,12 @@ async def test_streaming_filters_user_echo_and_emits_structured_channels() -> No
     assert updates
     texts = [_part_text(event) for event in updates]
     assert user_text not in texts
-    channels = [event.artifact.metadata["opencode"]["channel"] for event in updates]
-    assert _unique(channels) == ["reasoning", "tool_call", "final_answer"]
+    content_types = [event.artifact.metadata["opencode"]["content_type"] for event in updates]
+    assert _unique(content_types) == ["reasoning", "tool_call", "text"]
+    artifact_ids = [event.artifact.artifact_id for event in updates]
+    assert len(set(artifact_ids)) == 1
+    sequences = [event.artifact.metadata["opencode"]["sequence"] for event in updates]
+    assert sequences == list(range(1, len(updates) + 1))
 
 
 @pytest.mark.asyncio
@@ -179,7 +183,7 @@ async def test_streaming_does_not_send_duplicate_final_snapshot_when_chunks_exis
     final_updates = [
         event
         for event in _artifact_updates(queue)
-        if event.artifact.metadata["opencode"]["channel"] == "final_answer"
+        if event.artifact.metadata["opencode"]["content_type"] == "text"
     ]
     assert len(final_updates) == 1
     assert _part_text(final_updates[0]) == "stable final answer"
@@ -203,13 +207,13 @@ async def test_streaming_emits_final_snapshot_only_when_stream_has_no_final_answ
     final_updates = [
         event
         for event in _artifact_updates(queue)
-        if event.artifact.metadata["opencode"]["channel"] == "final_answer"
+        if event.artifact.metadata["opencode"]["content_type"] == "text"
     ]
     assert len(final_updates) == 1
     final_event = final_updates[0]
     assert _part_text(final_event) == "final answer from send_message"
     assert final_event.artifact.metadata["opencode"]["source"] == "final_snapshot"
-    assert final_event.append is False
+    assert final_event.append is True
     assert final_event.last_chunk is True
 
 
@@ -262,7 +266,7 @@ async def test_streaming_drops_events_without_message_id_and_falls_back_to_snaps
     update = updates[0]
     assert _part_text(update) == "final answer from send_message"
     assert update.artifact.metadata["opencode"]["source"] == "final_snapshot"
-    assert update.artifact.metadata["opencode"]["channel"] == "final_answer"
+    assert update.artifact.metadata["opencode"]["content_type"] == "text"
 
 
 def _unique(items: list[str]) -> list[str]:
@@ -303,20 +307,20 @@ async def test_streaming_parses_embedded_reasoning_and_tool_calls() -> None:
 
     updates = _artifact_updates(queue)
 
-    def _final_state(channel: str) -> str:
+    def _final_state(content_type: str) -> str:
         parts = []
         for ev in updates:
-            if ev.artifact.metadata["opencode"]["channel"] == channel:
+            if ev.artifact.metadata["opencode"]["content_type"] == content_type:
                 if not ev.append:
                     parts = [_part_text(ev)]
                 else:
                     parts.append(_part_text(ev))
         return "".join(parts)
 
-    assert _final_state("final_answer") == "start  middle  end"
+    assert _final_state("text") == "start  middle  end"
     assert _final_state("reasoning") == "thinking"
-    assert _final_state("tool_call") == '[tool_call: {"foo":1}]'
-    assert "<thin" not in _final_state("final_answer")
+    assert _final_state("tool_call") == ' {"foo":1}'
+    assert "<thin" not in _final_state("text")
 
 
 @pytest.mark.asyncio
@@ -350,15 +354,86 @@ async def test_streaming_parses_tool_call_with_bracket_in_json_string() -> None:
 
     updates = _artifact_updates(queue)
 
-    def _final_state(channel: str) -> str:
+    def _final_state(content_type: str) -> str:
         parts = []
         for ev in updates:
-            if ev.artifact.metadata["opencode"]["channel"] == channel:
+            if ev.artifact.metadata["opencode"]["content_type"] == content_type:
                 if not ev.append:
                     parts = [_part_text(ev)]
                 else:
                     parts.append(_part_text(ev))
         return "".join(parts)
 
-    assert _final_state("tool_call") == '[tool_call: {"text":"a]b","arr":[1,2]}]'
-    assert _final_state("final_answer") == "before  after"
+    assert _final_state("tool_call") == ' {"text":"a]b","arr":[1,2]}'
+    assert _final_state("text") == "before  after"
+
+
+@pytest.mark.asyncio
+async def test_streaming_flushes_partial_marker_on_eof_as_current_content_type() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="hello <thin"),
+        ],
+        response_text="hello <thin",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        _context(task_id="task-eof-flush", context_id="ctx-eof-flush", text="go"),
+        queue,
+    )
+
+    updates = _artifact_updates(queue)
+    assert updates
+    assert "".join(_part_text(ev) for ev in updates) == "hello <thin"
+    assert all(ev.artifact.metadata["opencode"]["content_type"] == "text" for ev in updates)
+
+
+@pytest.mark.asyncio
+async def test_streaming_never_resets_single_artifact_after_first_chunk() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            {
+                "type": "message.part.updated",
+                "properties": {
+                    "part": {
+                        "sessionID": "ses-1",
+                        "type": "text",
+                        "role": "assistant",
+                        "messageID": "msg-1",
+                        "text": "hello",
+                    },
+                    "delta": "",
+                },
+            },
+            {
+                "type": "message.part.updated",
+                "properties": {
+                    "part": {
+                        "sessionID": "ses-1",
+                        "type": "text",
+                        "role": "assistant",
+                        "messageID": "msg-1",
+                        "text": "HELLO",
+                    },
+                    "delta": "",
+                },
+            },
+        ],
+        response_text="HELLO",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        _context(task_id="task-no-reset", context_id="ctx-no-reset", text="go"),
+        queue,
+    )
+
+    updates = _artifact_updates(queue)
+    assert len(updates) >= 2
+    assert updates[0].append is False
+    assert all(ev.append is True for ev in updates[1:])

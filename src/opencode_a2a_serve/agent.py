@@ -29,16 +29,16 @@ from .opencode_client import OpencodeClient
 
 logger = logging.getLogger(__name__)
 
-_STREAM_CHANNEL_REASONING = "reasoning"
-_STREAM_CHANNEL_TOOL_CALL = "tool_call"
-_STREAM_CHANNEL_FINAL_ANSWER = "final_answer"
+_STREAM_CONTENT_TEXT = "text"
+_STREAM_CONTENT_REASONING = "reasoning"
+_STREAM_CONTENT_TOOL_CALL = "tool_call"
 
 
 @dataclass(frozen=True)
 class _NormalizedStreamChunk:
     text: str
     append: bool
-    channel: str
+    content_type: str
     source: str
     event_type: str
     message_id: str | None
@@ -49,9 +49,10 @@ class _NormalizedStreamChunk:
 class _StreamOutputState:
     user_text: str
     response_message_id: str | None = None
-    channel_buffers: dict[str, str] = field(default_factory=dict)
-    saw_final_answer_chunk: bool = False
+    content_buffers: dict[str, str] = field(default_factory=dict)
     saw_any_chunk: bool = False
+    emitted_stream_chunk: bool = False
+    sequence: int = 0
 
     def set_response_message_id(self, message_id: str | None) -> None:
         if not isinstance(message_id, str):
@@ -67,38 +68,47 @@ class _StreamOutputState:
             return True
         return message_id == self.response_message_id
 
-    def should_drop_initial_user_echo(self, text: str, *, channel: str, role: str | None) -> bool:
+    def should_drop_initial_user_echo(
+        self,
+        text: str,
+        *,
+        content_type: str,
+        role: str | None,
+    ) -> bool:
         if role is not None:
             return False
-        if channel != _STREAM_CHANNEL_FINAL_ANSWER:
+        if content_type != _STREAM_CONTENT_TEXT:
             return False
         if self.saw_any_chunk:
             return False
         user_text = self.user_text.strip()
         return bool(user_text) and text.strip() == user_text
 
-    def register_chunk(self, *, channel: str, text: str, append: bool) -> tuple[bool, bool]:
-        previous = self.channel_buffers.get(channel, "")
-        effective_append = append if previous else False
-        next_value = f"{previous}{text}" if effective_append else text
+    def register_chunk(self, *, content_type: str, text: str, append: bool) -> tuple[bool, bool]:
+        previous = self.content_buffers.get(content_type, "")
+        next_value = f"{previous}{text}" if append else text
         if next_value == previous:
-            return False, effective_append
-        self.channel_buffers[channel] = next_value
+            return False, False
+        self.content_buffers[content_type] = next_value
         self.saw_any_chunk = True
-        if channel == _STREAM_CHANNEL_FINAL_ANSWER and next_value.strip():
-            self.saw_final_answer_chunk = True
+        # Single-artifact stream must stay append-only after the first emitted chunk.
+        effective_append = self.emitted_stream_chunk
+        self.emitted_stream_chunk = True
         return True, effective_append
 
     def should_emit_final_snapshot(self, text: str) -> bool:
         if not text.strip():
             return False
-        existing = self.channel_buffers.get(_STREAM_CHANNEL_FINAL_ANSWER, "")
+        existing = self.content_buffers.get(_STREAM_CONTENT_TEXT, "")
         if existing.strip() == text.strip():
             return False
-        self.channel_buffers[_STREAM_CHANNEL_FINAL_ANSWER] = text
+        self.content_buffers[_STREAM_CONTENT_TEXT] = text
         self.saw_any_chunk = True
-        self.saw_final_answer_chunk = True
         return True
+
+    def next_sequence(self) -> int:
+        self.sequence += 1
+        return self.sequence
 
 
 class _TTLCache:
@@ -386,17 +396,16 @@ class OpencodeAgentExecutor(AgentExecutor):
                         event_queue=event_queue,
                         task_id=task_id,
                         context_id=context_id,
-                        artifact_id=_artifact_id_for_stream_channel(
-                            stream_artifact_id, _STREAM_CHANNEL_FINAL_ANSWER
-                        ),
+                        artifact_id=stream_artifact_id,
                         text=response_text,
-                        append=False,
+                        append=stream_state.emitted_stream_chunk,
                         last_chunk=True,
                         artifact_metadata=_build_stream_artifact_metadata(
-                            channel=_STREAM_CHANNEL_FINAL_ANSWER,
+                            content_type=_STREAM_CONTENT_TEXT,
                             source="final_snapshot",
                             event_type="message.finalized",
                             message_id=response.message_id,
+                            sequence=stream_state.next_sequence(),
                         ),
                     )
                 await event_queue.enqueue_event(
@@ -705,9 +714,55 @@ class OpencodeAgentExecutor(AgentExecutor):
         stop_event: asyncio.Event,
         directory: str | None = None,
     ) -> None:
-        buffered_text: dict[str, str] = {}
+        raw_text_buffers: dict[str, str] = {}
+        direct_buffers: dict[str, str] = {}
+        parsers: dict[str, _EmbeddedStreamParser] = {}
         backoff = 0.5
         max_backoff = 5.0
+
+        async def _emit_chunks(chunks: list[_NormalizedStreamChunk]) -> None:
+            for chunk in chunks:
+                if not stream_state.matches_expected_message(chunk.message_id):
+                    continue
+                if stream_state.should_drop_initial_user_echo(
+                    chunk.text,
+                    content_type=chunk.content_type,
+                    role=chunk.role,
+                ):
+                    continue
+                should_emit, effective_append = stream_state.register_chunk(
+                    content_type=chunk.content_type,
+                    text=chunk.text,
+                    append=chunk.append,
+                )
+                if not should_emit:
+                    continue
+                await _enqueue_artifact_update(
+                    event_queue=event_queue,
+                    task_id=task_id,
+                    context_id=context_id,
+                    artifact_id=artifact_id,
+                    text=chunk.text,
+                    append=effective_append,
+                    last_chunk=False,
+                    artifact_metadata=_build_stream_artifact_metadata(
+                        content_type=chunk.content_type,
+                        source=chunk.source,
+                        event_type=chunk.event_type,
+                        message_id=chunk.message_id,
+                        role=chunk.role,
+                        sequence=stream_state.next_sequence(),
+                    ),
+                )
+                logger.debug(
+                    "Stream chunk task_id=%s session_id=%s content_type=%s append=%s text=%s",
+                    task_id,
+                    session_id,
+                    chunk.content_type,
+                    effective_append,
+                    chunk.text,
+                )
+
         try:
             while not stop_event.is_set():
                 try:
@@ -730,66 +785,64 @@ class OpencodeAgentExecutor(AgentExecutor):
                         role = _extract_stream_role(part, props)
                         if role in {"user", "system"}:
                             continue
-                        channel = _classify_stream_channel(part, props)
+                        content_type = _classify_stream_content_type(part, props)
                         delta = props.get("delta")
                         message_id = _extract_stream_message_id(part, props)
+                        message_key = message_id or "unknown"
 
                         chunks: list[_NormalizedStreamChunk] = []
-                        if channel == _STREAM_CHANNEL_FINAL_ANSWER and part.get("type") == "text":
-                            raw_key = f"raw:{message_id or 'unknown'}"
-                            previous_raw = buffered_text.get(raw_key, "")
+                        if content_type == _STREAM_CONTENT_TEXT and part.get("type") == "text":
+                            parser = parsers.setdefault(message_key, _EmbeddedStreamParser())
+                            raw_key = f"raw:{message_key}"
+                            previous_raw = raw_text_buffers.get(raw_key, "")
+                            incoming_text: str | None = None
+                            append = True
+                            source = "delta"
                             if isinstance(delta, str) and delta:
-                                next_raw = previous_raw + delta
+                                incoming_text = delta
                             elif isinstance(part.get("text"), str):
-                                next_raw = part["text"]
-                            else:
-                                continue
-                            if next_raw == previous_raw:
-                                continue
-                            buffered_text[raw_key] = next_raw
-
-                            parsed_channels = _parse_embedded_channels(next_raw)
-                            for parsed_channel_name, current_parsed_text in parsed_channels.items():
-                                parsed_buffer_key = (
-                                    f"{parsed_channel_name}:{message_id or 'unknown'}"
-                                )
-                                previous_parsed_text = buffered_text.get(parsed_buffer_key, "")
-                                if not current_parsed_text and not previous_parsed_text:
+                                next_text = part["text"]
+                                if next_text == previous_raw:
                                     continue
-                                if current_parsed_text == previous_parsed_text:
-                                    continue
-
-                                if current_parsed_text.startswith(previous_parsed_text):
-                                    chunk_text = current_parsed_text[len(previous_parsed_text) :]
+                                if next_text.startswith(previous_raw):
+                                    incoming_text = next_text[len(previous_raw) :]
                                     append = True
-                                    source = "parsed_diff"
+                                    source = "part_text_diff"
                                 else:
-                                    chunk_text = current_parsed_text
+                                    incoming_text = next_text
                                     append = False
-                                    source = "parsed_reset"
-                                buffered_text[parsed_buffer_key] = current_parsed_text
+                                    source = "part_text_reset"
+                            if incoming_text is None:
+                                continue
 
-                                if chunk_text:
-                                    chunks.append(
-                                        _NormalizedStreamChunk(
-                                            text=chunk_text,
-                                            append=append,
-                                            channel=parsed_channel_name,
-                                            source=source,
-                                            event_type=event_type,
-                                            message_id=message_id,
-                                            role=role,
-                                        )
+                            if append:
+                                raw_text_buffers[raw_key] = f"{previous_raw}{incoming_text}"
+                            else:
+                                raw_text_buffers[raw_key] = incoming_text
+                                parser.reset()
+
+                            parsed_segments = parser.feed(incoming_text)
+                            for idx, segment in enumerate(parsed_segments):
+                                chunks.append(
+                                    _NormalizedStreamChunk(
+                                        text=segment.text,
+                                        append=append if idx == 0 else True,
+                                        content_type=segment.content_type,
+                                        source=f"lexer_{source}",
+                                        event_type=event_type,
+                                        message_id=message_id,
+                                        role=role,
                                     )
+                                )
                         else:
                             chunk_text: str | None = None
                             append = True
                             source = "delta"
-                            buffer_key = f"{channel}:{message_id or 'unknown'}"
-                            previous = buffered_text.get(buffer_key, "")
+                            buffer_key = f"{content_type}:{message_key}"
+                            previous = direct_buffers.get(buffer_key, "")
                             if isinstance(delta, str) and delta:
                                 chunk_text = delta
-                                buffered_text[buffer_key] = f"{previous}{delta}"
+                                direct_buffers[buffer_key] = f"{previous}{delta}"
                             elif part.get("type") == "text" and isinstance(part.get("text"), str):
                                 next_text = part["text"]
                                 if next_text != previous:
@@ -801,13 +854,13 @@ class OpencodeAgentExecutor(AgentExecutor):
                                         chunk_text = next_text
                                         append = False
                                         source = "part_text_reset"
-                                    buffered_text[buffer_key] = next_text
+                                    direct_buffers[buffer_key] = next_text
                             if chunk_text:
                                 chunks.append(
                                     _NormalizedStreamChunk(
                                         text=chunk_text,
                                         append=append,
-                                        channel=channel,
+                                        content_type=content_type,
                                         source=source,
                                         event_type=event_type,
                                         message_id=message_id,
@@ -817,48 +870,26 @@ class OpencodeAgentExecutor(AgentExecutor):
 
                         if not chunks:
                             continue
+                        await _emit_chunks(chunks)
 
-                        for chunk in chunks:
-                            if not stream_state.matches_expected_message(chunk.message_id):
-                                continue
-                            if stream_state.should_drop_initial_user_echo(
-                                chunk.text, channel=chunk.channel, role=chunk.role
-                            ):
-                                continue
-                            should_emit, effective_append = stream_state.register_chunk(
-                                channel=chunk.channel,
-                                text=chunk.text,
-                                append=chunk.append,
-                            )
-                            if not should_emit:
-                                continue
-                            await _enqueue_artifact_update(
-                                event_queue=event_queue,
-                                task_id=task_id,
-                                context_id=context_id,
-                                artifact_id=_artifact_id_for_stream_channel(
-                                    artifact_id, chunk.channel
-                                ),
-                                text=chunk.text,
-                                append=effective_append,
-                                last_chunk=False,
-                                artifact_metadata=_build_stream_artifact_metadata(
-                                    channel=chunk.channel,
-                                    source=chunk.source,
-                                    event_type=chunk.event_type,
-                                    message_id=chunk.message_id,
-                                    role=chunk.role,
-                                ),
-                            )
-                            logger.debug(
-                                "Stream chunk task_id=%s session_id=%s "
-                                "channel=%s append=%s text=%s",
-                                task_id,
-                                session_id,
-                                chunk.channel,
-                                effective_append,
-                                chunk.text,
-                            )
+                    if not stop_event.is_set():
+                        eof_chunks: list[_NormalizedStreamChunk] = []
+                        for message_key, parser in parsers.items():
+                            message_id = None if message_key == "unknown" else message_key
+                            for segment in parser.flush_eof():
+                                eof_chunks.append(
+                                    _NormalizedStreamChunk(
+                                        text=segment.text,
+                                        append=True,
+                                        content_type=segment.content_type,
+                                        source="lexer_eof_flush",
+                                        event_type="message.stream.eof",
+                                        message_id=message_id,
+                                        role="agent",
+                                    )
+                                )
+                        if eof_chunks:
+                            await _emit_chunks(eof_chunks)
                     break
                 except Exception:
                     if stop_event.is_set():
@@ -915,22 +946,18 @@ async def _enqueue_artifact_update(
     )
 
 
-def _artifact_id_for_stream_channel(base_artifact_id: str, channel: str) -> str:
-    if channel == _STREAM_CHANNEL_FINAL_ANSWER:
-        return base_artifact_id
-    return f"{base_artifact_id}:{channel}"
-
-
 def _build_stream_artifact_metadata(
     *,
-    channel: str,
+    content_type: str,
     source: str,
     event_type: str,
     message_id: str | None = None,
     role: str | None = None,
+    sequence: int | None = None,
 ) -> dict[str, Any]:
     opencode_meta: dict[str, Any] = {
-        "channel": channel,
+        "content_type": content_type,
+        "block_type": content_type,
         "source": source,
         "event_type": event_type,
     }
@@ -938,6 +965,8 @@ def _build_stream_artifact_metadata(
         opencode_meta["message_id"] = message_id
     if role:
         opencode_meta["role"] = role
+    if sequence is not None:
+        opencode_meta["sequence"] = sequence
     return {"opencode": opencode_meta}
 
 
@@ -1015,76 +1044,200 @@ def _extract_stream_message_id(part: Mapping[str, Any], props: Mapping[str, Any]
     return None
 
 
-def _parse_embedded_channels(text: str) -> dict[str, str]:
-    channels = {
-        _STREAM_CHANNEL_FINAL_ANSWER: "",
-        _STREAM_CHANNEL_REASONING: "",
-        _STREAM_CHANNEL_TOOL_CALL: "",
-    }
-    i = 0
+@dataclass(frozen=True)
+class _ParsedStreamSegment:
+    content_type: str
+    text: str
 
-    while i < len(text):
-        if text.startswith("<think>", i):
-            end = text.find("</think>", i + 7)
-            if end < 0:
-                # Keep incomplete reasoning tag in pending tail; wait for next chunk.
-                break
-            channels[_STREAM_CHANNEL_REASONING] += text[i + 7 : end]
-            i = end + 8
-            continue
 
-        if text.startswith("[tool_call:", i):
-            j = i + 11
-            depth = 1
-            in_string = False
-            quote_char = ""
-            escaped = False
-            while j < len(text) and depth > 0:
-                ch = text[j]
-                if in_string:
-                    if escaped:
-                        escaped = False
+class _EmbeddedStreamParser:
+    _THINK_OPEN = "<think>"
+    _THINK_CLOSE = "</think>"
+    _TOOL_CALL_OPEN = "[tool_call:"
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self._state = _STREAM_CONTENT_TEXT
+        self._buffer = ""
+        self._tool_depth = 1
+        self._tool_in_string = False
+        self._tool_quote_char = ""
+        self._tool_escaped = False
+
+    def feed(self, text: str) -> list[_ParsedStreamSegment]:
+        if not text:
+            return []
+        self._buffer += text
+        segments: list[_ParsedStreamSegment] = []
+        i = 0
+        while i < len(self._buffer):
+            if self._state == _STREAM_CONTENT_TEXT:
+                think_pos = self._buffer.find(self._THINK_OPEN, i)
+                tool_pos = self._buffer.find(self._TOOL_CALL_OPEN, i)
+                marker_pos = -1
+                marker = ""
+                if think_pos >= 0 and (tool_pos < 0 or think_pos < tool_pos):
+                    marker_pos = think_pos
+                    marker = self._THINK_OPEN
+                elif tool_pos >= 0:
+                    marker_pos = tool_pos
+                    marker = self._TOOL_CALL_OPEN
+
+                if marker_pos >= 0:
+                    _append_segment(
+                        segments,
+                        _STREAM_CONTENT_TEXT,
+                        self._buffer[i:marker_pos],
+                    )
+                    i = marker_pos + len(marker)
+                    if marker == self._THINK_OPEN:
+                        self._state = _STREAM_CONTENT_REASONING
+                    else:
+                        self._state = _STREAM_CONTENT_TOOL_CALL
+                        self._tool_depth = 1
+                        self._tool_in_string = False
+                        self._tool_quote_char = ""
+                        self._tool_escaped = False
+                    continue
+
+                remaining = self._buffer[i:]
+                hold_len = _max_partial_marker_len(
+                    remaining,
+                    markers=(self._THINK_OPEN, self._TOOL_CALL_OPEN),
+                )
+                emit_len = len(remaining) - hold_len
+                _append_segment(
+                    segments,
+                    _STREAM_CONTENT_TEXT,
+                    remaining[:emit_len],
+                )
+                i += emit_len
+                if hold_len > 0:
+                    break
+                continue
+
+            if self._state == _STREAM_CONTENT_REASONING:
+                end_pos = self._buffer.find(self._THINK_CLOSE, i)
+                if end_pos >= 0:
+                    _append_segment(
+                        segments,
+                        _STREAM_CONTENT_REASONING,
+                        self._buffer[i:end_pos],
+                    )
+                    i = end_pos + len(self._THINK_CLOSE)
+                    self._state = _STREAM_CONTENT_TEXT
+                    continue
+
+                remaining = self._buffer[i:]
+                hold_len = _max_partial_marker_len(
+                    remaining,
+                    markers=(self._THINK_CLOSE,),
+                )
+                emit_len = len(remaining) - hold_len
+                _append_segment(
+                    segments,
+                    _STREAM_CONTENT_REASONING,
+                    remaining[:emit_len],
+                )
+                i += emit_len
+                if hold_len > 0:
+                    break
+                continue
+
+            tool_buf: list[str] = []
+            while i < len(self._buffer):
+                ch = self._buffer[i]
+                i += 1
+
+                if self._tool_in_string:
+                    tool_buf.append(ch)
+                    if self._tool_escaped:
+                        self._tool_escaped = False
                     elif ch == "\\":
-                        escaped = True
-                    elif ch == quote_char:
-                        in_string = False
-                else:
-                    if ch in {'"', "'"}:
-                        in_string = True
-                        quote_char = ch
-                    elif ch == "[":
-                        depth += 1
-                    elif ch == "]":
-                        depth -= 1
-                j += 1
-            if depth > 0:
-                # Keep incomplete tool call in pending tail; wait for next chunk.
+                        self._tool_escaped = True
+                    elif ch == self._tool_quote_char:
+                        self._tool_in_string = False
+                    continue
+
+                if ch in {'"', "'"}:
+                    self._tool_in_string = True
+                    self._tool_quote_char = ch
+                    tool_buf.append(ch)
+                    continue
+                if ch == "[":
+                    self._tool_depth += 1
+                    tool_buf.append(ch)
+                    continue
+                if ch == "]":
+                    self._tool_depth -= 1
+                    if self._tool_depth == 0:
+                        self._state = _STREAM_CONTENT_TEXT
+                        self._tool_in_string = False
+                        self._tool_quote_char = ""
+                        self._tool_escaped = False
+                        break
+                    tool_buf.append(ch)
+                    continue
+
+                tool_buf.append(ch)
+
+            _append_segment(
+                segments,
+                _STREAM_CONTENT_TOOL_CALL,
+                "".join(tool_buf),
+            )
+
+        self._buffer = self._buffer[i:]
+        return segments
+
+    def flush_eof(self) -> list[_ParsedStreamSegment]:
+        if not self._buffer:
+            return []
+        content_type = self._state
+        text = self._buffer
+        self._buffer = ""
+        self._state = _STREAM_CONTENT_TEXT
+        self._tool_depth = 1
+        self._tool_in_string = False
+        self._tool_quote_char = ""
+        self._tool_escaped = False
+        return [_ParsedStreamSegment(content_type=content_type, text=text)]
+
+
+def _append_segment(
+    segments: list[_ParsedStreamSegment],
+    content_type: str,
+    text: str,
+) -> None:
+    if not text:
+        return
+    if segments and segments[-1].content_type == content_type:
+        previous = segments[-1]
+        segments[-1] = _ParsedStreamSegment(
+            content_type=content_type,
+            text=f"{previous.text}{text}",
+        )
+        return
+    segments.append(_ParsedStreamSegment(content_type=content_type, text=text))
+
+
+def _max_partial_marker_len(text: str, *, markers: tuple[str, ...]) -> int:
+    if not text:
+        return 0
+    max_len = 0
+    for marker in markers:
+        upper = min(len(text), len(marker) - 1)
+        for size in range(upper, 0, -1):
+            if marker.startswith(text[-size:]):
+                if size > max_len:
+                    max_len = size
                 break
-            channels[_STREAM_CHANNEL_TOOL_CALL] += text[i:j]
-            i = j
-            continue
-
-        remaining = text[i:]
-        if _is_partial_marker_prefix(remaining):
-            break
-
-        channels[_STREAM_CHANNEL_FINAL_ANSWER] += text[i]
-        i += 1
-
-    return channels
+    return max_len
 
 
-def _is_partial_marker_prefix(remaining: str) -> bool:
-    if not remaining:
-        return False
-    if remaining != "<think>" and "<think>".startswith(remaining):
-        return True
-    if remaining != "[tool_call:" and "[tool_call:".startswith(remaining):
-        return True
-    return False
-
-
-def _classify_stream_channel(part: Mapping[str, Any], props: Mapping[str, Any]) -> str:
+def _classify_stream_content_type(part: Mapping[str, Any], props: Mapping[str, Any]) -> str:
     def _iter_candidates() -> list[str]:
         candidates: list[str] = []
         for value in (
@@ -1108,7 +1261,7 @@ def _classify_stream_channel(part: Mapping[str, Any], props: Mapping[str, Any]) 
         any(keyword in candidate for keyword in ("reason", "thinking", "thought"))
         for candidate in candidates
     ):
-        return _STREAM_CHANNEL_REASONING
+        return _STREAM_CONTENT_REASONING
     if any(
         any(
             keyword in candidate
@@ -1123,8 +1276,8 @@ def _classify_stream_channel(part: Mapping[str, Any], props: Mapping[str, Any]) 
         )
         for candidate in candidates
     ):
-        return _STREAM_CHANNEL_TOOL_CALL
-    return _STREAM_CHANNEL_FINAL_ANSWER
+        return _STREAM_CONTENT_TOOL_CALL
+    return _STREAM_CONTENT_TEXT
 
 
 def _build_history(context: RequestContext) -> list[Message]:
