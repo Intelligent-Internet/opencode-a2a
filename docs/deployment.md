@@ -396,5 +396,8 @@ Application-level safeguards:
   `GET /v1/tasks/{task_id}:subscribe`
 - service subscribes to OpenCode `/event` stream and forwards filtered
   per-session updates
-- stream emits incremental `TaskArtifactUpdateEvent` (`append=true`) and closes
-  with `TaskStatusUpdateEvent(final=true)`
+- stream emits incremental `TaskArtifactUpdateEvent` with channel metadata
+  (`reasoning` / `tool_call` / `final_answer`)
+- events without `message_id` are discarded to avoid ambiguous correlation
+- final snapshot is emitted only when stream chunks did not already produce
+  the same final answer; stream then closes with `TaskStatusUpdateEvent(final=true)`

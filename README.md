@@ -1,5 +1,9 @@
 # opencode-a2a-serve
 
+> **Turning OpenCode into a production-ready, stateful Agent API with REST/JSON-RPC endpoints, authentication, streaming, and session management.**
+>
+> **Tech Stack:** Python 3.11+ | FastAPI | A2A SDK | `uv` | `pytest`
+
 `opencode-a2a-serve` is an adapter layer that exposes OpenCode as an A2A service (FastAPI + A2A SDK). It provides:
 
 - A2A HTTP+JSON (REST): `/v1/message:send`, `/v1/message:stream`,
@@ -38,8 +42,9 @@ Additional notes:
 ## Capabilities
 
 - Standard A2A chat: forwards `message:send` / `message:stream` to OpenCode.
-- SSE streaming: `/v1/message:stream` emits incremental
-  `TaskArtifactUpdateEvent`, then `TaskStatusUpdateEvent(final=true)`.
+- SSE streaming: `/v1/message:stream` emits incremental updates and then
+  closes with `TaskStatusUpdateEvent(final=true)`. For detailed streaming
+  contract and event semantics, see `docs/guide.md`.
 - Re-subscribe after disconnect: `GET /v1/tasks/{task_id}:subscribe`
   (available while the task is not in a terminal state).
 - Session continuation contract: clients can explicitly bind to an existing

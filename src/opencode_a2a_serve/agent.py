@@ -7,7 +7,9 @@ import time
 import uuid
 from collections.abc import Mapping
 from contextlib import suppress
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events.event_queue import EventQueue
@@ -26,6 +28,77 @@ from a2a.types import (
 from .opencode_client import OpencodeClient
 
 logger = logging.getLogger(__name__)
+
+_STREAM_CHANNEL_REASONING = "reasoning"
+_STREAM_CHANNEL_TOOL_CALL = "tool_call"
+_STREAM_CHANNEL_FINAL_ANSWER = "final_answer"
+
+
+@dataclass(frozen=True)
+class _NormalizedStreamChunk:
+    text: str
+    append: bool
+    channel: str
+    source: str
+    event_type: str
+    message_id: str | None
+    role: str | None
+
+
+@dataclass
+class _StreamOutputState:
+    user_text: str
+    response_message_id: str | None = None
+    channel_buffers: dict[str, str] = field(default_factory=dict)
+    saw_final_answer_chunk: bool = False
+    saw_any_chunk: bool = False
+
+    def set_response_message_id(self, message_id: str | None) -> None:
+        if not isinstance(message_id, str):
+            self.response_message_id = None
+            return
+        value = message_id.strip()
+        self.response_message_id = value or None
+
+    def matches_expected_message(self, message_id: str | None) -> bool:
+        if not message_id:
+            return False
+        if not self.response_message_id:
+            return True
+        return message_id == self.response_message_id
+
+    def should_drop_initial_user_echo(self, text: str, *, channel: str, role: str | None) -> bool:
+        if role is not None:
+            return False
+        if channel != _STREAM_CHANNEL_FINAL_ANSWER:
+            return False
+        if self.saw_any_chunk:
+            return False
+        user_text = self.user_text.strip()
+        return bool(user_text) and text.strip() == user_text
+
+    def register_chunk(self, *, channel: str, text: str, append: bool) -> tuple[bool, bool]:
+        previous = self.channel_buffers.get(channel, "")
+        effective_append = append if previous else False
+        next_value = f"{previous}{text}" if effective_append else text
+        if next_value == previous:
+            return False, effective_append
+        self.channel_buffers[channel] = next_value
+        self.saw_any_chunk = True
+        if channel == _STREAM_CHANNEL_FINAL_ANSWER and next_value.strip():
+            self.saw_final_answer_chunk = True
+        return True, effective_append
+
+    def should_emit_final_snapshot(self, text: str) -> bool:
+        if not text.strip():
+            return False
+        existing = self.channel_buffers.get(_STREAM_CHANNEL_FINAL_ANSWER, "")
+        if existing.strip() == text.strip():
+            return False
+        self.channel_buffers[_STREAM_CHANNEL_FINAL_ANSWER] = text
+        self.saw_any_chunk = True
+        self.saw_final_answer_chunk = True
+        return True
 
 
 class _TTLCache:
@@ -116,6 +189,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         self._pending_session_claims: dict[str, str] = {}
         self._lock = asyncio.Lock()
         self._inflight_session_creates: dict[tuple[str, str], asyncio.Task[str]] = {}
+        self._session_locks: dict[str, asyncio.Lock] = {}
 
     def _resolve_and_validate_directory(self, requested: str | None) -> str | None:
         """Normalizes and validates the directory parameter against workspace boundaries.
@@ -230,9 +304,11 @@ class OpencodeAgentExecutor(AgentExecutor):
         )
 
         stream_artifact_id = f"{task_id}:stream"
+        stream_state = _StreamOutputState(user_text=user_text)
         stop_event = asyncio.Event()
         stream_task: asyncio.Task[None] | None = None
         pending_preferred_claim = False
+        session_lock: asyncio.Lock | None = None
         session_id = ""
 
         try:
@@ -243,6 +319,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                 preferred_session_id=bound_session_id,
                 directory=directory,
             )
+            session_lock = await self._get_session_lock(session_id)
+            await session_lock.acquire()
 
             if streaming_request:
                 stream_task = asyncio.create_task(
@@ -251,6 +329,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                         task_id=task_id,
                         context_id=context_id,
                         artifact_id=stream_artifact_id,
+                        stream_state=stream_state,
                         event_queue=event_queue,
                         stop_event=stop_event,
                         directory=directory,
@@ -282,7 +361,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 )
                 pending_preferred_claim = False
 
-            response_text = response.text or "(No text content returned by OpenCode.)"
+            response_text = response.text or ""
             logger.debug(
                 "OpenCode response task_id=%s session_id=%s message_id=%s text=%s",
                 task_id,
@@ -290,22 +369,26 @@ class OpencodeAgentExecutor(AgentExecutor):
                 response.message_id,
                 response_text,
             )
-            assistant_message = _build_assistant_message(
-                task_id=task_id,
-                context_id=context_id,
-                text=response_text,
-                message_id=response.message_id,
-            )
             if streaming_request:
-                await _enqueue_artifact_update(
-                    event_queue=event_queue,
-                    task_id=task_id,
-                    context_id=context_id,
-                    artifact_id=stream_artifact_id,
-                    text=response_text,
-                    append=False,
-                    last_chunk=True,
-                )
+                stream_state.set_response_message_id(response.message_id)
+                if stream_state.should_emit_final_snapshot(response_text):
+                    await _enqueue_artifact_update(
+                        event_queue=event_queue,
+                        task_id=task_id,
+                        context_id=context_id,
+                        artifact_id=_artifact_id_for_stream_channel(
+                            stream_artifact_id, _STREAM_CHANNEL_FINAL_ANSWER
+                        ),
+                        text=response_text,
+                        append=False,
+                        last_chunk=True,
+                        artifact_metadata=_build_stream_artifact_metadata(
+                            channel=_STREAM_CHANNEL_FINAL_ANSWER,
+                            source="final_snapshot",
+                            event_type="message.finalized",
+                            message_id=response.message_id,
+                        ),
+                    )
                 await event_queue.enqueue_event(
                     TaskStatusUpdateEvent(
                         task_id=task_id,
@@ -323,6 +406,13 @@ class OpencodeAgentExecutor(AgentExecutor):
                     )
                 )
             else:
+                response_text = response_text or "(No text content returned by OpenCode.)"
+                assistant_message = _build_assistant_message(
+                    task_id=task_id,
+                    context_id=context_id,
+                    text=response_text,
+                    message_id=response.message_id,
+                )
                 artifact = Artifact(
                     artifact_id=str(uuid.uuid4()),
                     name="response",
@@ -366,6 +456,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                 stream_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await stream_task
+            if session_lock and session_lock.locked():
+                session_lock.release()
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id
@@ -514,6 +606,14 @@ class OpencodeAgentExecutor(AgentExecutor):
             if self._pending_session_claims.get(session_id) == identity:
                 self._pending_session_claims.pop(session_id, None)
 
+    async def _get_session_lock(self, session_id: str) -> asyncio.Lock:
+        async with self._lock:
+            lock = self._session_locks.get(session_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._session_locks[session_id] = lock
+            return lock
+
     async def _emit_error(
         self,
         event_queue: EventQueue,
@@ -576,14 +676,14 @@ class OpencodeAgentExecutor(AgentExecutor):
         task_id: str,
         context_id: str,
         artifact_id: str,
+        stream_state: _StreamOutputState,
         event_queue: EventQueue,
         stop_event: asyncio.Event,
         directory: str | None = None,
     ) -> None:
-        buffered_text = ""
+        buffered_text: dict[str, str] = {}
         backoff = 0.5
         max_backoff = 5.0
-        sent_chunk = False
         try:
             while not stop_event.is_set():
                 try:
@@ -595,53 +695,87 @@ class OpencodeAgentExecutor(AgentExecutor):
                         event_type = event.get("type")
                         if event_type != "message.part.updated":
                             continue
-                        props = event.get("properties", {})
-                        part = props.get("part") or {}
-                        if part.get("sessionID") != session_id:
+                        props = event.get("properties")
+                        if not isinstance(props, Mapping):
                             continue
-                        role = part.get("role") or props.get("role")
-                        if role is None:
-                            message = props.get("message")
-                            if isinstance(message, dict):
-                                role = message.get("role")
-                        if isinstance(role, str) and role.lower() in {"user", "system"}:
+                        part = props.get("part")
+                        if not isinstance(part, Mapping):
+                            part = {}
+                        if _extract_stream_session_id(part, props) != session_id:
                             continue
+                        role = _extract_stream_role(part, props)
+                        if role in {"user", "system"}:
+                            continue
+                        channel = _classify_stream_channel(part, props)
                         delta = props.get("delta")
                         chunk_text: str | None = None
                         append = True
+                        source = "delta"
+                        message_id = _extract_stream_message_id(part, props)
+                        buffer_key = f"{channel}:{message_id or 'unknown'}"
+                        previous = buffered_text.get(buffer_key, "")
                         if isinstance(delta, str) and delta:
                             chunk_text = delta
-                            buffered_text += delta
+                            buffered_text[buffer_key] = f"{previous}{delta}"
                         elif part.get("type") == "text" and isinstance(part.get("text"), str):
                             next_text = part["text"]
-                            if next_text != buffered_text:
-                                if next_text.startswith(buffered_text):
-                                    chunk_text = next_text[len(buffered_text) :]
+                            if next_text != previous:
+                                if next_text.startswith(previous):
+                                    chunk_text = next_text[len(previous) :]
                                     append = True
+                                    source = "part_text_diff"
                                 else:
                                     chunk_text = next_text
                                     append = False
-                                buffered_text = next_text
+                                    source = "part_text_reset"
+                                buffered_text[buffer_key] = next_text
                         if not chunk_text:
                             continue
-                        if not sent_chunk:
-                            append = False
-                            sent_chunk = True
+                        chunk = _NormalizedStreamChunk(
+                            text=chunk_text,
+                            append=append,
+                            channel=channel,
+                            source=source,
+                            event_type=event_type,
+                            message_id=message_id,
+                            role=role,
+                        )
+                        if not stream_state.matches_expected_message(chunk.message_id):
+                            continue
+                        if stream_state.should_drop_initial_user_echo(
+                            chunk.text, channel=chunk.channel, role=chunk.role
+                        ):
+                            continue
+                        should_emit, effective_append = stream_state.register_chunk(
+                            channel=chunk.channel,
+                            text=chunk.text,
+                            append=chunk.append,
+                        )
+                        if not should_emit:
+                            continue
                         await _enqueue_artifact_update(
                             event_queue=event_queue,
                             task_id=task_id,
                             context_id=context_id,
-                            artifact_id=artifact_id,
-                            text=chunk_text,
-                            append=append,
+                            artifact_id=_artifact_id_for_stream_channel(artifact_id, chunk.channel),
+                            text=chunk.text,
+                            append=effective_append,
                             last_chunk=False,
+                            artifact_metadata=_build_stream_artifact_metadata(
+                                channel=chunk.channel,
+                                source=chunk.source,
+                                event_type=chunk.event_type,
+                                message_id=chunk.message_id,
+                                role=chunk.role,
+                            ),
                         )
                         logger.debug(
-                            "Stream chunk task_id=%s session_id=%s append=%s text=%s",
+                            "Stream chunk task_id=%s session_id=%s channel=%s append=%s text=%s",
                             task_id,
                             session_id,
-                            append,
-                            chunk_text,
+                            chunk.channel,
+                            effective_append,
+                            chunk.text,
                         )
                     break
                 except Exception:
@@ -679,10 +813,13 @@ async def _enqueue_artifact_update(
     text: str,
     append: bool | None,
     last_chunk: bool | None,
+    artifact_metadata: Mapping[str, Any] | None = None,
+    event_metadata: Mapping[str, Any] | None = None,
 ) -> None:
     artifact = Artifact(
         artifact_id=artifact_id,
         parts=[TextPart(text=text)],
+        metadata=dict(artifact_metadata) if artifact_metadata else None,
     )
     await event_queue.enqueue_event(
         TaskArtifactUpdateEvent(
@@ -691,8 +828,152 @@ async def _enqueue_artifact_update(
             artifact=artifact,
             append=append,
             last_chunk=last_chunk,
+            metadata=dict(event_metadata) if event_metadata else None,
         )
     )
+
+
+def _artifact_id_for_stream_channel(base_artifact_id: str, channel: str) -> str:
+    if channel == _STREAM_CHANNEL_FINAL_ANSWER:
+        return base_artifact_id
+    return f"{base_artifact_id}:{channel}"
+
+
+def _build_stream_artifact_metadata(
+    *,
+    channel: str,
+    source: str,
+    event_type: str,
+    message_id: str | None = None,
+    role: str | None = None,
+) -> dict[str, Any]:
+    opencode_meta: dict[str, Any] = {
+        "channel": channel,
+        "source": source,
+        "event_type": event_type,
+    }
+    if message_id:
+        opencode_meta["message_id"] = message_id
+    if role:
+        opencode_meta["role"] = role
+    return {"opencode": opencode_meta}
+
+
+def _normalize_role(role: Any) -> str | None:
+    if not isinstance(role, str):
+        return None
+    value = role.strip().lower()
+    if not value:
+        return None
+    if value.startswith("role_"):
+        value = value[5:]
+    if value in {"assistant", "agent", "model", "ai"}:
+        return "agent"
+    if value in {"user", "human"}:
+        return "user"
+    if value == "system":
+        return "system"
+    return value
+
+
+def _extract_stream_role(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
+    role = part.get("role") or props.get("role")
+    if role is None:
+        message = props.get("message")
+        if isinstance(message, Mapping):
+            role = message.get("role")
+    return _normalize_role(role)
+
+
+def _extract_stream_session_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
+    session_keys = ("sessionID", "sessionId", "session_id")
+    for key in session_keys:
+        value = part.get(key)
+        if isinstance(value, str) and value:
+            return value
+    message = props.get("message")
+    if isinstance(message, Mapping):
+        for key in session_keys:
+            value = message.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
+def _extract_stream_message_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
+    message_keys = ("messageID", "messageId", "message_id", "id")
+    for key in message_keys:
+        value = part.get(key)
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                return normalized
+    for key in message_keys:
+        value = props.get(key)
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                return normalized
+    message = props.get("message")
+    if isinstance(message, Mapping):
+        for key in message_keys:
+            value = message.get(key)
+            if isinstance(value, str):
+                normalized = value.strip()
+                if normalized:
+                    return normalized
+        info = message.get("info")
+        if isinstance(info, Mapping):
+            for key in message_keys:
+                value = info.get(key)
+                if isinstance(value, str):
+                    normalized = value.strip()
+                    if normalized:
+                        return normalized
+    return None
+
+
+def _classify_stream_channel(part: Mapping[str, Any], props: Mapping[str, Any]) -> str:
+    def _iter_candidates() -> list[str]:
+        candidates: list[str] = []
+        for value in (
+            part.get("channel"),
+            props.get("channel"),
+            part.get("kind"),
+            props.get("kind"),
+            part.get("type"),
+            props.get("type"),
+            props.get("deltaType"),
+            props.get("contentType"),
+            props.get("phase"),
+            props.get("name"),
+        ):
+            if isinstance(value, str) and value.strip():
+                candidates.append(value.strip().lower())
+        return candidates
+
+    candidates = _iter_candidates()
+    if any(
+        any(keyword in candidate for keyword in ("reason", "thinking", "thought"))
+        for candidate in candidates
+    ):
+        return _STREAM_CHANNEL_REASONING
+    if any(
+        any(
+            keyword in candidate
+            for keyword in (
+                "tool",
+                "function_call",
+                "functioncall",
+                "tool_call",
+                "toolcall",
+                "action",
+            )
+        )
+        for candidate in candidates
+    ):
+        return _STREAM_CHANNEL_TOOL_CALL
+    return _STREAM_CHANNEL_FINAL_ANSWER
 
 
 def _build_history(context: RequestContext) -> list[Message]:

@@ -55,9 +55,13 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
 - The service forwards A2A `message:send` to OpenCode session/message calls.
 - Task state defaults to `input-required` to support multi-turn interactions.
 - Streaming (`/v1/message:stream`) emits incremental
-  `TaskArtifactUpdateEvent` (`append=true`) and then
-  `TaskStatusUpdateEvent(final=true)`. Full output content is carried in
-  artifacts; non-streaming requests return a `Task` directly.
+  `TaskArtifactUpdateEvent` and then
+  `TaskStatusUpdateEvent(final=true)`. Stream artifacts carry
+  `artifact.metadata.opencode.channel` with values
+  `reasoning` / `tool_call` / `final_answer`. Events without
+  `message_id` are dropped. A final snapshot is only emitted when stream
+  chunks did not already produce the same final answer text.
+  Non-streaming requests return a `Task` directly.
 - Requests require `Authorization: Bearer <token>`; otherwise `401` is
   returned. Agent Card endpoints are public.
 - Within one `opencode-a2a-serve` instance, all consumers share the same
