@@ -57,17 +57,16 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
 - Streaming (`/v1/message:stream`) emits incremental
   `TaskArtifactUpdateEvent` and then
   `TaskStatusUpdateEvent(final=true)`. Stream artifacts carry
-  `artifact.metadata.opencode.content_type` (also mirrored as
-  `artifact.metadata.opencode.block_type`) with values
+  `artifact.metadata.opencode.block_type` with values
   `text` / `reasoning` / `tool_call`. All chunks share one stream
   artifact ID and preserve original timeline via
   `artifact.metadata.opencode.sequence`. Events without
   `message_id` are dropped. A final snapshot is only emitted when stream
   chunks did not already produce the same final text.
   The parser strips `<think>...</think>` and `[tool_call: ...]` wrappers and
-  emits the inner payload with the corresponding `content_type`.
+  emits the inner payload with the corresponding `block_type`.
   If stream ends with an unfinished marker prefix, buffered tail is flushed
-  using the parser's current `content_type` (no rollback).
+  using the parser's current `block_type` (no rollback).
   Non-streaming requests return a `Task` directly.
 - Requests require `Authorization: Bearer <token>`; otherwise `401` is
   returned. Agent Card endpoints are public.

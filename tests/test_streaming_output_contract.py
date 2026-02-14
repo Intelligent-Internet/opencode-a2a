@@ -127,7 +127,7 @@ def _part_text(event: TaskArtifactUpdateEvent) -> str:
 
 
 @pytest.mark.asyncio
-async def test_streaming_filters_user_echo_and_emits_single_artifact_content_types() -> None:
+async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types() -> None:
     user_text = "who are you"
     client = DummyStreamingClient(
         stream_events_payload=[
@@ -153,8 +153,8 @@ async def test_streaming_filters_user_echo_and_emits_single_artifact_content_typ
     assert updates
     texts = [_part_text(event) for event in updates]
     assert user_text not in texts
-    content_types = [event.artifact.metadata["opencode"]["content_type"] for event in updates]
-    assert _unique(content_types) == ["reasoning", "tool_call", "text"]
+    block_types = [event.artifact.metadata["opencode"]["block_type"] for event in updates]
+    assert _unique(block_types) == ["reasoning", "tool_call", "text"]
     artifact_ids = [event.artifact.artifact_id for event in updates]
     assert len(set(artifact_ids)) == 1
     sequences = [event.artifact.metadata["opencode"]["sequence"] for event in updates]
@@ -183,7 +183,7 @@ async def test_streaming_does_not_send_duplicate_final_snapshot_when_chunks_exis
     final_updates = [
         event
         for event in _artifact_updates(queue)
-        if event.artifact.metadata["opencode"]["content_type"] == "text"
+        if event.artifact.metadata["opencode"]["block_type"] == "text"
     ]
     assert len(final_updates) == 1
     assert _part_text(final_updates[0]) == "stable final answer"
@@ -207,7 +207,7 @@ async def test_streaming_emits_final_snapshot_only_when_stream_has_no_final_answ
     final_updates = [
         event
         for event in _artifact_updates(queue)
-        if event.artifact.metadata["opencode"]["content_type"] == "text"
+        if event.artifact.metadata["opencode"]["block_type"] == "text"
     ]
     assert len(final_updates) == 1
     final_event = final_updates[0]
@@ -266,7 +266,7 @@ async def test_streaming_drops_events_without_message_id_and_falls_back_to_snaps
     update = updates[0]
     assert _part_text(update) == "final answer from send_message"
     assert update.artifact.metadata["opencode"]["source"] == "final_snapshot"
-    assert update.artifact.metadata["opencode"]["content_type"] == "text"
+    assert update.artifact.metadata["opencode"]["block_type"] == "text"
 
 
 def _unique(items: list[str]) -> list[str]:
@@ -307,10 +307,10 @@ async def test_streaming_parses_embedded_reasoning_and_tool_calls() -> None:
 
     updates = _artifact_updates(queue)
 
-    def _final_state(content_type: str) -> str:
+    def _final_state(block_type: str) -> str:
         parts = []
         for ev in updates:
-            if ev.artifact.metadata["opencode"]["content_type"] == content_type:
+            if ev.artifact.metadata["opencode"]["block_type"] == block_type:
                 if not ev.append:
                     parts = [_part_text(ev)]
                 else:
@@ -354,10 +354,10 @@ async def test_streaming_parses_tool_call_with_bracket_in_json_string() -> None:
 
     updates = _artifact_updates(queue)
 
-    def _final_state(content_type: str) -> str:
+    def _final_state(block_type: str) -> str:
         parts = []
         for ev in updates:
-            if ev.artifact.metadata["opencode"]["content_type"] == content_type:
+            if ev.artifact.metadata["opencode"]["block_type"] == block_type:
                 if not ev.append:
                     parts = [_part_text(ev)]
                 else:
@@ -369,7 +369,7 @@ async def test_streaming_parses_tool_call_with_bracket_in_json_string() -> None:
 
 
 @pytest.mark.asyncio
-async def test_streaming_flushes_partial_marker_on_eof_as_current_content_type() -> None:
+async def test_streaming_flushes_partial_marker_on_eof_as_current_block_type() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[
             _event(session_id="ses-1", role="assistant", part_type="text", delta="hello <thin"),
@@ -388,7 +388,7 @@ async def test_streaming_flushes_partial_marker_on_eof_as_current_content_type()
     updates = _artifact_updates(queue)
     assert updates
     assert "".join(_part_text(ev) for ev in updates) == "hello <thin"
-    assert all(ev.artifact.metadata["opencode"]["content_type"] == "text" for ev in updates)
+    assert all(ev.artifact.metadata["opencode"]["block_type"] == "text" for ev in updates)
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -29,16 +30,18 @@ from .opencode_client import OpencodeClient
 
 logger = logging.getLogger(__name__)
 
-_STREAM_CONTENT_TEXT = "text"
-_STREAM_CONTENT_REASONING = "reasoning"
-_STREAM_CONTENT_TOOL_CALL = "tool_call"
+
+class BlockType(str, Enum):
+    TEXT = "text"
+    REASONING = "reasoning"
+    TOOL_CALL = "tool_call"
 
 
 @dataclass(frozen=True)
 class _NormalizedStreamChunk:
     text: str
     append: bool
-    content_type: str
+    block_type: BlockType
     source: str
     event_type: str
     message_id: str | None
@@ -49,7 +52,7 @@ class _NormalizedStreamChunk:
 class _StreamOutputState:
     user_text: str
     response_message_id: str | None = None
-    content_buffers: dict[str, str] = field(default_factory=dict)
+    content_buffers: dict[BlockType, str] = field(default_factory=dict)
     saw_any_chunk: bool = False
     emitted_stream_chunk: bool = False
     sequence: int = 0
@@ -72,24 +75,26 @@ class _StreamOutputState:
         self,
         text: str,
         *,
-        content_type: str,
+        block_type: BlockType,
         role: str | None,
     ) -> bool:
         if role is not None:
             return False
-        if content_type != _STREAM_CONTENT_TEXT:
+        if block_type != BlockType.TEXT:
             return False
         if self.saw_any_chunk:
             return False
         user_text = self.user_text.strip()
         return bool(user_text) and text.strip() == user_text
 
-    def register_chunk(self, *, content_type: str, text: str, append: bool) -> tuple[bool, bool]:
-        previous = self.content_buffers.get(content_type, "")
+    def register_chunk(
+        self, *, block_type: BlockType, text: str, append: bool
+    ) -> tuple[bool, bool]:
+        previous = self.content_buffers.get(block_type, "")
         next_value = f"{previous}{text}" if append else text
         if next_value == previous:
             return False, False
-        self.content_buffers[content_type] = next_value
+        self.content_buffers[block_type] = next_value
         self.saw_any_chunk = True
         # Single-artifact stream must stay append-only after the first emitted chunk.
         effective_append = self.emitted_stream_chunk
@@ -99,10 +104,10 @@ class _StreamOutputState:
     def should_emit_final_snapshot(self, text: str) -> bool:
         if not text.strip():
             return False
-        existing = self.content_buffers.get(_STREAM_CONTENT_TEXT, "")
+        existing = self.content_buffers.get(BlockType.TEXT, "")
         if existing.strip() == text.strip():
             return False
-        self.content_buffers[_STREAM_CONTENT_TEXT] = text
+        self.content_buffers[BlockType.TEXT] = text
         self.saw_any_chunk = True
         return True
 
@@ -401,7 +406,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                         append=stream_state.emitted_stream_chunk,
                         last_chunk=True,
                         artifact_metadata=_build_stream_artifact_metadata(
-                            content_type=_STREAM_CONTENT_TEXT,
+                            block_type=BlockType.TEXT,
                             source="final_snapshot",
                             event_type="message.finalized",
                             message_id=response.message_id,
@@ -726,12 +731,12 @@ class OpencodeAgentExecutor(AgentExecutor):
                     continue
                 if stream_state.should_drop_initial_user_echo(
                     chunk.text,
-                    content_type=chunk.content_type,
+                    block_type=chunk.block_type,
                     role=chunk.role,
                 ):
                     continue
                 should_emit, effective_append = stream_state.register_chunk(
-                    content_type=chunk.content_type,
+                    block_type=chunk.block_type,
                     text=chunk.text,
                     append=chunk.append,
                 )
@@ -746,7 +751,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     append=effective_append,
                     last_chunk=False,
                     artifact_metadata=_build_stream_artifact_metadata(
-                        content_type=chunk.content_type,
+                        block_type=chunk.block_type,
                         source=chunk.source,
                         event_type=chunk.event_type,
                         message_id=chunk.message_id,
@@ -755,10 +760,10 @@ class OpencodeAgentExecutor(AgentExecutor):
                     ),
                 )
                 logger.debug(
-                    "Stream chunk task_id=%s session_id=%s content_type=%s append=%s text=%s",
+                    "Stream chunk task_id=%s session_id=%s block_type=%s append=%s text=%s",
                     task_id,
                     session_id,
-                    chunk.content_type,
+                    chunk.block_type,
                     effective_append,
                     chunk.text,
                 )
@@ -785,13 +790,13 @@ class OpencodeAgentExecutor(AgentExecutor):
                         role = _extract_stream_role(part, props)
                         if role in {"user", "system"}:
                             continue
-                        content_type = _classify_stream_content_type(part, props)
+                        block_type = _classify_stream_block_type(part, props)
                         delta = props.get("delta")
                         message_id = _extract_stream_message_id(part, props)
                         message_key = message_id or "unknown"
 
                         chunks: list[_NormalizedStreamChunk] = []
-                        if content_type == _STREAM_CONTENT_TEXT and part.get("type") == "text":
+                        if block_type == BlockType.TEXT and part.get("type") == "text":
                             parser = parsers.setdefault(message_key, _EmbeddedStreamParser())
                             raw_key = f"raw:{message_key}"
                             previous_raw = raw_text_buffers.get(raw_key, "")
@@ -827,7 +832,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     _NormalizedStreamChunk(
                                         text=segment.text,
                                         append=append if idx == 0 else True,
-                                        content_type=segment.content_type,
+                                        block_type=segment.block_type,
                                         source=f"lexer_{source}",
                                         event_type=event_type,
                                         message_id=message_id,
@@ -838,12 +843,12 @@ class OpencodeAgentExecutor(AgentExecutor):
                             chunk_text: str | None = None
                             append = True
                             source = "delta"
-                            buffer_key = f"{content_type}:{message_key}"
+                            buffer_key = f"{block_type}:{message_key}"
                             previous = direct_buffers.get(buffer_key, "")
                             if isinstance(delta, str) and delta:
                                 chunk_text = delta
                                 direct_buffers[buffer_key] = f"{previous}{delta}"
-                            elif part.get("type") == "text" and isinstance(part.get("text"), str):
+                            elif isinstance(part.get("text"), str):
                                 next_text = part["text"]
                                 if next_text != previous:
                                     if next_text.startswith(previous):
@@ -860,7 +865,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     _NormalizedStreamChunk(
                                         text=chunk_text,
                                         append=append,
-                                        content_type=content_type,
+                                        block_type=block_type,
                                         source=source,
                                         event_type=event_type,
                                         message_id=message_id,
@@ -881,7 +886,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     _NormalizedStreamChunk(
                                         text=segment.text,
                                         append=True,
-                                        content_type=segment.content_type,
+                                        block_type=segment.block_type,
                                         source="lexer_eof_flush",
                                         event_type="message.stream.eof",
                                         message_id=message_id,
@@ -948,7 +953,7 @@ async def _enqueue_artifact_update(
 
 def _build_stream_artifact_metadata(
     *,
-    content_type: str,
+    block_type: BlockType,
     source: str,
     event_type: str,
     message_id: str | None = None,
@@ -956,8 +961,7 @@ def _build_stream_artifact_metadata(
     sequence: int | None = None,
 ) -> dict[str, Any]:
     opencode_meta: dict[str, Any] = {
-        "content_type": content_type,
-        "block_type": content_type,
+        "block_type": block_type,
         "source": source,
         "event_type": event_type,
     }
@@ -1046,7 +1050,7 @@ def _extract_stream_message_id(part: Mapping[str, Any], props: Mapping[str, Any]
 
 @dataclass(frozen=True)
 class _ParsedStreamSegment:
-    content_type: str
+    block_type: BlockType
     text: str
 
 
@@ -1059,7 +1063,7 @@ class _EmbeddedStreamParser:
         self.reset()
 
     def reset(self) -> None:
-        self._state = _STREAM_CONTENT_TEXT
+        self._state = BlockType.TEXT
         self._buffer = ""
         self._tool_depth = 1
         self._tool_in_string = False
@@ -1073,7 +1077,7 @@ class _EmbeddedStreamParser:
         segments: list[_ParsedStreamSegment] = []
         i = 0
         while i < len(self._buffer):
-            if self._state == _STREAM_CONTENT_TEXT:
+            if self._state == BlockType.TEXT:
                 think_pos = self._buffer.find(self._THINK_OPEN, i)
                 tool_pos = self._buffer.find(self._TOOL_CALL_OPEN, i)
                 marker_pos = -1
@@ -1088,14 +1092,14 @@ class _EmbeddedStreamParser:
                 if marker_pos >= 0:
                     _append_segment(
                         segments,
-                        _STREAM_CONTENT_TEXT,
+                        BlockType.TEXT,
                         self._buffer[i:marker_pos],
                     )
                     i = marker_pos + len(marker)
                     if marker == self._THINK_OPEN:
-                        self._state = _STREAM_CONTENT_REASONING
+                        self._state = BlockType.REASONING
                     else:
-                        self._state = _STREAM_CONTENT_TOOL_CALL
+                        self._state = BlockType.TOOL_CALL
                         self._tool_depth = 1
                         self._tool_in_string = False
                         self._tool_quote_char = ""
@@ -1110,7 +1114,7 @@ class _EmbeddedStreamParser:
                 emit_len = len(remaining) - hold_len
                 _append_segment(
                     segments,
-                    _STREAM_CONTENT_TEXT,
+                    BlockType.TEXT,
                     remaining[:emit_len],
                 )
                 i += emit_len
@@ -1118,16 +1122,16 @@ class _EmbeddedStreamParser:
                     break
                 continue
 
-            if self._state == _STREAM_CONTENT_REASONING:
+            if self._state == BlockType.REASONING:
                 end_pos = self._buffer.find(self._THINK_CLOSE, i)
                 if end_pos >= 0:
                     _append_segment(
                         segments,
-                        _STREAM_CONTENT_REASONING,
+                        BlockType.REASONING,
                         self._buffer[i:end_pos],
                     )
                     i = end_pos + len(self._THINK_CLOSE)
-                    self._state = _STREAM_CONTENT_TEXT
+                    self._state = BlockType.TEXT
                     continue
 
                 remaining = self._buffer[i:]
@@ -1138,7 +1142,7 @@ class _EmbeddedStreamParser:
                 emit_len = len(remaining) - hold_len
                 _append_segment(
                     segments,
-                    _STREAM_CONTENT_REASONING,
+                    BlockType.REASONING,
                     remaining[:emit_len],
                 )
                 i += emit_len
@@ -1173,7 +1177,7 @@ class _EmbeddedStreamParser:
                 if ch == "]":
                     self._tool_depth -= 1
                     if self._tool_depth == 0:
-                        self._state = _STREAM_CONTENT_TEXT
+                        self._state = BlockType.TEXT
                         self._tool_in_string = False
                         self._tool_quote_char = ""
                         self._tool_escaped = False
@@ -1185,7 +1189,7 @@ class _EmbeddedStreamParser:
 
             _append_segment(
                 segments,
-                _STREAM_CONTENT_TOOL_CALL,
+                BlockType.TOOL_CALL,
                 "".join(tool_buf),
             )
 
@@ -1195,32 +1199,32 @@ class _EmbeddedStreamParser:
     def flush_eof(self) -> list[_ParsedStreamSegment]:
         if not self._buffer:
             return []
-        content_type = self._state
+        block_type = self._state
         text = self._buffer
         self._buffer = ""
-        self._state = _STREAM_CONTENT_TEXT
+        self._state = BlockType.TEXT
         self._tool_depth = 1
         self._tool_in_string = False
         self._tool_quote_char = ""
         self._tool_escaped = False
-        return [_ParsedStreamSegment(content_type=content_type, text=text)]
+        return [_ParsedStreamSegment(block_type=block_type, text=text)]
 
 
 def _append_segment(
     segments: list[_ParsedStreamSegment],
-    content_type: str,
+    block_type: BlockType,
     text: str,
 ) -> None:
     if not text:
         return
-    if segments and segments[-1].content_type == content_type:
+    if segments and segments[-1].block_type == block_type:
         previous = segments[-1]
         segments[-1] = _ParsedStreamSegment(
-            content_type=content_type,
+            block_type=block_type,
             text=f"{previous.text}{text}",
         )
         return
-    segments.append(_ParsedStreamSegment(content_type=content_type, text=text))
+    segments.append(_ParsedStreamSegment(block_type=block_type, text=text))
 
 
 def _max_partial_marker_len(text: str, *, markers: tuple[str, ...]) -> int:
@@ -1237,31 +1241,29 @@ def _max_partial_marker_len(text: str, *, markers: tuple[str, ...]) -> int:
     return max_len
 
 
-def _classify_stream_content_type(part: Mapping[str, Any], props: Mapping[str, Any]) -> str:
-    def _iter_candidates() -> list[str]:
-        candidates: list[str] = []
-        for value in (
-            part.get("channel"),
-            props.get("channel"),
-            part.get("kind"),
-            props.get("kind"),
-            part.get("type"),
-            props.get("type"),
-            props.get("deltaType"),
-            props.get("contentType"),
-            props.get("phase"),
-            props.get("name"),
-        ):
-            if isinstance(value, str) and value.strip():
-                candidates.append(value.strip().lower())
-        return candidates
+def _classify_stream_block_type(part: Mapping[str, Any], props: Mapping[str, Any]) -> BlockType:
+    candidates: list[str] = []
+    for value in (
+        part.get("block_type"),
+        props.get("block_type"),
+        part.get("channel"),
+        props.get("channel"),
+        part.get("kind"),
+        props.get("kind"),
+        part.get("type"),
+        props.get("type"),
+        props.get("deltaType"),
+        props.get("phase"),
+        props.get("name"),
+    ):
+        if isinstance(value, str) and value.strip():
+            candidates.append(value.strip().lower())
 
-    candidates = _iter_candidates()
     if any(
         any(keyword in candidate for keyword in ("reason", "thinking", "thought"))
         for candidate in candidates
     ):
-        return _STREAM_CONTENT_REASONING
+        return BlockType.REASONING
     if any(
         any(
             keyword in candidate
@@ -1276,8 +1278,8 @@ def _classify_stream_content_type(part: Mapping[str, Any], props: Mapping[str, A
         )
         for candidate in candidates
     ):
-        return _STREAM_CONTENT_TOOL_CALL
-    return _STREAM_CONTENT_TEXT
+        return BlockType.TOOL_CALL
+    return BlockType.TEXT
 
 
 def _build_history(context: RequestContext) -> list[Message]:
