@@ -1,80 +1,20 @@
 import asyncio
 
 import pytest
-from a2a.server.agent_execution import RequestContext
-from a2a.types import Message, MessageSendParams, Role, TextPart
+from a2a.types import Task
 
 from opencode_a2a_serve.agent import OpencodeAgentExecutor
 from opencode_a2a_serve.opencode_client import OpencodeMessage
-
-
-class DummyEventQueue:
-    def __init__(self) -> None:
-        self.events = []
-
-    async def enqueue_event(self, event) -> None:  # noqa: ANN001
-        self.events.append(event)
-
-    async def close(self) -> None:
-        return None
-
-
-class DummyOpencodeClient:
-    def __init__(self) -> None:
-        self.created_sessions = 0
-        self.sent_session_ids: list[str] = []
-        self.stream_timeout = None
-        self.directory = None
-        from opencode_a2a_serve.config import Settings
-
-        self.settings = Settings(
-            A2A_BEARER_TOKEN="test",
-            OPENCODE_BASE_URL="http://localhost",
-        )
-
-    async def create_session(
-        self,
-        title: str | None = None,
-        *,
-        directory: str | None = None,
-    ) -> str:
-        self.created_sessions += 1
-        return f"ses-created-{self.created_sessions}"
-
-    async def send_message(
-        self, session_id: str, text: str, *, directory: str | None = None, timeout_override=None
-    ) -> OpencodeMessage:  # noqa: ANN001
-        self.sent_session_ids.append(session_id)
-        return OpencodeMessage(
-            text=f"echo:{text}",
-            session_id=session_id,
-            message_id="m-1",
-            raw={},
-        )
-
-    async def stream_events(self, stop_event=None, *, directory: str | None = None):  # noqa: ANN001
-        del stop_event, directory
-        for _ in ():
-            yield {}
-
-
-def _context(*, task_id: str, context_id: str, text: str, metadata: dict | None) -> RequestContext:
-    msg = Message(
-        message_id="msg-1",
-        role=Role.user,
-        parts=[TextPart(text=text)],
-    )
-    params = MessageSendParams(message=msg, metadata=metadata)
-    return RequestContext(request=params, task_id=task_id, context_id=context_id)
+from tests.helpers import DummyChatOpencodeClient, DummyEventQueue, make_request_context
 
 
 @pytest.mark.asyncio
 async def test_agent_prefers_metadata_opencode_session_id() -> None:
-    client = DummyOpencodeClient()
+    client = DummyChatOpencodeClient()
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
     q = DummyEventQueue()
 
-    ctx = _context(
+    ctx = make_request_context(
         task_id="t-1",
         context_id="c-1",
         text="hello",
@@ -88,7 +28,7 @@ async def test_agent_prefers_metadata_opencode_session_id() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_caches_bound_session_id_for_followup_requests() -> None:
-    client = DummyOpencodeClient()
+    client = DummyChatOpencodeClient()
     executor = OpencodeAgentExecutor(
         client,
         streaming_enabled=False,
@@ -97,7 +37,7 @@ async def test_agent_caches_bound_session_id_for_followup_requests() -> None:
     )
     q = DummyEventQueue()
 
-    ctx1 = _context(
+    ctx1 = make_request_context(
         task_id="t-1",
         context_id="c-1",
         text="hello",
@@ -105,7 +45,7 @@ async def test_agent_caches_bound_session_id_for_followup_requests() -> None:
     )
     await executor.execute(ctx1, q)
 
-    ctx2 = _context(
+    ctx2 = make_request_context(
         task_id="t-2",
         context_id="c-1",
         text="follow",
@@ -119,7 +59,7 @@ async def test_agent_caches_bound_session_id_for_followup_requests() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_dedupes_concurrent_session_creates_per_context() -> None:
-    class SlowCreateClient(DummyOpencodeClient):
+    class SlowCreateClient(DummyChatOpencodeClient):
         async def create_session(
             self,
             title: str | None = None,
@@ -139,9 +79,43 @@ async def test_agent_dedupes_concurrent_session_creates_per_context() -> None:
 
     async def run_one(task_id: str) -> None:
         q = DummyEventQueue()
-        ctx = _context(task_id=task_id, context_id="c-1", text="hi", metadata=None)
+        ctx = make_request_context(task_id=task_id, context_id="c-1", text="hi", metadata=None)
         await executor.execute(ctx, q)
 
     await asyncio.gather(run_one("t-1"), run_one("t-2"), run_one("t-3"))
 
     assert client.created_sessions == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_uses_stable_fallback_message_id_when_upstream_missing_message_id() -> None:
+    class MissingMessageIdClient(DummyChatOpencodeClient):
+        async def send_message(
+            self,
+            session_id: str,
+            text: str,
+            *,
+            directory: str | None = None,
+            timeout_override=None,  # noqa: ANN001
+        ) -> OpencodeMessage:
+            del text, directory, timeout_override
+            self.sent_session_ids.append(session_id)
+            return OpencodeMessage(
+                text="echo:hello",
+                session_id=session_id,
+                message_id=None,
+                raw={},
+            )
+
+    client = MissingMessageIdClient()
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    q = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="t-fallback", context_id="c-fallback", text="hello"),
+        q,
+    )
+
+    task = next(event for event in q.events if isinstance(event, Task))
+    assert task.metadata["opencode"]["message_id"] == "t-fallback:c-fallback:assistant"
+    assert task.status.message.message_id == "t-fallback:c-fallback:assistant"

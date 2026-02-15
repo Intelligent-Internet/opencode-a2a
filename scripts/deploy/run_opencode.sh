@@ -10,6 +10,7 @@ OPENCODE_BIND_PORT="${OPENCODE_BIND_PORT:-4096}"
 OPENCODE_EXTRA_ARGS="${OPENCODE_EXTRA_ARGS:-}"
 OPENCODE_PROVIDER_ID="${OPENCODE_PROVIDER_ID:-}"
 OPENCODE_MODEL_ID="${OPENCODE_MODEL_ID:-}"
+OPENCODE_LSP="${OPENCODE_LSP:-false}"
 GOOGLE_GENERATIVE_AI_API_KEY="${GOOGLE_GENERATIVE_AI_API_KEY:-}"
 
 if [[ ! -x "$OPENCODE_BIN" ]]; then
@@ -24,6 +25,25 @@ if [[ "$provider_lc" == "google" || "$model_lc" == *"gemini"* ]]; then
     echo "GOOGLE_GENERATIVE_AI_API_KEY is required when using Google/Gemini model settings" >&2
     exit 1
   fi
+fi
+
+if [[ -z "${OPENCODE_CONFIG_CONTENT:-}" ]]; then
+  case "${OPENCODE_LSP,,}" in
+    1|true|yes|on)
+      lsp_json=true
+      ;;
+    0|false|no|off|"")
+      lsp_json=false
+      ;;
+    *)
+      echo "Invalid OPENCODE_LSP value: ${OPENCODE_LSP} (expected true/false)" >&2
+      exit 1
+      ;;
+  esac
+  printf -v OPENCODE_CONFIG_CONTENT \
+    '{"$schema":"https://opencode.ai/config.json","lsp":%s}' \
+    "$lsp_json"
+  export OPENCODE_CONFIG_CONTENT
 fi
 
 cmd=("$OPENCODE_BIN" serve --log-level "$OPENCODE_LOG_LEVEL" --print-logs)

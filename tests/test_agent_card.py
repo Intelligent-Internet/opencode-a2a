@@ -3,20 +3,11 @@ from opencode_a2a_serve.app import (
     SESSION_QUERY_EXTENSION_URI,
     build_agent_card,
 )
-from opencode_a2a_serve.config import Settings
-
-
-def _settings(**overrides) -> Settings:
-    base = {
-        "A2A_BEARER_TOKEN": "test-token",
-        "OPENCODE_BASE_URL": "http://127.0.0.1:4096",
-    }
-    base.update(overrides)
-    return Settings(**base)
+from tests.helpers import make_settings
 
 
 def test_agent_card_description_reflects_actual_transport_capabilities() -> None:
-    card = build_agent_card(_settings())
+    card = build_agent_card(make_settings(a2a_bearer_token="test-token"))
 
     assert "HTTP+JSON and JSON-RPC transports" in card.description
     assert "message/send, message/stream" in card.description
@@ -28,14 +19,15 @@ def test_agent_card_description_reflects_actual_transport_capabilities() -> None
 
 def test_agent_card_injects_deployment_context_into_extensions() -> None:
     card = build_agent_card(
-        _settings(
-            A2A_PROJECT="alpha",
-            OPENCODE_DIRECTORY="/srv/workspaces/alpha",
-            OPENCODE_PROVIDER_ID="google",
-            OPENCODE_MODEL_ID="gemini-2.5-flash",
-            OPENCODE_AGENT="code-reviewer",
-            OPENCODE_VARIANT="safe",
-            A2A_ALLOW_DIRECTORY_OVERRIDE="false",
+        make_settings(
+            a2a_bearer_token="test-token",
+            a2a_project="alpha",
+            opencode_directory="/srv/workspaces/alpha",
+            opencode_provider_id="google",
+            opencode_model_id="gemini-2.5-flash",
+            opencode_agent="code-reviewer",
+            opencode_variant="safe",
+            a2a_allow_directory_override=False,
         )
     )
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
@@ -61,6 +53,6 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
 
 
 def test_agent_card_chat_examples_include_project_hint_when_configured() -> None:
-    card = build_agent_card(_settings(A2A_PROJECT="alpha"))
+    card = build_agent_card(make_settings(a2a_bearer_token="test-token", a2a_project="alpha"))
     chat_skill = next(skill for skill in card.skills if skill.id == "opencode.chat")
     assert any("project alpha" in example for example in chat_skill.examples)

@@ -79,7 +79,7 @@ GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
 ./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1 a2a_public_url=https://a2a.example.com
 ```
 
-Supported CLI keys (case-insensitive): `project`/`project_name`, `data_root`, `a2a_port`, `a2a_host`, `a2a_public_url`, `a2a_streaming`, `a2a_log_level`, `a2a_log_payloads`, `a2a_log_body_limit`, `opencode_provider_id`, `opencode_model_id`, `repo_url`, `repo_branch`, `opencode_timeout`, `opencode_timeout_stream`, `git_identity_name`, `git_identity_email`, `update_a2a`, `force_restart`.
+Supported CLI keys (case-insensitive): `project`/`project_name`, `data_root`, `a2a_port`, `a2a_host`, `a2a_public_url`, `a2a_streaming`, `a2a_log_level`, `a2a_log_payloads`, `a2a_log_body_limit`, `opencode_provider_id`, `opencode_model_id`, `opencode_lsp`, `repo_url`, `repo_branch`, `opencode_timeout`, `opencode_timeout_stream`, `git_identity_name`, `git_identity_email`, `update_a2a`, `force_restart`.
 
 Required secret env vars: `GH_TOKEN`, `A2A_BEARER_TOKEN`
 
@@ -104,6 +104,16 @@ Minimal example:
 ```bash
 GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
 ./scripts/deploy.sh project=alpha a2a_port=8010
+```
+
+LSP behavior:
+
+- Deployment default is `OPENCODE_LSP=false` (LSP disabled).
+- To enable LSP for one instance, pass `opencode_lsp=true`:
+
+```bash
+GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
+./scripts/deploy.sh project=alpha opencode_lsp=true
 ```
 
 Upgrade an existing instance after shared-code update:
@@ -220,6 +230,7 @@ Naming rule in the tables below:
 | `OPENCODE_EXTRA_ARGS` | - | Optional | empty | Extra OpenCode startup args. |
 | `OPENCODE_PROVIDER_ID` | `opencode_provider_id` | Optional | None | Written to `a2a.env`. |
 | `OPENCODE_MODEL_ID` | `opencode_model_id` | Optional | None | Written to `a2a.env`. |
+| `OPENCODE_LSP` | `opencode_lsp` | Optional | `false` | Global OpenCode LSP switch for deployed instance. Wrapper injects default `OPENCODE_CONFIG_CONTENT` with this value when `OPENCODE_CONFIG_CONTENT` is unset. |
 | `OPENCODE_TIMEOUT` | `opencode_timeout` | Optional | `300` | OpenCode request timeout (seconds). |
 | `OPENCODE_TIMEOUT_STREAM` | `opencode_timeout_stream` | Optional | None | OpenCode streaming timeout (seconds). |
 | `GIT_IDENTITY_NAME` | `git_identity_name` | Optional | `OpenCode-<project>` | Git author/committer name. |

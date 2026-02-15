@@ -1,40 +1,7 @@
 import pytest
 
-from opencode_a2a_serve.config import Settings
 from opencode_a2a_serve.opencode_client import OpencodeClient
-
-
-def _settings(*, directory: str | None) -> Settings:
-    return Settings(
-        opencode_base_url="http://127.0.0.1:4096",
-        opencode_directory=directory,
-        opencode_provider_id=None,
-        opencode_model_id=None,
-        opencode_agent=None,
-        opencode_system=None,
-        opencode_variant=None,
-        opencode_timeout=1.0,
-        opencode_timeout_stream=None,
-        a2a_public_url="http://127.0.0.1:8000",
-        a2a_title="OpenCode A2A",
-        a2a_description="A2A wrapper service for OpenCode",
-        a2a_version="0.1.0",
-        a2a_protocol_version="0.3.0",
-        a2a_streaming=True,
-        a2a_log_level="DEBUG",
-        a2a_log_payloads=False,
-        a2a_log_body_limit=0,
-        a2a_documentation_url=None,
-        a2a_host="127.0.0.1",
-        a2a_port=8000,
-        a2a_bearer_token="t-1",
-        a2a_oauth_authorization_url=None,
-        a2a_oauth_token_url=None,
-        a2a_oauth_metadata_url=None,
-        a2a_oauth_scopes={},
-        a2a_session_cache_ttl_seconds=3600,
-        a2a_session_cache_maxsize=10_000,
-    )
+from tests.helpers import make_settings
 
 
 class _DummyResponse:
@@ -47,7 +14,15 @@ class _DummyResponse:
 
 @pytest.mark.asyncio
 async def test_merge_params_does_not_allow_directory_override(monkeypatch):
-    client = OpencodeClient(_settings(directory="/safe"))
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_directory="/safe",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
 
     seen = {}
 

@@ -1,15 +1,13 @@
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from a2a.server.agent_execution import RequestContext
-from a2a.server.context import ServerCallContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import TaskState, TaskStatusUpdateEvent
 
 from opencode_a2a_serve.agent import OpencodeAgentExecutor
-from opencode_a2a_serve.config import Settings
 from opencode_a2a_serve.opencode_client import OpencodeClient
+from tests.helpers import configure_mock_client_runtime, make_request_context_mock
 
 
 @pytest.mark.asyncio
@@ -39,35 +37,26 @@ async def test_cancel_interrupts_running_execute_and_keeps_queue_open():
 
     client.create_session.return_value = "session-1"
     client.send_message.side_effect = send_message
-    type(client).directory = PropertyMock(return_value="/tmp/workspace")
-    type(client).settings = PropertyMock(
-        return_value=Settings(
-            A2A_BEARER_TOKEN="test",
-            OPENCODE_BASE_URL="http://localhost",
-            A2A_ALLOW_DIRECTORY_OVERRIDE=True,
-        )
-    )
+    configure_mock_client_runtime(client)
 
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
 
-    execute_context = MagicMock(spec=RequestContext)
-    execute_context.task_id = "task-1"
-    execute_context.context_id = "context-A"
-    execute_context.call_context = MagicMock(spec=ServerCallContext)
-    execute_context.call_context.state = {"identity": "user-1"}
-    execute_context.get_user_input.return_value = "hello"
-    execute_context.current_task = None
-    execute_context.message = None
-    execute_context.metadata = None
+    execute_context = make_request_context_mock(
+        task_id="task-1",
+        context_id="context-A",
+        identity="user-1",
+        user_input="hello",
+    )
     execute_queue = AsyncMock(spec=EventQueue)
 
     execute_task = asyncio.create_task(executor.execute(execute_context, execute_queue))
     await asyncio.wait_for(send_started.wait(), timeout=1.0)
 
-    cancel_context = MagicMock(spec=RequestContext)
-    cancel_context.task_id = "task-1"
-    cancel_context.context_id = "context-A"
-    cancel_context.call_context = None
+    cancel_context = make_request_context_mock(
+        task_id="task-1",
+        context_id="context-A",
+        call_context_enabled=False,
+    )
     cancel_queue = AsyncMock(spec=EventQueue)
 
     await asyncio.wait_for(executor.cancel(cancel_context, cancel_queue), timeout=1.0)
@@ -92,10 +81,11 @@ async def test_cancel_interrupts_running_execute_and_keeps_queue_open():
 @pytest.mark.asyncio
 async def test_cancel_does_not_block_with_real_event_queue() -> None:
     executor = OpencodeAgentExecutor(MagicMock(), streaming_enabled=False)
-    context = MagicMock(spec=RequestContext)
-    context.task_id = None
-    context.context_id = None
-    context.call_context = None
+    context = make_request_context_mock(
+        task_id=None,
+        context_id=None,
+        call_context_enabled=False,
+    )
     queue = EventQueue()
 
     await asyncio.wait_for(executor.cancel(context, queue), timeout=0.5)

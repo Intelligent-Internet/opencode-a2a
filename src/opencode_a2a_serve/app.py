@@ -149,7 +149,6 @@ def build_agent_card(settings: Settings) -> AgentCard:
     security: list[dict[str, list[str]]] = [{"bearerAuth": []}]
 
     if settings.a2a_oauth_authorization_url and settings.a2a_oauth_token_url:
-        security_schemes = security_schemes or {}
         security_schemes["oauth2"] = SecurityScheme(
             root=OAuth2SecurityScheme(
                 oauth2_metadata_url=settings.a2a_oauth_metadata_url,
@@ -163,7 +162,6 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 ),
             )
         )
-        security = security or []
         security.append({"oauth2": list(settings.a2a_oauth_scopes.keys())})
 
     return AgentCard(
@@ -352,12 +350,15 @@ def create_app(settings: Settings) -> FastAPI:
     for route, callback in rest_adapter.routes().items():
         app.add_api_route(route[0], callback, methods=[route[1]])
 
-    def _detect_opencode_session_query_method(body_bytes: bytes) -> str | None:
+    def _parse_json_body(body_bytes: bytes) -> dict | None:
         try:
             payload = json.loads(body_bytes.decode("utf-8", errors="replace"))
         except Exception:
             return None
-        if not isinstance(payload, dict):
+        return payload if isinstance(payload, dict) else None
+
+    def _detect_opencode_session_query_method(payload: dict | None) -> str | None:
+        if payload is None:
             return None
         method = payload.get("method")
         if not isinstance(method, str):
@@ -366,12 +367,8 @@ def create_app(settings: Settings) -> FastAPI:
             return method
         return None
 
-    def _looks_like_jsonrpc_message_payload(raw: bytes) -> bool:
-        try:
-            payload = json.loads(raw.decode("utf-8", errors="replace"))
-        except Exception:
-            return False
-        if not isinstance(payload, dict):
+    def _looks_like_jsonrpc_message_payload(payload: dict | None) -> bool:
+        if payload is None:
             return False
         message = payload.get("message")
         if not isinstance(message, dict):
@@ -381,12 +378,8 @@ def create_app(settings: Settings) -> FastAPI:
         role = message.get("role")
         return isinstance(role, str) and role in {"user", "agent"}
 
-    def _looks_like_jsonrpc_envelope(raw: bytes) -> bool:
-        try:
-            payload = json.loads(raw.decode("utf-8", errors="replace"))
-        except Exception:
-            return False
-        if not isinstance(payload, dict):
+    def _looks_like_jsonrpc_envelope(payload: dict | None) -> bool:
+        if payload is None:
             return False
         method = payload.get("method")
         version = payload.get("jsonrpc")
@@ -402,7 +395,8 @@ def create_app(settings: Settings) -> FastAPI:
 
         body = await request.body()
         request._body = body  # allow downstream to read again
-        if _looks_like_jsonrpc_envelope(body) or _looks_like_jsonrpc_message_payload(body):
+        payload = _parse_json_body(body)
+        if _looks_like_jsonrpc_envelope(payload) or _looks_like_jsonrpc_message_payload(payload):
             return JSONResponse(
                 {
                     "error": (
@@ -424,7 +418,8 @@ def create_app(settings: Settings) -> FastAPI:
         request._body = body  # allow downstream to read again
         path = request.url.path
         # Detect session-query JSON-RPC methods regardless of deployment prefixes/root_path.
-        sensitive_method = _detect_opencode_session_query_method(body)
+        payload = _parse_json_body(body)
+        sensitive_method = _detect_opencode_session_query_method(payload)
 
         if sensitive_method:
             logger.debug("A2A request %s %s method=%s", request.method, path, sensitive_method)

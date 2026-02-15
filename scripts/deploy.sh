@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy an isolated OpenCode + A2A instance (systemd services).
-# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
+# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=<bool>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
 # Required env: GH_TOKEN, A2A_BEARER_TOKEN
 # Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
 # Requires: sudo access to write systemd units and create users/directories.
@@ -29,6 +29,7 @@ A2A_LOG_BODY_LIMIT_INPUT=""
 DATA_ROOT_INPUT=""
 OPENCODE_PROVIDER_ID_INPUT=""
 OPENCODE_MODEL_ID_INPUT=""
+OPENCODE_LSP_INPUT=""
 REPO_URL_INPUT=""
 REPO_BRANCH_INPUT=""
 OPENCODE_TIMEOUT_INPUT=""
@@ -89,6 +90,9 @@ for arg in "$@"; do
     opencode_model_id)
       OPENCODE_MODEL_ID_INPUT="$value"
       ;;
+    opencode_lsp)
+      OPENCODE_LSP_INPUT="$value"
+      ;;
     repo_url)
       REPO_URL_INPUT="$value"
       ;;
@@ -130,7 +134,7 @@ Usage:
   GH_TOKEN=<token> A2A_BEARER_TOKEN=<token> [<PROVIDER_SECRET_ENV>=<key>] \
   ./scripts/deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
   [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] \
-  [opencode_provider_id=<id>] [opencode_model_id=<id>] [repo_url=<url>] [repo_branch=<branch>] \
+  [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=<bool>] [repo_url=<url>] [repo_branch=<branch>] \
   [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] \
   [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
 
@@ -155,6 +159,7 @@ export_if_present() {
 
 export_if_present "OPENCODE_PROVIDER_ID" "$OPENCODE_PROVIDER_ID_INPUT"
 export_if_present "OPENCODE_MODEL_ID" "$OPENCODE_MODEL_ID_INPUT"
+export_if_present "OPENCODE_LSP" "$OPENCODE_LSP_INPUT"
 export_if_present "REPO_URL" "$REPO_URL_INPUT"
 export_if_present "REPO_BRANCH" "$REPO_BRANCH_INPUT"
 export_if_present "OPENCODE_TIMEOUT" "$OPENCODE_TIMEOUT_INPUT"
@@ -166,6 +171,7 @@ export_if_present "DATA_ROOT" "$DATA_ROOT_INPUT"
 export OPENCODE_BIND_HOST="${OPENCODE_BIND_HOST:-127.0.0.1}"
 export OPENCODE_LOG_LEVEL="${OPENCODE_LOG_LEVEL:-DEBUG}"
 export OPENCODE_EXTRA_ARGS="${OPENCODE_EXTRA_ARGS:-}"
+export OPENCODE_LSP="${OPENCODE_LSP:-false}"
 
 if [[ -n "$A2A_HOST_INPUT" ]]; then
   export A2A_HOST="$A2A_HOST_INPUT"

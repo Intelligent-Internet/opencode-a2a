@@ -25,6 +25,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .opencode_client import OpencodeClient
+from .text_parts import extract_text_from_parts
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def _parse_positive_int(value: Any, *, field: str) -> int | None:
 UNTITLED_SESSION_TITLE = "Untitled session"
 
 
-def _extract_session_title(session: dict[str, Any], *, session_id: str) -> str:
+def _extract_session_title(session: dict[str, Any]) -> str:
     candidates: list[Any] = [
         session.get("title"),
         session.get("name"),
@@ -77,8 +78,6 @@ def _extract_session_title(session: dict[str, Any], *, session_id: str) -> str:
             return value.strip()
 
     # Stable placeholder so downstream can always render a label.
-    # Downstream can still fall back to session_id if they prefer.
-    _ = session_id
     return UNTITLED_SESSION_TITLE
 
 
@@ -89,7 +88,7 @@ def _as_a2a_session_task(session: Any) -> dict[str, Any] | None:
     if not isinstance(raw_id, str) or not raw_id.strip():
         return None
     session_id = raw_id.strip()
-    title = _extract_session_title(session, session_id=session_id)
+    title = _extract_session_title(session)
     task = Task(
         id=session_id,
         context_id=session_id,
@@ -119,18 +118,7 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
 
     text = item.get("text")
     if not isinstance(text, str):
-        # Best-effort extraction from OpenCode-like parts.
-        parts = item.get("parts")
-        if isinstance(parts, list):
-            texts: list[str] = []
-            for part in parts:
-                if isinstance(part, dict) and part.get("type") == "text":
-                    part_text = part.get("text")
-                    if isinstance(part_text, str) and part_text:
-                        texts.append(part_text)
-            text = "".join(texts).strip()
-        else:
-            text = ""
+        text = extract_text_from_parts(item.get("parts"))
 
     msg = Message(
         message_id=message_id,

@@ -45,7 +45,6 @@ class _NormalizedStreamChunk:
     append: bool
     block_type: BlockType
     source: str
-    event_type: str
     message_id: str | None
     role: str | None
 
@@ -69,17 +68,15 @@ class _StreamPartState:
 @dataclass
 class _StreamOutputState:
     user_text: str
-    observed_message_ids: set[str] = field(default_factory=set)
+    stable_message_id: str
+    event_id_namespace: str
     content_buffers: dict[BlockType, str] = field(default_factory=dict)
     saw_any_chunk: bool = False
     emitted_stream_chunk: bool = False
     sequence: int = 0
 
     def matches_expected_message(self, message_id: str | None) -> bool:
-        if not message_id:
-            return False
-        self.observed_message_ids.add(message_id)
-        return True
+        return bool(message_id)
 
     def should_drop_initial_user_echo(
         self,
@@ -124,6 +121,16 @@ class _StreamOutputState:
     def next_sequence(self) -> int:
         self.sequence += 1
         return self.sequence
+
+    def resolve_message_id(self, message_id: str | None) -> str:
+        if isinstance(message_id, str):
+            normalized = message_id.strip()
+            if normalized:
+                return normalized
+        return self.stable_message_id
+
+    def build_event_id(self, sequence: int) -> str:
+        return f"{self.event_id_namespace}:{sequence}"
 
 
 class _TTLCache:
@@ -332,7 +339,11 @@ class OpencodeAgentExecutor(AgentExecutor):
         )
 
         stream_artifact_id = f"{task_id}:stream"
-        stream_state = _StreamOutputState(user_text=user_text)
+        stream_state = _StreamOutputState(
+            user_text=user_text,
+            stable_message_id=f"{task_id}:{context_id}:assistant",
+            event_id_namespace=f"{task_id}:{context_id}:{stream_artifact_id}",
+        )
         stop_event = asyncio.Event()
         stream_task: asyncio.Task[None] | None = None
         pending_preferred_claim = False
@@ -397,15 +408,17 @@ class OpencodeAgentExecutor(AgentExecutor):
                 pending_preferred_claim = False
 
             response_text = response.text or ""
+            resolved_message_id = stream_state.resolve_message_id(response.message_id)
             logger.debug(
                 "OpenCode response task_id=%s session_id=%s message_id=%s text=%s",
                 task_id,
                 response.session_id,
-                response.message_id,
+                resolved_message_id,
                 response_text,
             )
             if streaming_request:
                 if stream_state.should_emit_final_snapshot(response_text):
+                    sequence = stream_state.next_sequence()
                     await _enqueue_artifact_update(
                         event_queue=event_queue,
                         task_id=task_id,
@@ -417,9 +430,9 @@ class OpencodeAgentExecutor(AgentExecutor):
                         artifact_metadata=_build_stream_artifact_metadata(
                             block_type=BlockType.TEXT,
                             source="final_snapshot",
-                            event_type="message.finalized",
-                            message_id=response.message_id,
-                            sequence=stream_state.next_sequence(),
+                            message_id=resolved_message_id,
+                            sequence=sequence,
+                            event_id=stream_state.build_event_id(sequence),
                         ),
                     )
                 await event_queue.enqueue_event(
@@ -433,7 +446,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                         metadata={
                             "opencode": {
                                 "session_id": response.session_id,
-                                "message_id": response.message_id,
+                                "message_id": resolved_message_id,
+                                "event_id": f"{stream_state.event_id_namespace}:status",
                             }
                         },
                     )
@@ -444,7 +458,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     task_id=task_id,
                     context_id=context_id,
                     text=response_text,
-                    message_id=response.message_id,
+                    message_id=resolved_message_id,
                 )
                 artifact = Artifact(
                     artifact_id=str(uuid.uuid4()),
@@ -461,7 +475,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     metadata={
                         "opencode": {
                             "session_id": response.session_id,
-                            "message_id": response.message_id,
+                            "message_id": resolved_message_id,
                         }
                     },
                 )
@@ -737,6 +751,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             for chunk in chunks:
                 if not stream_state.matches_expected_message(chunk.message_id):
                     continue
+                resolved_message_id = stream_state.resolve_message_id(chunk.message_id)
                 if stream_state.should_drop_initial_user_echo(
                     chunk.text,
                     block_type=chunk.block_type,
@@ -750,6 +765,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 )
                 if not should_emit:
                     continue
+                sequence = stream_state.next_sequence()
                 await _enqueue_artifact_update(
                     event_queue=event_queue,
                     task_id=task_id,
@@ -761,10 +777,10 @@ class OpencodeAgentExecutor(AgentExecutor):
                     artifact_metadata=_build_stream_artifact_metadata(
                         block_type=chunk.block_type,
                         source=chunk.source,
-                        event_type=chunk.event_type,
-                        message_id=chunk.message_id,
+                        message_id=resolved_message_id,
                         role=chunk.role,
-                        sequence=stream_state.next_sequence(),
+                        sequence=sequence,
+                        event_id=stream_state.build_event_id(sequence),
                     ),
                 )
                 logger.debug(
@@ -782,7 +798,6 @@ class OpencodeAgentExecutor(AgentExecutor):
             append: bool,
             block_type: BlockType,
             source: str,
-            event_type: str,
             message_id: str | None,
             role: str | None,
         ) -> _NormalizedStreamChunk:
@@ -791,7 +806,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                 append=append,
                 block_type=block_type,
                 source=source,
-                event_type=event_type,
                 message_id=message_id,
                 role=role,
             )
@@ -828,7 +842,6 @@ class OpencodeAgentExecutor(AgentExecutor):
             state: _StreamPartState,
             delta_text: str,
             message_id: str | None,
-            event_type: str,
             source: str,
         ) -> list[_NormalizedStreamChunk]:
             if not delta_text:
@@ -843,7 +856,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                     append=True,
                     block_type=state.block_type,
                     source=source,
-                    event_type=event_type,
                     message_id=state.message_id,
                     role=state.role,
                 )
@@ -854,7 +866,6 @@ class OpencodeAgentExecutor(AgentExecutor):
             state: _StreamPartState,
             snapshot: str,
             message_id: str | None,
-            event_type: str,
             part_id: str,
         ) -> list[_NormalizedStreamChunk]:
             if message_id:
@@ -873,7 +884,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                         append=True,
                         block_type=state.block_type,
                         source="part_text_diff",
-                        event_type=event_type,
                         message_id=state.message_id,
                         role=state.role,
                     )
@@ -895,7 +905,6 @@ class OpencodeAgentExecutor(AgentExecutor):
             state: _StreamPartState,
             part: Mapping[str, Any],
             message_id: str | None,
-            event_type: str,
         ) -> list[_NormalizedStreamChunk]:
             tool_chunk = _serialize_tool_part(part)
             if not tool_chunk:
@@ -913,7 +922,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                     append=bool(previous),
                     block_type=state.block_type,
                     source="tool_part_update",
-                    event_type=event_type,
                     message_id=state.message_id,
                     role=state.role,
                 )
@@ -966,7 +974,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                                 state=state,
                                 delta_text=delta,
                                 message_id=message_id,
-                                event_type=event_type,
                                 source="delta_event",
                             )
                             if chunks:
@@ -998,7 +1005,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     state=state,
                                     delta_text=buffered.delta,
                                     message_id=buffered.message_id,
-                                    event_type="message.part.delta",
                                     source="delta_event_buffered",
                                 )
                             )
@@ -1010,7 +1016,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     state=state,
                                     delta_text=delta,
                                     message_id=message_id,
-                                    event_type=event_type,
                                     source="delta",
                                 )
                             )
@@ -1020,7 +1025,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     state=state,
                                     part=part,
                                     message_id=message_id,
-                                    event_type=event_type,
                                 )
                             )
                         elif isinstance(part.get("text"), str):
@@ -1029,7 +1033,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     state=state,
                                     snapshot=part["text"],
                                     message_id=message_id,
-                                    event_type=event_type,
                                     part_id=part_id,
                                 )
                             )
@@ -1076,6 +1079,7 @@ async def _enqueue_artifact_update(
     artifact_metadata: Mapping[str, Any] | None = None,
     event_metadata: Mapping[str, Any] | None = None,
 ) -> None:
+    normalized_last_chunk = True if last_chunk is True else None
     artifact = Artifact(
         artifact_id=artifact_id,
         parts=[TextPart(text=text)],
@@ -1087,7 +1091,7 @@ async def _enqueue_artifact_update(
             context_id=context_id,
             artifact=artifact,
             append=append,
-            last_chunk=last_chunk,
+            last_chunk=normalized_last_chunk,
             metadata=dict(event_metadata) if event_metadata else None,
         )
     )
@@ -1097,15 +1101,14 @@ def _build_stream_artifact_metadata(
     *,
     block_type: BlockType,
     source: str,
-    event_type: str,
     message_id: str | None = None,
     role: str | None = None,
     sequence: int | None = None,
+    event_id: str | None = None,
 ) -> dict[str, Any]:
     opencode_meta: dict[str, Any] = {
         "block_type": block_type,
         "source": source,
-        "event_type": event_type,
     }
     if message_id:
         opencode_meta["message_id"] = message_id
@@ -1113,6 +1116,8 @@ def _build_stream_artifact_metadata(
         opencode_meta["role"] = role
     if sequence is not None:
         opencode_meta["sequence"] = sequence
+    if event_id:
+        opencode_meta["event_id"] = event_id
     return {"opencode": opencode_meta}
 
 
@@ -1142,72 +1147,58 @@ def _extract_stream_role(part: Mapping[str, Any], props: Mapping[str, Any]) -> s
     return _normalize_role(role)
 
 
+def _extract_first_nonempty_string(
+    source: Mapping[str, Any] | None,
+    keys: tuple[str, ...],
+) -> str | None:
+    if not isinstance(source, Mapping):
+        return None
+    for key in keys:
+        value = source.get(key)
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                return normalized
+    return None
+
+
 def _extract_stream_session_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
     session_keys = ("sessionID", "sessionId", "session_id")
-    for key in session_keys:
-        value = part.get(key)
-        if isinstance(value, str) and value:
-            return value
-    for key in session_keys:
-        value = props.get(key)
-        if isinstance(value, str) and value:
-            return value
+    for source in (part, props):
+        candidate = _extract_first_nonempty_string(source, session_keys)
+        if candidate:
+            return candidate
     message = props.get("message")
-    if isinstance(message, Mapping):
-        for key in session_keys:
-            value = message.get(key)
-            if isinstance(value, str) and value:
-                return value
+    candidate = _extract_first_nonempty_string(message, session_keys)
+    if candidate:
+        return candidate
     return None
 
 
 def _extract_stream_message_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
     message_keys = ("messageID", "messageId", "message_id", "id")
-    for key in message_keys:
-        value = part.get(key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                return normalized
-    for key in message_keys:
-        value = props.get(key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                return normalized
+    for source in (part, props):
+        candidate = _extract_first_nonempty_string(source, message_keys)
+        if candidate:
+            return candidate
     message = props.get("message")
     if isinstance(message, Mapping):
-        for key in message_keys:
-            value = message.get(key)
-            if isinstance(value, str):
-                normalized = value.strip()
-                if normalized:
-                    return normalized
+        candidate = _extract_first_nonempty_string(message, message_keys)
+        if candidate:
+            return candidate
         info = message.get("info")
-        if isinstance(info, Mapping):
-            for key in message_keys:
-                value = info.get(key)
-                if isinstance(value, str):
-                    normalized = value.strip()
-                    if normalized:
-                        return normalized
+        candidate = _extract_first_nonempty_string(info, message_keys)
+        if candidate:
+            return candidate
     return None
 
 
 def _extract_stream_part_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
     part_keys = ("partID", "partId", "part_id", "id")
-    for key in part_keys:
-        value = part.get(key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                return normalized
-    for key in part_keys:
-        value = props.get(key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                return normalized
+    for source in (part, props):
+        candidate = _extract_first_nonempty_string(source, part_keys)
+        if candidate:
+            return candidate
     return None
 
 
