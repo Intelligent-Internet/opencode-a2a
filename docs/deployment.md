@@ -399,10 +399,11 @@ Application-level safeguards:
 - stream emits incremental `TaskArtifactUpdateEvent` on a single artifact
   with `opencode.block_type` metadata
   (`text` / `reasoning` / `tool_call`) and monotonic `opencode.sequence`
-- parser strips `<think>...</think>` and `[tool_call: ...]` wrappers, then
-  emits inner payload as typed chunks
+- routing is schema-first via OpenCode `part.type` + `part_id` state, not
+  inline marker parsing
+- `message.part.delta` may arrive before `message.part.updated`; the service
+  buffers those deltas and replays them when the part state is available
+- structured `tool` parts are emitted as `tool_call` block updates
 - events without `message_id` are discarded to avoid ambiguous correlation
-- unfinished marker tails at EOF are flushed using the parser's current
-  block type (no rollback)
 - final snapshot is emitted only when stream chunks did not already produce
   the same final text; stream then closes with `TaskStatusUpdateEvent(final=true)`

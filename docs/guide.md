@@ -63,10 +63,12 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
   `artifact.metadata.opencode.sequence`. Events without
   `message_id` are dropped. A final snapshot is only emitted when stream
   chunks did not already produce the same final text.
-  The parser strips `<think>...</think>` and `[tool_call: ...]` wrappers and
-  emits the inner payload with the corresponding `block_type`.
-  If stream ends with an unfinished marker prefix, buffered tail is flushed
-  using the parser's current `block_type` (no rollback).
+  Stream routing is schema-first: the service classifies chunks primarily by
+  OpenCode `part.type` (plus `part_id` state) rather than inline text markers.
+  `message.part.delta` and `message.part.updated` are merged per `part_id`;
+  out-of-order deltas are buffered and replayed when the corresponding
+  `part.updated` arrives. Structured `tool` parts are emitted as `tool_call`
+  blocks with normalized state payload.
   Non-streaming requests return a `Task` directly.
 - Requests require `Authorization: Bearer <token>`; otherwise `401` is
   returned. Agent Card endpoints are public.
