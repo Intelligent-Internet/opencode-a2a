@@ -25,6 +25,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .opencode_client import OpencodeClient
+from .text_parts import extract_text_from_parts
 
 logger = logging.getLogger(__name__)
 
@@ -119,18 +120,7 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
 
     text = item.get("text")
     if not isinstance(text, str):
-        # Best-effort extraction from OpenCode-like parts.
-        parts = item.get("parts")
-        if isinstance(parts, list):
-            texts: list[str] = []
-            for part in parts:
-                if isinstance(part, dict) and part.get("type") == "text":
-                    part_text = part.get("text")
-                    if isinstance(part_text, str) and part_text:
-                        texts.append(part_text)
-            text = "".join(texts).strip()
-        else:
-            text = ""
+        text = extract_text_from_parts(item.get("parts"))
 
     msg = Message(
         message_id=message_id,

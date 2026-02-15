@@ -1,22 +1,21 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
-from a2a.server.agent_execution import RequestContext
 from a2a.server.events.event_queue import EventQueue
 
 from opencode_a2a_serve.agent import OpencodeAgentExecutor
-from opencode_a2a_serve.config import Settings
 from opencode_a2a_serve.opencode_client import OpencodeClient
+from tests.helpers import make_request_context_mock, make_settings
 
 
 @pytest.fixture
 def mock_client():
-    settings = Settings(
-        A2A_BEARER_TOKEN="test",
-        OPENCODE_BASE_URL="http://localhost",
-        OPENCODE_DIRECTORY="/tmp/workspace",
-        A2A_ALLOW_DIRECTORY_OVERRIDE=True,
+    settings = make_settings(
+        a2a_bearer_token="test",
+        opencode_base_url="http://localhost",
+        opencode_directory="/tmp/workspace",
+        a2a_allow_directory_override=True,
     )
 
     client = OpencodeClient(settings)
@@ -76,11 +75,12 @@ async def test_execute_with_invalid_directory(mock_client):
     executor = OpencodeAgentExecutor(mock_client, streaming_enabled=False)
     event_queue = AsyncMock(spec=EventQueue)
 
-    context = MagicMock(spec=RequestContext)
-    context.task_id = "task-1"
-    context.context_id = "ctx-1"
-    context.metadata = {"directory": "/etc"}  # Illegal
-    context.call_context = None
+    context = make_request_context_mock(
+        task_id="task-1",
+        context_id="ctx-1",
+        metadata={"directory": "/etc"},  # Illegal
+        call_context_enabled=False,
+    )
 
     await executor.execute(context, event_queue)
 

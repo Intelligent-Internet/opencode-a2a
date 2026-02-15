@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
+from .text_parts import extract_text_from_parts
 
 _UNSET = object()
 
@@ -193,8 +194,7 @@ class OpencodeClient:
         if self._log_payloads:
             logger = logging.getLogger(__name__)
             logger.debug("OpenCode response payload=%s", data)
-        parts = data.get("parts", [])
-        text_content = _extract_text(parts)
+        text_content = extract_text_from_parts(data.get("parts", []))
         message_id = None
         info = data.get("info")
         if isinstance(info, dict):
@@ -205,11 +205,3 @@ class OpencodeClient:
             message_id=message_id,
             raw=data,
         )
-
-
-def _extract_text(parts: list[dict[str, Any]]) -> str:
-    texts: list[str] = []
-    for part in parts:
-        if part.get("type") == "text" and isinstance(part.get("text"), str):
-            texts.append(part["text"])
-    return "".join(texts).strip()

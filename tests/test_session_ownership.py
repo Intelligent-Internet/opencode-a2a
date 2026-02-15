@@ -1,14 +1,12 @@
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from a2a.server.agent_execution import RequestContext
-from a2a.server.context import ServerCallContext
 from a2a.server.events.event_queue import EventQueue
 
 from opencode_a2a_serve.agent import OpencodeAgentExecutor, _TTLCache
-from opencode_a2a_serve.config import Settings
 from opencode_a2a_serve.opencode_client import OpencodeClient
+from tests.helpers import configure_mock_client_runtime, make_request_context_mock
 
 
 @pytest.fixture
@@ -32,15 +30,7 @@ def mock_client():
     response.message_id = "msg-1"
     client.send_message.return_value = response
 
-    # Use PropertyMock for properties
-    type(client).directory = PropertyMock(return_value="/tmp/workspace")
-    type(client).settings = PropertyMock(
-        return_value=Settings(
-            A2A_BEARER_TOKEN="test",
-            OPENCODE_BASE_URL="http://localhost",
-            A2A_ALLOW_DIRECTORY_OVERRIDE=True,
-        )
-    )
+    configure_mock_client_runtime(client)
     return client
 
 
@@ -50,30 +40,24 @@ async def test_identity_isolation(mock_client):
     event_queue = AsyncMock(spec=EventQueue)
 
     # User 1, Context A
-    context1 = MagicMock(spec=RequestContext)
-    context1.task_id = "task-1"
-    context1.context_id = "context-A"
-    context1.call_context = MagicMock(spec=ServerCallContext)
-    context1.call_context.state = {"identity": "user-1"}
-    context1.get_user_input.return_value = "hello"
-    context1.current_task = None
-    context1.message = None
-    context1.metadata = None
+    context1 = make_request_context_mock(
+        task_id="task-1",
+        context_id="context-A",
+        identity="user-1",
+        user_input="hello",
+    )
 
     await executor.execute(context1, event_queue)
     mock_client.create_session.assert_called_once()
     assert executor._sessions.get(("user-1", "context-A")) == "session-1"
 
     # User 2, Context A (Same context ID, different user)
-    context2 = MagicMock(spec=RequestContext)
-    context2.task_id = "task-2"
-    context2.context_id = "context-A"
-    context2.call_context = MagicMock(spec=ServerCallContext)
-    context2.call_context.state = {"identity": "user-2"}
-    context2.get_user_input.return_value = "hello"
-    context2.current_task = None
-    context2.message = None
-    context2.metadata = None
+    context2 = make_request_context_mock(
+        task_id="task-2",
+        context_id="context-A",
+        identity="user-2",
+        user_input="hello",
+    )
 
     await executor.execute(context2, event_queue)
     # Should create a NEW session for user-2
@@ -89,28 +73,24 @@ async def test_session_hijack_prevention(mock_client):
     event_queue = AsyncMock(spec=EventQueue)
 
     # User 1 creates session-1
-    context1 = MagicMock(spec=RequestContext)
-    context1.task_id = "task-1"
-    context1.context_id = "context-A"
-    context1.call_context = MagicMock(spec=ServerCallContext)
-    context1.call_context.state = {"identity": "user-1"}
-    context1.get_user_input.return_value = "hello"
-    context1.current_task = None
-    context1.message = None
-    context1.metadata = None
+    context1 = make_request_context_mock(
+        task_id="task-1",
+        context_id="context-A",
+        identity="user-1",
+        user_input="hello",
+    )
 
     await executor.execute(context1, event_queue)
     assert executor._session_owners.get("session-1") == "user-1"
 
     # User 2 tries to bind to session-1 via metadata
-    context2 = MagicMock(spec=RequestContext)
-    context2.task_id = "task-2"
-    context2.context_id = "context-B"
-    context2.call_context = MagicMock(spec=ServerCallContext)
-    context2.call_context.state = {"identity": "user-2"}
-    context2.get_user_input.return_value = "hello"
-    context2.metadata = {"opencode_session_id": "session-1"}
-    context2.message = None
+    context2 = make_request_context_mock(
+        task_id="task-2",
+        context_id="context-B",
+        identity="user-2",
+        user_input="hello",
+        metadata={"opencode_session_id": "session-1"},
+    )
 
     # This should fail and emit an error
     await executor.execute(context2, event_queue)
@@ -159,30 +139,19 @@ async def test_concurrent_session_create_isolated_by_identity():
 
     client.create_session.side_effect = create_session
     client.send_message.side_effect = send_message
-    type(client).directory = PropertyMock(return_value="/tmp/workspace")
-    type(client).settings = PropertyMock(
-        return_value=Settings(
-            A2A_BEARER_TOKEN="test",
-            OPENCODE_BASE_URL="http://localhost",
-            A2A_ALLOW_DIRECTORY_OVERRIDE=True,
-        )
-    )
+    configure_mock_client_runtime(client)
 
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
     event_queue_1 = AsyncMock(spec=EventQueue)
     event_queue_2 = AsyncMock(spec=EventQueue)
 
-    def _context(task_id: str, identity: str) -> RequestContext:
-        context = MagicMock(spec=RequestContext)
-        context.task_id = task_id
-        context.context_id = "context-A"
-        context.call_context = MagicMock(spec=ServerCallContext)
-        context.call_context.state = {"identity": identity}
-        context.get_user_input.return_value = "hello"
-        context.current_task = None
-        context.message = None
-        context.metadata = None
-        return context
+    def _context(task_id: str, identity: str):
+        return make_request_context_mock(
+            task_id=task_id,
+            context_id="context-A",
+            identity=identity,
+            user_input="hello",
+        )
 
     await asyncio.gather(
         executor.execute(_context("task-1", "user-1"), event_queue_1),
@@ -263,27 +232,18 @@ async def test_preferred_session_claim_is_released_on_upstream_failure():
         raise RuntimeError(f"upstream failed for {session_id}")
 
     client.send_message.side_effect = send_message
-    type(client).directory = PropertyMock(return_value="/tmp/workspace")
-    type(client).settings = PropertyMock(
-        return_value=Settings(
-            A2A_BEARER_TOKEN="test",
-            OPENCODE_BASE_URL="http://localhost",
-            A2A_ALLOW_DIRECTORY_OVERRIDE=True,
-        )
-    )
+    configure_mock_client_runtime(client)
 
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
     event_queue = AsyncMock(spec=EventQueue)
 
-    context = MagicMock(spec=RequestContext)
-    context.task_id = "task-1"
-    context.context_id = "context-A"
-    context.call_context = MagicMock(spec=ServerCallContext)
-    context.call_context.state = {"identity": "user-1"}
-    context.get_user_input.return_value = "hello"
-    context.metadata = {"opencode_session_id": "session-X"}
-    context.current_task = None
-    context.message = None
+    context = make_request_context_mock(
+        task_id="task-1",
+        context_id="context-A",
+        identity="user-1",
+        user_input="hello",
+        metadata={"opencode_session_id": "session-X"},
+    )
 
     await executor.execute(context, event_queue)
 
@@ -305,27 +265,18 @@ async def test_preferred_session_claim_is_released_on_upstream_cancellation():
         raise asyncio.CancelledError()
 
     client.send_message.side_effect = send_message
-    type(client).directory = PropertyMock(return_value="/tmp/workspace")
-    type(client).settings = PropertyMock(
-        return_value=Settings(
-            A2A_BEARER_TOKEN="test",
-            OPENCODE_BASE_URL="http://localhost",
-            A2A_ALLOW_DIRECTORY_OVERRIDE=True,
-        )
-    )
+    configure_mock_client_runtime(client)
 
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
     event_queue = AsyncMock(spec=EventQueue)
 
-    context = MagicMock(spec=RequestContext)
-    context.task_id = "task-1"
-    context.context_id = "context-A"
-    context.call_context = MagicMock(spec=ServerCallContext)
-    context.call_context.state = {"identity": "user-1"}
-    context.get_user_input.return_value = "hello"
-    context.metadata = {"opencode_session_id": "session-X"}
-    context.current_task = None
-    context.message = None
+    context = make_request_context_mock(
+        task_id="task-1",
+        context_id="context-A",
+        identity="user-1",
+        user_input="hello",
+        metadata={"opencode_session_id": "session-X"},
+    )
 
     with pytest.raises(asyncio.CancelledError):
         await executor.execute(context, event_queue)
