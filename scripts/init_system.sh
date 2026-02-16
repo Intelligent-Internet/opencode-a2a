@@ -9,14 +9,17 @@ OPENCODE_CORE_DIR="/opt/.opencode"
 SHARED_WRAPPER_DIR="/opt/opencode-a2a"
 OPENCODE_A2A_DIR="${SHARED_WRAPPER_DIR}/opencode-a2a-serve"
 UV_PYTHON_DIR="/opt/uv-python"
-UV_PYTHON_DIR_MODE="777"
-UV_PYTHON_DIR_FINAL_MODE="755"
-UV_PYTHON_DIR_GROUP=""
+UV_PYTHON_DIR_MODE="770"
+UV_PYTHON_DIR_FINAL_MODE="750"
+UV_PYTHON_DIR_GROUP="opencode"
 UV_PYTHON_INSTALL_DIR="$UV_PYTHON_DIR"
 DATA_ROOT="/data/opencode-a2a"
 OPENCODE_A2A_REPO="https://github.com/Intelligent-Internet/opencode-a2a-serve.git"
 OPENCODE_A2A_BRANCH="main"
-OPENCODE_INSTALL_CMD="curl -fsSL https://opencode.ai/install | bash"
+OPENCODE_INSTALLER_URL="https://opencode.ai/install"
+OPENCODE_INSTALLER_VERSION="1.2.5"
+OPENCODE_INSTALLER_SHA256="fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e"
+OPENCODE_INSTALL_CMD="--version ${OPENCODE_INSTALLER_VERSION}"
 
 # Feature toggles (edit here to enable/disable).
 INSTALL_PACKAGES="true"
@@ -183,6 +186,43 @@ validate_script_contains() {
     return 1
   fi
   return 0
+}
+
+verify_file_checksum() {
+  local path="$1"
+  local expected="$2"
+  local actual
+
+  if [[ ! -s "$path" ]]; then
+    return 1
+  fi
+  if [[ -z "$expected" ]]; then
+    warn "OPENCODE_INSTALLER_SHA256 is empty; refusing to run remote installer."
+    return 1
+  fi
+  actual="$(sha256sum "$path" | awk '{print $1}')"
+  if [[ "$actual" != "$expected" ]]; then
+    warn "Checksum mismatch for $path"
+    warn "  expected: $expected"
+    warn "  actual:   $actual"
+    return 1
+  fi
+  return 0
+}
+
+ensure_group() {
+  local group="$1"
+  if [[ -z "$group" ]]; then
+    return 0
+  fi
+  if getent group "$group" >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! command -v groupadd >/dev/null 2>&1; then
+    warn "groupadd not found; cannot create uv python group '${group}'."
+    return 1
+  fi
+  $SUDO groupadd --system "$group"
 }
 
 ensure_gh() {
@@ -400,11 +440,18 @@ fi
 log_done "Systemd check completed."
 
 log_start "Ensuring shared directories exist..."
+if ! ensure_group "$UV_PYTHON_DIR_GROUP"; then
+  INCOMPLETE=1
+fi
 ensure_dir "$OPENCODE_CORE_DIR" "755"
 ensure_dir "$SHARED_WRAPPER_DIR" "755"
 ensure_dir "$UV_PYTHON_DIR" "$UV_PYTHON_DIR_MODE"
 if [[ -n "$UV_PYTHON_DIR_GROUP" ]]; then
-  $SUDO chgrp "$UV_PYTHON_DIR_GROUP" "$UV_PYTHON_DIR"
+  if getent group "$UV_PYTHON_DIR_GROUP" >/dev/null 2>&1; then
+    $SUDO chgrp "$UV_PYTHON_DIR_GROUP" "$UV_PYTHON_DIR"
+  else
+    warn "UV_PYTHON_DIR_GROUP not found; keep default ownership for $UV_PYTHON_DIR."
+  fi
 fi
 $SUDO chmod "$UV_PYTHON_DIR_MODE" "$UV_PYTHON_DIR"
 ensure_dir "$DATA_ROOT" "711"
@@ -499,7 +546,11 @@ if command -v uv >/dev/null 2>&1; then
   fi
   log_start "Setting uv python directory permissions..."
   if [[ -n "$UV_PYTHON_DIR_GROUP" ]]; then
-    $SUDO chgrp -R "$UV_PYTHON_DIR_GROUP" "$UV_PYTHON_DIR"
+    if getent group "$UV_PYTHON_DIR_GROUP" >/dev/null 2>&1; then
+      $SUDO chgrp -R "$UV_PYTHON_DIR_GROUP" "$UV_PYTHON_DIR"
+    else
+      warn "UV_PYTHON_DIR_GROUP not found; skip recursive chgrp for $UV_PYTHON_DIR."
+    fi
   fi
   $SUDO chmod -R "$UV_PYTHON_DIR_FINAL_MODE" "$UV_PYTHON_DIR"
   log_done "uv python directory permissions set."
@@ -567,13 +618,35 @@ elif command -v opencode >/dev/null 2>&1; then
   log_done "opencode found in PATH."
 else
   if [[ -n "$OPENCODE_INSTALL_CMD" ]]; then
-    log_start "Running OPENCODE_INSTALL_CMD..."
-    if [[ -n "$SUDO" ]]; then
-      $SUDO env OPENCODE_CORE_DIR="$OPENCODE_CORE_DIR" bash -lc "$OPENCODE_INSTALL_CMD"
+    opencode_install_script="$(mktemp)"
+    log_start "Downloading OpenCode installer..."
+    if ! download_script "$OPENCODE_INSTALLER_URL" "$opencode_install_script"; then
+      warn "Failed to download OpenCode installer."
+      INCOMPLETE=1
+    elif ! verify_file_checksum "$opencode_install_script" "$OPENCODE_INSTALLER_SHA256"; then
+      warn "OpenCode installer checksum validation failed."
+      INCOMPLETE=1
     else
-      OPENCODE_CORE_DIR="$OPENCODE_CORE_DIR" bash -lc "$OPENCODE_INSTALL_CMD"
+      log_done "OpenCode installer downloaded and verified."
+      read -r -a opencode_install_args <<< "$OPENCODE_INSTALL_CMD"
+      if [[ -n "$SUDO" ]]; then
+        if ! $SUDO env OPENCODE_CORE_DIR="$OPENCODE_CORE_DIR" \
+          bash "$opencode_install_script" "${opencode_install_args[@]}"; then
+          warn "OPENCODE_INSTALL_CMD execution failed."
+          INCOMPLETE=1
+        fi
+      else
+        if ! OPENCODE_CORE_DIR="$OPENCODE_CORE_DIR" \
+          bash "$opencode_install_script" "${opencode_install_args[@]}"; then
+          warn "OPENCODE_INSTALL_CMD execution failed."
+          INCOMPLETE=1
+        fi
+      fi
+      if [[ "$INCOMPLETE" -eq 0 ]]; then
+        log_done "OPENCODE_INSTALL_CMD completed."
+      fi
     fi
-    log_done "OPENCODE_INSTALL_CMD completed."
+    rm -f "$opencode_install_script"
     if [[ ! -d "$OPENCODE_CORE_DIR" && -d "/root/.opencode" ]]; then
       log_start "Relocating OpenCode from /root/.opencode to $OPENCODE_CORE_DIR..."
       $SUDO mv /root/.opencode "$OPENCODE_CORE_DIR"

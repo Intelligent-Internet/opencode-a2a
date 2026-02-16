@@ -105,6 +105,13 @@ ensure_user_home_matches_project_dir "$PROJECT_NAME" "$PROJECT_DIR"
 if ! id "$PROJECT_NAME" &>/dev/null; then
   sudo adduser --system --group --home "$PROJECT_DIR" "$PROJECT_NAME"
 fi
+if [[ -n "${UV_PYTHON_DIR_GROUP:-}" ]] && getent group "${UV_PYTHON_DIR_GROUP}" >/dev/null 2>&1; then
+  if command -v usermod >/dev/null 2>&1; then
+    sudo usermod -aG "${UV_PYTHON_DIR_GROUP}" "$PROJECT_NAME"
+  else
+    echo "usermod not found; cannot add ${PROJECT_NAME} to UV_PYTHON_DIR_GROUP=${UV_PYTHON_DIR_GROUP}." >&2
+  fi
+fi
 
 sudo install -d -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" "$PROJECT_DIR" "$WORKSPACE_DIR" "$LOG_DIR" "$RUN_DIR"
 sudo install -d -m 700 -o root -g root "$CONFIG_DIR"
