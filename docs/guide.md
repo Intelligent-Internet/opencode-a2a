@@ -1,6 +1,8 @@
 # Usage Guide
 
 This guide covers configuration, authentication, API behavior, streaming re-subscription, and A2A client usage examples.
+It is also the canonical document for implementation-level protocol contracts
+and JSON-RPC extension details (README stays at overview level).
 
 ## Transport Contracts
 
@@ -53,14 +55,14 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
 ## Service Behavior
 
 - The service forwards A2A `message:send` to OpenCode session/message calls.
-- Task state defaults to `input-required` to support multi-turn interactions.
+- Task state defaults to `completed` for successful turns.
 - Streaming (`/v1/message:stream`) emits incremental
   `TaskArtifactUpdateEvent` and then
   `TaskStatusUpdateEvent(final=true)`. Stream artifacts carry
   `artifact.metadata.opencode.block_type` with values
   `text` / `reasoning` / `tool_call`. All chunks share one stream
   artifact ID and preserve original timeline via
-  `artifact.metadata.opencode.sequence`. Events without
+  `artifact.metadata.opencode.event_id`. Events without
   `message_id` are dropped. A final snapshot is only emitted when stream
   chunks did not already produce the same final text.
   Stream routing is schema-first: the service classifies chunks primarily by
@@ -68,8 +70,16 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
   `message.part.delta` and `message.part.updated` are merged per `part_id`;
   out-of-order deltas are buffered and replayed when the corresponding
   `part.updated` arrives. Structured `tool` parts are emitted as `tool_call`
-  blocks with normalized state payload.
+  blocks with normalized state payload. Final status event metadata may include
+  normalized token usage at `metadata.opencode.usage` with fields like
+  `input_tokens`, `output_tokens`, `total_tokens`, and optional `cost`.
+  Interrupt events (`permission.asked` / `question.asked`) are mapped to
+  `TaskStatusUpdateEvent(final=false, state=input-required)` with details at
+  `metadata.opencode.interrupt` (including `request_id`, interrupt `type`, and
+  minimal callback payload).
   Non-streaming requests return a `Task` directly.
+- Non-streaming `message:send` responses may include normalized token usage at
+  `Task.metadata.opencode.usage` with the same field schema.
 - Requests require `Authorization: Bearer <token>`; otherwise `401` is
   returned. Agent Card endpoints are public.
 - Within one `opencode-a2a-serve` instance, all consumers share the same
@@ -81,7 +91,7 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
     via `event_queue`.
   - Failure events include concrete error details with `failed` state.
 - Directory validation and normalization:
-  - Clients can pass `metadata.directory`, but it must stay inside
+  - Clients can pass `metadata.opencode.directory`, but it must stay inside
     `${OPENCODE_DIRECTORY}` (or service runtime root if not configured).
   - All paths are normalized with `realpath` to prevent `..` or symlink
     boundary bypass.
@@ -96,7 +106,7 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
 
 To continue a historical OpenCode session, include this metadata key in each invoke request:
 
-- `metadata.opencode_session_id`: target OpenCode session ID
+- `metadata.opencode.session_id`: target OpenCode session ID
 
 Server behavior:
 
@@ -117,7 +127,9 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
       "content": [{"text": "Continue the previous session and restate the key conclusion."}]
     },
     "metadata": {
-      "opencode_session_id": "<session_id>"
+      "opencode": {
+        "session_id": "<session_id>"
+      }
     }
   }'
 ```
@@ -136,7 +148,9 @@ This service exposes OpenCode session list and message-history queries via A2A J
   - `result.items` is always an array of A2A standard objects
   - session list => `Task` with `status.state=completed`
   - message history => `Message`
-  - raw upstream payload is preserved at `metadata.opencode.raw`
+  - `contextId` is an A2A context key derived by the adapter
+    (format: `ctx:opencode-session:<session_id>`, not raw OpenCode session ID)
+  - OpenCode session identity is exposed explicitly at `metadata.opencode.session_id`
   - session title is available at `metadata.opencode.title`
 
 ### Session List (`opencode.sessions.list`)
@@ -149,7 +163,7 @@ curl -sS http://127.0.0.1:8000/ \
     "jsonrpc": "2.0",
     "id": 1,
     "method": "opencode.sessions.list",
-    "params": {"page": 1, "size": 20}
+    "params": {"limit": 20}
   }'
 ```
 
@@ -165,8 +179,62 @@ curl -sS http://127.0.0.1:8000/ \
     "method": "opencode.sessions.messages.list",
     "params": {
       "session_id": "<session_id>",
-      "page": 1,
-      "size": 50
+      "limit": 50
+    }
+  }'
+```
+
+## OpenCode Interrupt Callback (A2A Extension)
+
+When stream metadata reports an interrupt request at `metadata.opencode.interrupt`,
+clients can reply through JSON-RPC extension methods:
+
+- `opencode.permission.reply`
+  - required: `request_id`
+  - required: `reply` (`once` / `always` / `reject`)
+  - optional: `message`
+  - optional: `metadata.opencode.directory`
+- `opencode.question.reply`
+  - required: `request_id`
+  - required: `answers` (`Array<Array<string>>`)
+  - optional: `metadata.opencode.directory`
+- `opencode.question.reject`
+  - required: `request_id`
+  - optional: `metadata.opencode.directory`
+
+Notes:
+
+- `request_id` must be a live interrupt request observed from stream metadata
+  (`metadata.opencode.interrupt.request_id`).
+- The server keeps an in-memory interrupt binding cache; callbacks with unknown
+  or expired `request_id` are rejected.
+- Callback requests are validated against interrupt type and caller identity.
+- Callback context variables use nested metadata namespace:
+  `params.metadata.opencode.*` (for example `metadata.opencode.directory`).
+- Successful callback responses are minimal: only `ok` and `request_id`.
+- Error types:
+  - `INTERRUPT_REQUEST_NOT_FOUND`
+  - `INTERRUPT_REQUEST_EXPIRED`
+  - `INTERRUPT_TYPE_MISMATCH`
+
+Permission reply example:
+
+```bash
+curl -sS http://127.0.0.1:8000/ \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "opencode.permission.reply",
+    "params": {
+      "request_id": "<request_id>",
+      "reply": "once",
+      "metadata": {
+        "opencode": {
+          "directory": "/path/inside/workspace"
+        }
+      }
     }
   }'
 ```

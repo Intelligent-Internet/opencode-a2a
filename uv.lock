@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "a2a-sdk"
-version = "0.3.17"
+version = "0.3.22"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "google-api-core" },
@@ -17,9 +17,9 @@ dependencies = [
     { name = "protobuf" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/00/c1/695e724ca9fa88933625f694dd371257375d25b9567919d86eedf8530a05/a2a_sdk-0.3.17.tar.gz", hash = "sha256:c39bb5731d7386c323efe6b01d15fd82fb0e65d512d1b0caaa46ce180d4cd4df", size = 229014, upload-time = "2025-11-24T12:37:41.261Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/92/a3/76f2d94a32a1b0dc760432d893a09ec5ed31de5ad51b1ef0f9d199ceb260/a2a_sdk-0.3.22.tar.gz", hash = "sha256:77a5694bfc4f26679c11b70c7f1062522206d430b34bc1215cfbb1eba67b7e7d", size = 231535, upload-time = "2025-12-16T18:39:21.19Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/04/75/d7254295a2073747d34aa4dba20fe6791f761781d718b88539bb3d4524c4/a2a_sdk-0.3.17-py3-none-any.whl", hash = "sha256:d3e04db524d6cfd087af0b1aede9cb790155ca8770b1d651a30df514dd2c056e", size = 141527, upload-time = "2025-11-24T12:37:39.704Z" },
+    { url = "https://files.pythonhosted.org/packages/64/e8/f4e39fd1cf0b3c4537b974637143f3ebfe1158dad7232d9eef15666a81ba/a2a_sdk-0.3.22-py3-none-any.whl", hash = "sha256:b98701135bb90b0ff85d35f31533b6b7a299bf810658c1c65f3814a6c15ea385", size = 144347, upload-time = "2025-12-16T18:39:19.218Z" },
 ]
 
 [[package]]
@@ -345,7 +345,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", specifier = "==0.3.17" },
+    { name = "a2a-sdk", specifier = "==0.3.22" },
     { name = "fastapi", specifier = ">=0.110" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },

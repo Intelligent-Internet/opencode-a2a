@@ -78,7 +78,7 @@ async def test_execute_with_invalid_directory(mock_client):
     context = make_request_context_mock(
         task_id="task-1",
         context_id="ctx-1",
-        metadata={"directory": "/etc"},  # Illegal
+        metadata={"opencode": {"directory": "/etc"}},  # Illegal
         call_context_enabled=False,
     )
 

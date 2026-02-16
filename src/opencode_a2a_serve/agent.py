@@ -32,6 +32,9 @@ from .opencode_client import OpencodeClient
 
 logger = logging.getLogger(__name__)
 
+_INTERRUPT_ASKED_EVENT_TYPES = {"permission.asked", "question.asked"}
+_INTERRUPT_RESOLVED_EVENT_TYPES = {"permission.replied", "question.replied", "question.rejected"}
+
 
 class BlockType(str, Enum):
     TEXT = "text"
@@ -71,6 +74,8 @@ class _StreamOutputState:
     stable_message_id: str
     event_id_namespace: str
     content_buffers: dict[BlockType, str] = field(default_factory=dict)
+    token_usage: dict[str, Any] | None = None
+    pending_interrupt_request_ids: set[str] = field(default_factory=set)
     saw_any_chunk: bool = False
     emitted_stream_chunk: bool = False
     sequence: int = 0
@@ -131,6 +136,21 @@ class _StreamOutputState:
 
     def build_event_id(self, sequence: int) -> str:
         return f"{self.event_id_namespace}:{sequence}"
+
+    def ingest_token_usage(self, usage: Mapping[str, Any] | None) -> None:
+        self.token_usage = _merge_token_usage(self.token_usage, usage)
+
+    def mark_interrupt_pending(self, request_id: str) -> bool:
+        normalized = request_id.strip()
+        if not normalized:
+            return False
+        if normalized in self.pending_interrupt_request_ids:
+            return False
+        self.pending_interrupt_request_ids.add(normalized)
+        return True
+
+    def clear_interrupt_pending(self, request_id: str) -> None:
+        self.pending_interrupt_request_ids.discard(request_id.strip())
 
 
 class _TTLCache:
@@ -292,7 +312,6 @@ class OpencodeAgentExecutor(AgentExecutor):
         bound_session_id = _extract_opencode_session_id(context)
 
         # Directory validation
-        requested_dir = None
         metadata = context.metadata
         if metadata is not None and not isinstance(metadata, Mapping):
             await self._emit_error(
@@ -303,8 +322,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 streaming_request=streaming_request,
             )
             return
-        if isinstance(metadata, Mapping):
-            requested_dir = metadata.get("directory")
+        requested_dir = _extract_opencode_directory(context)
 
         try:
             directory = self._resolve_and_validate_directory(requested_dir)
@@ -372,6 +390,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 stream_task = asyncio.create_task(
                     self._consume_opencode_stream(
                         session_id=session_id,
+                        identity=identity,
                         task_id=task_id,
                         context_id=context_id,
                         artifact_id=stream_artifact_id,
@@ -409,6 +428,10 @@ class OpencodeAgentExecutor(AgentExecutor):
 
             response_text = response.text or ""
             resolved_message_id = stream_state.resolve_message_id(response.message_id)
+            resolved_token_usage = _merge_token_usage(
+                _extract_token_usage(response.raw),
+                stream_state.token_usage,
+            )
             logger.debug(
                 "OpenCode response task_id=%s session_id=%s message_id=%s text=%s",
                 task_id,
@@ -431,7 +454,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                             block_type=BlockType.TEXT,
                             source="final_snapshot",
                             message_id=resolved_message_id,
-                            sequence=sequence,
                             event_id=stream_state.build_event_id(sequence),
                         ),
                     )
@@ -440,7 +462,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                         task_id=task_id,
                         context_id=context_id,
                         status=TaskStatus(
-                            state=TaskState.input_required,
+                            state=TaskState.completed,
                         ),
                         final=True,
                         metadata={
@@ -448,6 +470,11 @@ class OpencodeAgentExecutor(AgentExecutor):
                                 "session_id": response.session_id,
                                 "message_id": resolved_message_id,
                                 "event_id": f"{stream_state.event_id_namespace}:status",
+                                **(
+                                    {"usage": resolved_token_usage}
+                                    if resolved_token_usage is not None
+                                    else {}
+                                ),
                             }
                         },
                     )
@@ -469,13 +496,17 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task = Task(
                     id=task_id,
                     context_id=context_id,
-                    status=TaskStatus(state=TaskState.input_required),
+                    status=TaskStatus(state=TaskState.completed),
                     history=history,
                     artifacts=[artifact],
                     metadata={
                         "opencode": {
                             "session_id": response.session_id,
-                            "message_id": resolved_message_id,
+                            **(
+                                {"usage": resolved_token_usage}
+                                if resolved_token_usage is not None
+                                else {}
+                            ),
                         }
                     },
                 )
@@ -734,6 +765,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         self,
         *,
         session_id: str,
+        identity: str,
         task_id: str,
         context_id: str,
         artifact_id: str,
@@ -779,7 +811,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                         source=chunk.source,
                         message_id=resolved_message_id,
                         role=chunk.role,
-                        sequence=sequence,
                         event_id=stream_state.build_event_id(sequence),
                     ),
                 )
@@ -791,6 +822,35 @@ class OpencodeAgentExecutor(AgentExecutor):
                     effective_append,
                     chunk.text,
                 )
+
+        async def _emit_interrupt_status(
+            *,
+            state: TaskState,
+            request_id: str,
+            interrupt_type: str,
+            details: Mapping[str, Any],
+        ) -> None:
+            sequence = stream_state.next_sequence()
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    task_id=task_id,
+                    context_id=context_id,
+                    status=TaskStatus(state=state),
+                    final=False,
+                    metadata={
+                        "opencode": {
+                            "session_id": session_id,
+                            "message_id": stream_state.resolve_message_id(None),
+                            "event_id": stream_state.build_event_id(sequence),
+                            "interrupt": {
+                                "request_id": request_id,
+                                "type": interrupt_type,
+                                "details": dict(details),
+                            },
+                        }
+                    },
+                )
+            )
 
         def _new_chunk(
             *,
@@ -936,10 +996,48 @@ class OpencodeAgentExecutor(AgentExecutor):
                         if stop_event.is_set():
                             break
                         event_type = event.get("type")
-                        if event_type not in {"message.part.updated", "message.part.delta"}:
+                        if not isinstance(event_type, str):
                             continue
                         props = event.get("properties")
                         if not isinstance(props, Mapping):
+                            continue
+                        event_session_id = _extract_event_session_id(event)
+                        if event_session_id == session_id:
+                            usage = _extract_token_usage(event)
+                            if usage is not None:
+                                stream_state.ingest_token_usage(usage)
+                            asked = _extract_interrupt_asked_event(event)
+                            if asked is not None:
+                                request_id = asked["request_id"]
+                                if stream_state.mark_interrupt_pending(request_id):
+                                    remember_request = getattr(
+                                        self._client, "remember_interrupt_request", None
+                                    )
+                                    if callable(remember_request):
+                                        remember_request(
+                                            request_id=request_id,
+                                            session_id=session_id,
+                                            interrupt_type=asked["interrupt_type"],
+                                            identity=identity,
+                                            task_id=task_id,
+                                            context_id=context_id,
+                                        )
+                                    await _emit_interrupt_status(
+                                        state=TaskState.input_required,
+                                        request_id=request_id,
+                                        interrupt_type=asked["interrupt_type"],
+                                        details=asked["details"],
+                                    )
+                            resolved = _extract_interrupt_resolved_event(event)
+                            if resolved is not None:
+                                resolved_request_id = resolved["request_id"]
+                                stream_state.clear_interrupt_pending(resolved_request_id)
+                                discard_request = getattr(
+                                    self._client, "discard_interrupt_request", None
+                                )
+                                if callable(discard_request):
+                                    discard_request(resolved_request_id)
+                        if event_type not in {"message.part.updated", "message.part.delta"}:
                             continue
                         part = props.get("part")
                         if not isinstance(part, Mapping):
@@ -948,8 +1046,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                             continue
                         message_id = _extract_stream_message_id(part, props)
                         part_id = _extract_stream_part_id(part, props)
-                        if not part_id and event_type == "message.part.updated":
-                            part_id = _build_fallback_part_id(part, props, message_id=message_id)
                         if not part_id:
                             continue
 
@@ -1103,7 +1199,6 @@ def _build_stream_artifact_metadata(
     source: str,
     message_id: str | None = None,
     role: str | None = None,
-    sequence: int | None = None,
     event_id: str | None = None,
 ) -> dict[str, Any]:
     opencode_meta: dict[str, Any] = {
@@ -1114,11 +1209,127 @@ def _build_stream_artifact_metadata(
         opencode_meta["message_id"] = message_id
     if role:
         opencode_meta["role"] = role
-    if sequence is not None:
-        opencode_meta["sequence"] = sequence
     if event_id:
         opencode_meta["event_id"] = event_id
     return {"opencode": opencode_meta}
+
+
+def _coerce_number(value: Any) -> int | float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if value.is_integer():
+            return int(value)
+        return value
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    try:
+        if "." in normalized or "e" in normalized.lower():
+            parsed = float(normalized)
+            if parsed.is_integer():
+                return int(parsed)
+            return parsed
+        return int(normalized)
+    except ValueError:
+        return None
+
+
+def _extract_usage_from_info_like(info: Mapping[str, Any]) -> dict[str, Any] | None:
+    tokens = info.get("tokens")
+    if not isinstance(tokens, Mapping):
+        return None
+
+    usage: dict[str, Any] = {}
+
+    input_tokens = _coerce_number(tokens.get("input"))
+    if input_tokens is not None:
+        usage["input_tokens"] = input_tokens
+
+    output_tokens = _coerce_number(tokens.get("output"))
+    if output_tokens is not None:
+        usage["output_tokens"] = output_tokens
+
+    total_tokens = _coerce_number(tokens.get("total"))
+    if total_tokens is not None:
+        usage["total_tokens"] = total_tokens
+    elif input_tokens is not None and output_tokens is not None:
+        usage["total_tokens"] = input_tokens + output_tokens
+
+    reasoning_tokens = _coerce_number(tokens.get("reasoning"))
+    if reasoning_tokens is not None:
+        usage["reasoning_tokens"] = reasoning_tokens
+
+    cache = tokens.get("cache")
+    if isinstance(cache, Mapping):
+        cache_usage: dict[str, Any] = {}
+        cache_read = _coerce_number(cache.get("read"))
+        if cache_read is not None:
+            cache_usage["read_tokens"] = cache_read
+        cache_write = _coerce_number(cache.get("write"))
+        if cache_write is not None:
+            cache_usage["write_tokens"] = cache_write
+        if cache_usage:
+            usage["cache_tokens"] = cache_usage
+
+    cost = _coerce_number(info.get("cost"))
+    if cost is not None:
+        usage["cost"] = cost
+
+    if not usage:
+        return None
+    return usage
+
+
+def _extract_token_usage(payload: Any) -> dict[str, Any] | None:
+    if not isinstance(payload, Mapping):
+        return None
+
+    candidates: list[Mapping[str, Any]] = []
+    info = payload.get("info")
+    if isinstance(info, Mapping):
+        candidates.append(info)
+
+    props = payload.get("properties")
+    if isinstance(props, Mapping):
+        props_info = props.get("info")
+        if isinstance(props_info, Mapping):
+            candidates.append(props_info)
+        part = props.get("part")
+        if isinstance(part, Mapping):
+            candidates.append(part)
+
+    for candidate in candidates:
+        usage = _extract_usage_from_info_like(candidate)
+        if usage is not None:
+            return usage
+    return None
+
+
+def _merge_token_usage(
+    base: Mapping[str, Any] | None,
+    incoming: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if base is None and incoming is None:
+        return None
+    merged: dict[str, Any] = dict(base) if base else {}
+    if incoming:
+        for key, value in incoming.items():
+            if value is None:
+                continue
+            if key == "raw" and isinstance(value, Mapping):
+                existing = merged.get("raw")
+                if isinstance(existing, Mapping):
+                    merged["raw"] = {**dict(existing), **dict(value)}
+                else:
+                    merged["raw"] = dict(value)
+                continue
+            merged[key] = value
+    return merged or None
 
 
 def _normalize_role(role: Any) -> str | None:
@@ -1127,23 +1338,17 @@ def _normalize_role(role: Any) -> str | None:
     value = role.strip().lower()
     if not value:
         return None
-    if value.startswith("role_"):
-        value = value[5:]
-    if value in {"assistant", "agent", "model", "ai"}:
+    if value == "assistant":
         return "agent"
-    if value in {"user", "human"}:
+    if value == "user":
         return "user"
     if value == "system":
         return "system"
-    return value
+    return None
 
 
 def _extract_stream_role(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
     role = part.get("role") or props.get("role")
-    if role is None:
-        message = props.get("message")
-        if isinstance(message, Mapping):
-            role = message.get("role")
     return _normalize_role(role)
 
 
@@ -1163,68 +1368,122 @@ def _extract_first_nonempty_string(
 
 
 def _extract_stream_session_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    session_keys = ("sessionID", "sessionId", "session_id")
-    for source in (part, props):
-        candidate = _extract_first_nonempty_string(source, session_keys)
-        if candidate:
-            return candidate
-    message = props.get("message")
-    candidate = _extract_first_nonempty_string(message, session_keys)
+    candidate = _extract_first_nonempty_string(part, ("sessionID",))
     if candidate:
         return candidate
+    return _extract_first_nonempty_string(props, ("sessionID",))
+
+
+def _extract_event_session_id(event: Mapping[str, Any]) -> str | None:
+    props = event.get("properties")
+    if not isinstance(props, Mapping):
+        return None
+    direct = _extract_first_nonempty_string(props, ("sessionID",))
+    if direct:
+        return direct
+    info = props.get("info")
+    if isinstance(info, Mapping):
+        info_session_id = _extract_first_nonempty_string(info, ("sessionID",))
+        if info_session_id:
+            return info_session_id
+    part = props.get("part")
+    if isinstance(part, Mapping):
+        part_session_id = _extract_first_nonempty_string(part, ("sessionID",))
+        if part_session_id:
+            return part_session_id
     return None
+
+
+def _extract_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        normalized = item.strip()
+        if normalized:
+            result.append(normalized)
+    return result
+
+
+def _extract_interrupt_asked_request_id(props: Mapping[str, Any]) -> str | None:
+    return _extract_first_nonempty_string(
+        props,
+        ("id",),
+    )
+
+
+def _extract_interrupt_resolved_request_id(props: Mapping[str, Any]) -> str | None:
+    return _extract_first_nonempty_string(
+        props,
+        ("requestID",),
+    )
+
+
+def _extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | None:
+    event_type = event.get("type")
+    if event_type not in _INTERRUPT_ASKED_EVENT_TYPES:
+        return None
+    props = event.get("properties")
+    if not isinstance(props, Mapping):
+        return None
+    request_id = _extract_interrupt_asked_request_id(props)
+    if not request_id:
+        return None
+    if event_type == "permission.asked":
+        details: dict[str, Any] = {
+            "permission": props.get("permission"),
+            "patterns": _extract_string_list(props.get("patterns")),
+        }
+        return {
+            "request_id": request_id,
+            "interrupt_type": "permission",
+            "details": details,
+        }
+    questions = props.get("questions")
+    details = {"questions": questions if isinstance(questions, list) else []}
+    return {
+        "request_id": request_id,
+        "interrupt_type": "question",
+        "details": details,
+    }
+
+
+def _extract_interrupt_resolved_event(event: Mapping[str, Any]) -> dict[str, str] | None:
+    event_type = event.get("type")
+    if event_type not in _INTERRUPT_RESOLVED_EVENT_TYPES:
+        return None
+    props = event.get("properties")
+    if not isinstance(props, Mapping):
+        return None
+    request_id = _extract_interrupt_resolved_request_id(props)
+    if not request_id:
+        return None
+    return {"request_id": request_id, "event_type": event_type}
 
 
 def _extract_stream_message_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    message_keys = ("messageID", "messageId", "message_id", "id")
-    for source in (part, props):
-        candidate = _extract_first_nonempty_string(source, message_keys)
-        if candidate:
-            return candidate
-    message = props.get("message")
-    if isinstance(message, Mapping):
-        candidate = _extract_first_nonempty_string(message, message_keys)
-        if candidate:
-            return candidate
-        info = message.get("info")
-        candidate = _extract_first_nonempty_string(info, message_keys)
-        if candidate:
-            return candidate
-    return None
+    candidate = _extract_first_nonempty_string(part, ("messageID",))
+    if candidate:
+        return candidate
+    return _extract_first_nonempty_string(props, ("messageID",))
 
 
 def _extract_stream_part_id(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    part_keys = ("partID", "partId", "part_id", "id")
-    for source in (part, props):
-        candidate = _extract_first_nonempty_string(source, part_keys)
-        if candidate:
-            return candidate
-    return None
-
-
-def _build_fallback_part_id(
-    part: Mapping[str, Any],
-    props: Mapping[str, Any],
-    *,
-    message_id: str | None,
-) -> str | None:
-    if not message_id:
-        return None
-    part_type = _extract_stream_part_type(part, props) or "unknown"
-    return f"fallback:{message_id}:{part_type}"
+    candidate = _extract_first_nonempty_string(part, ("id",))
+    if candidate:
+        return candidate
+    return _extract_first_nonempty_string(props, ("partID",))
 
 
 def _extract_stream_part_type(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    for value in (
-        part.get("type"),
-        part.get("kind"),
-        props.get("partType"),
-        props.get("part_type"),
-    ):
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized:
-                return normalized
+    del props
+    value = part.get("type")
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized:
+            return normalized
     return None
 
 
@@ -1233,16 +1492,9 @@ def _map_part_type_to_block_type(part_type: str | None) -> BlockType | None:
         return None
     if part_type == "text":
         return BlockType.TEXT
-    if part_type in {"reasoning", "thinking", "thought"}:
+    if part_type == "reasoning":
         return BlockType.REASONING
-    if part_type in {
-        "tool",
-        "tool_call",
-        "toolcall",
-        "function_call",
-        "functioncall",
-        "action",
-    }:
+    if part_type == "tool":
         return BlockType.TOOL_CALL
     return None
 
@@ -1250,69 +1502,19 @@ def _map_part_type_to_block_type(part_type: str | None) -> BlockType | None:
 def _resolve_stream_block_type(
     part: Mapping[str, Any], props: Mapping[str, Any]
 ) -> BlockType | None:
-    explicit_part_type = _extract_stream_part_type(part, props)
-    if explicit_part_type is not None:
-        return _map_part_type_to_block_type(explicit_part_type)
-    return _classify_stream_block_type(part, props)
-
-
-def _classify_stream_block_type(
-    part: Mapping[str, Any], props: Mapping[str, Any]
-) -> BlockType | None:
-    candidates: list[str] = []
-    for value in (
-        part.get("block_type"),
-        props.get("block_type"),
-        part.get("channel"),
-        props.get("channel"),
-        part.get("kind"),
-        props.get("kind"),
-        props.get("type"),
-        props.get("deltaType"),
-        props.get("phase"),
-        props.get("name"),
-    ):
-        if isinstance(value, str) and value.strip():
-            candidates.append(value.strip().lower())
-
-    if any(
-        any(keyword in candidate for keyword in ("reason", "thinking", "thought"))
-        for candidate in candidates
-    ):
-        return BlockType.REASONING
-    if any(
-        any(
-            keyword in candidate
-            for keyword in (
-                "tool",
-                "function_call",
-                "functioncall",
-                "tool_call",
-                "toolcall",
-                "action",
-            )
-        )
-        for candidate in candidates
-    ):
-        return BlockType.TOOL_CALL
-    if any(
-        any(keyword in candidate for keyword in ("text", "answer", "final"))
-        for candidate in candidates
-    ):
-        return BlockType.TEXT
-    return None
+    return _map_part_type_to_block_type(_extract_stream_part_type(part, props))
 
 
 def _serialize_tool_part(part: Mapping[str, Any]) -> str | None:
     payload: dict[str, Any] = {}
-    for source_key in ("callID", "callId", "call_id"):
+    for source_key in ("callID",):
         value = part.get(source_key)
         if isinstance(value, str):
             normalized = value.strip()
             if normalized:
                 payload["call_id"] = normalized
                 break
-    for source_key in ("tool", "name"):
+    for source_key in ("tool",):
         value = part.get(source_key)
         if isinstance(value, str):
             normalized = value.strip()
@@ -1346,23 +1548,40 @@ def _build_history(context: RequestContext) -> list[Message]:
     return history
 
 
-def _extract_opencode_session_id(context: RequestContext) -> str | None:
-    # Contract: clients may pass the binding at either request-level metadata
-    # (MessageSendParams.metadata) or message-level metadata (Message.metadata).
-    candidate = None
+def _iter_opencode_metadata_maps(context: RequestContext):
     try:
         meta = context.metadata
-        if isinstance(meta, Mapping):
-            candidate = meta.get("opencode_session_id")
     except Exception:
-        candidate = None
+        meta = None
 
-    if not candidate and context.message is not None:
+    if isinstance(meta, Mapping):
+        opencode_meta = meta.get("opencode")
+        if isinstance(opencode_meta, Mapping):
+            yield opencode_meta
+
+    if context.message is not None:
         msg_meta = getattr(context.message, "metadata", None) or {}
         if isinstance(msg_meta, Mapping):
-            candidate = msg_meta.get("opencode_session_id")
+            opencode_meta = msg_meta.get("opencode")
+            if isinstance(opencode_meta, Mapping):
+                yield opencode_meta
 
-    if isinstance(candidate, str):
-        value = candidate.strip()
-        return value or None
+
+def _extract_opencode_string_metadata(context: RequestContext, field: str) -> str | None:
+    for opencode_meta in _iter_opencode_metadata_maps(context):
+        candidate = opencode_meta.get(field)
+        if isinstance(candidate, str):
+            value = candidate.strip()
+            if value:
+                return value
     return None
+
+
+def _extract_opencode_session_id(context: RequestContext) -> str | None:
+    # Contract: clients pass binding metadata under metadata.opencode.session_id.
+    return _extract_opencode_string_metadata(context, "session_id")
+
+
+def _extract_opencode_directory(context: RequestContext) -> str | None:
+    # Contract: clients pass directory override under metadata.opencode.directory.
+    return _extract_opencode_string_metadata(context, "directory")

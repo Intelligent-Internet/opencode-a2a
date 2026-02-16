@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import secrets
@@ -31,8 +32,7 @@ from starlette.responses import StreamingResponse
 from .agent import OpencodeAgentExecutor
 from .config import Settings
 from .jsonrpc_ext import (
-    SESSION_QUERY_PAGINATION_DEFAULT_SIZE,
-    SESSION_QUERY_PAGINATION_MAX_SIZE,
+    SESSION_CONTEXT_PREFIX,
     OpencodeSessionQueryJSONRPCApplication,
 )
 from .opencode_client import OpencodeClient
@@ -46,9 +46,15 @@ SESSION_QUERY_METHODS = {
     "list_sessions": "opencode.sessions.list",
     "get_session_messages": "opencode.sessions.messages.list",
 }
+INTERRUPT_CALLBACK_METHODS = {
+    "reply_permission": "opencode.permission.reply",
+    "reply_question": "opencode.question.reply",
+    "reject_question": "opencode.question.reject",
+}
 
 SESSION_BINDING_EXTENSION_URI = "urn:opencode-a2a:opencode-session-binding/v1"
 SESSION_QUERY_EXTENSION_URI = "urn:opencode-a2a:opencode-session-query/v1"
+INTERRUPT_CALLBACK_EXTENSION_URI = "urn:opencode-a2a:opencode-interrupt-callback/v1"
 
 
 class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
@@ -102,8 +108,9 @@ def _build_agent_card_description(
     summary = (
         "Supports HTTP+JSON and JSON-RPC transports, standard A2A messaging "
         "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
-        "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), and "
-        "OpenCode session-query extensions."
+        "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), "
+        "OpenCode session-query extensions, and interrupt callback extensions "
+        "(permission/question reply)."
     )
     parts: list[str] = [base, summary]
     parts.append(
@@ -183,20 +190,22 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     description=(
                         "Contract to bind A2A messages to an existing OpenCode session "
                         "when continuing a previous chat. Clients should pass "
-                        "metadata.opencode_session_id. The metadata.directory field is also "
+                        "metadata.opencode.session_id. The metadata.opencode.directory field is "
+                        "also "
                         "supported under server-side directory boundary validation."
                     ),
                     params={
-                        "metadata_key": "opencode_session_id",
+                        "metadata_namespace": "opencode",
+                        "metadata_key": "opencode.session_id",
                         "behavior": "prefer_metadata_binding_else_create_session",
-                        "supported_metadata": ["opencode_session_id", "directory"],
+                        "supported_metadata": ["opencode.session_id", "opencode.directory"],
                         "directory_override_enabled": settings.a2a_allow_directory_override,
                         "shared_workspace_across_consumers": True,
                         "tenant_isolation": "none",
                         "deployment_context": deployment_context,
                         "notes": [
                             (
-                                "If metadata.opencode_session_id is provided, the server will "
+                                "If metadata.opencode.session_id is provided, the server will "
                                 "send the message to that OpenCode session_id."
                             ),
                             (
@@ -221,11 +230,9 @@ def build_agent_card(settings: Settings) -> AgentCard:
                         "deployment_context": deployment_context,
                         "pagination": {
                             # Explicit, discoverable contract for generic clients.
-                            "mode": "page_size",
+                            "mode": "limit",
                             "behavior": "passthrough",
-                            "params": ["page", "size"],
-                            "default_size": SESSION_QUERY_PAGINATION_DEFAULT_SIZE,
-                            "max_size": SESSION_QUERY_PAGINATION_MAX_SIZE,
+                            "params": ["limit"],
                         },
                         "errors": {
                             # JSON-RPC standard errors still apply (e.g. -32602 invalid params).
@@ -234,17 +241,66 @@ def build_agent_card(settings: Settings) -> AgentCard:
                                 "SESSION_NOT_FOUND": -32001,
                                 "UPSTREAM_UNREACHABLE": -32002,
                                 "UPSTREAM_HTTP_ERROR": -32003,
+                                "UPSTREAM_PAYLOAD_ERROR": -32005,
                             },
                             # Stable fields returned in error.data for business errors.
-                            "error_data_fields": ["type", "session_id", "upstream_status"],
+                            "error_data_fields": [
+                                "type",
+                                "session_id",
+                                "upstream_status",
+                                "detail",
+                            ],
                         },
                         # Result envelope is A2A-first.
                         # items are serialized A2A Task/Message objects.
                         "result_envelope": {
-                            "fields": ["items", "pagination"],
+                            "fields": ["items"],
                             "items_field": "items",
-                            "pagination_field": "pagination",
                         },
+                        "context_semantics": {
+                            "a2a_context_id_field": "contextId",
+                            "a2a_context_id_prefix": SESSION_CONTEXT_PREFIX,
+                            "upstream_session_id_field": "metadata.opencode.session_id",
+                        },
+                    },
+                ),
+                AgentExtension(
+                    uri=INTERRUPT_CALLBACK_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Handle interactive interrupt callbacks generated by OpenCode "
+                        "(permission/question asked events) through JSON-RPC methods."
+                    ),
+                    params={
+                        "methods": INTERRUPT_CALLBACK_METHODS,
+                        "supported_interrupt_events": [
+                            "permission.asked",
+                            "question.asked",
+                        ],
+                        "permission_reply_values": ["once", "always", "reject"],
+                        "question_reply_contract": {
+                            "answers": "array of answer arrays (same order as asked questions)"
+                        },
+                        "metadata_namespace": "opencode",
+                        "supported_metadata": ["opencode.directory"],
+                        "context_fields": {
+                            "directory": "metadata.opencode.directory",
+                        },
+                        "success_result_fields": ["ok", "request_id"],
+                        "errors": {
+                            "business_codes": {
+                                "INTERRUPT_REQUEST_NOT_FOUND": -32004,
+                            },
+                            "error_types": [
+                                "INTERRUPT_REQUEST_NOT_FOUND",
+                                "INTERRUPT_REQUEST_EXPIRED",
+                                "INTERRUPT_TYPE_MISMATCH",
+                            ],
+                            "error_data_fields": ["type", "request_id", "upstream_status"],
+                        },
+                        "shared_workspace_across_consumers": True,
+                        "tenant_isolation": "none",
+                        "deployment_context": deployment_context,
                     },
                 ),
             ],
@@ -271,6 +327,20 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 examples=[
                     "List OpenCode sessions (method opencode.sessions.list).",
                     "List messages for a session (method opencode.sessions.messages.list).",
+                ],
+            ),
+            AgentSkill(
+                id="opencode.interrupt.callback",
+                name="OpenCode Interrupt Callback",
+                description=(
+                    "Reply permission/question interrupts emitted during streaming via "
+                    "JSON-RPC methods opencode.permission.reply, "
+                    "opencode.question.reply, and opencode.question.reject."
+                ),
+                tags=["opencode", "interrupt", "permission", "question"],
+                examples=[
+                    "Reply once/always/reject to a permission request by request_id.",
+                    "Submit answers for a question request by request_id.",
                 ],
             ),
         ],
@@ -307,6 +377,7 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
         provided = auth_header.split(" ", 1)[1].strip()
         if not secrets.compare_digest(provided, token):
             return _unauthorized_response()
+        request.state.user_identity = f"bearer:{hashlib.sha256(provided.encode()).hexdigest()[:12]}"
 
         return await call_next(request)
 
@@ -339,7 +410,10 @@ def create_app(settings: Settings) -> FastAPI:
         http_handler=handler,
         context_builder=context_builder,
         opencode_client=client,
-        methods=SESSION_QUERY_METHODS,
+        methods={
+            **SESSION_QUERY_METHODS,
+            **INTERRUPT_CALLBACK_METHODS,
+        },
     ).build(title=settings.a2a_title, version=settings.a2a_version, lifespan=lifespan)
 
     rest_adapter = RESTAdapter(
@@ -357,13 +431,13 @@ def create_app(settings: Settings) -> FastAPI:
             return None
         return payload if isinstance(payload, dict) else None
 
-    def _detect_opencode_session_query_method(payload: dict | None) -> str | None:
+    def _detect_opencode_extension_method(payload: dict | None) -> str | None:
         if payload is None:
             return None
         method = payload.get("method")
         if not isinstance(method, str):
             return None
-        if method.startswith("opencode.sessions."):
+        if method.startswith("opencode."):
             return method
         return None
 
@@ -419,7 +493,7 @@ def create_app(settings: Settings) -> FastAPI:
         path = request.url.path
         # Detect session-query JSON-RPC methods regardless of deployment prefixes/root_path.
         payload = _parse_json_body(body)
-        sensitive_method = _detect_opencode_session_query_method(payload)
+        sensitive_method = _detect_opencode_extension_method(payload)
 
         if sensitive_method:
             logger.debug("A2A request %s %s method=%s", request.method, path, sensitive_method)

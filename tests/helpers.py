@@ -138,13 +138,39 @@ class DummyChatOpencodeClient:
         for _ in ():
             yield {}
 
+    def remember_interrupt_request(
+        self,
+        *,
+        request_id: str,
+        session_id: str,
+        interrupt_type: str | None = None,
+        identity: str | None = None,
+        task_id: str | None = None,
+        context_id: str | None = None,
+        ttl_seconds: float | None = None,
+    ) -> None:
+        del request_id, session_id, interrupt_type, identity, task_id, context_id, ttl_seconds
+
+    def resolve_interrupt_session(self, request_id: str) -> str | None:
+        del request_id
+        return None
+
+    def discard_interrupt_request(self, request_id: str) -> None:
+        del request_id
+
 
 class DummySessionQueryOpencodeClient:
     def __init__(self, _settings: Settings) -> None:
-        self._sessions_payload = {"items": [{"id": "s-1"}]}
-        self._messages_payload = {"items": [{"id": "m-1", "text": "SECRET_HISTORY"}]}
+        self._sessions_payload = [{"id": "s-1", "title": "Session s-1"}]
+        self._messages_payload = [
+            {
+                "info": {"id": "m-1", "role": "assistant"},
+                "parts": [{"type": "text", "text": "SECRET_HISTORY"}],
+            }
+        ]
         self.last_sessions_params = None
         self.last_messages_params = None
+        self._interrupt_requests: dict[str, dict[str, str | None]] = {}
 
     async def close(self) -> None:
         return None
@@ -157,3 +183,77 @@ class DummySessionQueryOpencodeClient:
         assert session_id
         self.last_messages_params = params
         return self._messages_payload
+
+    def remember_interrupt_request(
+        self,
+        *,
+        request_id: str,
+        session_id: str,
+        interrupt_type: str,
+        identity: str | None = None,
+        task_id: str | None = None,
+        context_id: str | None = None,
+        ttl_seconds: float | None = None,
+    ) -> None:
+        del ttl_seconds
+        self._interrupt_requests[request_id] = {
+            "session_id": session_id,
+            "interrupt_type": interrupt_type,
+            "identity": identity,
+            "task_id": task_id,
+            "context_id": context_id,
+        }
+
+    def resolve_interrupt_request(self, request_id: str):
+        payload = self._interrupt_requests.get(request_id)
+        if payload is None:
+            return "missing", None
+
+        class _Binding:
+            def __init__(self, data: dict[str, str | None]) -> None:
+                self.session_id = data.get("session_id")
+                self.interrupt_type = data.get("interrupt_type")
+                self.identity = data.get("identity")
+                self.task_id = data.get("task_id")
+                self.context_id = data.get("context_id")
+
+        return "active", _Binding(payload)
+
+    def resolve_interrupt_session(self, request_id: str) -> str | None:
+        payload = self._interrupt_requests.get(request_id)
+        if payload is None:
+            return None
+        return payload.get("session_id")
+
+    def discard_interrupt_request(self, request_id: str) -> None:
+        self._interrupt_requests.pop(request_id, None)
+
+    async def permission_reply(
+        self,
+        request_id: str,
+        *,
+        reply: str,
+        message: str | None = None,
+        directory: str | None = None,
+    ) -> bool:
+        del request_id, reply, message, directory
+        return True
+
+    async def question_reply(
+        self,
+        request_id: str,
+        *,
+        answers: list[list[str]],
+        directory: str | None = None,
+    ) -> bool:
+        del request_id, answers, directory
+        return True
+
+    async def question_reject(
+        self,
+        request_id: str,
+        *,
+        directory: str | None = None,
+    ) -> bool:
+        del request_id, directory
+        return True

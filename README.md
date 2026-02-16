@@ -45,20 +45,17 @@ Additional notes:
 - SSE streaming: `/v1/message:stream` emits incremental updates and then
   closes with `TaskStatusUpdateEvent(final=true)`. For detailed streaming
   contract and event semantics, see `docs/guide.md`.
+- Token usage passthrough: normalized usage/cost stats are exposed at
+  `metadata.opencode.usage` (stream final status and non-streaming task metadata).
+- Interrupt callback passthrough: when OpenCode emits `permission.asked` /
+  `question.asked`, stream status events include `metadata.opencode.interrupt`
+  so downstream can reply via JSON-RPC extension methods.
 - Re-subscribe after disconnect: `GET /v1/tasks/{task_id}:subscribe`
   (available while the task is not in a terminal state).
 - Session continuation contract: clients can explicitly bind to an existing
-  OpenCode session via `metadata.opencode_session_id`.
+  OpenCode session via `metadata.opencode.session_id`.
 - OpenCode session query extension (JSON-RPC):
   `opencode.sessions.list` / `opencode.sessions.messages.list`.
-
-## Transport Notes
-
-- The service keeps dual-stack transport support: HTTP+JSON (REST routes) and JSON-RPC (`POST /`).
-- Agent Card sets `preferredTransport=HTTP+JSON` and still declares JSON-RPC via `additionalInterfaces`.
-- Request payloads are transport-specific and must not be mixed:
-  - REST (`/v1/message:send`): typically `message.content` with role values like `ROLE_USER`
-  - JSON-RPC (`method=message/send`): `params.message.parts` with role values `user` / `agent`
 
 ## Quick Start
 
@@ -113,77 +110,18 @@ For full configuration, see `docs/guide.md`. Most commonly used options:
 - `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`:
   in-memory `(identity, contextId) -> session_id` mapping cache settings
 
-## Session Continuation Contract
+## API & Protocol Details
 
-To continue an existing OpenCode conversation, pass this metadata key on every invoke request:
+Implementation-level protocol contracts and examples are maintained in
+`docs/guide.md`:
 
-- `metadata.opencode_session_id`: target OpenCode session ID (for example
-  `ses_xxx`)
-
-Server behavior:
-
-- If provided, the server sends the message to the specified session.
-- If omitted, the server creates a new session and caches
-  `(identity, contextId) -> session_id` with TTL and max-size bounds.
-
-Example:
-
-```bash
-curl -sS http://127.0.0.1:8000/v1/message:send \
-  -H 'content-type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
-  -d '{
-    "message": {
-      "messageId": "msg-continue-1",
-      "role": "ROLE_USER",
-      "content": [{"text": "Continue our previous conversation and summarize the last conclusion."}]
-    },
-    "metadata": {
-      "opencode_session_id": "<session_id>"
-    }
-  }'
-```
-
-## OpenCode Session Query (A2A Extension via JSON-RPC)
-
-The service exposes OpenCode session list/history queries through A2A extension methods on the JSON-RPC endpoint (`POST /`), without introducing custom REST endpoints.
-
-- Auth: same `Authorization: Bearer <token>`
-- Result: `result.items` always contains A2A standard objects
-  (Task for session list, Message for history)
-- OpenCode raw records are preserved in `metadata.opencode.raw`
-
-List sessions (`opencode.sessions.list`):
-
-```bash
-curl -sS http://127.0.0.1:8000/ \
-  -H 'content-type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "opencode.sessions.list",
-    "params": {"page": 1, "size": 20}
-  }'
-```
-
-List messages in a session (`opencode.sessions.messages.list`):
-
-```bash
-curl -sS http://127.0.0.1:8000/ \
-  -H 'content-type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 2,
-    "method": "opencode.sessions.messages.list",
-    "params": {
-      "session_id": "<session_id>",
-      "page": 1,
-      "size": 50
-    }
-  }'
-```
+- Transport contract and payload shape boundaries
+- Session continuation (`metadata.opencode.session_id`)
+- JSON-RPC extension methods:
+  `opencode.sessions.list`, `opencode.sessions.messages.list`,
+  `opencode.permission.reply`, `opencode.question.reply`,
+  `opencode.question.reject`
+- Interrupt callback request lifecycle and error semantics
 
 ## Documentation
 

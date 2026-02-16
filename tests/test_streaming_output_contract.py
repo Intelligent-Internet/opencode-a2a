@@ -1,7 +1,7 @@
 import asyncio
 
 import pytest
-from a2a.types import TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from a2a.types import Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
 from opencode_a2a_serve.agent import OpencodeAgentExecutor
 from opencode_a2a_serve.opencode_client import OpencodeMessage
@@ -15,16 +15,19 @@ class DummyStreamingClient:
         stream_events_payload: list[dict],
         response_text: str,
         response_message_id: str | None = "msg-1",
+        response_raw: dict | None = None,
         send_delay: float = 0.02,
     ) -> None:
         self._stream_events_payload = stream_events_payload
         self._response_text = response_text
         self._response_message_id = response_message_id
+        self._response_raw = response_raw or {}
         self._send_delay = send_delay
         self._in_flight_send = 0
         self.max_in_flight_send = 0
         self.stream_timeout = None
         self.directory = None
+        self._interrupt_sessions: dict[str, str] = {}
         self.settings = make_settings(
             a2a_bearer_token="test",
             opencode_base_url="http://localhost",
@@ -56,7 +59,7 @@ class DummyStreamingClient:
             text=self._response_text,
             session_id=session_id,
             message_id=self._response_message_id,
-            raw={},
+            raw=self._response_raw,
         )
 
     async def stream_events(self, stop_event=None, *, directory: str | None = None):  # noqa: ANN001
@@ -66,6 +69,26 @@ class DummyStreamingClient:
                 break
             await asyncio.sleep(0)
             yield event
+
+    def remember_interrupt_request(
+        self,
+        *,
+        request_id: str,
+        session_id: str,
+        interrupt_type: str | None = None,
+        identity: str | None = None,
+        task_id: str | None = None,
+        context_id: str | None = None,
+        ttl_seconds: float | None = None,
+    ) -> None:
+        del interrupt_type, identity, task_id, context_id, ttl_seconds
+        self._interrupt_sessions[request_id] = session_id
+
+    def resolve_interrupt_session(self, request_id: str) -> str | None:
+        return self._interrupt_sessions.get(request_id)
+
+    def discard_interrupt_request(self, request_id: str) -> None:
+        self._interrupt_sessions.pop(request_id, None)
 
 
 def _event(
@@ -79,8 +102,10 @@ def _event(
     text: str | None = None,
     part_overrides: dict | None = None,
 ) -> dict:
+    resolved_part_id = part_id or f"prt-{message_id or 'missing'}-{part_type}"
     properties: dict = {
         "part": {
+            "id": resolved_part_id,
             "sessionID": session_id,
             "type": part_type,
         },
@@ -90,8 +115,6 @@ def _event(
         properties["part"]["role"] = role
     if message_id is not None:
         properties["part"]["messageID"] = message_id
-    if part_id is not None:
-        properties["part"]["id"] = part_id
     if text is not None:
         properties["part"]["text"] = text
     if part_overrides:
@@ -123,6 +146,70 @@ def _delta_event(
     }
 
 
+def _step_finish_usage_event(
+    *,
+    session_id: str,
+    message_id: str = "msg-1",
+    part_id: str = "prt-step-finish",
+    input_tokens: int,
+    output_tokens: int,
+    total_tokens: int,
+    cost: float,
+) -> dict:
+    return {
+        "type": "message.part.updated",
+        "properties": {
+            "part": {
+                "id": part_id,
+                "sessionID": session_id,
+                "messageID": message_id,
+                "type": "step-finish",
+                "reason": "stop",
+                "cost": cost,
+                "tokens": {
+                    "input": input_tokens,
+                    "output": output_tokens,
+                    "total": total_tokens,
+                    "reasoning": 0,
+                    "cache": {"read": 0, "write": 0},
+                },
+            }
+        },
+    }
+
+
+def _permission_asked_event(*, session_id: str, request_id: str) -> dict:
+    return {
+        "type": "permission.asked",
+        "properties": {
+            "id": request_id,
+            "sessionID": session_id,
+            "permission": "read",
+            "patterns": ["/data/project/.env.secret"],
+            "always": ["/data/project/.env.example"],
+            "metadata": {"path": "/data/project/.env.secret"},
+            "tool": {"messageID": "msg-tool-1", "callID": "call-tool-1"},
+        },
+    }
+
+
+def _question_asked_event(*, session_id: str, request_id: str) -> dict:
+    return {
+        "type": "question.asked",
+        "properties": {
+            "id": request_id,
+            "sessionID": session_id,
+            "questions": [
+                {
+                    "header": "Confirm",
+                    "question": "Proceed?",
+                    "options": [{"label": "Yes", "value": "yes"}],
+                }
+            ],
+        },
+    }
+
+
 def _artifact_updates(queue: DummyEventQueue) -> list[TaskArtifactUpdateEvent]:
     return [event for event in queue.events if isinstance(event, TaskArtifactUpdateEvent)]
 
@@ -137,12 +224,12 @@ async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types
     user_text = "who are you"
     client = DummyStreamingClient(
         stream_events_payload=[
-            _event(session_id="ses-1", role="ROLE_USER", part_type="text", delta=user_text),
+            _event(session_id="ses-1", role="user", part_type="text", delta=user_text),
             _event(session_id="ses-1", role="assistant", part_type="reasoning", delta="thinking"),
             _event(
                 session_id="ses-1",
                 role="assistant",
-                part_type="tool_call",
+                part_type="tool",
                 delta='{"tool":"search"}',
             ),
             _event(session_id="ses-1", role="assistant", part_type="text", delta="final answer"),
@@ -165,10 +252,8 @@ async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types
     assert _unique(block_types) == ["reasoning", "tool_call", "text"]
     artifact_ids = [event.artifact.artifact_id for event in updates]
     assert len(set(artifact_ids)) == 1
-    sequences = [event.artifact.metadata["opencode"]["sequence"] for event in updates]
-    assert sequences == list(range(1, len(updates) + 1))
     event_ids = [event.artifact.metadata["opencode"]["event_id"] for event in updates]
-    assert event_ids == [f"task-1:ctx-1:task-1:stream:{seq}" for seq in sequences]
+    assert event_ids == [f"task-1:ctx-1:task-1:stream:{seq}" for seq in range(1, len(updates) + 1)]
 
 
 @pytest.mark.asyncio
@@ -241,7 +326,7 @@ async def test_execute_serializes_send_message_per_session() -> None:
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
     queue_1 = DummyEventQueue()
     queue_2 = DummyEventQueue()
-    metadata = {"opencode_session_id": "ses-shared"}
+    metadata = {"opencode": {"session_id": "ses-shared"}}
 
     await asyncio.gather(
         executor.execute(
@@ -297,6 +382,169 @@ async def test_streaming_drops_events_without_message_id_and_falls_back_to_snaps
     ][-1]
     assert final_status.metadata["opencode"]["message_id"] == "task-6:ctx-6:assistant"
     assert final_status.metadata["opencode"]["event_id"] == "task-6:ctx-6:task-6:stream:status"
+
+
+@pytest.mark.asyncio
+async def test_streaming_includes_usage_in_final_status_metadata() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="answer"),
+            _step_finish_usage_event(
+                session_id="ses-1",
+                input_tokens=12,
+                output_tokens=4,
+                total_tokens=16,
+                cost=0.0012,
+            ),
+        ],
+        response_text="answer",
+        response_raw={
+            "info": {
+                "tokens": {
+                    "input": 11,
+                    "output": 5,
+                    "reasoning": 0,
+                    "cache": {"read": 0, "write": 0},
+                },
+                "cost": 0.0009,
+            }
+        },
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-usage", context_id="ctx-usage", text="hello"),
+        queue,
+    )
+
+    final_status = [
+        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+    ][-1]
+    usage = final_status.metadata["opencode"]["usage"]
+    assert usage["input_tokens"] == 12
+    assert usage["output_tokens"] == 4
+    assert usage["total_tokens"] == 16
+    assert usage["cost"] == 0.0012
+    assert "raw" not in usage
+    assert final_status.status.state == TaskState.completed
+
+
+@pytest.mark.asyncio
+async def test_streaming_final_status_state_is_completed() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-final-stream", context_id="ctx-final-stream", text="hello"
+        ),
+        queue,
+    )
+
+    final_statuses = [
+        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+    ]
+    assert final_statuses
+    assert final_statuses[-1].status.state == TaskState.completed
+
+
+@pytest.mark.asyncio
+async def test_non_streaming_response_task_state_is_completed() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-final-non-stream", context_id="ctx-final-non-stream", text="hello"
+        ),
+        queue,
+    )
+
+    tasks = [event for event in queue.events if isinstance(event, Task)]
+    assert tasks
+    assert tasks[-1].status.state == TaskState.completed
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _permission_asked_event(session_id="ses-1", request_id="perm-req-1"),
+            _permission_asked_event(session_id="ses-1", request_id="perm-req-1"),
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="answer"),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-perm", context_id="ctx-perm", text="hello"),
+        queue,
+    )
+
+    interrupt_statuses = [
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent)
+        and event.final is False
+        and (event.metadata or {}).get("opencode", {}).get("interrupt", {}).get("type")
+        == "permission"
+    ]
+    assert len(interrupt_statuses) == 1
+    interrupt = interrupt_statuses[0].metadata["opencode"]["interrupt"]
+    assert interrupt["request_id"] == "perm-req-1"
+    assert interrupt["details"]["permission"] == "read"
+    assert "/data/project/.env.secret" in interrupt["details"]["patterns"]
+    assert "metadata" not in interrupt["details"]
+    assert "tool" not in interrupt["details"]
+    assert interrupt_statuses[0].status.state == TaskState.input_required
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_interrupt_status_for_question_asked_event() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _question_asked_event(session_id="ses-1", request_id="q-req-1"),
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="answer"),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-question", context_id="ctx-question", text="hello"),
+        queue,
+    )
+
+    interrupt_statuses = [
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent)
+        and event.final is False
+        and (event.metadata or {}).get("opencode", {}).get("interrupt", {}).get("type")
+        == "question"
+    ]
+    assert len(interrupt_statuses) == 1
+    interrupt = interrupt_statuses[0].metadata["opencode"]["interrupt"]
+    assert interrupt["request_id"] == "q-req-1"
+    assert isinstance(interrupt["details"]["questions"], list)
+    assert "tool" not in interrupt["details"]
+    assert interrupt_statuses[0].status.state == TaskState.input_required
 
 
 def _unique(items: list[str]) -> list[str]:
@@ -446,6 +694,7 @@ async def test_streaming_never_resets_single_artifact_after_first_chunk() -> Non
                 "type": "message.part.updated",
                 "properties": {
                     "part": {
+                        "id": "prt-no-reset-1",
                         "sessionID": "ses-1",
                         "type": "text",
                         "role": "assistant",
@@ -459,6 +708,7 @@ async def test_streaming_never_resets_single_artifact_after_first_chunk() -> Non
                 "type": "message.part.updated",
                 "properties": {
                     "part": {
+                        "id": "prt-no-reset-1",
                         "sessionID": "ses-1",
                         "type": "text",
                         "role": "assistant",

@@ -18,7 +18,7 @@ async def test_agent_prefers_metadata_opencode_session_id() -> None:
         task_id="t-1",
         context_id="c-1",
         text="hello",
-        metadata={"opencode_session_id": "ses-bound"},
+        metadata={"opencode": {"session_id": "ses-bound"}},
     )
     await executor.execute(ctx, q)
 
@@ -41,7 +41,7 @@ async def test_agent_caches_bound_session_id_for_followup_requests() -> None:
         task_id="t-1",
         context_id="c-1",
         text="hello",
-        metadata={"opencode_session_id": "ses-bound"},
+        metadata={"opencode": {"session_id": "ses-bound"}},
     )
     await executor.execute(ctx1, q)
 
@@ -117,5 +117,52 @@ async def test_agent_uses_stable_fallback_message_id_when_upstream_missing_messa
     )
 
     task = next(event for event in q.events if isinstance(event, Task))
-    assert task.metadata["opencode"]["message_id"] == "t-fallback:c-fallback:assistant"
+    assert "message_id" not in task.metadata["opencode"]
     assert task.status.message.message_id == "t-fallback:c-fallback:assistant"
+
+
+@pytest.mark.asyncio
+async def test_agent_includes_usage_in_non_stream_task_metadata() -> None:
+    class UsageClient(DummyChatOpencodeClient):
+        async def send_message(
+            self,
+            session_id: str,
+            text: str,
+            *,
+            directory: str | None = None,
+            timeout_override=None,  # noqa: ANN001
+        ) -> OpencodeMessage:
+            del text, directory, timeout_override
+            self.sent_session_ids.append(session_id)
+            return OpencodeMessage(
+                text="echo:hello",
+                session_id=session_id,
+                message_id="msg-usage",
+                raw={
+                    "info": {
+                        "tokens": {
+                            "input": 7,
+                            "output": 3,
+                            "reasoning": 0,
+                            "cache": {"read": 0, "write": 0},
+                        },
+                        "cost": 0.0007,
+                    }
+                },
+            )
+
+    client = UsageClient()
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    q = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="t-usage", context_id="c-usage", text="hello"),
+        q,
+    )
+
+    task = next(event for event in q.events if isinstance(event, Task))
+    usage = task.metadata["opencode"]["usage"]
+    assert usage["input_tokens"] == 7
+    assert usage["output_tokens"] == 3
+    assert usage["total_tokens"] == 10
+    assert "raw" not in usage
