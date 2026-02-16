@@ -281,6 +281,11 @@ def build_agent_card(settings: Settings) -> AgentCard:
                         "question_reply_contract": {
                             "answers": "array of answer arrays (same order as asked questions)"
                         },
+                        "metadata_namespace": "opencode",
+                        "supported_metadata": ["opencode.directory"],
+                        "context_fields": {
+                            "directory": "metadata.opencode.directory",
+                        },
                         "success_result_fields": ["ok", "request_id"],
                         "errors": {
                             "business_codes": {

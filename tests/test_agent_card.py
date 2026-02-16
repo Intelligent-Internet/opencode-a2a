@@ -70,6 +70,9 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert interrupt.params["deployment_context"]["project"] == "alpha"
     assert interrupt.params["shared_workspace_across_consumers"] is True
     assert interrupt.params["tenant_isolation"] == "none"
+    assert interrupt.params["metadata_namespace"] == "opencode"
+    assert interrupt.params["supported_metadata"] == ["opencode.directory"]
+    assert interrupt.params["context_fields"]["directory"] == "metadata.opencode.directory"
 
 
 def test_agent_card_chat_examples_include_project_hint_when_configured() -> None:

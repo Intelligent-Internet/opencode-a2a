@@ -509,7 +509,11 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
                     "request_id": "perm-1",
                     "reply": "once",
                     "message": "approved by operator",
-                    "directory": "/workspace",
+                    "metadata": {
+                        "opencode": {
+                            "directory": "/workspace",
+                        }
+                    },
                 },
             },
         )
@@ -551,6 +555,42 @@ async def test_interrupt_callback_extension_rejects_legacy_permission_fields(mon
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32602
+
+
+@pytest.mark.asyncio
+async def test_interrupt_callback_extension_rejects_legacy_metadata_directory(monkeypatch):
+    import opencode_a2a_serve.app as app_module
+
+    dummy = DummyOpencodeClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 112,
+                "method": "opencode.permission.reply",
+                "params": {
+                    "request_id": "perm-legacy",
+                    "reply": "once",
+                    "metadata": {
+                        "directory": "/workspace",
+                    },
+                },
+            },
+        )
+        payload = resp.json()
+        assert payload["error"]["code"] == -32602
+        assert payload["error"]["data"]["fields"] == ["metadata.directory"]
 
 
 @pytest.mark.asyncio
@@ -612,7 +652,15 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
                 "jsonrpc": "2.0",
                 "id": 12,
                 "method": "opencode.question.reply",
-                "params": {"request_id": "q-1", "answers": [["A"], ["B"]]},
+                "params": {
+                    "request_id": "q-1",
+                    "answers": [["A"], ["B"]],
+                    "metadata": {
+                        "opencode": {
+                            "directory": "/workspace/question/reply",
+                        }
+                    },
+                },
             },
         )
         reply_payload = reply_resp.json()
@@ -620,6 +668,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
         assert reply_payload["result"]["request_id"] == "q-1"
         assert set(reply_payload["result"]) == {"ok", "request_id"}
         assert dummy.question_reply_calls[0]["answers"] == [["A"], ["B"]]
+        assert dummy.question_reply_calls[0]["directory"] == "/workspace/question/reply"
 
         reject_resp = await client.post(
             "/",
@@ -628,12 +677,20 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
                 "jsonrpc": "2.0",
                 "id": 13,
                 "method": "opencode.question.reject",
-                "params": {"request_id": "q-2"},
+                "params": {
+                    "request_id": "q-2",
+                    "metadata": {
+                        "opencode": {
+                            "directory": "/workspace/question/reject",
+                        }
+                    },
+                },
             },
         )
         reject_payload = reject_resp.json()
         assert reject_payload["result"]["ok"] is True
         assert dummy.question_reject_calls[0]["request_id"] == "q-2"
+        assert dummy.question_reject_calls[0]["directory"] == "/workspace/question/reject"
 
 
 @pytest.mark.asyncio

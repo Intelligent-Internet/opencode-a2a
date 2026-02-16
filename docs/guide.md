@@ -193,11 +193,14 @@ clients can reply through JSON-RPC extension methods:
   - required: `request_id`
   - required: `reply` (`once` / `always` / `reject`)
   - optional: `message`
+  - optional: `metadata.opencode.directory`
 - `opencode.question.reply`
   - required: `request_id`
   - required: `answers` (`Array<Array<string>>`)
+  - optional: `metadata.opencode.directory`
 - `opencode.question.reject`
   - required: `request_id`
+  - optional: `metadata.opencode.directory`
 
 Notes:
 
@@ -206,6 +209,8 @@ Notes:
 - The server keeps an in-memory interrupt binding cache; callbacks with unknown
   or expired `request_id` are rejected.
 - Callback requests are validated against interrupt type and caller identity.
+- Callback context variables use nested metadata namespace:
+  `params.metadata.opencode.*` (for example `metadata.opencode.directory`).
 - Successful callback responses are minimal: only `ok` and `request_id`.
 - Error types:
   - `INTERRUPT_REQUEST_NOT_FOUND`
@@ -224,7 +229,12 @@ curl -sS http://127.0.0.1:8000/ \
     "method": "opencode.permission.reply",
     "params": {
       "request_id": "<request_id>",
-      "reply": "once"
+      "reply": "once",
+      "metadata": {
+        "opencode": {
+          "directory": "/path/inside/workspace"
+        }
+      }
     }
   }'
 ```

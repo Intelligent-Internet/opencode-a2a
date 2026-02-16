@@ -422,14 +422,55 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             )
         request_id = request_id.strip()
         request_identity = getattr(request.state, "user_identity", None)
-        directory = params.get("directory")
+        metadata = params.get("metadata")
+        if metadata is not None and not isinstance(metadata, dict):
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message="metadata must be an object",
+                        data={"type": "INVALID_FIELD", "field": "metadata"},
+                    )
+                ),
+            )
+        opencode_metadata: dict[str, Any] | None = None
+        if isinstance(metadata, dict):
+            unknown_metadata_fields = sorted(set(metadata) - {"opencode"})
+            if unknown_metadata_fields:
+                prefixed_fields = [f"metadata.{field}" for field in unknown_metadata_fields]
+                return self._generate_error_response(
+                    base_request.id,
+                    A2AError(
+                        root=InvalidParamsError(
+                            message=f"Unsupported metadata fields: {', '.join(prefixed_fields)}",
+                            data={"type": "INVALID_FIELD", "fields": prefixed_fields},
+                        )
+                    ),
+                )
+            raw_opencode_metadata = metadata.get("opencode")
+            if raw_opencode_metadata is not None and not isinstance(raw_opencode_metadata, dict):
+                return self._generate_error_response(
+                    base_request.id,
+                    A2AError(
+                        root=InvalidParamsError(
+                            message="metadata.opencode must be an object",
+                            data={"type": "INVALID_FIELD", "field": "metadata.opencode"},
+                        )
+                    ),
+                )
+            if isinstance(raw_opencode_metadata, dict):
+                opencode_metadata = raw_opencode_metadata
+
+        directory = None
+        if opencode_metadata is not None:
+            directory = opencode_metadata.get("directory")
         if directory is not None and not isinstance(directory, str):
             return self._generate_error_response(
                 base_request.id,
                 A2AError(
                     root=InvalidParamsError(
-                        message="directory must be a string",
-                        data={"type": "INVALID_FIELD", "field": "directory"},
+                        message="metadata.opencode.directory must be a string",
+                        data={"type": "INVALID_FIELD", "field": "metadata.opencode.directory"},
                     )
                 ),
             )
@@ -508,11 +549,11 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                         ),
                     )
         if base_request.method == self._method_reply_permission:
-            allowed_fields = {"request_id", "reply", "message", "directory"}
+            allowed_fields = {"request_id", "reply", "message", "metadata"}
         elif base_request.method == self._method_reply_question:
-            allowed_fields = {"request_id", "answers", "directory"}
+            allowed_fields = {"request_id", "answers", "metadata"}
         else:
-            allowed_fields = {"request_id", "directory"}
+            allowed_fields = {"request_id", "metadata"}
         unknown_fields = sorted(set(params) - allowed_fields)
         if unknown_fields:
             return self._generate_error_response(
