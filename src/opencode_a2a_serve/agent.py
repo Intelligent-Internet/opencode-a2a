@@ -14,6 +14,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+import httpx
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
@@ -151,6 +152,107 @@ class _StreamOutputState:
 
     def clear_interrupt_pending(self, request_id: str) -> None:
         self.pending_interrupt_request_ids.discard(request_id.strip())
+
+
+@dataclass(frozen=True)
+class _UpstreamErrorProfile:
+    error_type: str
+    state: TaskState
+    default_message: str
+
+
+_UPSTREAM_HTTP_ERROR_PROFILE_BY_STATUS: dict[int, _UpstreamErrorProfile] = {
+    400: _UpstreamErrorProfile(
+        "UPSTREAM_BAD_REQUEST",
+        TaskState.failed,
+        "OpenCode rejected the request due to invalid input",
+    ),
+    401: _UpstreamErrorProfile(
+        "UPSTREAM_UNAUTHORIZED",
+        TaskState.auth_required,
+        "OpenCode rejected the request due to authentication failure",
+    ),
+    403: _UpstreamErrorProfile(
+        "UPSTREAM_PERMISSION_DENIED",
+        TaskState.failed,
+        "OpenCode rejected the request due to insufficient permissions",
+    ),
+    404: _UpstreamErrorProfile(
+        "UPSTREAM_RESOURCE_NOT_FOUND",
+        TaskState.failed,
+        "OpenCode rejected the request because the target resource was not found",
+    ),
+    429: _UpstreamErrorProfile(
+        "UPSTREAM_QUOTA_EXCEEDED",
+        TaskState.failed,
+        "OpenCode rejected the request due to quota limits",
+    ),
+}
+
+
+def _resolve_upstream_error_profile(status: int) -> _UpstreamErrorProfile:
+    if status in _UPSTREAM_HTTP_ERROR_PROFILE_BY_STATUS:
+        return _UPSTREAM_HTTP_ERROR_PROFILE_BY_STATUS[status]
+    if 400 <= status < 500:
+        return _UpstreamErrorProfile(
+            "UPSTREAM_CLIENT_ERROR",
+            TaskState.failed,
+            f"OpenCode rejected the request with client error {status}",
+        )
+    if status >= 500:
+        return _UpstreamErrorProfile(
+            "UPSTREAM_SERVER_ERROR",
+            TaskState.failed,
+            f"OpenCode rejected the request with server error {status}",
+        )
+    return _UpstreamErrorProfile(
+        "UPSTREAM_HTTP_ERROR",
+        TaskState.failed,
+        f"OpenCode rejected the request with HTTP status {status}",
+    )
+
+
+def _extract_upstream_error_detail(response: httpx.Response | None) -> str | None:
+    if response is None:
+        return None
+
+    payload = None
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+
+    if isinstance(payload, dict):
+        for key in ("detail", "error", "message"):
+            value = payload.get(key)
+            if isinstance(value, str):
+                value = value.strip()
+                if value:
+                    return value
+
+    text = response.text.strip()
+    if text:
+        return text[:512]
+    return None
+
+
+def _format_upstream_error(
+    exc: httpx.HTTPStatusError, *, request: str
+) -> tuple[str, TaskState, str]:
+    status = exc.response.status_code
+    profile = _resolve_upstream_error_profile(status)
+    detail = _extract_upstream_error_detail(exc.response)
+    if detail:
+        return (
+            profile.error_type,
+            profile.state,
+            f"{profile.default_message} ({request}, status={status}, detail={detail}).",
+        )
+    return (
+        profile.error_type,
+        profile.state,
+        f"{profile.default_message} ({request}, status={status}).",
+    )
 
 
 class _TTLCache:
@@ -300,6 +402,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id or "unknown",
                 context_id=context_id or "unknown",
                 message="Missing task_id or context_id in request context",
+                state=TaskState.failed,
                 streaming_request=self._should_stream(context),
             )
             return
@@ -319,6 +422,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 message="Invalid metadata: expected an object/map.",
+                state=TaskState.failed,
                 streaming_request=streaming_request,
             )
             return
@@ -333,6 +437,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 message=str(e),
+                state=TaskState.failed,
                 streaming_request=streaming_request,
             )
             return
@@ -343,6 +448,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 message="Only text input is supported.",
+                state=TaskState.failed,
                 streaming_request=streaming_request,
             )
             return
@@ -513,6 +619,33 @@ class OpencodeAgentExecutor(AgentExecutor):
                 # Attach the assistant message as the current status message.
                 task.status.message = assistant_message
                 await event_queue.enqueue_event(task)
+        except httpx.HTTPStatusError as exc:
+            logger.exception("OpenCode request failed with HTTP error")
+            error_type, state, message = _format_upstream_error(
+                exc,
+                request="send_message",
+            )
+            await self._emit_error(
+                event_queue,
+                task_id=task_id,
+                context_id=context_id,
+                message=message,
+                state=state,
+                error_type=error_type,
+                upstream_status=exc.response.status_code,
+                streaming_request=streaming_request,
+            )
+        except httpx.TimeoutException as exc:
+            logger.exception("OpenCode request timed out")
+            await self._emit_error(
+                event_queue,
+                task_id=task_id,
+                context_id=context_id,
+                message=f"OpenCode request timed out: {exc}",
+                state=TaskState.failed,
+                error_type="UPSTREAM_TIMEOUT",
+                streaming_request=streaming_request,
+            )
         except Exception as exc:
             logger.exception("OpenCode request failed")
             await self._emit_error(
@@ -520,6 +653,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 message=f"OpenCode error: {exc}",
+                state=TaskState.failed,
                 streaming_request=streaming_request,
             )
         finally:
@@ -551,6 +685,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     task_id=task_id or "unknown",
                     context_id=context_id or "unknown",
                     message="Missing task_id or context_id in request context",
+                    state=TaskState.failed,
                     streaming_request=False,
                 )
                 return
@@ -594,6 +729,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                         task_id=task_id,
                         context_id=context_id,
                         message=f"Cancel failed: {exc}",
+                        state=TaskState.failed,
                         streaming_request=False,
                     )
 
@@ -713,6 +849,9 @@ class OpencodeAgentExecutor(AgentExecutor):
         context_id: str,
         message: str,
         *,
+        state: TaskState,
+        error_type: str | None = None,
+        upstream_status: int | None = None,
         streaming_request: bool,
     ) -> None:
         error_message = Message(
@@ -722,6 +861,14 @@ class OpencodeAgentExecutor(AgentExecutor):
             task_id=task_id,
             context_id=context_id,
         )
+        error_metadata: dict[str, Any] | None = None
+        if error_type or upstream_status is not None:
+            error_payload: dict[str, Any] = {}
+            if error_type:
+                error_payload["type"] = error_type
+            if upstream_status is not None:
+                error_payload["upstream_status"] = upstream_status
+            error_metadata = {"opencode": {"error": error_payload}}
         if streaming_request:
             await _enqueue_artifact_update(
                 event_queue=event_queue,
@@ -736,7 +883,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                 TaskStatusUpdateEvent(
                     task_id=task_id,
                     context_id=context_id,
-                    status=TaskStatus(state=TaskState.failed),
+                    status=TaskStatus(state=state),
+                    metadata=error_metadata,
                     final=True,
                 )
             )
@@ -744,8 +892,9 @@ class OpencodeAgentExecutor(AgentExecutor):
         task = Task(
             id=task_id,
             context_id=context_id,
-            status=TaskStatus(state=TaskState.failed, message=error_message),
+            status=TaskStatus(state=state, message=error_message),
             history=[error_message],
+            metadata=error_metadata,
         )
         await event_queue.enqueue_event(task)
 

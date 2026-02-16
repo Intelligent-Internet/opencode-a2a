@@ -40,7 +40,7 @@ Default behavior:
 - installs `uv` (if missing), pre-downloads Python `3.10/3.11/3.12/3.13`
 - creates shared directories (`/opt/.opencode`, `/opt/opencode-a2a`,
   `/opt/uv-python`, `/data/opencode-a2a`)
-- sets `/opt/uv-python` permission from `777` to recursive `755`
+- sets `/opt/uv-python` permission from `770` to recursive `750`
 - fails if `systemctl` is unavailable
 - clones this repository to shared path (HTTPS URL by default)
 - creates A2A virtualenv via `uv sync --all-extras`
@@ -49,6 +49,12 @@ Notes:
 
 - `init_system.sh` has no runtime arguments; edit top constants to change
   defaults.
+- Security notes:
+  - `scripts/init_system.sh` defaults to `UV_PYTHON_DIR_MODE=770` and
+    `UV_PYTHON_DIR_FINAL_MODE=750`. Set `UV_PYTHON_DIR_GROUP` for controlled
+    access by project users (for example `opencode`).
+  - OpenCode installation uses a pinned installer URL/version with SHA256
+    verification by default (`OPENCODE_INSTALLER_*` constants).
 
 ## Directory Layout
 
@@ -223,6 +229,7 @@ Naming rule in the tables below:
 | `OPENCODE_A2A_DIR` | - | Optional | `/opt/opencode-a2a/opencode-a2a-serve` | Repo path for opencode-a2a-serve. |
 | `OPENCODE_CORE_DIR` | - | Optional | `/opt/.opencode` | OpenCode core path. |
 | `UV_PYTHON_DIR` | - | Optional | `/opt/uv-python` | uv Python cache path. |
+| `UV_PYTHON_DIR_GROUP` | - | Optional | `opencode` | Optional group for uv python shared directory access control. |
 | `DATA_ROOT` | `data_root` | Optional | `/data/opencode-a2a` | Instance root directory. |
 | `OPENCODE_BIND_HOST` | - | Optional | `127.0.0.1` | OpenCode bind host. |
 | `OPENCODE_BIND_PORT` | - | Optional | `A2A_PORT + 1` fallback to `4096` | Multi-instance should use unique port. |

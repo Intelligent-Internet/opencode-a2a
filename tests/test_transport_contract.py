@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 import pytest
 from a2a.types import TransportProtocol
@@ -123,3 +125,64 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
         assert rpc_resp.status_code == 200
         payload = rpc_resp.json()
         assert payload["error"]["code"] == -32602
+
+
+def _rest_message_payload() -> dict:
+    return {
+        "message": {
+            "messageId": "m-rest",
+            "role": "ROLE_USER",
+            "content": [{"text": "hello from rest"}],
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_log_payloads_keeps_body_for_rest_handler(monkeypatch, caplog) -> None:
+    import opencode_a2a_serve.app as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    app = app_module.create_app(make_settings(a2a_bearer_token="test-token", a2a_log_payloads=True))
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+
+    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_serve.app"):
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/v1/message:send",
+                headers=headers,
+                json=_rest_message_payload(),
+            )
+
+            assert resp.status_code == 200
+
+    assert any(
+        "A2A request POST /v1/message:send body=" in record.message for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_log_payloads_streaming_response_path(monkeypatch, caplog) -> None:
+    import opencode_a2a_serve.app as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    app = app_module.create_app(make_settings(a2a_bearer_token="test-token", a2a_log_payloads=True))
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+
+    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_serve.app"):
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            async with client.stream(
+                "POST", "/v1/message:stream", headers=headers, json=_rest_message_payload()
+            ) as resp:
+                assert resp.status_code == 200
+                assert "text/event-stream" in resp.headers.get("content-type", "")
+                async for chunk in resp.aiter_bytes():
+                    if chunk:
+                        break
+
+    assert any(
+        "A2A response /v1/message:stream status=200" in record.message
+        or "A2A response /v1/message:stream streaming" in record.message
+        for record in caplog.records
+    )

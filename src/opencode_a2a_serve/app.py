@@ -5,6 +5,7 @@ import json
 import logging
 import secrets
 from contextlib import asynccontextmanager
+from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING
 
 import uvicorn
@@ -38,6 +39,11 @@ from .jsonrpc_ext import (
 from .opencode_client import OpencodeClient
 
 logger = logging.getLogger(__name__)
+
+_REQUEST_BODY_BYTES: ContextVar[bytes | None] = ContextVar(
+    "_REQUEST_BODY_BYTES",
+    default=None,
+)
 
 if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
@@ -459,85 +465,108 @@ def create_app(settings: Settings) -> FastAPI:
         version = payload.get("jsonrpc")
         return isinstance(method, str) and isinstance(version, str)
 
+    async def _get_request_body(request: Request) -> tuple[bytes, Token | None]:
+        cached = _REQUEST_BODY_BYTES.get()
+        if cached is not None:
+            return cached, None
+        body = await request.body()
+        token = _REQUEST_BODY_BYTES.set(body)
+        return body, token
+
     @app.middleware("http")
     async def guard_rest_payload_shape(request: Request, call_next):
+        token: Token | None = None
         if request.method != "POST" or request.url.path not in {
             "/v1/message:send",
             "/v1/message:stream",
         }:
             return await call_next(request)
 
-        body = await request.body()
-        request._body = body  # allow downstream to read again
-        payload = _parse_json_body(body)
-        if _looks_like_jsonrpc_envelope(payload) or _looks_like_jsonrpc_message_payload(payload):
-            return JSONResponse(
-                {
-                    "error": (
-                        "Invalid HTTP+JSON payload for REST endpoint. "
-                        "Use message.content with ROLE_* role values, or call "
-                        "POST / with method=message/send or method=message/stream."
-                    )
-                },
-                status_code=400,
-            )
-        return await call_next(request)
+        try:
+            body, token = await _get_request_body(request)
+            payload = _parse_json_body(body)
+            if _looks_like_jsonrpc_envelope(payload) or _looks_like_jsonrpc_message_payload(
+                payload
+            ):
+                return JSONResponse(
+                    {
+                        "error": (
+                            "Invalid HTTP+JSON payload for REST endpoint. "
+                            "Use message.content with ROLE_* role values, or call "
+                            "POST / with method=message/send or method=message/stream."
+                        )
+                    },
+                    status_code=400,
+                )
+            return await call_next(request)
+        finally:
+            if token is not None:
+                _REQUEST_BODY_BYTES.reset(token)
 
     @app.middleware("http")
     async def log_payloads(request: Request, call_next):
+        token: Token | None = None
         if not settings.a2a_log_payloads:
             return await call_next(request)
 
-        body = await request.body()
-        request._body = body  # allow downstream to read again
-        path = request.url.path
-        # Detect session-query JSON-RPC methods regardless of deployment prefixes/root_path.
-        payload = _parse_json_body(body)
-        sensitive_method = _detect_opencode_extension_method(payload)
+        try:
+            body, token = await _get_request_body(request)
+            path = request.url.path
+            # Detect session-query JSON-RPC methods regardless of deployment prefixes/root_path.
+            payload = _parse_json_body(body)
+            sensitive_method = _detect_opencode_extension_method(payload)
 
-        if sensitive_method:
-            logger.debug("A2A request %s %s method=%s", request.method, path, sensitive_method)
+            if sensitive_method:
+                logger.debug(
+                    "A2A request %s %s method=%s",
+                    request.method,
+                    path,
+                    sensitive_method,
+                )
+                response = await call_next(request)
+                if isinstance(response, StreamingResponse):
+                    logger.debug("A2A response %s streaming method=%s", path, sensitive_method)
+                    return response
+                response_body = getattr(response, "body", b"") or b""
+                logger.debug(
+                    "A2A response %s status=%s bytes=%s method=%s",
+                    path,
+                    response.status_code,
+                    len(response_body),
+                    sensitive_method,
+                )
+                return response
+
+            body_text = body.decode("utf-8", errors="replace")
+            limit = settings.a2a_log_body_limit
+            if limit > 0 and len(body_text) > limit:
+                body_text = f"{body_text[:limit]}...[truncated]"
+            logger.debug(
+                "A2A request %s %s body=%s",
+                request.method,
+                request.url.path,
+                body_text,
+            )
+
             response = await call_next(request)
             if isinstance(response, StreamingResponse):
-                logger.debug("A2A response %s streaming method=%s", path, sensitive_method)
+                logger.debug("A2A response %s streaming", request.url.path)
                 return response
+
             response_body = getattr(response, "body", b"") or b""
+            resp_text = response_body.decode("utf-8", errors="replace")
+            if limit > 0 and len(resp_text) > limit:
+                resp_text = f"{resp_text[:limit]}...[truncated]"
             logger.debug(
-                "A2A response %s status=%s bytes=%s method=%s",
-                path,
+                "A2A response %s status=%s body=%s",
+                request.url.path,
                 response.status_code,
-                len(response_body),
-                sensitive_method,
+                resp_text,
             )
             return response
-
-        body_text = body.decode("utf-8", errors="replace")
-        limit = settings.a2a_log_body_limit
-        if limit > 0 and len(body_text) > limit:
-            body_text = f"{body_text[:limit]}...[truncated]"
-        logger.debug(
-            "A2A request %s %s body=%s",
-            request.method,
-            request.url.path,
-            body_text,
-        )
-
-        response = await call_next(request)
-        if isinstance(response, StreamingResponse):
-            logger.debug("A2A response %s streaming", request.url.path)
-            return response
-
-        response_body = getattr(response, "body", b"") or b""
-        resp_text = response_body.decode("utf-8", errors="replace")
-        if limit > 0 and len(resp_text) > limit:
-            resp_text = f"{resp_text[:limit]}...[truncated]"
-        logger.debug(
-            "A2A response %s status=%s body=%s",
-            request.url.path,
-            response.status_code,
-            resp_text,
-        )
-        return response
+        finally:
+            if token is not None:
+                _REQUEST_BODY_BYTES.reset(token)
 
     add_auth_middleware(app, settings)
 
