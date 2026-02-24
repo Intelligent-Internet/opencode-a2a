@@ -14,51 +14,31 @@ and JSON-RPC extension details (README stays at overview level).
   - REST send payload usually uses `message.content` and role values like `ROLE_USER`
   - JSON-RPC `message/send` payload uses `params.message.parts` and role values `user` / `agent`
 
-## Environment Variables
+## Runtime Environment Variables
 
-- `OPENCODE_BASE_URL`: OpenCode base URL, default `http://127.0.0.1:4096`
-- `OPENCODE_DIRECTORY`: OpenCode `directory` parameter (optional)
-- `OPENCODE_PROVIDER_ID`: model `providerID` (optional)
-- `OPENCODE_MODEL_ID`: model `modelID` (optional)
-- `OPENCODE_AGENT`: OpenCode agent name (optional)
-- `OPENCODE_SYSTEM`: system prompt (optional)
-- `OPENCODE_VARIANT`: variant (optional)
-- `OPENCODE_TIMEOUT`: request timeout in seconds, default `120`
-  (systemd deployment template writes `300` by default)
-- `OPENCODE_TIMEOUT_STREAM`: streaming request timeout in seconds (optional;
-  unset means no explicit stream timeout)
+This section keeps only the protocol-relevant variables.
+For the full runtime variable catalog and defaults, see
+[`../src/opencode_a2a_serve/config.py`](../src/opencode_a2a_serve/config.py).
+For deploy-time inputs and systemd-oriented parameters, see
+[`../scripts/deploy_readme.md`](../scripts/deploy_readme.md).
 
-- `A2A_PUBLIC_URL`: externally reachable A2A URL prefix,
-  default `http://127.0.0.1:8000`
-- `A2A_PROJECT`: optional project label injected into Agent Card extensions and examples
-- `A2A_TITLE`: agent name, default `OpenCode A2A`
-- `A2A_DESCRIPTION`: agent description
-- `A2A_VERSION`: agent version
-- `A2A_PROTOCOL_VERSION`: A2A protocol version, default `0.3.0`
-- `A2A_HOST`: bind host, default `127.0.0.1`
-- `A2A_PORT`: bind port, default `8000`
-- `A2A_BEARER_TOKEN`: required; service fails fast if unset
-- `A2A_STREAMING`: enable SSE streaming (`/v1/message:stream`), default `true`
-- `A2A_LOG_LEVEL`: `DEBUG/INFO/WARNING/ERROR`, default `INFO`
-- `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED`: controls A2A SDK tracing instrumentation, default `false` in deploy/start scripts
-- `A2A_LOG_PAYLOADS`: log A2A/OpenCode payload bodies, default `false`
-- `A2A_LOG_BODY_LIMIT`: payload log body size limit, default `0` (no truncation)
-- `A2A_CANCEL_ABORT_TIMEOUT_SECONDS`: best-effort upstream
-  `session.abort` timeout in seconds for `tasks/cancel`, default `2.0`
-- `A2A_DOCUMENTATION_URL`: optional URL exposed via Agent Card
-  `documentationUrl`
-- `A2A_OAUTH_AUTHORIZATION_URL`: OAuth2 authorization URL (declarative only)
-- `A2A_OAUTH_TOKEN_URL`: OAuth2 token URL (declarative only)
-- `A2A_OAUTH_METADATA_URL`: OAuth2 metadata URL (optional)
-- `A2A_OAUTH_SCOPES`: comma-separated OAuth2 scopes (declarative only)
-- `A2A_SESSION_CACHE_TTL_SECONDS`: in-memory TTL for
-  `(identity, contextId) -> OpenCode session_id`, default `3600`
-- `A2A_SESSION_CACHE_MAXSIZE`: max cache entries, default `10000`
-- `A2A_ENABLE_SESSION_SHELL`: enable `opencode.sessions.shell` JSON-RPC control
-  method, default `false`
-  - Security warning: high-risk capability. It can execute shell commands in
-    the OpenCode session workspace. Enable only in trusted/internal
-    environments with strict bearer-token management and audit controls.
+Key variables to understand protocol behavior:
+
+- `A2A_BEARER_TOKEN`: required for all authenticated runtime requests.
+- `A2A_STREAMING`: enables/disables SSE endpoint `/v1/message:stream`.
+- `A2A_ALLOW_DIRECTORY_OVERRIDE`: controls whether clients may pass
+  `metadata.opencode.directory`.
+- `A2A_ENABLE_SESSION_SHELL`: gates high-risk JSON-RPC method
+  `opencode.sessions.shell`.
+- `A2A_LOG_PAYLOADS` / `A2A_LOG_BODY_LIMIT`: payload logging behavior and
+  truncation.
+- `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`: session cache
+  behavior for `(identity, contextId) -> session_id`.
+- `A2A_CANCEL_ABORT_TIMEOUT_SECONDS`: best-effort timeout for upstream
+  `session.abort` in cancel flow.
+- `A2A_OAUTH_AUTHORIZATION_URL` / `A2A_OAUTH_TOKEN_URL` /
+  `A2A_OAUTH_METADATA_URL` / `A2A_OAUTH_SCOPES`: declarative OAuth2 metadata in
+  Agent Card only (no runtime OAuth verification in this service).
 
 ## Service Behavior
 

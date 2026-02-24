@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Initialize system prerequisites for OpenCode + A2A (idempotent).
-# Usage: ./init_system.sh
-# Path configuration: edit the variables below (no env overrides).
-# Optional env:
+# Docs: scripts/init_system_readme.md
+# Initialize host prerequisites for OpenCode + A2A (idempotent).
 set -euo pipefail
 
 OPENCODE_CORE_DIR="/opt/.opencode"
@@ -21,13 +19,13 @@ OPENCODE_INSTALLER_VERSION="1.2.5"
 OPENCODE_INSTALLER_SHA256="fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e"
 OPENCODE_INSTALL_CMD="--version ${OPENCODE_INSTALLER_VERSION}"
 
-# Feature toggles (edit here to enable/disable).
+# Feature toggles.
 INSTALL_PACKAGES="true"
 INSTALL_UV="true"
 INSTALL_GH="true"
 INSTALL_NODE="true"
 
-# Node.js configuration (edit here).
+# Node.js configuration.
 NODE_MAJOR="20"
 
 DEFAULT_PACKAGES=(

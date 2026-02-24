@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
-# Deploy an isolated OpenCode + A2A instance (systemd services).
-# Usage: ./deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_otel_instrumentation_enabled=<bool>] [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [a2a_cancel_abort_timeout_seconds=<seconds>] [a2a_enable_session_shell=<bool>] [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=<bool>] [repo_url=<url>] [repo_branch=<branch>] [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
-# Required env: GH_TOKEN, A2A_BEARER_TOKEN
-# Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
-# Requires: sudo access to write systemd units and create users/directories.
-#
-# Source of truth for all variable semantics/defaults:
-# - docs/deployment.md (section: "deploy.sh Inputs and Generated Variables")
-# Non-secret options that support both env and CLI key=value use precedence:
-# - CLI > env > default
+# Docs: scripts/deploy_readme.md
+# Deploy one isolated OpenCode + A2A systemd instance.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

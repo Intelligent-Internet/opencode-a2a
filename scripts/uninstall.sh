@@ -1,21 +1,6 @@
 #!/usr/bin/env bash
-# Uninstall a single OpenCode + A2A instance created by scripts/deploy.sh.
-#
-# Safety model (enforced):
-# - This script always prints the uninstall actions (preview first).
-# - There is NO dry_run=false option.
-# - To actually apply destructive actions you must pass confirm=UNINSTALL.
-#
-# IMPORTANT: This script never removes systemd template units
-# (/etc/systemd/system/opencode@.service, opencode-a2a@.service) because they are
-# shared globally across all instances.
-#
-# Usage:
-#   ./scripts/uninstall.sh project=<name> [data_root=/data/opencode-a2a] [confirm=UNINSTALL]
-#
-# Examples:
-#   ./scripts/uninstall.sh project=alpha
-#   ./scripts/uninstall.sh project=alpha confirm=UNINSTALL
+# Docs: scripts/uninstall_readme.md
+# Preview-first uninstall for one deployed project instance.
 set -euo pipefail
 
 PROJECT_NAME=""
@@ -55,10 +40,7 @@ fi
 
 DATA_ROOT="${DATA_ROOT_INPUT:-${DATA_ROOT:-/data/opencode-a2a}}"
 
-# Basic guardrails to prevent path traversal and dangerous deletes.
-#
-# deploy.sh uses PROJECT_NAME as the Linux system user/group name, so keep this
-# aligned with common Linux username constraints.
+# Guardrails for path safety and account-name compatibility.
 if [[ "$PROJECT_NAME" == "." || "$PROJECT_NAME" == ".." ]]; then
   echo "Invalid project name: ${PROJECT_NAME}" >&2
   exit 1
@@ -88,16 +70,14 @@ if [[ "$CONFIRM_INPUT" == "UNINSTALL" ]]; then
   APPLY="true"
 fi
 
-# Canonicalize paths for safety and to prevent DATA_ROOT=/path/.. surprises.
-#
-# In apply mode we refuse dot-segments in DATA_ROOT and require a canonicalizer.
+# Canonicalize paths and reject dot-segments in apply mode.
 contains_dot_segment() {
   local p="$1"
   [[ "$p" =~ (^|/)\.\.(/|$) || "$p" =~ (^|/)\.(/|$) ]]
 }
 
 find_exe() {
-  # Find an executable without relying on the caller's PATH (which may omit /usr/sbin).
+  # Avoid caller PATH omissions such as /usr/sbin.
   local name="$1"
   local p=""
   p="$(command -v "$name" 2>/dev/null || true)"
@@ -115,7 +95,6 @@ find_exe() {
 }
 
 print_missing_account_tool_hints() {
-  # Print operator-friendly guidance when user/group management tools are missing.
   # Args: user|group
   local kind="${1:-}"
   local os_id=""
@@ -206,8 +185,7 @@ run_ignore() {
 }
 
 run_reset_failed() {
-  # systemctl reset-failed is best-effort cleanup. If the unit is not loaded/not
-  # found, treat it as informational (do not affect exit code).
+  # Treat missing/not-loaded units as informational.
   echo "+ $*"
   if [[ "$APPLY" != "true" ]]; then
     return 0
@@ -242,8 +220,7 @@ echo "Project dir: ${PROJECT_DIR}"
 echo "Note: systemd template units will NOT be removed."
 echo "Mode: $([[ "$APPLY" == "true" ]] && echo apply || echo preview)"
 
-# In apply mode, enforce strict project name constraints to match typical Linux
-# username rules (deploy.sh uses PROJECT_NAME as the system user/group name).
+# Enforce strict project-name constraints in apply mode.
 if [[ "$APPLY" == "true" ]]; then
   if [[ ! "$PROJECT_NAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
     echo "Invalid project name for apply mode (expected: ^[a-z_][a-z0-9_-]{0,31}$): ${PROJECT_NAME}" >&2
@@ -251,17 +228,17 @@ if [[ "$APPLY" == "true" ]]; then
   fi
 fi
 
-# Apply mode requires sudo; avoid hanging in non-interactive environments.
+# Apply mode requires sudo; avoid interactive hangs.
 if [[ "$APPLY" == "true" ]]; then
   if ! command -v sudo >/dev/null 2>&1; then
     echo "sudo not found; cannot apply uninstall." >&2
     exit 1
   fi
   if [[ -t 0 ]]; then
-    # Interactive terminal: refresh credentials (may prompt).
+    # Interactive terminal: refresh credentials.
     sudo -v
   else
-    # Non-interactive: require non-prompting sudo.
+    # Non-interactive: require passwordless sudo for this run.
     if ! sudo -n true 2>/dev/null; then
       echo "sudo requires a password or is not permitted (non-interactive). Refusing to apply." >&2
       echo "Run in an interactive shell, or configure NOPASSWD for required commands." >&2
@@ -270,13 +247,13 @@ if [[ "$APPLY" == "true" ]]; then
   fi
 fi
 
-# Refuse to delete an unexpected directory layout (defense in depth).
+# Refuse unexpected target layout (defense in depth).
 if [[ "$PROJECT_DIR" != "${DATA_ROOT}/"* ]]; then
   echo "Internal error: project dir is not under DATA_ROOT: ${PROJECT_DIR}" >&2
   exit 1
 fi
 
-# If the directory exists, require a marker file that deploy.sh creates.
+# If the directory exists, require deploy markers.
 if [[ "$APPLY" == "true" && -e "${PROJECT_DIR}" ]]; then
   if ! sudo test -f "${PROJECT_DIR}/config/a2a.env" && ! sudo test -f "${PROJECT_DIR}/config/opencode.env"; then
     echo "Refusing to delete ${PROJECT_DIR}: missing marker env files under config/." >&2
@@ -323,7 +300,7 @@ if id "${PROJECT_NAME}" &>/dev/null; then
     fi
   fi
 
-  # Determine whether the user is gone before attempting to delete the group.
+  # Delete group only after user deletion outcome is known.
   if ! id "${PROJECT_NAME}" &>/dev/null; then
     user_deleted="true"
   fi
@@ -333,9 +310,7 @@ else
 fi
 
 if getent group "${PROJECT_NAME}" >/dev/null 2>&1; then
-  # Safety rules (apply mode):
-  # - We only attempt group deletion after the user is gone.
-  # - If the group still has members, we refuse to delete it automatically.
+  # Refuse automatic group deletion when user still exists or group has members.
   if [[ "$APPLY" == "true" && "$user_deleted" != "true" ]]; then
     warn "Refusing to delete group ${PROJECT_NAME} automatically because user ${PROJECT_NAME} still exists (or was not deleted)."
     HAD_NONFATAL_FAILURE="true"
@@ -345,7 +320,7 @@ if getent group "${PROJECT_NAME}" >/dev/null 2>&1; then
       if [[ -n "$members" ]]; then
         warn "Refusing to delete group ${PROJECT_NAME} automatically because it still has members: ${members}"
         HAD_NONFATAL_FAILURE="true"
-        # Still print the command for auditability, but do not run it.
+        # Print command for auditability without execution.
         groupdel_bin="$(find_exe groupdel || true)"
         if [[ -n "$groupdel_bin" ]]; then
           echo "+ sudo ${groupdel_bin} ${PROJECT_NAME}"
@@ -366,7 +341,7 @@ if getent group "${PROJECT_NAME}" >/dev/null 2>&1; then
         fi
       fi
     else
-      # Preview mode: print what would be attempted in apply mode.
+      # Preview mode: print what would run in apply mode.
       groupdel_bin="$(find_exe groupdel || true)"
       delgroup_bin="$(find_exe delgroup || true)"
       if [[ -n "$groupdel_bin" ]]; then
