@@ -23,17 +23,29 @@ from fastapi.responses import JSONResponse
 from starlette.requests import Request
 from starlette.responses import Response
 
-from .opencode_client import OpencodeClient
+from .extension_contracts import (
+    INTERRUPT_ERROR_BUSINESS_CODES,
+    PROMPT_ASYNC_REQUEST_ALLOWED_FIELDS,
+    SESSION_QUERY_ERROR_BUSINESS_CODES,
+    SESSION_QUERY_PAGINATION_UNSUPPORTED,
+)
+from .opencode_client import OpencodeClient, UpstreamContractError
 from .text_parts import extract_text_from_parts
 
 logger = logging.getLogger(__name__)
 
-ERR_SESSION_NOT_FOUND = -32001
-ERR_UPSTREAM_UNREACHABLE = -32002
-ERR_UPSTREAM_HTTP_ERROR = -32003
-ERR_INTERRUPT_NOT_FOUND = -32004
-ERR_UPSTREAM_PAYLOAD_ERROR = -32005
+ERR_SESSION_NOT_FOUND = SESSION_QUERY_ERROR_BUSINESS_CODES["SESSION_NOT_FOUND"]
+ERR_UPSTREAM_UNREACHABLE = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_UNREACHABLE"]
+ERR_UPSTREAM_HTTP_ERROR = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_HTTP_ERROR"]
+ERR_INTERRUPT_NOT_FOUND = INTERRUPT_ERROR_BUSINESS_CODES["INTERRUPT_REQUEST_NOT_FOUND"]
+ERR_UPSTREAM_PAYLOAD_ERROR = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_PAYLOAD_ERROR"]
 SESSION_CONTEXT_PREFIX = "ctx:opencode-session:"
+
+
+class _PromptAsyncValidationError(ValueError):
+    def __init__(self, *, field: str, message: str) -> None:
+        super().__init__(message)
+        self.field = field
 
 
 def _normalize_permission_reply(value: Any) -> str:
@@ -83,6 +95,181 @@ def _parse_positive_int(value: Any, *, field: str) -> int | None:
     if parsed < 1:
         raise ValueError(f"{field} must be >= 1")
     return parsed
+
+
+def _raise_prompt_async_validation_error(*, field: str, message: str) -> None:
+    raise _PromptAsyncValidationError(field=field, message=message)
+
+
+def _validate_model_ref(value: Any, *, field: str) -> None:
+    if not isinstance(value, dict):
+        _raise_prompt_async_validation_error(field=field, message=f"{field} must be an object")
+    provider = value.get("providerID")
+    model = value.get("modelID")
+    if not isinstance(provider, str) or not provider.strip():
+        _raise_prompt_async_validation_error(
+            field=f"{field}.providerID",
+            message=f"{field}.providerID must be a non-empty string",
+        )
+    if not isinstance(model, str) or not model.strip():
+        _raise_prompt_async_validation_error(
+            field=f"{field}.modelID",
+            message=f"{field}.modelID must be a non-empty string",
+        )
+
+
+def _validate_prompt_async_format(value: Any, *, field: str) -> None:
+    if not isinstance(value, dict):
+        _raise_prompt_async_validation_error(field=field, message=f"{field} must be an object")
+    fmt_type = value.get("type")
+    if fmt_type == "text":
+        return
+    if fmt_type == "json_schema":
+        schema = value.get("schema")
+        if not isinstance(schema, dict):
+            _raise_prompt_async_validation_error(
+                field=f"{field}.schema",
+                message=f"{field}.schema must be an object for type=json_schema",
+            )
+        retry_count = value.get("retryCount")
+        if retry_count is not None and (not isinstance(retry_count, int) or retry_count < 0):
+            _raise_prompt_async_validation_error(
+                field=f"{field}.retryCount",
+                message=f"{field}.retryCount must be an integer >= 0",
+            )
+        return
+    _raise_prompt_async_validation_error(
+        field=f"{field}.type",
+        message=f"{field}.type must be 'text' or 'json_schema'",
+    )
+
+
+def _validate_prompt_async_part(value: Any, *, field: str) -> None:
+    if not isinstance(value, dict):
+        _raise_prompt_async_validation_error(field=field, message=f"{field} must be an object")
+    part_type = value.get("type")
+    if not isinstance(part_type, str):
+        _raise_prompt_async_validation_error(
+            field=f"{field}.type",
+            message=f"{field}.type must be a string",
+        )
+    if part_type == "text":
+        if not isinstance(value.get("text"), str):
+            _raise_prompt_async_validation_error(
+                field=f"{field}.text",
+                message=f"{field}.text must be a string",
+            )
+        return
+    if part_type == "file":
+        if not isinstance(value.get("mime"), str):
+            _raise_prompt_async_validation_error(
+                field=f"{field}.mime",
+                message=f"{field}.mime must be a string",
+            )
+        if not isinstance(value.get("url"), str):
+            _raise_prompt_async_validation_error(
+                field=f"{field}.url",
+                message=f"{field}.url must be a string",
+            )
+        return
+    if part_type == "agent":
+        if not isinstance(value.get("name"), str):
+            _raise_prompt_async_validation_error(
+                field=f"{field}.name",
+                message=f"{field}.name must be a string",
+            )
+        return
+    if part_type == "subtask":
+        for key in ("prompt", "description", "agent"):
+            if not isinstance(value.get(key), str):
+                _raise_prompt_async_validation_error(
+                    field=f"{field}.{key}",
+                    message=f"{field}.{key} must be a string",
+                )
+        model = value.get("model")
+        if model is not None:
+            _validate_model_ref(model, field=f"{field}.model")
+        command = value.get("command")
+        if command is not None and not isinstance(command, str):
+            _raise_prompt_async_validation_error(
+                field=f"{field}.command",
+                message=f"{field}.command must be a string",
+            )
+        return
+    _raise_prompt_async_validation_error(
+        field=f"{field}.type",
+        message=f"{field}.type must be one of: text, file, agent, subtask",
+    )
+
+
+def _validate_prompt_async_request_payload(value: dict[str, Any]) -> None:
+    allowed_fields = set(PROMPT_ASYNC_REQUEST_ALLOWED_FIELDS)
+    unknown_fields = sorted(set(value) - allowed_fields)
+    if unknown_fields:
+        joined = ", ".join(f"request.{field}" for field in unknown_fields)
+        _raise_prompt_async_validation_error(
+            field="request",
+            message=f"Unsupported fields: {joined}",
+        )
+
+    message_id = value.get("messageID")
+    if message_id is not None:
+        if not isinstance(message_id, str) or not message_id.startswith("msg"):
+            _raise_prompt_async_validation_error(
+                field="request.messageID",
+                message="request.messageID must be a string starting with 'msg'",
+            )
+
+    model = value.get("model")
+    if model is not None:
+        _validate_model_ref(model, field="request.model")
+
+    for key in ("agent", "system", "variant"):
+        data = value.get(key)
+        if data is not None and not isinstance(data, str):
+            _raise_prompt_async_validation_error(
+                field=f"request.{key}",
+                message=f"request.{key} must be a string",
+            )
+
+    no_reply = value.get("noReply")
+    if no_reply is not None and not isinstance(no_reply, bool):
+        _raise_prompt_async_validation_error(
+            field="request.noReply",
+            message="request.noReply must be a boolean",
+        )
+
+    tools = value.get("tools")
+    if tools is not None:
+        if not isinstance(tools, dict):
+            _raise_prompt_async_validation_error(
+                field="request.tools",
+                message="request.tools must be an object",
+            )
+        for tool_key, tool_value in tools.items():
+            if not isinstance(tool_key, str):
+                _raise_prompt_async_validation_error(
+                    field="request.tools",
+                    message="request.tools keys must be strings",
+                )
+            if not isinstance(tool_value, bool):
+                _raise_prompt_async_validation_error(
+                    field=f"request.tools.{tool_key}",
+                    message=f"request.tools.{tool_key} must be a boolean",
+                )
+
+    fmt = value.get("format")
+    if fmt is not None:
+        _validate_prompt_async_format(fmt, field="request.format")
+
+    parts = value.get("parts")
+    if not isinstance(parts, list):
+        _raise_prompt_async_validation_error(
+            field="request.parts",
+            message="request.parts must be an array",
+        )
+    for index, part in enumerate(parts):
+        _validate_prompt_async_part(part, field=f"request.parts[{index}]")
 
 
 def _extract_session_title(session: dict[str, Any]) -> str:
@@ -157,7 +344,7 @@ def _extract_raw_items(raw_result: Any, *, kind: str) -> list[Any]:
 
 
 class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
-    """Extend A2A JSON-RPC endpoint with OpenCode session query methods.
+    """Extend A2A JSON-RPC endpoint with OpenCode session methods.
 
     These methods are optional (declared via AgentCard.capabilities.extensions) and do
     not require additional private REST endpoints.
@@ -174,6 +361,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         self._opencode_client = opencode_client
         self._method_list_sessions = methods["list_sessions"]
         self._method_get_session_messages = methods["get_session_messages"]
+        self._method_prompt_async = methods["prompt_async"]
         self._method_reply_permission = methods["reply_permission"]
         self._method_reply_question = methods["reply_question"]
         self._method_reject_question = methods["reject_question"]
@@ -203,12 +391,16 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             self._method_list_sessions,
             self._method_get_session_messages,
         }
+        session_control_methods = {self._method_prompt_async}
         interrupt_callback_methods = {
             self._method_reply_permission,
             self._method_reply_question,
             self._method_reject_question,
         }
-        if base_request.method not in session_query_methods | interrupt_callback_methods:
+        if (
+            base_request.method
+            not in session_query_methods | session_control_methods | interrupt_callback_methods
+        ):
             return await super()._handle_requests(request)
 
         params = base_request.params or {}
@@ -220,6 +412,8 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
 
         if base_request.method in session_query_methods:
             return await self._handle_session_query_request(base_request, params)
+        if base_request.method in session_control_methods:
+            return await self._handle_session_control_request(base_request, params)
         return await self._handle_interrupt_callback_request(base_request, params, request=request)
 
     async def _handle_session_query_request(
@@ -242,7 +436,8 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         if isinstance(raw_query, dict):
             query.update(raw_query)
 
-        if "cursor" in params or "page" in params or "size" in params:
+        unsupported_pagination_fields = tuple(SESSION_QUERY_PAGINATION_UNSUPPORTED)
+        if any(field in params for field in unsupported_pagination_fields):
             return self._generate_error_response(
                 base_request.id,
                 A2AError(
@@ -251,12 +446,12 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                         data={
                             "type": "INVALID_PAGINATION_MODE",
                             "supported": ["limit"],
-                            "unsupported": ["cursor", "page", "size"],
+                            "unsupported": list(unsupported_pagination_fields),
                         },
                     )
                 ),
             )
-        if "cursor" in query or "page" in query or "size" in query:
+        if any(field in query for field in unsupported_pagination_fields):
             return self._generate_error_response(
                 base_request.id,
                 A2AError(
@@ -265,7 +460,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                         data={
                             "type": "INVALID_PAGINATION_MODE",
                             "supported": ["limit"],
-                            "unsupported": ["cursor", "page", "size"],
+                            "unsupported": list(unsupported_pagination_fields),
                         },
                     )
                 ),
@@ -400,6 +595,190 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         return self._jsonrpc_success_response(
             base_request.id,
             result,
+        )
+
+    async def _handle_session_control_request(
+        self,
+        base_request: JSONRPCRequest,
+        params: dict[str, Any],
+    ) -> Response:
+        allowed_fields = {"session_id", "request", "metadata"}
+        unknown_fields = sorted(set(params) - allowed_fields)
+        if unknown_fields:
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message=f"Unsupported fields: {', '.join(unknown_fields)}",
+                        data={"type": "INVALID_FIELD", "fields": unknown_fields},
+                    )
+                ),
+            )
+
+        session_id = params.get("session_id")
+        if not isinstance(session_id, str) or not session_id.strip():
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message="Missing required params.session_id",
+                        data={"type": "MISSING_FIELD", "field": "session_id"},
+                    )
+                ),
+            )
+        session_id = session_id.strip()
+
+        raw_request = params.get("request")
+        if raw_request is None:
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message="Missing required params.request",
+                        data={"type": "MISSING_FIELD", "field": "request"},
+                    )
+                ),
+            )
+        if not isinstance(raw_request, dict):
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message="params.request must be an object",
+                        data={"type": "INVALID_FIELD", "field": "request"},
+                    )
+                ),
+            )
+
+        try:
+            _validate_prompt_async_request_payload(raw_request)
+        except _PromptAsyncValidationError as exc:
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message=str(exc),
+                        data={"type": "INVALID_FIELD", "field": exc.field},
+                    )
+                ),
+            )
+
+        metadata = params.get("metadata")
+        if metadata is not None and not isinstance(metadata, dict):
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message="metadata must be an object",
+                        data={"type": "INVALID_FIELD", "field": "metadata"},
+                    )
+                ),
+            )
+        opencode_metadata: dict[str, Any] | None = None
+        if isinstance(metadata, dict):
+            unknown_metadata_fields = sorted(set(metadata) - {"opencode"})
+            if unknown_metadata_fields:
+                prefixed_fields = [f"metadata.{field}" for field in unknown_metadata_fields]
+                return self._generate_error_response(
+                    base_request.id,
+                    A2AError(
+                        root=InvalidParamsError(
+                            message=f"Unsupported metadata fields: {', '.join(prefixed_fields)}",
+                            data={"type": "INVALID_FIELD", "fields": prefixed_fields},
+                        )
+                    ),
+                )
+            raw_opencode_metadata = metadata.get("opencode")
+            if raw_opencode_metadata is not None and not isinstance(raw_opencode_metadata, dict):
+                return self._generate_error_response(
+                    base_request.id,
+                    A2AError(
+                        root=InvalidParamsError(
+                            message="metadata.opencode must be an object",
+                            data={"type": "INVALID_FIELD", "field": "metadata.opencode"},
+                        )
+                    ),
+                )
+            if isinstance(raw_opencode_metadata, dict):
+                opencode_metadata = raw_opencode_metadata
+
+        directory = None
+        if opencode_metadata is not None:
+            directory = opencode_metadata.get("directory")
+        if directory is not None and not isinstance(directory, str):
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message="metadata.opencode.directory must be a string",
+                        data={"type": "INVALID_FIELD", "field": "metadata.opencode.directory"},
+                    )
+                ),
+            )
+
+        try:
+            await self._opencode_client.session_prompt_async(
+                session_id,
+                request=dict(raw_request),
+                directory=directory,
+            )
+        except httpx.HTTPStatusError as exc:
+            upstream_status = exc.response.status_code
+            if upstream_status == 404:
+                return self._generate_error_response(
+                    base_request.id,
+                    JSONRPCError(
+                        code=ERR_SESSION_NOT_FOUND,
+                        message="Session not found",
+                        data={"type": "SESSION_NOT_FOUND", "session_id": session_id},
+                    ),
+                )
+            return self._generate_error_response(
+                base_request.id,
+                JSONRPCError(
+                    code=ERR_UPSTREAM_HTTP_ERROR,
+                    message="Upstream OpenCode error",
+                    data={
+                        "type": "UPSTREAM_HTTP_ERROR",
+                        "upstream_status": upstream_status,
+                        "session_id": session_id,
+                    },
+                ),
+            )
+        except httpx.HTTPError:
+            return self._generate_error_response(
+                base_request.id,
+                JSONRPCError(
+                    code=ERR_UPSTREAM_UNREACHABLE,
+                    message="Upstream OpenCode unreachable",
+                    data={"type": "UPSTREAM_UNREACHABLE", "session_id": session_id},
+                ),
+            )
+        except UpstreamContractError as exc:
+            return self._generate_error_response(
+                base_request.id,
+                JSONRPCError(
+                    code=ERR_UPSTREAM_PAYLOAD_ERROR,
+                    message="Upstream OpenCode payload mismatch",
+                    data={
+                        "type": "UPSTREAM_PAYLOAD_ERROR",
+                        "detail": str(exc),
+                        "session_id": session_id,
+                    },
+                ),
+            )
+        except Exception as exc:
+            logger.exception("OpenCode session control JSON-RPC method failed")
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(root=InternalError(message=str(exc))),
+            )
+
+        if base_request.id is None:
+            return Response(status_code=204)
+        return self._jsonrpc_success_response(
+            base_request.id,
+            {"ok": True, "session_id": session_id},
         )
 
     async def _handle_interrupt_callback_request(

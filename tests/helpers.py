@@ -170,6 +170,7 @@ class DummySessionQueryOpencodeClient:
         ]
         self.last_sessions_params = None
         self.last_messages_params = None
+        self.prompt_async_calls: list[dict[str, Any]] = []
         self._interrupt_requests: dict[str, dict[str, str | None]] = {}
 
     async def close(self) -> None:
@@ -183,6 +184,21 @@ class DummySessionQueryOpencodeClient:
         assert session_id
         self.last_messages_params = params
         return self._messages_payload
+
+    async def session_prompt_async(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> None:
+        self.prompt_async_calls.append(
+            {
+                "session_id": session_id,
+                "request": request,
+                "directory": directory,
+            }
+        )
 
     def remember_interrupt_request(
         self,

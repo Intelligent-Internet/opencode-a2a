@@ -16,6 +16,10 @@ from .text_parts import extract_text_from_parts
 _UNSET = object()
 
 
+class UpstreamContractError(RuntimeError):
+    """Raised when upstream returns a shape/status that violates documented contract."""
+
+
 @dataclass(frozen=True)
 class OpencodeMessage:
     text: str
@@ -249,6 +253,25 @@ class OpencodeClient:
         )
         response.raise_for_status()
         return response.json()
+
+    async def session_prompt_async(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> None:
+        response = await self._client.post(
+            f"/session/{session_id}/prompt_async",
+            params=self._query_params(directory=directory),
+            json=request,
+        )
+        response.raise_for_status()
+        if response.status_code != 204:
+            raise UpstreamContractError(
+                "OpenCode /session/{sessionID}/prompt_async must return 204; "
+                f"got {response.status_code}"
+            )
 
     async def send_message(
         self,

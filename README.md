@@ -55,7 +55,8 @@ Additional notes:
 - Session continuation contract: clients can explicitly bind to an existing
   OpenCode session via `metadata.opencode.session_id`.
 - OpenCode session query extension (JSON-RPC):
-  `opencode.sessions.list` / `opencode.sessions.messages.list`.
+  `opencode.sessions.list` / `opencode.sessions.messages.list` /
+  `opencode.sessions.prompt_async`.
 
 ## Quick Start
 
@@ -121,6 +122,7 @@ Implementation-level protocol contracts and examples are maintained in
 - Session continuation (`metadata.opencode.session_id`)
 - JSON-RPC extension methods:
   `opencode.sessions.list`, `opencode.sessions.messages.list`,
+  `opencode.sessions.prompt_async`,
   `opencode.permission.reply`, `opencode.question.reply`,
   `opencode.question.reject`
 - Interrupt callback request lifecycle and error semantics

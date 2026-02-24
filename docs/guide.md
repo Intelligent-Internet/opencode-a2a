@@ -139,7 +139,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 ## OpenCode Session Query (A2A Extension)
 
-This service exposes OpenCode session list and message-history queries via A2A JSON-RPC extension methods (default endpoint: `POST /`). No extra custom REST endpoint is introduced.
+This service exposes OpenCode session list/message-history queries and async prompt injection via A2A JSON-RPC extension methods (default endpoint: `POST /`). No extra custom REST endpoint is introduced.
 
 - Trigger: call extension methods through A2A JSON-RPC
 - Auth: same `Authorization: Bearer <token>`
@@ -147,7 +147,9 @@ This service exposes OpenCode session list and message-history queries via A2A J
   suppressed for `method=opencode.sessions.*`
 - Endpoint discovery: prefer `additional_interfaces[]` with
   `transport=jsonrpc` from Agent Card
-- Result format:
+- Notification behavior: for `opencode.sessions.*`, requests without `id`
+  return HTTP `204 No Content`
+- Result format (query methods):
   - `result.items` is always an array of A2A standard objects
   - session list => `Task` with `status.state=completed`
   - message history => `Message`
@@ -187,6 +189,36 @@ curl -sS http://127.0.0.1:8000/ \
   }'
 ```
 
+### Session Prompt Async (`opencode.sessions.prompt_async`)
+
+```bash
+curl -sS http://127.0.0.1:8000/ \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 21,
+    "method": "opencode.sessions.prompt_async",
+    "params": {
+      "session_id": "<session_id>",
+      "request": {
+        "parts": [{"type": "text", "text": "Continue and summarize next steps."}],
+        "noReply": true
+      },
+      "metadata": {
+        "opencode": {
+          "directory": "/path/inside/workspace"
+        }
+      }
+    }
+  }'
+```
+
+Response:
+
+- success => `{"ok": true, "session_id": "<session_id>"}` (JSON-RPC result)
+- notification (no `id`) => HTTP `204 No Content`
+
 ## OpenCode Interrupt Callback (A2A Extension)
 
 When stream metadata reports an interrupt request at `metadata.opencode.interrupt`,
@@ -219,6 +251,8 @@ Notes:
   - `INTERRUPT_REQUEST_NOT_FOUND`
   - `INTERRUPT_REQUEST_EXPIRED`
   - `INTERRUPT_TYPE_MISMATCH`
+  - `UPSTREAM_UNREACHABLE`
+  - `UPSTREAM_HTTP_ERROR`
 
 Permission reply example:
 
