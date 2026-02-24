@@ -85,7 +85,7 @@ GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
 ./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1 a2a_public_url=https://a2a.example.com
 ```
 
-Supported CLI keys (case-insensitive): `project`/`project_name`, `data_root`, `a2a_port`, `a2a_host`, `a2a_public_url`, `a2a_streaming`, `a2a_log_level`, `a2a_otel_instrumentation_enabled`, `a2a_log_payloads`, `a2a_log_body_limit`, `opencode_provider_id`, `opencode_model_id`, `opencode_lsp`, `repo_url`, `repo_branch`, `opencode_timeout`, `opencode_timeout_stream`, `git_identity_name`, `git_identity_email`, `update_a2a`, `force_restart`.
+Supported CLI keys (case-insensitive): `project`/`project_name`, `data_root`, `a2a_port`, `a2a_host`, `a2a_public_url`, `a2a_streaming`, `a2a_log_level`, `a2a_otel_instrumentation_enabled`, `a2a_log_payloads`, `a2a_log_body_limit`, `a2a_cancel_abort_timeout_seconds`, `a2a_enable_session_shell`, `opencode_provider_id`, `opencode_model_id`, `opencode_lsp`, `repo_url`, `repo_branch`, `opencode_timeout`, `opencode_timeout_stream`, `git_identity_name`, `git_identity_email`, `update_a2a`, `force_restart`.
 
 Required secret env vars: `GH_TOKEN`, `A2A_BEARER_TOKEN`
 
@@ -251,12 +251,7 @@ Naming rule in the tables below:
 | `A2A_LOG_PAYLOADS` | `a2a_log_payloads` | Optional | `false` | Payload logging switch. |
 | `A2A_LOG_BODY_LIMIT` | `a2a_log_body_limit` | Optional | `0` | Payload body max length. |
 | `A2A_CANCEL_ABORT_TIMEOUT_SECONDS` | `a2a_cancel_abort_timeout_seconds` | Optional | `2.0` | Best-effort timeout in seconds for upstream `session.abort` during `tasks/cancel`. |
-
-Additional note:
-
-- `A2A_ENABLE_SESSION_SHELL` is not exposed as a `deploy.sh` CLI key yet.
-  If needed, set it manually in instance `config/a2a.env` and restart
-  `opencode-a2a@<project>.service`.
+| `A2A_ENABLE_SESSION_SHELL` | `a2a_enable_session_shell` | Optional | `false` | Enable JSON-RPC method `opencode.sessions.shell`. |
 
 #### Auto-Generated Runtime Variables (Not `deploy.sh` Input ENV)
 
