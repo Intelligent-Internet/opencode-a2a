@@ -40,6 +40,7 @@ and JSON-RPC extension details (README stays at overview level).
 - `A2A_BEARER_TOKEN`: required; service fails fast if unset
 - `A2A_STREAMING`: enable SSE streaming (`/v1/message:stream`), default `true`
 - `A2A_LOG_LEVEL`: `DEBUG/INFO/WARNING/ERROR`, default `INFO`
+- `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED`: controls A2A SDK tracing instrumentation, default `false` in deploy/start scripts
 - `A2A_LOG_PAYLOADS`: log A2A/OpenCode payload bodies, default `false`
 - `A2A_LOG_BODY_LIMIT`: payload log body size limit, default `0` (no truncation)
 - `A2A_DOCUMENTATION_URL`: optional URL exposed via Agent Card
