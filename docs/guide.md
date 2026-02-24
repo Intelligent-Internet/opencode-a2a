@@ -281,18 +281,18 @@ curl -sS http://127.0.0.1:8000/ \
 
 If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscribe while the task is still non-terminal.
 
-## 取消语义（`tasks/cancel`）
+## Cancellation Semantics (`tasks/cancel`)
 
-- 服务会先标记 A2A 任务为 `canceled`，并保持取消请求可快速返回。
-- 对于仍在运行中的任务，服务会尝试调用上游 OpenCode `POST /session/{sessionID}/abort`，以真实中断底层生成。
-- 上游中断是 best-effort：若上游返回 404、网络异常或其他 HTTP 错误，A2A 侧仍会完成取消流程并返回 `TaskState.canceled`。
-- 取消链路会输出指标埋点日志（`logger=opencode_a2a_serve.agent`）：
+- The service first marks the A2A task as `canceled` and keeps cancel requests responsive.
+- For running tasks, the service attempts upstream OpenCode `POST /session/{sessionID}/abort` to stop generation.
+- Upstream interruption is best-effort: if upstream returns 404, network errors, or other HTTP errors, A2A cancellation still completes with `TaskState.canceled`.
+- The cancel path emits metric log records (`logger=opencode_a2a_serve.agent`):
   - `a2a_cancel_requests_total`
   - `a2a_cancel_abort_attempt_total`
   - `a2a_cancel_abort_success_total`
   - `a2a_cancel_abort_timeout_total`
   - `a2a_cancel_abort_error_total`
-  - `a2a_cancel_duration_ms`（带 `abort_outcome` 标签）
+  - `a2a_cancel_duration_ms` (with `abort_outcome` label)
 
 ## Development Setup
 

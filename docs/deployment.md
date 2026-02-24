@@ -250,7 +250,7 @@ Naming rule in the tables below:
 | `A2A_OTEL_INSTRUMENTATION_ENABLED` | `a2a_otel_instrumentation_enabled` | Optional | `false` | Controls generated `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED` in `a2a.env` to disable A2A SDK OpenTelemetry instrumentation by default. |
 | `A2A_LOG_PAYLOADS` | `a2a_log_payloads` | Optional | `false` | Payload logging switch. |
 | `A2A_LOG_BODY_LIMIT` | `a2a_log_body_limit` | Optional | `0` | Payload body max length. |
-| `A2A_CANCEL_ABORT_TIMEOUT_SECONDS` | `a2a_cancel_abort_timeout_seconds` | Optional | `2.0` | `tasks/cancel` 触发上游 `session.abort` 的 best-effort 超时（秒）。 |
+| `A2A_CANCEL_ABORT_TIMEOUT_SECONDS` | `a2a_cancel_abort_timeout_seconds` | Optional | `2.0` | Best-effort timeout in seconds for upstream `session.abort` during `tasks/cancel`. |
 
 #### Auto-Generated Runtime Variables (Not `deploy.sh` Input ENV)
 
