@@ -7,7 +7,7 @@ import logging
 import secrets
 from contextlib import asynccontextmanager
 from contextvars import ContextVar, Token
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import uvicorn
 from a2a.server.apps.jsonrpc.jsonrpc_app import DefaultCallContextBuilder
@@ -420,7 +420,7 @@ def _patch_jsonrpc_openapi_contract(
         app.openapi_schema = schema
         return schema
 
-    app.openapi = custom_openapi
+    cast(Any, app).openapi = custom_openapi
 
 
 def build_agent_card(settings: Settings) -> AgentCard:
