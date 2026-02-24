@@ -224,6 +224,15 @@ class OpencodeClient:
             raise RuntimeError("OpenCode session response missing id")
         return session_id
 
+    async def abort_session(self, session_id: str, *, directory: str | None = None) -> bool:
+        response = await self._client.post(
+            f"/session/{session_id}/abort",
+            params=self._query_params(directory=directory),
+        )
+        response.raise_for_status()
+        data = response.json()
+        return self._require_boolean_response(endpoint="/session/{sessionID}/abort", payload=data)
+
     async def list_sessions(self, *, params: dict[str, Any] | None = None) -> Any:
         """List sessions from OpenCode."""
         # Note: directory override is not explicitly supported by list_sessions params yet.

@@ -161,6 +161,60 @@ async def test_question_reject_rejects_non_boolean_payload(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_abort_session_posts_abort_endpoint(monkeypatch):
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_directory="/safe",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    seen = {}
+
+    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
+        seen["path"] = path
+        seen["params"] = params
+        seen["json"] = json
+        return _DummyResponse(True)
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    ok = await client.abort_session("ses-1")
+    assert ok is True
+    assert seen["path"] == "/session/ses-1/abort"
+    assert seen["params"]["directory"] == "/safe"
+    assert seen["json"] is None
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_abort_session_rejects_non_boolean_payload(monkeypatch):
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
+        del path, params, json
+        return _DummyResponse({"ok": True})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    with pytest.raises(RuntimeError, match="response must be boolean"):
+        await client.abort_session("ses-1")
+
+    await client.close()
+
+
+@pytest.mark.asyncio
 async def test_interrupt_request_binding_expires_after_ttl() -> None:
     client = OpencodeClient(
         make_settings(
