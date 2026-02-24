@@ -2,7 +2,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
-from a2a.types import Task, TaskIdParams, TaskNotCancelableError, TaskNotFoundError, TaskState, TaskStatus
+from a2a.types import (
+    Task,
+    TaskIdParams,
+    TaskNotCancelableError,
+    TaskNotFoundError,
+    TaskState,
+    TaskStatus,
+)
 from a2a.utils.errors import ServerError
 
 from opencode_a2a_serve.app import OpencodeRequestHandler
