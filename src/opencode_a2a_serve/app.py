@@ -397,6 +397,45 @@ def build_agent_card(settings: Settings) -> AgentCard:
                             "mode": "limit",
                             "behavior": "passthrough",
                             "params": ["limit"],
+                            "applies_to": [
+                                SESSION_QUERY_METHODS["list_sessions"],
+                                SESSION_QUERY_METHODS["get_session_messages"],
+                            ],
+                        },
+                        "method_contracts": {
+                            SESSION_QUERY_METHODS["list_sessions"]: {
+                                "params": {
+                                    "optional": ["limit", "query.limit"],
+                                    "unsupported": ["cursor", "page", "size"],
+                                },
+                                "result": {"fields": ["items"], "items_type": "Task[]"},
+                            },
+                            SESSION_QUERY_METHODS["get_session_messages"]: {
+                                "params": {
+                                    "required": ["session_id"],
+                                    "optional": ["limit", "query.limit"],
+                                    "unsupported": ["cursor", "page", "size"],
+                                },
+                                "result": {"fields": ["items"], "items_type": "Message[]"},
+                            },
+                            SESSION_QUERY_METHODS["prompt_async"]: {
+                                "params": {
+                                    "required": ["session_id", "request.parts"],
+                                    "optional": [
+                                        "request.messageID",
+                                        "request.model",
+                                        "request.agent",
+                                        "request.noReply",
+                                        "request.tools",
+                                        "request.format",
+                                        "request.system",
+                                        "request.variant",
+                                        "metadata.opencode.directory",
+                                    ],
+                                },
+                                "result": {"fields": ["ok", "session_id"]},
+                                "notification_response_status": 204,
+                            },
                         },
                         "errors": {
                             # JSON-RPC standard errors still apply (e.g. -32602 invalid params).
@@ -415,11 +454,22 @@ def build_agent_card(settings: Settings) -> AgentCard:
                                 "detail",
                             ],
                         },
-                        # Result envelope is A2A-first.
-                        # items are serialized A2A Task/Message objects.
+                        # Result envelope varies by method:
+                        # query methods return items[], prompt_async returns ack fields.
                         "result_envelope": {
-                            "fields": ["items"],
-                            "items_field": "items",
+                            "by_method": {
+                                SESSION_QUERY_METHODS["list_sessions"]: {
+                                    "fields": ["items"],
+                                    "items_field": "items",
+                                },
+                                SESSION_QUERY_METHODS["get_session_messages"]: {
+                                    "fields": ["items"],
+                                    "items_field": "items",
+                                },
+                                SESSION_QUERY_METHODS["prompt_async"]: {
+                                    "fields": ["ok", "session_id"],
+                                },
+                            }
                         },
                         "context_semantics": {
                             "a2a_context_id_field": "contextId",
@@ -454,6 +504,8 @@ def build_agent_card(settings: Settings) -> AgentCard:
                         "errors": {
                             "business_codes": {
                                 "INTERRUPT_REQUEST_NOT_FOUND": -32004,
+                                "UPSTREAM_UNREACHABLE": -32002,
+                                "UPSTREAM_HTTP_ERROR": -32003,
                             },
                             "error_types": [
                                 "INTERRUPT_REQUEST_NOT_FOUND",
