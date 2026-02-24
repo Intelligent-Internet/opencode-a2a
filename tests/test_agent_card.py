@@ -91,6 +91,13 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
         "UPSTREAM_UNREACHABLE": -32002,
         "UPSTREAM_HTTP_ERROR": -32003,
     }
+    assert interrupt.params["errors"]["error_types"] == [
+        "INTERRUPT_REQUEST_NOT_FOUND",
+        "INTERRUPT_REQUEST_EXPIRED",
+        "INTERRUPT_TYPE_MISMATCH",
+        "UPSTREAM_UNREACHABLE",
+        "UPSTREAM_HTTP_ERROR",
+    ]
 
 
 def test_agent_card_chat_examples_include_project_hint_when_configured() -> None:

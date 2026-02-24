@@ -511,6 +511,8 @@ def build_agent_card(settings: Settings) -> AgentCard:
                                 "INTERRUPT_REQUEST_NOT_FOUND",
                                 "INTERRUPT_REQUEST_EXPIRED",
                                 "INTERRUPT_TYPE_MISMATCH",
+                                "UPSTREAM_UNREACHABLE",
+                                "UPSTREAM_HTTP_ERROR",
                             ],
                             "error_data_fields": ["type", "request_id", "upstream_status"],
                         },
