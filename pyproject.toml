@@ -38,8 +38,3 @@ quote-style = "double"
 
 [tool.uv]
 package = true
-
-[tool.pytest.ini_options]
-filterwarnings = [
-    "ignore:'HTTP_413_REQUEST_ENTITY_TOO_LARGE' is deprecated. Use 'HTTP_413_CONTENT_TOO_LARGE' instead.:DeprecationWarning:a2a\\.server\\.apps\\.jsonrpc\\.fastapi_app",
-]
