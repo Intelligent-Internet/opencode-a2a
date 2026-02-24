@@ -286,6 +286,8 @@ If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscr
 - 服务会先标记 A2A 任务为 `canceled`，并保持取消请求可快速返回。
 - 对于仍在运行中的任务，服务会尝试调用上游 OpenCode `POST /session/{sessionID}/abort`，以真实中断底层生成。
 - 上游中断是 best-effort：若上游返回 404、网络异常或其他 HTTP 错误，A2A 侧仍会完成取消流程并返回 `TaskState.canceled`。
+- 幂等约定：对已 `canceled` 的任务重复 `tasks/cancel`，返回当前任务终态，不报错。
+- 终态订阅约定：对已终态任务调用 `subscribe`，服务回放一次终态 Task 快照并结束流。
 - 取消链路会输出指标埋点日志（`logger=opencode_a2a_serve.agent`）：
   - `a2a_cancel_requests_total`
   - `a2a_cancel_abort_attempt_total`

@@ -13,7 +13,10 @@ import uvicorn
 from a2a.server.apps.jsonrpc.jsonrpc_app import DefaultCallContextBuilder
 from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.events import EventConsumer
-from a2a.server.request_handlers.default_request_handler import DefaultRequestHandler
+from a2a.server.request_handlers.default_request_handler import (
+    TERMINAL_TASK_STATES,
+    DefaultRequestHandler,
+)
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
@@ -26,8 +29,14 @@ from a2a.types import (
     OAuth2SecurityScheme,
     OAuthFlows,
     SecurityScheme,
+    Task,
+    TaskIdParams,
+    TaskNotCancelableError,
+    TaskNotFoundError,
+    TaskState,
     TransportProtocol,
 )
+from a2a.utils.errors import ServerError
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
@@ -67,6 +76,45 @@ INTERRUPT_CALLBACK_EXTENSION_URI = "urn:opencode-a2a:opencode-interrupt-callback
 
 class OpencodeRequestHandler(DefaultRequestHandler):
     """Custom request handler to gracefully handle client disconnects and prevent dead loops."""
+
+    async def on_cancel_task(
+        self,
+        params: TaskIdParams,
+        context=None,
+    ) -> Task | None:
+        task = await self.task_store.get(params.id, context)
+        if not task:
+            raise ServerError(error=TaskNotFoundError())
+
+        # Idempotent contract:
+        # repeated cancel on already-canceled task returns current terminal state.
+        if task.status.state == TaskState.canceled:
+            return task
+
+        if task.status.state in TERMINAL_TASK_STATES:
+            raise ServerError(
+                error=TaskNotCancelableError(
+                    message=f"Task cannot be canceled - current state: {task.status.state}"
+                )
+            )
+        return await super().on_cancel_task(params, context)
+
+    async def on_resubscribe_to_task(
+        self,
+        params: TaskIdParams,
+        context=None,
+    ):
+        task = await self.task_store.get(params.id, context)
+        if not task:
+            raise ServerError(error=TaskNotFoundError())
+
+        # Subscribe contract: terminal tasks replay once and then close stream.
+        if task.status.state in TERMINAL_TASK_STATES:
+            yield task
+            return
+
+        async for event in super().on_resubscribe_to_task(params, context):
+            yield event
 
     async def on_message_send_stream(self, params, context=None):
         (
