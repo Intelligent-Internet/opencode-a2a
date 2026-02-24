@@ -252,6 +252,12 @@ Naming rule in the tables below:
 | `A2A_LOG_BODY_LIMIT` | `a2a_log_body_limit` | Optional | `0` | Payload body max length. |
 | `A2A_CANCEL_ABORT_TIMEOUT_SECONDS` | `a2a_cancel_abort_timeout_seconds` | Optional | `2.0` | Best-effort timeout in seconds for upstream `session.abort` during `tasks/cancel`. |
 
+Additional note:
+
+- `A2A_ENABLE_SESSION_SHELL` is not exposed as a `deploy.sh` CLI key yet.
+  If needed, set it manually in instance `config/a2a.env` and restart
+  `opencode-a2a@<project>.service`.
+
 #### Auto-Generated Runtime Variables (Not `deploy.sh` Input ENV)
 
 | Generated Name | Source | Where Written | Notes |

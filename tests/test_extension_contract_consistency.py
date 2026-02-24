@@ -110,6 +110,22 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
             },
             None,
         ),
+        (
+            "opencode.sessions.command",
+            {
+                "session_id": "s-1",
+                "request": {"command": "/review", "arguments": "security"},
+            },
+            None,
+        ),
+        (
+            "opencode.sessions.shell",
+            {
+                "session_id": "s-1",
+                "request": {"agent": "code-reviewer", "command": "git status --short"},
+            },
+            None,
+        ),
         ("opencode.permission.reply", {"request_id": "req-perm", "reply": "once"}, "permission"),
         (
             "opencode.question.reply",

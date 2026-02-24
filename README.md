@@ -56,7 +56,8 @@ Additional notes:
   OpenCode session via `metadata.opencode.session_id`.
 - OpenCode session query extension (JSON-RPC):
   `opencode.sessions.list` / `opencode.sessions.messages.list` /
-  `opencode.sessions.prompt_async`.
+  `opencode.sessions.prompt_async` / `opencode.sessions.command` /
+  `opencode.sessions.shell` (disabled by default).
 
 ## Quick Start
 
@@ -110,6 +111,8 @@ For full configuration, see `docs/guide.md`. Most commonly used options:
 - `A2A_STREAMING`: enables SSE streaming (default: `true`)
 - `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`:
   in-memory `(identity, contextId) -> session_id` mapping cache settings
+- `A2A_ENABLE_SESSION_SHELL`: enable `opencode.sessions.shell` JSON-RPC
+  extension (default: `false`)
 - `A2A_CANCEL_ABORT_TIMEOUT_SECONDS`: best-effort upstream `session.abort`
   timeout for `tasks/cancel` (default: `2.0`)
 
@@ -122,7 +125,8 @@ Implementation-level protocol contracts and examples are maintained in
 - Session continuation (`metadata.opencode.session_id`)
 - JSON-RPC extension methods:
   `opencode.sessions.list`, `opencode.sessions.messages.list`,
-  `opencode.sessions.prompt_async`,
+  `opencode.sessions.prompt_async`, `opencode.sessions.command`,
+  `opencode.sessions.shell`,
   `opencode.permission.reply`, `opencode.question.reply`,
   `opencode.question.reject`
 - Interrupt callback request lifecycle and error semantics

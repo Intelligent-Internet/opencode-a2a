@@ -273,6 +273,36 @@ class OpencodeClient:
                 f"got {response.status_code}"
             )
 
+    async def session_command(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> Any:
+        response = await self._client.post(
+            f"/session/{session_id}/command",
+            params=self._query_params(directory=directory),
+            json=request,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def session_shell(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> Any:
+        response = await self._client.post(
+            f"/session/{session_id}/shell",
+            params=self._query_params(directory=directory),
+            json=request,
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def send_message(
         self,
         session_id: str,

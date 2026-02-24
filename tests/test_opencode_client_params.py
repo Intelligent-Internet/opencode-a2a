@@ -112,6 +112,70 @@ async def test_session_prompt_async_rejects_non_204_response(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_session_command_posts_command_endpoint(monkeypatch):
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_directory="/safe",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    seen = {}
+
+    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
+        seen["path"] = path
+        seen["params"] = params
+        seen["json"] = json
+        return _DummyResponse({"info": {"id": "m-1", "role": "assistant"}, "parts": []})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    payload = {"command": "/review", "arguments": "security"}
+    data = await client.session_command("ses-1", payload)
+    assert data["info"]["id"] == "m-1"
+    assert seen["path"] == "/session/ses-1/command"
+    assert seen["params"]["directory"] == "/safe"
+    assert seen["json"] == payload
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_session_shell_posts_shell_endpoint(monkeypatch):
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_directory="/safe",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    seen = {}
+
+    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
+        seen["path"] = path
+        seen["params"] = params
+        seen["json"] = json
+        return _DummyResponse({"id": "m-1", "role": "assistant", "parts": []})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    payload = {"agent": "code-reviewer", "command": "git status --short"}
+    data = await client.session_shell("ses-1", payload)
+    assert data["id"] == "m-1"
+    assert seen["path"] == "/session/ses-1/shell"
+    assert seen["params"]["directory"] == "/safe"
+    assert seen["json"] == payload
+
+    await client.close()
+
+
+@pytest.mark.asyncio
 async def test_permission_reply_raises_on_404_without_legacy_fallback(monkeypatch):
     client = OpencodeClient(
         make_settings(

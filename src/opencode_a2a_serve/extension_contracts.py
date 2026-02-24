@@ -40,6 +40,24 @@ PROMPT_ASYNC_REQUEST_ALLOWED_FIELDS: tuple[str, ...] = (
     *PROMPT_ASYNC_REQUEST_REQUIRED_FIELDS,
     *PROMPT_ASYNC_REQUEST_OPTIONAL_FIELDS,
 )
+COMMAND_REQUEST_REQUIRED_FIELDS: tuple[str, ...] = ("command", "arguments")
+COMMAND_REQUEST_OPTIONAL_FIELDS: tuple[str, ...] = (
+    "messageID",
+    "agent",
+    "model",
+    "variant",
+    "parts",
+)
+COMMAND_REQUEST_ALLOWED_FIELDS: tuple[str, ...] = (
+    *COMMAND_REQUEST_REQUIRED_FIELDS,
+    *COMMAND_REQUEST_OPTIONAL_FIELDS,
+)
+SHELL_REQUEST_REQUIRED_FIELDS: tuple[str, ...] = ("agent", "command")
+SHELL_REQUEST_OPTIONAL_FIELDS: tuple[str, ...] = ("model",)
+SHELL_REQUEST_ALLOWED_FIELDS: tuple[str, ...] = (
+    *SHELL_REQUEST_REQUIRED_FIELDS,
+    *SHELL_REQUEST_OPTIONAL_FIELDS,
+)
 
 SESSION_QUERY_PAGINATION_MODE = "limit"
 SESSION_QUERY_PAGINATION_BEHAVIOR = "passthrough"
@@ -85,12 +103,36 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
         result_fields=("ok", "session_id"),
         notification_response_status=204,
     ),
+    "command": SessionQueryMethodContract(
+        method="opencode.sessions.command",
+        required_params=("session_id", "request.command", "request.arguments"),
+        optional_params=(
+            "request.messageID",
+            "request.agent",
+            "request.model",
+            "request.variant",
+            "request.parts",
+            "metadata.opencode.directory",
+        ),
+        result_fields=("item",),
+        notification_response_status=204,
+    ),
+    "shell": SessionQueryMethodContract(
+        method="opencode.sessions.shell",
+        required_params=("session_id", "request.agent", "request.command"),
+        optional_params=(
+            "request.model",
+            "metadata.opencode.directory",
+        ),
+        result_fields=("item",),
+        notification_response_status=204,
+    ),
 }
 
 SESSION_QUERY_METHODS: dict[str, str] = {
     key: contract.method for key, contract in SESSION_QUERY_METHOD_CONTRACTS.items()
 }
-SESSION_CONTROL_METHOD_KEYS: tuple[str, ...] = ("prompt_async",)
+SESSION_CONTROL_METHOD_KEYS: tuple[str, ...] = ("prompt_async", "command", "shell")
 SESSION_CONTROL_METHODS: dict[str, str] = {
     key: SESSION_QUERY_METHODS[key] for key in SESSION_CONTROL_METHOD_KEYS
 }
@@ -98,12 +140,14 @@ SESSION_CONTROL_METHODS: dict[str, str] = {
 SESSION_QUERY_ERROR_BUSINESS_CODES: dict[str, int] = {
     "SESSION_NOT_FOUND": -32001,
     "SESSION_FORBIDDEN": -32006,
+    "METHOD_DISABLED": -32007,
     "UPSTREAM_UNREACHABLE": -32002,
     "UPSTREAM_HTTP_ERROR": -32003,
     "UPSTREAM_PAYLOAD_ERROR": -32005,
 }
 SESSION_QUERY_ERROR_DATA_FIELDS: tuple[str, ...] = (
     "type",
+    "method",
     "session_id",
     "upstream_status",
     "detail",
@@ -221,6 +265,12 @@ def build_session_query_extension_params(
     return {
         "methods": dict(SESSION_QUERY_METHODS),
         "control_methods": dict(SESSION_CONTROL_METHODS),
+        "control_method_flags": {
+            SESSION_QUERY_METHODS["shell"]: {
+                "enabled_by_default": False,
+                "config_key": "A2A_ENABLE_SESSION_SHELL",
+            }
+        },
         "shared_workspace_across_consumers": True,
         "tenant_isolation": "none",
         "deployment_context": deployment_context,

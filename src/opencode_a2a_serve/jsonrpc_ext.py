@@ -26,10 +26,12 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .extension_contracts import (
+    COMMAND_REQUEST_ALLOWED_FIELDS,
     INTERRUPT_ERROR_BUSINESS_CODES,
     PROMPT_ASYNC_REQUEST_ALLOWED_FIELDS,
     SESSION_QUERY_ERROR_BUSINESS_CODES,
     SESSION_QUERY_PAGINATION_UNSUPPORTED,
+    SHELL_REQUEST_ALLOWED_FIELDS,
 )
 from .opencode_client import OpencodeClient, UpstreamContractError
 from .text_parts import extract_text_from_parts
@@ -38,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 ERR_SESSION_NOT_FOUND = SESSION_QUERY_ERROR_BUSINESS_CODES["SESSION_NOT_FOUND"]
 ERR_SESSION_FORBIDDEN = SESSION_QUERY_ERROR_BUSINESS_CODES["SESSION_FORBIDDEN"]
+ERR_METHOD_DISABLED = SESSION_QUERY_ERROR_BUSINESS_CODES["METHOD_DISABLED"]
 ERR_UPSTREAM_UNREACHABLE = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_UNREACHABLE"]
 ERR_UPSTREAM_HTTP_ERROR = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_HTTP_ERROR"]
 ERR_INTERRUPT_NOT_FOUND = INTERRUPT_ERROR_BUSINESS_CODES["INTERRUPT_REQUEST_NOT_FOUND"]
@@ -276,6 +279,93 @@ def _validate_prompt_async_request_payload(value: dict[str, Any]) -> None:
         _validate_prompt_async_part(part, field=f"request.parts[{index}]")
 
 
+def _validate_command_part(value: Any, *, field: str) -> None:
+    if not isinstance(value, dict):
+        _raise_prompt_async_validation_error(field=field, message=f"{field} must be an object")
+    part_type = value.get("type")
+    if part_type != "file":
+        _raise_prompt_async_validation_error(
+            field=f"{field}.type",
+            message=f"{field}.type must be 'file'",
+        )
+    for key in ("mime", "url"):
+        item = value.get(key)
+        if not isinstance(item, str) or not item.strip():
+            _raise_prompt_async_validation_error(
+                field=f"{field}.{key}",
+                message=f"{field}.{key} must be a non-empty string",
+            )
+
+
+def _validate_command_request_payload(value: dict[str, Any]) -> None:
+    allowed_fields = set(COMMAND_REQUEST_ALLOWED_FIELDS)
+    unknown_fields = sorted(set(value) - allowed_fields)
+    if unknown_fields:
+        joined = ", ".join(f"request.{field}" for field in unknown_fields)
+        _raise_prompt_async_validation_error(
+            field="request",
+            message=f"Unsupported fields: {joined}",
+        )
+
+    for key in ("command", "arguments"):
+        item = value.get(key)
+        if not isinstance(item, str) or not item.strip():
+            _raise_prompt_async_validation_error(
+                field=f"request.{key}",
+                message=f"request.{key} must be a non-empty string",
+            )
+
+    message_id = value.get("messageID")
+    if message_id is not None:
+        if not isinstance(message_id, str) or not message_id.startswith("msg"):
+            _raise_prompt_async_validation_error(
+                field="request.messageID",
+                message="request.messageID must be a string starting with 'msg'",
+            )
+
+    for key in ("agent", "model", "variant"):
+        data = value.get(key)
+        if data is not None and not isinstance(data, str):
+            _raise_prompt_async_validation_error(
+                field=f"request.{key}",
+                message=f"request.{key} must be a string",
+            )
+
+    parts = value.get("parts")
+    if parts is not None:
+        if not isinstance(parts, list):
+            _raise_prompt_async_validation_error(
+                field="request.parts",
+                message="request.parts must be an array",
+            )
+        parts_list = cast(list[Any], parts)
+        for index, part in enumerate(parts_list):
+            _validate_command_part(part, field=f"request.parts[{index}]")
+
+
+def _validate_shell_request_payload(value: dict[str, Any]) -> None:
+    allowed_fields = set(SHELL_REQUEST_ALLOWED_FIELDS)
+    unknown_fields = sorted(set(value) - allowed_fields)
+    if unknown_fields:
+        joined = ", ".join(f"request.{field}" for field in unknown_fields)
+        _raise_prompt_async_validation_error(
+            field="request",
+            message=f"Unsupported fields: {joined}",
+        )
+
+    for key in ("agent", "command"):
+        item = value.get(key)
+        if not isinstance(item, str) or not item.strip():
+            _raise_prompt_async_validation_error(
+                field=f"request.{key}",
+                message=f"request.{key} must be a non-empty string",
+            )
+
+    model = value.get("model")
+    if model is not None:
+        _validate_model_ref(model, field="request.model")
+
+
 def _extract_session_title(session: dict[str, Any]) -> str:
     title = session.get("title")
     if not isinstance(title, str):
@@ -312,9 +402,14 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
 
-    info = item.get("info")
-    if not isinstance(info, dict):
-        return None
+    info: dict[str, Any]
+    parts: Any = item.get("parts")
+    raw_info = item.get("info")
+    if isinstance(raw_info, dict):
+        info = raw_info
+    else:
+        info = item
+
     raw_id = info.get("id")
     if not isinstance(raw_id, str):
         return None
@@ -327,7 +422,7 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
     if isinstance(role_raw, str) and role_raw.strip().lower() == "user":
         role = Role.user
 
-    text = extract_text_from_parts(item.get("parts"))
+    text = extract_text_from_parts(parts if isinstance(parts, list) else [])
 
     context_id = _as_a2a_session_context_id(session_id)
     msg = Message(
@@ -359,6 +454,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         *args: Any,
         opencode_client: OpencodeClient,
         methods: dict[str, str],
+        enable_session_shell: bool = False,
         directory_resolver: Callable[[str | None], str | None] | None = None,
         session_claim: Callable[..., Awaitable[bool]] | None = None,
         session_claim_finalize: Callable[..., Awaitable[None]] | None = None,
@@ -374,9 +470,12 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         self._method_list_sessions = methods["list_sessions"]
         self._method_get_session_messages = methods["get_session_messages"]
         self._method_prompt_async = methods["prompt_async"]
+        self._method_command = methods["command"]
+        self._method_shell = methods["shell"]
         self._method_reply_permission = methods["reply_permission"]
         self._method_reply_question = methods["reply_question"]
         self._method_reject_question = methods["reject_question"]
+        self._enable_session_shell = bool(enable_session_shell)
         missing_control_hooks = [
             name
             for name, hook in (
@@ -494,7 +593,11 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             self._method_list_sessions,
             self._method_get_session_messages,
         }
-        session_control_methods = {self._method_prompt_async}
+        session_control_methods = {
+            self._method_prompt_async,
+            self._method_command,
+            self._method_shell,
+        }
         interrupt_callback_methods = {
             self._method_reply_permission,
             self._method_reply_question,
@@ -759,8 +862,37 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 ),
             )
 
+        request_identity = getattr(request.state, "user_identity", None)
+        identity = request_identity if isinstance(request_identity, str) else None
+        task_id = getattr(request.state, "task_id", None)
+        context_id = getattr(request.state, "context_id", None)
+
+        def _log_shell_audit(outcome: str) -> None:
+            if base_request.method != self._method_shell:
+                return
+            logger.info(
+                "session_shell_audit method=%s identity=%s task_id=%s context_id=%s "
+                "session_id=%s outcome=%s",
+                base_request.method,
+                identity if identity else "-",
+                task_id if isinstance(task_id, str) and task_id.strip() else "-",
+                context_id if isinstance(context_id, str) and context_id.strip() else "-",
+                session_id,
+                outcome,
+            )
+
         try:
-            _validate_prompt_async_request_payload(raw_request)
+            if base_request.method == self._method_prompt_async:
+                _validate_prompt_async_request_payload(raw_request)
+            elif base_request.method == self._method_command:
+                _validate_command_request_payload(raw_request)
+            elif base_request.method == self._method_shell:
+                _validate_shell_request_payload(raw_request)
+            else:
+                raise _PromptAsyncValidationError(
+                    field="method",
+                    message=f"Unsupported method: {base_request.method}",
+                )
         except _PromptAsyncValidationError as exc:
             return self._generate_error_response(
                 base_request.id,
@@ -793,8 +925,23 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                     ),
                 )
 
-        request_identity = getattr(request.state, "user_identity", None)
-        identity = request_identity if isinstance(request_identity, str) else None
+        if base_request.method == self._method_shell and not self._enable_session_shell:
+            _log_shell_audit("disabled")
+            if base_request.id is None:
+                return Response(status_code=204)
+            return self._generate_error_response(
+                base_request.id,
+                JSONRPCError(
+                    code=ERR_METHOD_DISABLED,
+                    message="Method disabled",
+                    data={
+                        "type": "METHOD_DISABLED",
+                        "method": base_request.method,
+                        "session_id": session_id,
+                    },
+                ),
+            )
+
         pending_claim = False
         claim_finalized = False
         if (
@@ -809,26 +956,59 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                     session_id=session_id,
                 )
             except PermissionError:
+                _log_shell_audit("forbidden")
                 return self._session_forbidden_response(
                     base_request.id,
                     session_id=session_id,
                 )
 
         try:
-            await self._opencode_client.session_prompt_async(
-                session_id,
-                request=dict(raw_request),
-                directory=directory,
-            )
+            result: dict[str, Any]
+            if base_request.method == self._method_prompt_async:
+                await self._opencode_client.session_prompt_async(
+                    session_id,
+                    request=dict(raw_request),
+                    directory=directory,
+                )
+                result = {"ok": True, "session_id": session_id}
+            elif base_request.method == self._method_command:
+                raw_result = await self._opencode_client.session_command(
+                    session_id,
+                    request=dict(raw_request),
+                    directory=directory,
+                )
+                item = _as_a2a_message(session_id, raw_result)
+                if item is None:
+                    raise UpstreamContractError(
+                        "OpenCode /session/{sessionID}/command response could not be mapped "
+                        "to A2A Message"
+                    )
+                result = {"item": item}
+            else:
+                raw_result = await self._opencode_client.session_shell(
+                    session_id,
+                    request=dict(raw_request),
+                    directory=directory,
+                )
+                item = _as_a2a_message(session_id, raw_result)
+                if item is None:
+                    raise UpstreamContractError(
+                        "OpenCode /session/{sessionID}/shell response could not be mapped "
+                        "to A2A Message"
+                    )
+                result = {"item": item}
+
             if pending_claim and identity and self._session_claim_finalize is not None:
                 await self._session_claim_finalize(
                     identity=identity,
                     session_id=session_id,
                 )
                 claim_finalized = True
+            _log_shell_audit("success")
         except httpx.HTTPStatusError as exc:
             upstream_status = exc.response.status_code
             if upstream_status == 404:
+                _log_shell_audit("upstream_404")
                 return self._generate_error_response(
                     base_request.id,
                     JSONRPCError(
@@ -837,6 +1017,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                         data={"type": "SESSION_NOT_FOUND", "session_id": session_id},
                     ),
                 )
+            _log_shell_audit("upstream_http_error")
             return self._generate_error_response(
                 base_request.id,
                 JSONRPCError(
@@ -844,21 +1025,28 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                     message="Upstream OpenCode error",
                     data={
                         "type": "UPSTREAM_HTTP_ERROR",
+                        "method": base_request.method,
                         "upstream_status": upstream_status,
                         "session_id": session_id,
                     },
                 ),
             )
         except httpx.HTTPError:
+            _log_shell_audit("upstream_unreachable")
             return self._generate_error_response(
                 base_request.id,
                 JSONRPCError(
                     code=ERR_UPSTREAM_UNREACHABLE,
                     message="Upstream OpenCode unreachable",
-                    data={"type": "UPSTREAM_UNREACHABLE", "session_id": session_id},
+                    data={
+                        "type": "UPSTREAM_UNREACHABLE",
+                        "method": base_request.method,
+                        "session_id": session_id,
+                    },
                 ),
             )
         except UpstreamContractError as exc:
+            _log_shell_audit("upstream_payload_error")
             return self._generate_error_response(
                 base_request.id,
                 JSONRPCError(
@@ -866,17 +1054,20 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                     message="Upstream OpenCode payload mismatch",
                     data={
                         "type": "UPSTREAM_PAYLOAD_ERROR",
+                        "method": base_request.method,
                         "detail": str(exc),
                         "session_id": session_id,
                     },
                 ),
             )
         except PermissionError:
+            _log_shell_audit("forbidden")
             return self._session_forbidden_response(
                 base_request.id,
                 session_id=session_id,
             )
         except Exception as exc:
+            _log_shell_audit("internal_error")
             logger.exception("OpenCode session control JSON-RPC method failed")
             return self._generate_error_response(
                 base_request.id,
@@ -904,7 +1095,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             return Response(status_code=204)
         return self._jsonrpc_success_response(
             base_request.id,
-            {"ok": True, "session_id": session_id},
+            result,
         )
 
     async def _handle_interrupt_callback_request(

@@ -173,6 +173,8 @@ class DummySessionQueryOpencodeClient:
         self.last_sessions_params = None
         self.last_messages_params = None
         self.prompt_async_calls: list[dict[str, Any]] = []
+        self.command_calls: list[dict[str, Any]] = []
+        self.shell_calls: list[dict[str, Any]] = []
         self._interrupt_requests: dict[str, dict[str, str | None]] = {}
 
     async def close(self) -> None:
@@ -201,6 +203,45 @@ class DummySessionQueryOpencodeClient:
                 "directory": directory,
             }
         )
+
+    async def session_command(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> dict[str, Any]:
+        self.command_calls.append(
+            {
+                "session_id": session_id,
+                "request": request,
+                "directory": directory,
+            }
+        )
+        return {
+            "info": {"id": "msg-command-1", "role": "assistant"},
+            "parts": [{"type": "text", "text": "Command completed."}],
+        }
+
+    async def session_shell(
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        directory: str | None = None,
+    ) -> dict[str, Any]:
+        self.shell_calls.append(
+            {
+                "session_id": session_id,
+                "request": request,
+                "directory": directory,
+            }
+        )
+        return {
+            "id": "msg-shell-1",
+            "role": "assistant",
+            "parts": [{"type": "text", "text": "Shell command executed."}],
+        }
 
     def remember_interrupt_request(
         self,

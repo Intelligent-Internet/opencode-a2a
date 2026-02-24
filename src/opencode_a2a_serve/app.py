@@ -245,6 +245,7 @@ def _build_deployment_context(settings: Settings) -> dict[str, str | bool]:
     context: dict[str, str | bool] = {
         "allow_directory_override": settings.a2a_allow_directory_override,
         "shared_workspace_across_consumers": True,
+        "session_shell_enabled": settings.a2a_enable_session_shell,
     }
     if settings.a2a_project:
         context["project"] = settings.a2a_project
@@ -343,6 +344,36 @@ def _build_jsonrpc_extension_openapi_examples() -> dict[str, Any]:
                     "session_id": "s-1",
                     "request": {
                         "parts": [{"type": "text", "text": "Continue and summarize next steps."}]
+                    },
+                },
+            },
+        },
+        "session_command": {
+            "summary": "Send command to an existing session",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 22,
+                "method": SESSION_QUERY_METHODS["command"],
+                "params": {
+                    "session_id": "s-1",
+                    "request": {
+                        "command": "/review",
+                        "arguments": "focus on security findings",
+                    },
+                },
+            },
+        },
+        "session_shell": {
+            "summary": "Run shell command in an existing session",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 23,
+                "method": SESSION_QUERY_METHODS["shell"],
+                "params": {
+                    "session_id": "s-1",
+                    "request": {
+                        "agent": "code-reviewer",
+                        "command": "git status --short",
                     },
                 },
             },
@@ -542,15 +573,16 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 id="opencode.sessions.query",
                 name="OpenCode Sessions Query",
                 description=(
-                    "Query OpenCode sessions/histories and submit async prompts via JSON-RPC "
-                    "extension methods opencode.sessions.list, "
-                    "opencode.sessions.messages.list, and opencode.sessions.prompt_async."
+                    "Query OpenCode sessions/histories and trigger session control methods via "
+                    "JSON-RPC extensions (list/messages/prompt_async/command/shell)."
                 ),
                 tags=["opencode", "sessions", "history"],
                 examples=[
                     "List OpenCode sessions (method opencode.sessions.list).",
                     "List messages for a session (method opencode.sessions.messages.list).",
                     "Send async prompt to a session (method opencode.sessions.prompt_async).",
+                    "Send command to a session (method opencode.sessions.command).",
+                    "Run shell in a session (method opencode.sessions.shell).",
                 ],
             ),
             AgentSkill(
@@ -635,6 +667,7 @@ def create_app(settings: Settings) -> FastAPI:
         http_handler=handler,
         context_builder=context_builder,
         opencode_client=client,
+        enable_session_shell=settings.a2a_enable_session_shell,
         directory_resolver=executor.resolve_directory_for_control,
         session_claim=executor.claim_session_for_control,
         session_claim_finalize=executor.finalize_session_for_control,

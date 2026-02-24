@@ -54,6 +54,8 @@ and JSON-RPC extension details (README stays at overview level).
 - `A2A_SESSION_CACHE_TTL_SECONDS`: in-memory TTL for
   `(identity, contextId) -> OpenCode session_id`, default `3600`
 - `A2A_SESSION_CACHE_MAXSIZE`: max cache entries, default `10000`
+- `A2A_ENABLE_SESSION_SHELL`: enable `opencode.sessions.shell` JSON-RPC control
+  method, default `false`
 
 ## Service Behavior
 
@@ -139,7 +141,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 ## OpenCode Session Query (A2A Extension)
 
-This service exposes OpenCode session list/message-history queries and async prompt injection via A2A JSON-RPC extension methods (default endpoint: `POST /`). No extra custom REST endpoint is introduced.
+This service exposes OpenCode session list/message-history queries and session control methods via A2A JSON-RPC extension methods (default endpoint: `POST /`). No extra custom REST endpoint is introduced.
 
 - Trigger: call extension methods through A2A JSON-RPC
 - Auth: same `Authorization: Bearer <token>`
@@ -221,6 +223,7 @@ Response:
 - error types:
   - `SESSION_NOT_FOUND`
   - `SESSION_FORBIDDEN`
+  - `METHOD_DISABLED` (not applicable to prompt_async)
   - `UPSTREAM_UNREACHABLE`
   - `UPSTREAM_HTTP_ERROR`
   - `UPSTREAM_PAYLOAD_ERROR`
@@ -230,6 +233,65 @@ Validation notes:
 - `metadata.opencode.directory` follows the same normalization and boundary rules
   as message send (`realpath` + workspace boundary check).
 - Control methods enforce session owner guard based on request identity.
+
+### Session Command (`opencode.sessions.command`)
+
+```bash
+curl -sS http://127.0.0.1:8000/ \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 22,
+    "method": "opencode.sessions.command",
+    "params": {
+      "session_id": "<session_id>",
+      "request": {
+        "command": "/review",
+        "arguments": "focus on security findings"
+      },
+      "metadata": {
+        "opencode": {
+          "directory": "/path/inside/workspace"
+        }
+      }
+    }
+  }'
+```
+
+Response:
+
+- success => `{"item": <A2A Message>}` (JSON-RPC result)
+- notification (no `id`) => HTTP `204 No Content`
+
+### Session Shell (`opencode.sessions.shell`)
+
+`opencode.sessions.shell` is disabled by default. Enable with
+`A2A_ENABLE_SESSION_SHELL=true`.
+
+```bash
+curl -sS http://127.0.0.1:8000/ \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 23,
+    "method": "opencode.sessions.shell",
+    "params": {
+      "session_id": "<session_id>",
+      "request": {
+        "agent": "code-reviewer",
+        "command": "git status --short"
+      }
+    }
+  }'
+```
+
+Response:
+
+- success => `{"item": <A2A Message>}` (JSON-RPC result)
+- disabled => JSON-RPC error `METHOD_DISABLED`
+- notification (no `id`) => HTTP `204 No Content`
 
 ## OpenCode Interrupt Callback (A2A Extension)
 

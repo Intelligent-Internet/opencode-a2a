@@ -59,18 +59,40 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert session_query.params["shared_workspace_across_consumers"] is True
     assert session_query.params["tenant_isolation"] == "none"
     assert session_query.params["control_methods"] == {
-        "prompt_async": "opencode.sessions.prompt_async"
+        "prompt_async": "opencode.sessions.prompt_async",
+        "command": "opencode.sessions.command",
+        "shell": "opencode.sessions.shell",
     }
     assert session_query.params["methods"]["prompt_async"] == "opencode.sessions.prompt_async"
+    assert session_query.params["methods"]["command"] == "opencode.sessions.command"
+    assert session_query.params["methods"]["shell"] == "opencode.sessions.shell"
+    assert session_query.params["control_method_flags"]["opencode.sessions.shell"] == {
+        "enabled_by_default": False,
+        "config_key": "A2A_ENABLE_SESSION_SHELL",
+    }
     assert session_query.params["pagination"]["applies_to"] == [
         "opencode.sessions.list",
         "opencode.sessions.messages.list",
     ]
     prompt_contract = session_query.params["method_contracts"]["opencode.sessions.prompt_async"]
+    command_contract = session_query.params["method_contracts"]["opencode.sessions.command"]
+    shell_contract = session_query.params["method_contracts"]["opencode.sessions.shell"]
     list_contract = session_query.params["method_contracts"]["opencode.sessions.list"]
     messages_contract = session_query.params["method_contracts"]["opencode.sessions.messages.list"]
     assert prompt_contract["params"]["required"] == ["session_id", "request.parts"]
     assert prompt_contract["result"]["fields"] == ["ok", "session_id"]
+    assert command_contract["params"]["required"] == [
+        "session_id",
+        "request.command",
+        "request.arguments",
+    ]
+    assert command_contract["result"]["fields"] == ["item"]
+    assert shell_contract["params"]["required"] == [
+        "session_id",
+        "request.agent",
+        "request.command",
+    ]
+    assert shell_contract["result"]["fields"] == ["item"]
     assert list_contract["notification_response_status"] == 204
     assert messages_contract["notification_response_status"] == 204
     assert prompt_contract["notification_response_status"] == 204
@@ -78,6 +100,8 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert result_envelope["opencode.sessions.list"]["fields"] == ["items"]
     assert result_envelope["opencode.sessions.messages.list"]["fields"] == ["items"]
     assert result_envelope["opencode.sessions.prompt_async"]["fields"] == ["ok", "session_id"]
+    assert result_envelope["opencode.sessions.command"]["fields"] == ["item"]
+    assert result_envelope["opencode.sessions.shell"]["fields"] == ["item"]
     assert (
         session_query.params["context_semantics"]["a2a_context_id_prefix"] == SESSION_CONTEXT_PREFIX
     )
@@ -88,6 +112,7 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert session_query.params["errors"]["business_codes"] == {
         "SESSION_NOT_FOUND": -32001,
         "SESSION_FORBIDDEN": -32006,
+        "METHOD_DISABLED": -32007,
         "UPSTREAM_UNREACHABLE": -32002,
         "UPSTREAM_HTTP_ERROR": -32003,
         "UPSTREAM_PAYLOAD_ERROR": -32005,

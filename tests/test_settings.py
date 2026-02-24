@@ -22,12 +22,14 @@ def test_settings_valid():
         "A2A_BEARER_TOKEN": "test-token",
         "OPENCODE_TIMEOUT": "300",
         "A2A_CANCEL_ABORT_TIMEOUT_SECONDS": "0.75",
+        "A2A_ENABLE_SESSION_SHELL": "true",
     }
     with mock.patch.dict(os.environ, env, clear=True):
         settings = Settings.from_env()
         assert settings.a2a_bearer_token == "test-token"
         assert settings.opencode_timeout == 300.0
         assert settings.a2a_cancel_abort_timeout_seconds == 0.75
+        assert settings.a2a_enable_session_shell is True
 
 
 def test_parse_oauth_scopes():
