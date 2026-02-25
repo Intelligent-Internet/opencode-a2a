@@ -25,6 +25,42 @@ def test_rest_subscription_route_matches_current_sdk_contract() -> None:
     assert "/v1/tasks/{id}:resubscribe" not in route_paths
 
 
+def test_openapi_rest_message_routes_include_schema_and_examples() -> None:
+    app = create_app(make_settings(a2a_bearer_token="test-token"))
+    openapi = app.openapi()
+    paths = openapi["paths"]
+
+    expected: dict[str, str] = {
+        "/v1/message:send": "#/components/schemas/SendMessageRequest",
+        "/v1/message:stream": "#/components/schemas/SendStreamingMessageRequest",
+    }
+    for path, expected_schema_ref in expected.items():
+        post = paths[path]["post"]
+        assert post["summary"] in {"Send Message (HTTP+JSON)", "Stream Message (HTTP+JSON)"}
+        content = post.get("requestBody", {}).get("content", {}).get("application/json", {})
+        assert content.get("schema", {}).get("$ref") == expected_schema_ref
+        examples = content.get("examples")
+        assert isinstance(examples, dict)
+        assert "basic_message" in examples
+        assert "continue_session" in examples
+
+
+def test_openapi_jsonrpc_examples_include_core_message_methods() -> None:
+    app = create_app(make_settings(a2a_bearer_token="test-token"))
+    openapi = app.openapi()
+    post = openapi["paths"]["/"]["post"]
+    example_values = (
+        post.get("requestBody", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("examples", {})
+        .values()
+    )
+    methods = {value.get("value", {}).get("method") for value in example_values}
+    assert "message/send" in methods
+    assert "message/stream" in methods
+
+
 @pytest.mark.asyncio
 async def test_dual_stack_send_accepts_transport_native_payloads(monkeypatch) -> None:
     import opencode_a2a_serve.app as app_module

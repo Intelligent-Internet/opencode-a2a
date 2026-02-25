@@ -316,6 +316,41 @@ def _build_jsonrpc_extension_openapi_description() -> str:
 
 def _build_jsonrpc_extension_openapi_examples() -> dict[str, Any]:
     return {
+        "message_send": {
+            "summary": "Send message via JSON-RPC core method",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 101,
+                "method": "message/send",
+                "params": {
+                    "message": {
+                        "messageId": "msg-1",
+                        "role": "user",
+                        "parts": [{"kind": "text", "text": "Explain what this repository does."}],
+                    }
+                },
+            },
+        },
+        "message_stream": {
+            "summary": "Stream message via JSON-RPC core method",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 102,
+                "method": "message/stream",
+                "params": {
+                    "message": {
+                        "messageId": "msg-stream-1",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "kind": "text",
+                                "text": "Stream the answer and highlight key conclusions.",
+                            }
+                        ],
+                    }
+                },
+            },
+        },
         "session_list": {
             "summary": "List OpenCode sessions",
             "value": {
@@ -408,6 +443,36 @@ def _build_jsonrpc_extension_openapi_examples() -> dict[str, Any]:
     }
 
 
+def _build_rest_message_openapi_examples() -> dict[str, Any]:
+    return {
+        "basic_message": {
+            "summary": "Send a basic user message (HTTP+JSON)",
+            "value": {
+                "message": {
+                    "messageId": "msg-rest-1",
+                    "role": "ROLE_USER",
+                    "content": [{"text": "Explain what this repository does."}],
+                }
+            },
+        },
+        "continue_session": {
+            "summary": "Continue a historical OpenCode session",
+            "value": {
+                "message": {
+                    "messageId": "msg-rest-continue-1",
+                    "role": "ROLE_USER",
+                    "content": [{"text": "Continue previous work and summarize next steps."}],
+                },
+                "metadata": {
+                    "opencode": {
+                        "session_id": "s-1",
+                    }
+                },
+            },
+        },
+    }
+
+
 def _patch_jsonrpc_openapi_contract(
     app: FastAPI,
     *,
@@ -447,6 +512,48 @@ def _patch_jsonrpc_openapi_contract(
                             app_json = content.setdefault("application/json", {})
                             if isinstance(app_json, dict):
                                 app_json["examples"] = _build_jsonrpc_extension_openapi_examples()
+
+            rest_post_contracts: dict[str, dict[str, Any]] = {
+                "/v1/message:send": {
+                    "summary": "Send Message (HTTP+JSON)",
+                    "description": (
+                        "A2A HTTP+JSON message send endpoint. "
+                        "Use REST payload shape with message.content and ROLE_* roles."
+                    ),
+                    "schema_ref": "#/components/schemas/SendMessageRequest",
+                },
+                "/v1/message:stream": {
+                    "summary": "Stream Message (HTTP+JSON)",
+                    "description": (
+                        "A2A HTTP+JSON streaming endpoint. "
+                        "Use REST payload shape with message.content and ROLE_* roles."
+                    ),
+                    "schema_ref": "#/components/schemas/SendStreamingMessageRequest",
+                },
+            }
+            rest_examples = _build_rest_message_openapi_examples()
+            for rest_path, contract in rest_post_contracts.items():
+                rest_path_item = paths.get(rest_path)
+                if not isinstance(rest_path_item, dict):
+                    continue
+                rest_post = rest_path_item.get("post")
+                if not isinstance(rest_post, dict):
+                    continue
+
+                rest_post["summary"] = contract["summary"]
+                rest_post["description"] = contract["description"]
+                request_body = rest_post.setdefault("requestBody", {})
+                if not isinstance(request_body, dict):
+                    continue
+                request_body.setdefault("required", True)
+                content = request_body.setdefault("content", {})
+                if not isinstance(content, dict):
+                    continue
+                app_json = content.setdefault("application/json", {})
+                if not isinstance(app_json, dict):
+                    continue
+                app_json["schema"] = {"$ref": contract["schema_ref"]}
+                app_json["examples"] = rest_examples
 
         app.openapi_schema = schema
         return schema
