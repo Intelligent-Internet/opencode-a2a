@@ -107,10 +107,7 @@ class Settings(BaseSettings):
     def normalize_jwt_scope_match(cls, v: Any) -> str:
         if not isinstance(v, str) or not v.strip():
             return "any"
-        mode = v.strip().lower()
-        if mode in {"any", "all"}:
-            return mode
-        raise ValueError("A2A_JWT_SCOPE_MATCH must be 'any' or 'all'")
+        return v.strip().lower()
 
     @field_validator("a2a_required_scopes", mode="before")
     @classmethod
@@ -127,6 +124,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def resolve_auth_settings(self) -> Settings:
+        if self.a2a_auth_mode == "bearer":
+            if not self.a2a_bearer_token:
+                raise ValueError("A2A_BEARER_TOKEN is required when A2A_AUTH_MODE=bearer")
+            return self
+
+        if self.a2a_jwt_scope_match not in {"any", "all"}:
+            raise ValueError("A2A_JWT_SCOPE_MATCH must be 'any' or 'all'")
+
         if self.a2a_jwt_secret_b64:
             try:
                 decoded = base64.b64decode(self.a2a_jwt_secret_b64.strip(), validate=True)
@@ -137,11 +142,6 @@ class Settings(BaseSettings):
             self.a2a_jwt_secret = (
                 Path(self.a2a_jwt_secret_file).expanduser().read_text(encoding="utf-8")
             )
-
-        if self.a2a_auth_mode == "bearer":
-            if not self.a2a_bearer_token:
-                raise ValueError("A2A_BEARER_TOKEN is required when A2A_AUTH_MODE=bearer")
-            return self
 
         if not self.a2a_jwt_secret:
             raise ValueError(

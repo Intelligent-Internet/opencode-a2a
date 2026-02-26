@@ -45,6 +45,19 @@ def test_settings_jwt_mode_valid_without_bearer_token():
         assert settings.a2a_jwt_secret == expected_secret
 
 
+def test_settings_bearer_mode_ignores_invalid_jwt_fields():
+    env = {
+        "A2A_AUTH_MODE": "bearer",
+        "A2A_BEARER_TOKEN": "test-token",
+        "A2A_JWT_SECRET_B64": "@@@",  # pragma: allowlist secret
+        "A2A_JWT_SCOPE_MATCH": "invalid",
+    }
+    with mock.patch.dict(os.environ, env, clear=True):
+        settings = Settings.from_env()
+        assert settings.a2a_auth_mode == "bearer"
+        assert settings.a2a_bearer_token == "test-token"
+
+
 def test_parse_oauth_scopes():
     env = {
         "A2A_BEARER_TOKEN": "test",
