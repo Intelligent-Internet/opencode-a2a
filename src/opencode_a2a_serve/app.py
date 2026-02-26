@@ -970,7 +970,6 @@ def create_app(settings: Settings) -> FastAPI:
                 )
                 return response
 
-            response_content_type = _normalize_content_type(response.headers.get("content-type"))
             if request_omit_reason:
                 logger.debug(
                     "A2A response %s status=%s bytes=%s body=[omitted request_%s]",
@@ -980,6 +979,7 @@ def create_app(settings: Settings) -> FastAPI:
                     request_omit_reason,
                 )
                 return response
+            response_content_type = _normalize_content_type(response.headers.get("content-type"))
             if not _is_json_content_type(response_content_type):
                 logger.debug(
                     "A2A response %s status=%s bytes=%s body=[omitted non-json content-type=%s]",

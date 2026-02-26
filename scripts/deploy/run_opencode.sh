@@ -2,6 +2,10 @@
 # Wrapper to run opencode serve with configured host/port/logging.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../opencode_log_level.sh
+source "${SCRIPT_DIR}/../opencode_log_level.sh"
+
 OPENCODE_CORE_DIR="${OPENCODE_CORE_DIR:-/opt/.opencode}"
 OPENCODE_BIN="${OPENCODE_BIN:-${OPENCODE_CORE_DIR}/bin/opencode}"
 OPENCODE_LOG_LEVEL_RAW="${OPENCODE_LOG_LEVEL:-WARNING}"
@@ -13,18 +17,7 @@ OPENCODE_MODEL_ID="${OPENCODE_MODEL_ID:-}"
 OPENCODE_LSP="${OPENCODE_LSP:-false}"
 GOOGLE_GENERATIVE_AI_API_KEY="${GOOGLE_GENERATIVE_AI_API_KEY:-}"
 
-case "${OPENCODE_LOG_LEVEL_RAW^^}" in
-  DEBUG|INFO|WARN|ERROR)
-    OPENCODE_LOG_LEVEL="${OPENCODE_LOG_LEVEL_RAW^^}"
-    ;;
-  WARNING)
-    OPENCODE_LOG_LEVEL="WARN"
-    ;;
-  *)
-    echo "Invalid OPENCODE_LOG_LEVEL value: ${OPENCODE_LOG_LEVEL_RAW} (expected DEBUG/INFO/WARN/WARNING/ERROR)" >&2
-    exit 1
-    ;;
-esac
+OPENCODE_LOG_LEVEL="$(normalize_opencode_log_level "${OPENCODE_LOG_LEVEL_RAW}")"
 
 if [[ ! -x "$OPENCODE_BIN" ]]; then
   echo "opencode binary not found at $OPENCODE_BIN" >&2
