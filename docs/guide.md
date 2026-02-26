@@ -24,7 +24,14 @@ For deploy-time inputs and systemd-oriented parameters, see
 
 Key variables to understand protocol behavior:
 
-- `A2A_BEARER_TOKEN`: required for all authenticated runtime requests.
+- `A2A_AUTH_MODE`: `bearer` (default) or `jwt`.
+- `A2A_BEARER_TOKEN`: required when `A2A_AUTH_MODE=bearer`.
+- `A2A_JWT_SECRET` / `A2A_JWT_SECRET_B64` / `A2A_JWT_SECRET_FILE`: JWT
+  verification key sources when `A2A_AUTH_MODE=jwt`.
+- `A2A_JWT_ALGORITHM`: JWT algorithm for verification in JWT mode.
+- `A2A_JWT_ISSUER` / `A2A_JWT_AUDIENCE`: required JWT claim checks in JWT mode.
+- `A2A_REQUIRED_SCOPES`: optional comma-separated scopes required in JWT mode.
+- `A2A_JWT_SCOPE_MATCH`: `any`/`all` strategy for required-scope matching.
 - `A2A_STREAMING`: enables/disables SSE endpoint `/v1/message:stream`.
 - `A2A_ALLOW_DIRECTORY_OVERRIDE`: controls whether clients may pass
   `metadata.opencode.directory`.
@@ -70,6 +77,9 @@ Key variables to understand protocol behavior:
   `Task.metadata.opencode.usage` with the same field schema.
 - Requests require `Authorization: Bearer <token>`; otherwise `401` is
   returned. Agent Card endpoints are public.
+- Auth verification behavior is mode-dependent:
+  - Bearer mode validates exact token match against `A2A_BEARER_TOKEN`.
+  - JWT mode verifies signature plus `exp`/`iss`/`aud`, and optionally scopes.
 - Within one `opencode-a2a-serve` instance, all consumers share the same
   underlying OpenCode workspace/environment. This deployment model is not
   tenant-isolated by default.

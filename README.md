@@ -11,7 +11,7 @@ Provide a practical adapter layer that lets individuals and small teams expose O
 - Protocol bridge: map A2A message/task semantics to OpenCode session/message/event APIs.
 - Stateful interaction: support session continuation and reconnection workflows.
 - Operational readiness: include systemd multi-instance deployment scripts and guardrails.
-- Security baseline: enforce bearer-token auth and document key risk boundaries.
+- Security baseline: enforce configurable bearer/JWT auth and document key risk boundaries.
 
 ## Core Capabilities
 
@@ -35,10 +35,21 @@ opencode serve
 uv sync --all-extras
 ```
 
-3. Start this service:
+3. Start this service (bearer mode, default):
 
 ```bash
 A2A_BEARER_TOKEN=dev-token uv run opencode-a2a-serve
+```
+
+Or start in JWT mode:
+
+```bash
+A2A_AUTH_MODE=jwt \
+A2A_JWT_SECRET_FILE=./jwt-public.pem \
+A2A_JWT_ALGORITHM=HS256 \
+A2A_JWT_ISSUER=dev-issuer \
+A2A_JWT_AUDIENCE=dev-audience \
+uv run opencode-a2a-serve
 ```
 
 Default address: `http://127.0.0.1:8000`
@@ -66,7 +77,11 @@ For deployment and operations scripts, see [`scripts/README.md`](scripts/README.
 
 ## Security Boundary
 
-- `A2A_BEARER_TOKEN` is required for startup.
+- Startup auth config depends on mode:
+  - `A2A_AUTH_MODE=bearer` (default): requires `A2A_BEARER_TOKEN`
+  - `A2A_AUTH_MODE=jwt`: requires JWT key (`A2A_JWT_SECRET` or
+    `A2A_JWT_SECRET_B64` or `A2A_JWT_SECRET_FILE`) plus
+    `A2A_JWT_ISSUER` and `A2A_JWT_AUDIENCE`
 - LLM provider keys are consumed by the OpenCode process. This model is best suited for trusted/internal environments unless stronger credential isolation is introduced.
 - Within one service instance, consumers share the same underlying OpenCode workspace/environment (not tenant-isolated by default).
 

@@ -31,6 +31,18 @@ GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
 ./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
 ```
 
+JWT mode example:
+
+```bash
+GH_TOKEN='<gh-token>' \
+A2A_AUTH_MODE=jwt \
+A2A_JWT_SECRET_FILE=./jwt-public.pem \
+A2A_JWT_ALGORITHM=HS256 \
+A2A_JWT_ISSUER='compass' \
+A2A_JWT_AUDIENCE='opencode-a2a:alpha' \
+./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
+```
+
 HTTPS public URL example:
 
 ```bash
@@ -56,7 +68,10 @@ For values that support both env and CLI:
 ### Required Secrets
 
 - `GH_TOKEN`
-- `A2A_BEARER_TOKEN`
+- Auth secrets depend on mode:
+  - `A2A_AUTH_MODE=bearer` (default): `A2A_BEARER_TOKEN` required
+  - `A2A_AUTH_MODE=jwt`: one of `A2A_JWT_SECRET` / `A2A_JWT_SECRET_B64` /
+    `A2A_JWT_SECRET_FILE` required
 
 ### CLI Keys
 
@@ -65,6 +80,9 @@ Supported keys (case-insensitive):
 - `project` / `project_name`
 - `data_root`
 - `a2a_port`, `a2a_host`, `a2a_public_url`
+- `a2a_auth_mode`
+- `a2a_jwt_secret_file`, `a2a_jwt_algorithm`, `a2a_jwt_issuer`, `a2a_jwt_audience`
+- `a2a_required_scopes`, `a2a_jwt_scope_match`
 - `a2a_streaming`, `a2a_log_level`, `a2a_otel_instrumentation_enabled`
 - `a2a_log_payloads`, `a2a_log_body_limit`
 - `a2a_cancel_abort_timeout_seconds`, `a2a_enable_session_shell`
@@ -83,7 +101,9 @@ Sensitive values are blocked from CLI keys by design.
 | ENV Name | Required | Default | CLI Support | Notes |
 | --- | --- | --- | --- | --- |
 | `GH_TOKEN` | Yes | None | No | Used by OpenCode and `gh auth login`. |
-| `A2A_BEARER_TOKEN` | Yes | None | No | Written to `a2a.env`. |
+| `A2A_BEARER_TOKEN` | Bearer mode only | None | No | Required when `A2A_AUTH_MODE=bearer`; written to `a2a.env`. |
+| `A2A_JWT_SECRET` | JWT mode, conditional | None | No | JWT key source (plain text). |
+| `A2A_JWT_SECRET_B64` | JWT mode, conditional | None | No | JWT key source (base64). |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Optional | None | No | Persisted to `opencode.secret.env` when provided. |
 | `OPENAI_API_KEY` | Optional | None | No | Persisted to `opencode.secret.env` when provided. |
 | `ANTHROPIC_API_KEY` | Optional | None | No | Persisted to `opencode.secret.env` when provided. |
@@ -115,6 +135,13 @@ Sensitive values are blocked from CLI keys by design.
 | `A2A_HOST` | `a2a_host` | Optional | `127.0.0.1` | A2A bind host. |
 | `A2A_PORT` | `a2a_port` | Optional | `8000` | A2A bind port. |
 | `A2A_PUBLIC_URL` | `a2a_public_url` | Optional | `http://<A2A_HOST>:<A2A_PORT>` | Public URL in Agent Card. |
+| `A2A_AUTH_MODE` | `a2a_auth_mode` | Optional | `bearer` | Auth mode switch (`bearer`/`jwt`). |
+| `A2A_JWT_SECRET_FILE` | `a2a_jwt_secret_file` | JWT mode, conditional | None | JWT key file path. |
+| `A2A_JWT_ALGORITHM` | `a2a_jwt_algorithm` | Optional | `HS256` | JWT verification algorithm. |
+| `A2A_JWT_ISSUER` | `a2a_jwt_issuer` | JWT mode | None | JWT issuer claim check. |
+| `A2A_JWT_AUDIENCE` | `a2a_jwt_audience` | JWT mode | None | JWT audience claim check. |
+| `A2A_REQUIRED_SCOPES` | `a2a_required_scopes` | Optional | empty | Required scopes for JWT tokens. |
+| `A2A_JWT_SCOPE_MATCH` | `a2a_jwt_scope_match` | Optional | `any` | Scope matching strategy (`any`/`all`). |
 | `A2A_STREAMING` | `a2a_streaming` | Optional | `true` | SSE streaming toggle. |
 | `A2A_LOG_LEVEL` | `a2a_log_level` | Optional | `WARNING` | A2A log level. |
 | `A2A_OTEL_INSTRUMENTATION_ENABLED` | `a2a_otel_instrumentation_enabled` | Optional | `false` | Generates `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED` in `a2a.env`. |
