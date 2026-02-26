@@ -10,7 +10,17 @@ PROVIDER_SECRET_ENV_LIST="$(join_provider_secret_env_keys " | ")"
 
 PROJECT_NAME=""
 GH_TOKEN="${GH_TOKEN:-}"
+A2A_AUTH_MODE="${A2A_AUTH_MODE:-bearer}"
 A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN:-}"
+A2A_JWT_SECRET="${A2A_JWT_SECRET:-}"
+A2A_JWT_SECRET_B64="${A2A_JWT_SECRET_B64:-}"
+A2A_JWT_SECRET_FILE="${A2A_JWT_SECRET_FILE:-}"
+A2A_JWT_ALGORITHM="${A2A_JWT_ALGORITHM:-HS256}"
+A2A_JWT_ISSUER="${A2A_JWT_ISSUER:-}"
+A2A_JWT_AUDIENCE="${A2A_JWT_AUDIENCE:-}"
+A2A_REQUIRED_SCOPES="${A2A_REQUIRED_SCOPES:-}"
+A2A_JWT_SCOPE_MATCH="${A2A_JWT_SCOPE_MATCH:-any}"
+A2A_AUTH_MODE_INPUT=""
 A2A_PORT_INPUT=""
 A2A_HOST_INPUT=""
 A2A_PUBLIC_URL_INPUT=""
@@ -55,6 +65,35 @@ for arg in "$@"; do
     a2a_bearer_token|bearer_token)
       echo "Sensitive parameter '${key}' is not allowed via CLI. Use environment variable A2A_BEARER_TOKEN." >&2
       exit 1
+      ;;
+    a2a_jwt_secret)
+      echo "Sensitive parameter '${key}' is not allowed via CLI. Use environment variable A2A_JWT_SECRET." >&2
+      exit 1
+      ;;
+    a2a_jwt_secret_b64)
+      echo "Sensitive parameter '${key}' is not allowed via CLI. Use environment variable A2A_JWT_SECRET_B64." >&2
+      exit 1
+      ;;
+    a2a_auth_mode)
+      A2A_AUTH_MODE_INPUT="$value"
+      ;;
+    a2a_jwt_secret_file)
+      A2A_JWT_SECRET_FILE="$value"
+      ;;
+    a2a_jwt_algorithm)
+      A2A_JWT_ALGORITHM="$value"
+      ;;
+    a2a_jwt_issuer)
+      A2A_JWT_ISSUER="$value"
+      ;;
+    a2a_jwt_audience)
+      A2A_JWT_AUDIENCE="$value"
+      ;;
+    a2a_required_scopes)
+      A2A_REQUIRED_SCOPES="$value"
+      ;;
+    a2a_jwt_scope_match)
+      A2A_JWT_SCOPE_MATCH="$value"
       ;;
     a2a_port)
       A2A_PORT_INPUT="$value"
@@ -136,10 +175,13 @@ for arg in "$@"; do
   esac
 done
 
-if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" || -z "$A2A_BEARER_TOKEN" ]]; then
+if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" ]]; then
   cat >&2 <<USAGE
 Usage:
-  GH_TOKEN=<token> A2A_BEARER_TOKEN=<token> [<PROVIDER_SECRET_ENV>=<key>] \
+  GH_TOKEN=<token> [A2A_AUTH_MODE=bearer|jwt] [A2A_BEARER_TOKEN=<token>] \
+  [A2A_JWT_SECRET=<secret>|A2A_JWT_SECRET_B64=<b64>|A2A_JWT_SECRET_FILE=<path>] \
+  [A2A_JWT_ALGORITHM=<alg>] [A2A_JWT_ISSUER=<iss>] [A2A_JWT_AUDIENCE=<aud>] \
+  [A2A_REQUIRED_SCOPES=<comma-separated>] [A2A_JWT_SCOPE_MATCH=any|all] [<PROVIDER_SECRET_ENV>=<key>] \
   ./scripts/deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
   [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_otel_instrumentation_enabled=<bool>] \
   [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [a2a_cancel_abort_timeout_seconds=<seconds>] \
@@ -153,6 +195,36 @@ Provider secret env vars:
   ${PROVIDER_SECRET_ENV_LIST}
 USAGE
   exit 1
+fi
+
+if [[ -n "$A2A_AUTH_MODE_INPUT" ]]; then
+  A2A_AUTH_MODE="$A2A_AUTH_MODE_INPUT"
+fi
+A2A_AUTH_MODE="${A2A_AUTH_MODE,,}"
+
+if [[ "$A2A_AUTH_MODE" != "bearer" && "$A2A_AUTH_MODE" != "jwt" ]]; then
+  echo "A2A_AUTH_MODE must be bearer or jwt" >&2
+  exit 1
+fi
+
+if [[ "$A2A_AUTH_MODE" == "bearer" ]]; then
+  if [[ -z "$A2A_BEARER_TOKEN" ]]; then
+    echo "A2A_BEARER_TOKEN is required when A2A_AUTH_MODE=bearer" >&2
+    exit 1
+  fi
+else
+  if [[ -z "$A2A_JWT_SECRET" && -z "$A2A_JWT_SECRET_B64" && -z "$A2A_JWT_SECRET_FILE" ]]; then
+    echo "JWT mode requires one of A2A_JWT_SECRET/A2A_JWT_SECRET_B64/A2A_JWT_SECRET_FILE" >&2
+    exit 1
+  fi
+  if [[ -z "$A2A_JWT_ISSUER" || -z "$A2A_JWT_AUDIENCE" ]]; then
+    echo "JWT mode requires both A2A_JWT_ISSUER and A2A_JWT_AUDIENCE" >&2
+    exit 1
+  fi
+  if [[ "${A2A_JWT_SCOPE_MATCH,,}" != "any" && "${A2A_JWT_SCOPE_MATCH,,}" != "all" ]]; then
+    echo "A2A_JWT_SCOPE_MATCH must be any or all" >&2
+    exit 1
+  fi
 fi
 
 export OPENCODE_A2A_DIR="${OPENCODE_A2A_DIR:-/opt/opencode-a2a/opencode-a2a-serve}"
@@ -217,6 +289,15 @@ export A2A_LOG_PAYLOADS="${A2A_LOG_PAYLOADS:-false}"
 export A2A_LOG_BODY_LIMIT="${A2A_LOG_BODY_LIMIT:-0}"
 export A2A_CANCEL_ABORT_TIMEOUT_SECONDS="${A2A_CANCEL_ABORT_TIMEOUT_SECONDS:-2.0}"
 export A2A_ENABLE_SESSION_SHELL="${A2A_ENABLE_SESSION_SHELL:-false}"
+export A2A_AUTH_MODE="${A2A_AUTH_MODE}"
+export A2A_JWT_ALGORITHM="${A2A_JWT_ALGORITHM}"
+export A2A_JWT_SCOPE_MATCH="${A2A_JWT_SCOPE_MATCH,,}"
+export_if_present "A2A_JWT_SECRET" "$A2A_JWT_SECRET"
+export_if_present "A2A_JWT_SECRET_B64" "$A2A_JWT_SECRET_B64"
+export_if_present "A2A_JWT_SECRET_FILE" "$A2A_JWT_SECRET_FILE"
+export_if_present "A2A_JWT_ISSUER" "$A2A_JWT_ISSUER"
+export_if_present "A2A_JWT_AUDIENCE" "$A2A_JWT_AUDIENCE"
+export_if_present "A2A_REQUIRED_SCOPES" "$A2A_REQUIRED_SCOPES"
 export_if_present "A2A_LOG_LEVEL" "$A2A_LOG_LEVEL_INPUT"
 export_if_present "A2A_STREAMING" "$A2A_STREAMING_INPUT"
 export_if_present "A2A_OTEL_INSTRUMENTATION_ENABLED" "$A2A_OTEL_INSTRUMENTATION_ENABLED_INPUT"

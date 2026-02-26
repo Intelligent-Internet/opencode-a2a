@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Create project user, directories, and env files for systemd services.
-# Usage: GH_TOKEN=<token> A2A_BEARER_TOKEN=<token> ./setup_instance.sh <project_name>
+# Usage: GH_TOKEN=<token> A2A_AUTH_MODE=bearer|jwt [A2A_BEARER_TOKEN=<token>] ./setup_instance.sh <project_name>
 # Requires env: DATA_ROOT, OPENCODE_BIND_HOST, OPENCODE_BIND_PORT, OPENCODE_LOG_LEVEL,
 #               A2A_HOST, A2A_PORT, A2A_PUBLIC_URL.
 # Optional provider secret env: see scripts/deploy/provider_secret_env_keys.sh
@@ -14,12 +14,29 @@ source "${SCRIPT_DIR}/provider_secret_env_keys.sh"
 PROJECT_NAME="${1:-}"
 
 if [[ "$#" -ne 1 || -z "$PROJECT_NAME" ]]; then
-  echo "Usage: GH_TOKEN=<token> A2A_BEARER_TOKEN=<token> $0 <project_name>" >&2
+  echo "Usage: GH_TOKEN=<token> A2A_AUTH_MODE=bearer|jwt [A2A_BEARER_TOKEN=<token>] $0 <project_name>" >&2
   exit 1
 fi
 
 : "${GH_TOKEN:?GH_TOKEN is required}"
-: "${A2A_BEARER_TOKEN:?A2A_BEARER_TOKEN is required}"
+: "${A2A_AUTH_MODE:=bearer}"
+A2A_AUTH_MODE="${A2A_AUTH_MODE,,}"
+
+if [[ "$A2A_AUTH_MODE" != "bearer" && "$A2A_AUTH_MODE" != "jwt" ]]; then
+  echo "A2A_AUTH_MODE must be bearer or jwt" >&2
+  exit 1
+fi
+
+if [[ "$A2A_AUTH_MODE" == "bearer" ]]; then
+  : "${A2A_BEARER_TOKEN:?A2A_BEARER_TOKEN is required when A2A_AUTH_MODE=bearer}"
+else
+  if [[ -z "${A2A_JWT_SECRET:-}" && -z "${A2A_JWT_SECRET_B64:-}" && -z "${A2A_JWT_SECRET_FILE:-}" ]]; then
+    echo "JWT mode requires one of A2A_JWT_SECRET/A2A_JWT_SECRET_B64/A2A_JWT_SECRET_FILE" >&2
+    exit 1
+  fi
+  : "${A2A_JWT_ISSUER:?A2A_JWT_ISSUER is required when A2A_AUTH_MODE=jwt}"
+  : "${A2A_JWT_AUDIENCE:?A2A_JWT_AUDIENCE is required when A2A_AUTH_MODE=jwt}"
+fi
 
 : "${DATA_ROOT:?}"
 : "${OPENCODE_BIND_HOST:?}"
@@ -199,7 +216,25 @@ a2a_env_tmp="$(mktemp)"
   echo "A2A_PORT=${A2A_PORT}"
   echo "A2A_PUBLIC_URL=${A2A_PUBLIC_URL}"
   echo "A2A_PROJECT=${PROJECT_NAME}"
-  echo "A2A_BEARER_TOKEN=${A2A_BEARER_TOKEN}"
+  echo "A2A_AUTH_MODE=${A2A_AUTH_MODE}"
+  if [[ "$A2A_AUTH_MODE" == "bearer" ]]; then
+    echo "A2A_BEARER_TOKEN=${A2A_BEARER_TOKEN}"
+  else
+    if [[ -n "${A2A_JWT_SECRET_B64:-}" ]]; then
+      echo "A2A_JWT_SECRET_B64=${A2A_JWT_SECRET_B64}"
+    elif [[ -n "${A2A_JWT_SECRET_FILE:-}" ]]; then
+      echo "A2A_JWT_SECRET_FILE=${A2A_JWT_SECRET_FILE}"
+    else
+      echo "A2A_JWT_SECRET=${A2A_JWT_SECRET}"
+    fi
+    echo "A2A_JWT_ALGORITHM=${A2A_JWT_ALGORITHM:-HS256}"
+    echo "A2A_JWT_ISSUER=${A2A_JWT_ISSUER}"
+    echo "A2A_JWT_AUDIENCE=${A2A_JWT_AUDIENCE}"
+    if [[ -n "${A2A_REQUIRED_SCOPES:-}" ]]; then
+      echo "A2A_REQUIRED_SCOPES=${A2A_REQUIRED_SCOPES}"
+    fi
+    echo "A2A_JWT_SCOPE_MATCH=${A2A_JWT_SCOPE_MATCH:-any}"
+  fi
   echo "A2A_STREAMING=${A2A_STREAMING}"
   echo "A2A_LOG_LEVEL=${A2A_LOG_LEVEL:-WARNING}"
   echo "OTEL_INSTRUMENTATION_A2A_SDK_ENABLED=${A2A_OTEL_INSTRUMENTATION_ENABLED:-false}"

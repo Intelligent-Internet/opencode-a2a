@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING, Any, cast
 
+import jwt
 import uvicorn
 from a2a.server.apps.jsonrpc.jsonrpc_app import DefaultCallContextBuilder
 from a2a.server.apps.rest.rest_adapter import RESTAdapter
@@ -565,12 +566,13 @@ def build_agent_card(settings: Settings) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     base_url = public_url
     deployment_context = _build_deployment_context(settings)
+    bearer_format = "JWT" if settings.a2a_auth_mode == "jwt" else "opaque"
     security_schemes: dict[str, SecurityScheme] = {
         "bearerAuth": SecurityScheme(
             root=HTTPAuthSecurityScheme(
                 description="Bearer token authentication",
                 scheme="bearer",
-                bearer_format="opaque",
+                bearer_format=bearer_format,
             )
         )
     }
@@ -717,14 +719,43 @@ def build_agent_card(settings: Settings) -> AgentCard:
 
 
 def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
-    token = settings.a2a_bearer_token
-
     def _unauthorized_response() -> JSONResponse:
         return JSONResponse(
             {"error": "Unauthorized"},
             status_code=401,
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    def _forbidden_response() -> JSONResponse:
+        return JSONResponse(
+            {"error": "Forbidden"},
+            status_code=403,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    def _extract_token(request: Request) -> str | None:
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header.lower().startswith("bearer "):
+            return None
+        return auth_header.split(" ", 1)[1].strip() or None
+
+    def _normalize_token_scopes(payload: dict[str, Any]) -> set[str]:
+        raw_scopes = payload.get("scope")
+        if raw_scopes is None:
+            raw_scopes = payload.get("scp")
+        if raw_scopes is None:
+            return set()
+        if isinstance(raw_scopes, str):
+            normalized = raw_scopes.replace(",", " ")
+            return {scope for scope in normalized.split() if scope}
+        if isinstance(raw_scopes, list):
+            token_scopes: set[str] = set()
+            for scope in raw_scopes:
+                normalized = str(scope).strip()
+                if normalized:
+                    token_scopes.add(normalized)
+            return token_scopes
+        return set()
 
     @app.middleware("http")
     async def bearer_auth(request: Request, call_next):
@@ -734,13 +765,52 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
         }:
             return await call_next(request)
 
-        auth_header = request.headers.get("authorization", "")
-        if not auth_header.lower().startswith("bearer "):
+        token = _extract_token(request)
+        if token is None:
             return _unauthorized_response()
-        provided = auth_header.split(" ", 1)[1].strip()
-        if not secrets.compare_digest(provided, token):
+
+        if settings.a2a_auth_mode == "bearer":
+            expected_token = settings.a2a_bearer_token or ""
+            if not secrets.compare_digest(token, expected_token):
+                return _unauthorized_response()
+            request.state.user_identity = (
+                f"bearer:{hashlib.sha256(token.encode()).hexdigest()[:12]}"
+            )
+            return await call_next(request)
+
+        try:
+            payload = jwt.decode(
+                token,
+                settings.a2a_jwt_secret or "",
+                algorithms=[settings.a2a_jwt_algorithm],
+                audience=settings.a2a_jwt_audience,
+                issuer=settings.a2a_jwt_issuer,
+                options={"require": ["exp", "iss", "aud"]},
+            )
+        except jwt.PyJWTError:
+            logger.warning("Invalid JWT token")
             return _unauthorized_response()
-        request.state.user_identity = f"bearer:{hashlib.sha256(provided.encode()).hexdigest()[:12]}"
+
+        if settings.a2a_required_scopes:
+            required_scopes = set(settings.a2a_required_scopes)
+            token_scopes = _normalize_token_scopes(payload)
+            if settings.a2a_jwt_scope_match == "all":
+                scope_ok = required_scopes.issubset(token_scopes)
+            else:
+                scope_ok = bool(required_scopes.intersection(token_scopes))
+            if not scope_ok:
+                logger.warning(
+                    "Token missing required scopes: required=%s token=%s",
+                    sorted(required_scopes),
+                    sorted(token_scopes),
+                )
+                return _forbidden_response()
+
+        identity = payload.get("sub") or payload.get("client_id") or payload.get("uid")
+        if isinstance(identity, str) and identity.strip():
+            request.state.user_identity = identity.strip()
+        else:
+            request.state.user_identity = f"jwt:{hashlib.sha256(token.encode()).hexdigest()[:12]}"
 
         return await call_next(request)
 

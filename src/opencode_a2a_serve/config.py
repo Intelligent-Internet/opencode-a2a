@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import base64
+from pathlib import Path
 from typing import Any, cast
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_AUTH_MODES = {"bearer", "jwt"}
 
 
 class Settings(BaseSettings):
@@ -44,7 +48,18 @@ class Settings(BaseSettings):
     a2a_enable_session_shell: bool = Field(default=False, alias="A2A_ENABLE_SESSION_SHELL")
     a2a_host: str = Field(default="127.0.0.1", alias="A2A_HOST")
     a2a_port: int = Field(default=8000, alias="A2A_PORT")
-    a2a_bearer_token: str = Field(..., min_length=1, alias="A2A_BEARER_TOKEN")
+    a2a_auth_mode: str = Field(default="bearer", alias="A2A_AUTH_MODE")
+    a2a_bearer_token: str | None = Field(default=None, alias="A2A_BEARER_TOKEN")
+
+    # JWT settings (used when A2A_AUTH_MODE=jwt)
+    a2a_jwt_secret: str | None = Field(default=None, alias="A2A_JWT_SECRET")
+    a2a_jwt_secret_b64: str | None = Field(default=None, alias="A2A_JWT_SECRET_B64")
+    a2a_jwt_secret_file: str | None = Field(default=None, alias="A2A_JWT_SECRET_FILE")
+    a2a_jwt_algorithm: str = Field(default="HS256", alias="A2A_JWT_ALGORITHM")
+    a2a_jwt_issuer: str | None = Field(default=None, alias="A2A_JWT_ISSUER")
+    a2a_jwt_audience: str | None = Field(default=None, alias="A2A_JWT_AUDIENCE")
+    a2a_required_scopes: set[str] = Field(default_factory=set, alias="A2A_REQUIRED_SCOPES")
+    a2a_jwt_scope_match: str = Field(default="any", alias="A2A_JWT_SCOPE_MATCH")
 
     # OAuth2 settings
     a2a_oauth_authorization_url: str | None = Field(
@@ -76,6 +91,67 @@ class Settings(BaseSettings):
             if scope:
                 scopes[scope] = ""
         return scopes
+
+    @field_validator("a2a_auth_mode", mode="before")
+    @classmethod
+    def normalize_auth_mode(cls, v: Any) -> str:
+        if not isinstance(v, str) or not v.strip():
+            return "bearer"
+        mode = v.strip().lower()
+        if mode in _AUTH_MODES:
+            return mode
+        raise ValueError(f"A2A_AUTH_MODE must be one of {sorted(_AUTH_MODES)}")
+
+    @field_validator("a2a_jwt_scope_match", mode="before")
+    @classmethod
+    def normalize_jwt_scope_match(cls, v: Any) -> str:
+        if not isinstance(v, str) or not v.strip():
+            return "any"
+        mode = v.strip().lower()
+        if mode in {"any", "all"}:
+            return mode
+        raise ValueError("A2A_JWT_SCOPE_MATCH must be 'any' or 'all'")
+
+    @field_validator("a2a_required_scopes", mode="before")
+    @classmethod
+    def parse_required_scopes(cls, v: Any) -> set[str]:
+        if v is None:
+            return set()
+        if isinstance(v, set):
+            return {str(item).strip() for item in v if str(item).strip()}
+        if isinstance(v, (list, tuple)):
+            return {str(item).strip() for item in v if str(item).strip()}
+        if isinstance(v, str):
+            return {item.strip() for item in v.split(",") if item.strip()}
+        return set()
+
+    @model_validator(mode="after")
+    def resolve_auth_settings(self) -> Settings:
+        if self.a2a_jwt_secret_b64:
+            try:
+                decoded = base64.b64decode(self.a2a_jwt_secret_b64.strip(), validate=True)
+                self.a2a_jwt_secret = decoded.decode("utf-8")
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise ValueError("A2A_JWT_SECRET_B64 must be valid base64-encoded text") from exc
+        elif self.a2a_jwt_secret_file and not self.a2a_jwt_secret:
+            self.a2a_jwt_secret = (
+                Path(self.a2a_jwt_secret_file).expanduser().read_text(encoding="utf-8")
+            )
+
+        if self.a2a_auth_mode == "bearer":
+            if not self.a2a_bearer_token:
+                raise ValueError("A2A_BEARER_TOKEN is required when A2A_AUTH_MODE=bearer")
+            return self
+
+        if not self.a2a_jwt_secret:
+            raise ValueError(
+                "JWT mode requires one of A2A_JWT_SECRET/A2A_JWT_SECRET_B64/A2A_JWT_SECRET_FILE"
+            )
+        if not self.a2a_jwt_issuer:
+            raise ValueError("JWT mode requires A2A_JWT_ISSUER")
+        if not self.a2a_jwt_audience:
+            raise ValueError("JWT mode requires A2A_JWT_AUDIENCE")
+        return self
 
     @classmethod
     def from_env(cls) -> Settings:
