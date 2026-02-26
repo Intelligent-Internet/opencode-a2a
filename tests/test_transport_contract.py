@@ -4,7 +4,7 @@ import httpx
 import pytest
 from a2a.types import TransportProtocol
 
-from opencode_a2a_serve.app import build_agent_card, create_app
+from opencode_a2a_serve.app import _normalize_log_level, build_agent_card, create_app
 from tests.helpers import DummyChatOpencodeClient, make_settings
 
 
@@ -15,6 +15,10 @@ def test_agent_card_declares_dual_stack_with_http_json_preferred() -> None:
     transports = {iface.transport for iface in card.additional_interfaces or []}
     assert TransportProtocol.http_json in transports
     assert TransportProtocol.jsonrpc in transports
+
+
+def test_normalize_log_level_falls_back_to_warning_for_invalid_value() -> None:
+    assert _normalize_log_level("warn") == "WARNING"
 
 
 def test_rest_subscription_route_matches_current_sdk_contract() -> None:

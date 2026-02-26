@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     a2a_version: str = Field(default="0.1.0", alias="A2A_VERSION")
     a2a_protocol_version: str = Field(default="0.3.0", alias="A2A_PROTOCOL_VERSION")
     a2a_streaming: bool = Field(default=True, alias="A2A_STREAMING")
-    a2a_log_level: str = Field(default="INFO", alias="A2A_LOG_LEVEL")
+    a2a_log_level: str = Field(default="WARNING", alias="A2A_LOG_LEVEL")
     a2a_log_payloads: bool = Field(default=False, alias="A2A_LOG_PAYLOADS")
     a2a_log_body_limit: int = Field(default=0, alias="A2A_LOG_BODY_LIMIT")
     a2a_documentation_url: str | None = Field(default=None, alias="A2A_DOCUMENTATION_URL")

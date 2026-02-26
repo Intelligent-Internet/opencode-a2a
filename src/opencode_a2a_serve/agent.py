@@ -364,9 +364,9 @@ class OpencodeAgentExecutor(AgentExecutor):
                 f"{key}={str(label).lower() if isinstance(label, bool) else label}"
                 for key, label in sorted(labels.items())
             )
-            logger.info("metric=%s value=%s labels=%s", name, value, labels_text)
+            logger.debug("metric=%s value=%s labels=%s", name, value, labels_text)
             return
-        logger.info("metric=%s value=%s", name, value)
+        logger.debug("metric=%s value=%s", name, value)
 
     def _resolve_and_validate_directory(self, requested: str | None) -> str | None:
         """Normalizes and validates the directory parameter against workspace boundaries.

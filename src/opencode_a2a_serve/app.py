@@ -948,7 +948,7 @@ def _normalize_log_level(value: str) -> str:
     normalized = (value or "").strip().upper()
     if normalized in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
         return normalized
-    return "INFO"
+    return "WARNING"
 
 
 def _configure_logging(level: str) -> None:

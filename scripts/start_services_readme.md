@@ -29,8 +29,8 @@ It also stops previous matching local processes before startup.
 - `A2A_HOST` (default `127.0.0.1`)
 - `A2A_PORT` (default `8000`)
 - `A2A_PUBLIC_URL` (default `http://<A2A_HOST>:<A2A_PORT>`)
-- `OPENCODE_LOG_LEVEL` (default `DEBUG`)
-- `A2A_LOG_LEVEL` (default `INFO`)
+- `OPENCODE_LOG_LEVEL` (default `WARNING`)
+- `A2A_LOG_LEVEL` (default `WARNING`)
 - `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED` (default `false`)
 - `LOG_ROOT` / `LOG_DIR` / `OPENCODE_LOG` / `A2A_LOG`
 

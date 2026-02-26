@@ -68,7 +68,7 @@ Supported keys (case-insensitive):
 - `a2a_streaming`, `a2a_log_level`, `a2a_otel_instrumentation_enabled`
 - `a2a_log_payloads`, `a2a_log_body_limit`
 - `a2a_cancel_abort_timeout_seconds`, `a2a_enable_session_shell`
-- `opencode_provider_id`, `opencode_model_id`, `opencode_lsp`
+- `opencode_provider_id`, `opencode_model_id`, `opencode_lsp`, `opencode_log_level`
 - `opencode_timeout`, `opencode_timeout_stream`
 - `repo_url`, `repo_branch`
 - `git_identity_name`, `git_identity_email`
@@ -101,7 +101,7 @@ Sensitive values are blocked from CLI keys by design.
 | `DATA_ROOT` | `data_root` | Optional | `/data/opencode-a2a` | Instance root directory. |
 | `OPENCODE_BIND_HOST` | - | Optional | `127.0.0.1` | OpenCode bind host. |
 | `OPENCODE_BIND_PORT` | - | Optional | `A2A_PORT + 1` (fallback `4096`) | OpenCode bind port. |
-| `OPENCODE_LOG_LEVEL` | - | Optional | `DEBUG` | OpenCode log level. |
+| `OPENCODE_LOG_LEVEL` | `opencode_log_level` | Optional | `WARNING` | OpenCode log level. |
 | `OPENCODE_EXTRA_ARGS` | - | Optional | empty | Extra OpenCode startup args. |
 | `OPENCODE_PROVIDER_ID` | `opencode_provider_id` | Optional | None | Written to `a2a.env`. |
 | `OPENCODE_MODEL_ID` | `opencode_model_id` | Optional | None | Written to `a2a.env`. |
@@ -116,7 +116,7 @@ Sensitive values are blocked from CLI keys by design.
 | `A2A_PORT` | `a2a_port` | Optional | `8000` | A2A bind port. |
 | `A2A_PUBLIC_URL` | `a2a_public_url` | Optional | `http://<A2A_HOST>:<A2A_PORT>` | Public URL in Agent Card. |
 | `A2A_STREAMING` | `a2a_streaming` | Optional | `true` | SSE streaming toggle. |
-| `A2A_LOG_LEVEL` | `a2a_log_level` | Optional | `INFO` | A2A log level. |
+| `A2A_LOG_LEVEL` | `a2a_log_level` | Optional | `WARNING` | A2A log level. |
 | `A2A_OTEL_INSTRUMENTATION_ENABLED` | `a2a_otel_instrumentation_enabled` | Optional | `false` | Generates `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED` in `a2a.env`. |
 | `A2A_LOG_PAYLOADS` | `a2a_log_payloads` | Optional | `false` | Payload logging toggle. |
 | `A2A_LOG_BODY_LIMIT` | `a2a_log_body_limit` | Optional | `0` | Payload body max length. |

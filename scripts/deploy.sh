@@ -25,6 +25,7 @@ DATA_ROOT_INPUT=""
 OPENCODE_PROVIDER_ID_INPUT=""
 OPENCODE_MODEL_ID_INPUT=""
 OPENCODE_LSP_INPUT=""
+OPENCODE_LOG_LEVEL_INPUT=""
 REPO_URL_INPUT=""
 REPO_BRANCH_INPUT=""
 OPENCODE_TIMEOUT_INPUT=""
@@ -97,6 +98,9 @@ for arg in "$@"; do
     opencode_lsp)
       OPENCODE_LSP_INPUT="$value"
       ;;
+    opencode_log_level)
+      OPENCODE_LOG_LEVEL_INPUT="$value"
+      ;;
     repo_url)
       REPO_URL_INPUT="$value"
       ;;
@@ -140,7 +144,8 @@ Usage:
   [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_otel_instrumentation_enabled=<bool>] \
   [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [a2a_cancel_abort_timeout_seconds=<seconds>] \
   [a2a_enable_session_shell=<bool>] \
-  [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=<bool>] [repo_url=<url>] [repo_branch=<branch>] \
+  [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=<bool>] [opencode_log_level=<level>] \
+  [repo_url=<url>] [repo_branch=<branch>] \
   [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] \
   [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
 
@@ -174,9 +179,10 @@ export_if_present "OPENCODE_TIMEOUT_STREAM" "$OPENCODE_TIMEOUT_STREAM_INPUT"
 export_if_present "GIT_IDENTITY_NAME" "$GIT_IDENTITY_NAME_INPUT"
 export_if_present "GIT_IDENTITY_EMAIL" "$GIT_IDENTITY_EMAIL_INPUT"
 export_if_present "DATA_ROOT" "$DATA_ROOT_INPUT"
+export_if_present "OPENCODE_LOG_LEVEL" "$OPENCODE_LOG_LEVEL_INPUT"
 
 export OPENCODE_BIND_HOST="${OPENCODE_BIND_HOST:-127.0.0.1}"
-export OPENCODE_LOG_LEVEL="${OPENCODE_LOG_LEVEL:-DEBUG}"
+export OPENCODE_LOG_LEVEL="${OPENCODE_LOG_LEVEL:-WARNING}"
 export OPENCODE_EXTRA_ARGS="${OPENCODE_EXTRA_ARGS:-}"
 export OPENCODE_LSP="${OPENCODE_LSP:-false}"
 
@@ -204,7 +210,7 @@ else
   export A2A_PUBLIC_URL="http://${A2A_HOST}:${A2A_PORT}"
 fi
 
-export A2A_LOG_LEVEL="${A2A_LOG_LEVEL:-INFO}"
+export A2A_LOG_LEVEL="${A2A_LOG_LEVEL:-WARNING}"
 export A2A_STREAMING="${A2A_STREAMING:-true}"
 export A2A_OTEL_INSTRUMENTATION_ENABLED="${A2A_OTEL_INSTRUMENTATION_ENABLED:-false}"
 export A2A_LOG_PAYLOADS="${A2A_LOG_PAYLOADS:-false}"
