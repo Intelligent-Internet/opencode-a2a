@@ -101,7 +101,7 @@ Sensitive values are blocked from CLI keys by design.
 | `DATA_ROOT` | `data_root` | Optional | `/data/opencode-a2a` | Instance root directory. |
 | `OPENCODE_BIND_HOST` | - | Optional | `127.0.0.1` | OpenCode bind host. |
 | `OPENCODE_BIND_PORT` | - | Optional | `A2A_PORT + 1` (fallback `4096`) | OpenCode bind port. |
-| `OPENCODE_LOG_LEVEL` | `opencode_log_level` | Optional | `WARNING` | OpenCode log level. |
+| `OPENCODE_LOG_LEVEL` | `opencode_log_level` | Optional | `WARNING` | OpenCode log level. `WARNING` is normalized to `WARN` before launch. |
 | `OPENCODE_EXTRA_ARGS` | - | Optional | empty | Extra OpenCode startup args. |
 | `OPENCODE_PROVIDER_ID` | `opencode_provider_id` | Optional | None | Written to `a2a.env`. |
 | `OPENCODE_MODEL_ID` | `opencode_model_id` | Optional | None | Written to `a2a.env`. |
