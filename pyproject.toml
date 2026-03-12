@@ -4,6 +4,22 @@ version = "0.1.0"
 description = "A2A wrapper service for opencode"
 readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "OpenCode A2A Serve Maintainers" },
+]
+keywords = ["a2a", "opencode", "fastapi", "json-rpc", "sse"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Framework :: FastAPI",
+    "Topic :: Internet :: WWW/HTTP",
+]
 dependencies = [
     "a2a-sdk==0.3.24",
     "fastapi>=0.110",
@@ -27,6 +43,11 @@ dev = [
 
 [project.scripts]
 opencode-a2a-serve = "opencode_a2a_serve.app:main"
+
+[project.urls]
+Homepage = "https://github.com/Intelligent-Internet/opencode-a2a-serve"
+Repository = "https://github.com/Intelligent-Internet/opencode-a2a-serve"
+Issues = "https://github.com/Intelligent-Internet/opencode-a2a-serve/issues"
 
 [tool.ruff]
 line-length = 100
