@@ -14,6 +14,10 @@ _BASE_SETTINGS = {
 }
 
 
+def _session_meta(payload: dict) -> dict:
+    return payload["metadata"]["shared"]["session"]
+
+
 @pytest.mark.asyncio
 async def test_session_query_extension_requires_bearer_token(monkeypatch):
     import opencode_a2a_serve.app as app_module
@@ -86,10 +90,10 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
         session = payload["result"]["items"][0]
         assert session["id"] == "s-1"
         assert session["contextId"] == "ctx:opencode-session:s-1"
-        assert session["contextId"] != session["metadata"]["opencode"]["session_id"]
-        assert session["metadata"]["opencode"]["session_id"] == "s-1"
-        assert session["metadata"]["opencode"]["title"] == "Session s-1"
-        assert "raw" not in session["metadata"]["opencode"]
+        assert session["contextId"] != _session_meta(session)["id"]
+        assert _session_meta(session)["id"] == "s-1"
+        assert _session_meta(session)["title"] == "Session s-1"
+        assert "raw" not in session["metadata"]["shared"]
         assert dummy.last_sessions_params is not None
         assert dummy.last_sessions_params.get("limit") == 10
 
@@ -111,7 +115,7 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
         message = payload["result"]["items"][0]
         assert message["contextId"] == "ctx:opencode-session:s-1"
         assert message["parts"][0]["text"] == "SECRET_HISTORY"
-        assert message["metadata"]["opencode"]["session_id"] == "s-1"
+        assert _session_meta(message)["id"] == "s-1"
         assert dummy.last_messages_params is not None
         assert dummy.last_messages_params.get("limit") == 5
 
@@ -174,7 +178,7 @@ async def test_session_query_extension_session_title_is_extracted_or_placeholder
         payload = resp.json()
         session = payload["result"]["items"][0]
         assert session["id"] == "s-1"
-        assert session["metadata"]["opencode"]["title"] == "My Session"
+        assert _session_meta(session)["title"] == "My Session"
 
 
 @pytest.mark.asyncio
@@ -202,7 +206,7 @@ async def test_session_query_extension_keeps_session_with_empty_title(monkeypatc
         payload = resp.json()
         session = payload["result"]["items"][0]
         assert session["id"] == "s-1"
-        assert session["metadata"]["opencode"]["title"] == ""
+        assert _session_meta(session)["title"] == ""
 
 
 @pytest.mark.asyncio
@@ -275,7 +279,7 @@ async def test_session_query_extension_accepts_top_level_list_payload(monkeypatc
         payload = resp.json()
         assert payload["result"]["items"][0]["id"] == "s-1"
         assert payload["result"]["items"][0]["contextId"] == "ctx:opencode-session:s-1"
-        assert payload["result"]["items"][0]["metadata"]["opencode"]["session_id"] == "s-1"
+        assert _session_meta(payload["result"]["items"][0])["id"] == "s-1"
 
         resp = await client.post(
             "/",
@@ -289,7 +293,7 @@ async def test_session_query_extension_accepts_top_level_list_payload(monkeypatc
         )
         payload = resp.json()
         assert payload["result"]["items"][0]["contextId"] == "ctx:opencode-session:s-1"
-        assert payload["result"]["items"][0]["metadata"]["opencode"]["session_id"] == "s-1"
+        assert _session_meta(payload["result"]["items"][0])["id"] == "s-1"
         assert payload["result"]["items"][0]["parts"][0]["text"] == "SECRET_HISTORY"
 
 
@@ -1033,7 +1037,7 @@ async def test_session_command_extension_success(monkeypatch):
         payload = resp.json()
         assert payload.get("error") is None
         assert payload["result"]["item"]["messageId"] == "msg-command-1"
-        assert payload["result"]["item"]["metadata"]["opencode"]["session_id"] == "s-1"
+        assert _session_meta(payload["result"]["item"])["id"] == "s-1"
         assert payload["result"]["item"]["parts"][0]["text"] == "Command completed."
         assert len(dummy.command_calls) == 1
         assert dummy.command_calls[0]["session_id"] == "s-1"
@@ -1206,7 +1210,7 @@ async def test_session_shell_extension_success_when_enabled(monkeypatch):
         payload = resp.json()
         assert payload.get("error") is None
         assert payload["result"]["item"]["messageId"] == "msg-shell-1"
-        assert payload["result"]["item"]["metadata"]["opencode"]["session_id"] == "s-1"
+        assert _session_meta(payload["result"]["item"])["id"] == "s-1"
         assert payload["result"]["item"]["parts"][0]["text"] == "Shell command executed."
         assert len(dummy.shell_calls) == 1
         assert dummy.shell_calls[0]["directory"] == "/workspace"
@@ -1451,7 +1455,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
             json={
                 "jsonrpc": "2.0",
                 "id": 11,
-                "method": "opencode.permission.reply",
+                "method": "a2a.interrupt.permission.reply",
                 "params": {
                     "request_id": "perm-1",
                     "reply": "once",
@@ -1496,7 +1500,7 @@ async def test_interrupt_callback_extension_rejects_legacy_permission_fields(mon
             json={
                 "jsonrpc": "2.0",
                 "id": 111,
-                "method": "opencode.permission.reply",
+                "method": "a2a.interrupt.permission.reply",
                 "params": {"requestID": "perm-legacy", "decision": "allow"},
             },
         )
@@ -1525,7 +1529,7 @@ async def test_interrupt_callback_extension_rejects_legacy_metadata_directory(mo
             json={
                 "jsonrpc": "2.0",
                 "id": 112,
-                "method": "opencode.permission.reply",
+                "method": "a2a.interrupt.permission.reply",
                 "params": {
                     "request_id": "perm-legacy",
                     "reply": "once",
@@ -1598,7 +1602,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
             json={
                 "jsonrpc": "2.0",
                 "id": 12,
-                "method": "opencode.question.reply",
+                "method": "a2a.interrupt.question.reply",
                 "params": {
                     "request_id": "q-1",
                     "answers": [["A"], ["B"]],
@@ -1623,7 +1627,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
             json={
                 "jsonrpc": "2.0",
                 "id": 13,
-                "method": "opencode.question.reject",
+                "method": "a2a.interrupt.question.reject",
                 "params": {
                     "request_id": "q-2",
                     "metadata": {
@@ -1679,7 +1683,7 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
             json={
                 "jsonrpc": "2.0",
                 "id": 14,
-                "method": "opencode.permission.reply",
+                "method": "a2a.interrupt.permission.reply",
                 "params": {"request_id": "perm-404", "reply": "reject"},
             },
         )
@@ -1711,7 +1715,7 @@ async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch)
             json={
                 "jsonrpc": "2.0",
                 "id": 15,
-                "method": "opencode.permission.reply",
+                "method": "a2a.interrupt.permission.reply",
                 "params": {"request_id": "perm-expired", "reply": "once"},
             },
         )
@@ -1758,7 +1762,7 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
             json={
                 "jsonrpc": "2.0",
                 "id": 16,
-                "method": "opencode.permission.reply",
+                "method": "a2a.interrupt.permission.reply",
                 "params": {"request_id": "perm-unknown", "reply": "once"},
             },
         )
@@ -1797,7 +1801,7 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
             json={
                 "jsonrpc": "2.0",
                 "id": 17,
-                "method": "opencode.permission.reply",
+                "method": "a2a.interrupt.permission.reply",
                 "params": {"request_id": "q-only", "reply": "once"},
             },
         )
@@ -1836,7 +1840,7 @@ async def test_interrupt_callback_extension_rejects_identity_mismatch(monkeypatc
             json={
                 "jsonrpc": "2.0",
                 "id": 18,
-                "method": "opencode.permission.reply",
+                "method": "a2a.interrupt.permission.reply",
                 "params": {"request_id": "perm-owned", "reply": "once"},
             },
         )

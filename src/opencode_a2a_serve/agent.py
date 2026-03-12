@@ -449,7 +449,7 @@ class OpencodeAgentExecutor(AgentExecutor):
 
         streaming_request = self._should_stream(context)
         user_text = context.get_user_input().strip()
-        bound_session_id = _extract_opencode_session_id(context)
+        bound_session_id = _extract_shared_session_id(context)
 
         # Directory validation
         metadata = context.metadata
@@ -606,6 +606,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                             source="final_snapshot",
                             message_id=resolved_message_id,
                             event_id=stream_state.build_event_id(sequence),
+                            sequence=sequence,
                         ),
                     )
                 await event_queue.enqueue_event(
@@ -616,18 +617,15 @@ class OpencodeAgentExecutor(AgentExecutor):
                             state=TaskState.completed,
                         ),
                         final=True,
-                        metadata={
-                            "opencode": {
-                                "session_id": response.session_id,
+                        metadata=_build_output_metadata(
+                            session_id=response.session_id,
+                            usage=resolved_token_usage,
+                            stream={
                                 "message_id": resolved_message_id,
                                 "event_id": f"{stream_state.event_id_namespace}:status",
-                                **(
-                                    {"usage": resolved_token_usage}
-                                    if resolved_token_usage is not None
-                                    else {}
-                                ),
-                            }
-                        },
+                                "source": "status",
+                            },
+                        ),
                     )
                 )
             else:
@@ -650,16 +648,10 @@ class OpencodeAgentExecutor(AgentExecutor):
                     status=TaskStatus(state=TaskState.completed),
                     history=history,
                     artifacts=[artifact],
-                    metadata={
-                        "opencode": {
-                            "session_id": response.session_id,
-                            **(
-                                {"usage": resolved_token_usage}
-                                if resolved_token_usage is not None
-                                else {}
-                            ),
-                        }
-                    },
+                    metadata=_build_output_metadata(
+                        session_id=response.session_id,
+                        usage=resolved_token_usage,
+                    ),
                 )
                 # Attach the assistant message as the current status message.
                 task.status.message = assistant_message
@@ -1074,6 +1066,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                         message_id=resolved_message_id,
                         role=chunk.role,
                         event_id=stream_state.build_event_id(sequence),
+                        sequence=sequence,
                     ),
                 )
                 logger.debug(
@@ -1099,18 +1092,20 @@ class OpencodeAgentExecutor(AgentExecutor):
                     context_id=context_id,
                     status=TaskStatus(state=state),
                     final=False,
-                    metadata={
-                        "opencode": {
-                            "session_id": session_id,
+                    metadata=_build_output_metadata(
+                        session_id=session_id,
+                        stream={
                             "message_id": stream_state.resolve_message_id(None),
                             "event_id": stream_state.build_event_id(sequence),
-                            "interrupt": {
-                                "request_id": request_id,
-                                "type": interrupt_type,
-                                "details": dict(details),
-                            },
-                        }
-                    },
+                            "source": "interrupt",
+                            "sequence": sequence,
+                        },
+                        interrupt={
+                            "request_id": request_id,
+                            "type": interrupt_type,
+                            "details": dict(details),
+                        },
+                    ),
                 )
             )
 
@@ -1462,18 +1457,51 @@ def _build_stream_artifact_metadata(
     message_id: str | None = None,
     role: str | None = None,
     event_id: str | None = None,
+    sequence: int | None = None,
 ) -> dict[str, Any]:
-    opencode_meta: dict[str, Any] = {
-        "block_type": block_type,
+    stream_meta: dict[str, Any] = {
+        "block_type": block_type.value,
         "source": source,
     }
     if message_id:
-        opencode_meta["message_id"] = message_id
+        stream_meta["message_id"] = message_id
     if role:
-        opencode_meta["role"] = role
+        stream_meta["role"] = role
     if event_id:
-        opencode_meta["event_id"] = event_id
-    return {"opencode": opencode_meta}
+        stream_meta["event_id"] = event_id
+    if sequence is not None:
+        stream_meta["sequence"] = sequence
+    return {"shared": {"stream": stream_meta}}
+
+
+def _build_output_metadata(
+    *,
+    session_id: str | None = None,
+    session_title: str | None = None,
+    usage: Mapping[str, Any] | None = None,
+    stream: Mapping[str, Any] | None = None,
+    interrupt: Mapping[str, Any] | None = None,
+    opencode_private: Mapping[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    metadata: dict[str, Any] = {}
+    shared_meta: dict[str, Any] = {}
+
+    if session_id:
+        session_meta: dict[str, Any] = {"id": session_id}
+        if session_title is not None:
+            session_meta["title"] = session_title
+        shared_meta["session"] = session_meta
+    if usage is not None:
+        shared_meta["usage"] = dict(usage)
+    if stream is not None:
+        shared_meta["stream"] = dict(stream)
+    if interrupt is not None:
+        shared_meta["interrupt"] = dict(interrupt)
+    if shared_meta:
+        metadata["shared"] = shared_meta
+    if opencode_private:
+        metadata["opencode"] = dict(opencode_private)
+    return metadata or None
 
 
 def _coerce_number(value: Any) -> int | float | None:
@@ -1810,28 +1838,41 @@ def _build_history(context: RequestContext) -> list[Message]:
     return history
 
 
-def _iter_opencode_metadata_maps(context: RequestContext):
+def _iter_metadata_maps(context: RequestContext, namespace: str):
     try:
         meta = context.metadata
     except Exception:
         meta = None
 
     if isinstance(meta, Mapping):
-        opencode_meta = meta.get("opencode")
-        if isinstance(opencode_meta, Mapping):
-            yield opencode_meta
+        namespaced_meta = meta.get(namespace)
+        if isinstance(namespaced_meta, Mapping):
+            yield namespaced_meta
 
     if context.message is not None:
         msg_meta = getattr(context.message, "metadata", None) or {}
         if isinstance(msg_meta, Mapping):
-            opencode_meta = msg_meta.get("opencode")
-            if isinstance(opencode_meta, Mapping):
-                yield opencode_meta
+            namespaced_meta = msg_meta.get(namespace)
+            if isinstance(namespaced_meta, Mapping):
+                yield namespaced_meta
 
 
-def _extract_opencode_string_metadata(context: RequestContext, field: str) -> str | None:
-    for opencode_meta in _iter_opencode_metadata_maps(context):
-        candidate = opencode_meta.get(field)
+def _extract_namespaced_string_metadata(
+    context: RequestContext,
+    *,
+    namespace: str,
+    path: tuple[str, ...],
+) -> str | None:
+    for namespaced_meta in _iter_metadata_maps(context, namespace):
+        current: Any = namespaced_meta
+        for part in path[:-1]:
+            if not isinstance(current, Mapping):
+                current = None
+                break
+            current = current.get(part)
+        if not isinstance(current, Mapping):
+            continue
+        candidate = current.get(path[-1])
         if isinstance(candidate, str):
             value = candidate.strip()
             if value:
@@ -1839,11 +1880,19 @@ def _extract_opencode_string_metadata(context: RequestContext, field: str) -> st
     return None
 
 
-def _extract_opencode_session_id(context: RequestContext) -> str | None:
-    # Contract: clients pass binding metadata under metadata.opencode.session_id.
-    return _extract_opencode_string_metadata(context, "session_id")
+def _extract_shared_session_id(context: RequestContext) -> str | None:
+    # Contract: clients pass shared binding metadata under metadata.shared.session.id.
+    return _extract_namespaced_string_metadata(
+        context,
+        namespace="shared",
+        path=("session", "id"),
+    )
 
 
 def _extract_opencode_directory(context: RequestContext) -> str | None:
     # Contract: clients pass directory override under metadata.opencode.directory.
-    return _extract_opencode_string_metadata(context, "directory")
+    return _extract_namespaced_string_metadata(
+        context,
+        namespace="opencode",
+        path=("directory",),
+    )

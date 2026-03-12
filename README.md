@@ -18,8 +18,8 @@ Provide a practical adapter layer that lets individuals and small teams expose O
 - A2A HTTP+JSON endpoints (`/v1/message:send`, `/v1/message:stream`, `GET /v1/tasks/{task_id}:subscribe`).
 - A2A JSON-RPC endpoint (`POST /`) for standard methods and OpenCode-oriented extensions.
 - Streaming with incremental task artifacts and terminal status events.
-- Session continuation via `metadata.opencode.session_id`.
-- Session query/control extension methods (`opencode.sessions.*`) and interrupt callback methods.
+- Session continuation via `metadata.shared.session.id`.
+- OpenCode session query/control extension methods (`opencode.sessions.*`) and shared interrupt callback methods.
 
 ## Quick Start & Development
 

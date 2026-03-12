@@ -219,6 +219,18 @@ def _part_text(event: TaskArtifactUpdateEvent) -> str:
     return getattr(part, "text", None) or getattr(part.root, "text", "")
 
 
+def _artifact_stream_meta(event: TaskArtifactUpdateEvent) -> dict:
+    return event.artifact.metadata["shared"]["stream"]
+
+
+def _status_shared_meta(event: TaskStatusUpdateEvent) -> dict:
+    return (event.metadata or {})["shared"]
+
+
+def _interrupt_meta(event: TaskStatusUpdateEvent) -> dict:
+    return _status_shared_meta(event)["interrupt"]
+
+
 @pytest.mark.asyncio
 async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types() -> None:
     user_text = "who are you"
@@ -248,11 +260,11 @@ async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types
     assert updates
     texts = [_part_text(event) for event in updates]
     assert user_text not in texts
-    block_types = [event.artifact.metadata["opencode"]["block_type"] for event in updates]
+    block_types = [_artifact_stream_meta(event)["block_type"] for event in updates]
     assert _unique(block_types) == ["reasoning", "tool_call", "text"]
     artifact_ids = [event.artifact.artifact_id for event in updates]
     assert len(set(artifact_ids)) == 1
-    event_ids = [event.artifact.metadata["opencode"]["event_id"] for event in updates]
+    event_ids = [_artifact_stream_meta(event)["event_id"] for event in updates]
     assert event_ids == [f"task-1:ctx-1:task-1:stream:{seq}" for seq in range(1, len(updates) + 1)]
 
 
@@ -280,11 +292,11 @@ async def test_streaming_does_not_send_duplicate_final_snapshot_when_chunks_exis
     final_updates = [
         event
         for event in _artifact_updates(queue)
-        if event.artifact.metadata["opencode"]["block_type"] == "text"
+        if _artifact_stream_meta(event)["block_type"] == "text"
     ]
     assert len(final_updates) == 1
     assert _part_text(final_updates[0]) == "stable final answer"
-    assert final_updates[0].artifact.metadata["opencode"]["source"] != "final_snapshot"
+    assert _artifact_stream_meta(final_updates[0])["source"] != "final_snapshot"
 
 
 @pytest.mark.asyncio
@@ -306,12 +318,12 @@ async def test_streaming_emits_final_snapshot_only_when_stream_has_no_final_answ
     final_updates = [
         event
         for event in _artifact_updates(queue)
-        if event.artifact.metadata["opencode"]["block_type"] == "text"
+        if _artifact_stream_meta(event)["block_type"] == "text"
     ]
     assert len(final_updates) == 1
     final_event = final_updates[0]
     assert _part_text(final_event) == "final answer from send_message"
-    assert final_event.artifact.metadata["opencode"]["source"] == "final_snapshot"
+    assert _artifact_stream_meta(final_event)["source"] == "final_snapshot"
     assert final_event.append is True
     assert final_event.last_chunk is True
 
@@ -326,7 +338,7 @@ async def test_execute_serializes_send_message_per_session() -> None:
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
     queue_1 = DummyEventQueue()
     queue_2 = DummyEventQueue()
-    metadata = {"opencode": {"session_id": "ses-shared"}}
+    metadata = {"shared": {"session": {"id": "ses-shared"}}}
 
     await asyncio.gather(
         executor.execute(
@@ -373,15 +385,19 @@ async def test_streaming_emits_events_without_message_id_using_stable_fallback()
     assert len(updates) == 1
     update = updates[0]
     assert _part_text(update) == "final answer from send_message"
-    assert update.artifact.metadata["opencode"]["source"] == "delta"
-    assert update.artifact.metadata["opencode"]["block_type"] == "text"
-    assert update.artifact.metadata["opencode"]["message_id"] == "task-6:ctx-6:assistant"
-    assert update.artifact.metadata["opencode"]["event_id"] == "task-6:ctx-6:task-6:stream:1"
+    assert _artifact_stream_meta(update)["source"] == "delta"
+    assert _artifact_stream_meta(update)["block_type"] == "text"
+    assert _artifact_stream_meta(update)["message_id"] == "task-6:ctx-6:assistant"
+    assert _artifact_stream_meta(update)["event_id"] == "task-6:ctx-6:task-6:stream:1"
+    assert _artifact_stream_meta(update)["sequence"] == 1
     final_status = [
         event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
     ][-1]
-    assert final_status.metadata["opencode"]["message_id"] == "task-6:ctx-6:assistant"
-    assert final_status.metadata["opencode"]["event_id"] == "task-6:ctx-6:task-6:stream:status"
+    assert _status_shared_meta(final_status)["stream"]["message_id"] == "task-6:ctx-6:assistant"
+    assert (
+        _status_shared_meta(final_status)["stream"]["event_id"]
+        == "task-6:ctx-6:task-6:stream:status"
+    )
 
 
 @pytest.mark.asyncio
@@ -414,22 +430,27 @@ async def test_streaming_emits_snapshot_when_message_id_missing_and_stream_is_pa
     assert _part_text(first) == "partial "
     assert first.append is False
     assert first.last_chunk is None
-    assert first.artifact.metadata["opencode"]["source"] == "delta"
-    assert first.artifact.metadata["opencode"]["message_id"] == "task-6b:ctx-6b:assistant"
-    assert first.artifact.metadata["opencode"]["event_id"] == "task-6b:ctx-6b:task-6b:stream:1"
+    assert _artifact_stream_meta(first)["source"] == "delta"
+    assert _artifact_stream_meta(first)["message_id"] == "task-6b:ctx-6b:assistant"
+    assert _artifact_stream_meta(first)["event_id"] == "task-6b:ctx-6b:task-6b:stream:1"
+    assert _artifact_stream_meta(first)["sequence"] == 1
 
     assert _part_text(second) == "partial final answer"
     assert second.append is True
     assert second.last_chunk is True
-    assert second.artifact.metadata["opencode"]["source"] == "final_snapshot"
-    assert second.artifact.metadata["opencode"]["message_id"] == "task-6b:ctx-6b:assistant"
-    assert second.artifact.metadata["opencode"]["event_id"] == "task-6b:ctx-6b:task-6b:stream:2"
+    assert _artifact_stream_meta(second)["source"] == "final_snapshot"
+    assert _artifact_stream_meta(second)["message_id"] == "task-6b:ctx-6b:assistant"
+    assert _artifact_stream_meta(second)["event_id"] == "task-6b:ctx-6b:task-6b:stream:2"
+    assert _artifact_stream_meta(second)["sequence"] == 2
 
     final_status = [
         event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
     ][-1]
-    assert final_status.metadata["opencode"]["message_id"] == "task-6b:ctx-6b:assistant"
-    assert final_status.metadata["opencode"]["event_id"] == "task-6b:ctx-6b:task-6b:stream:status"
+    assert _status_shared_meta(final_status)["stream"]["message_id"] == "task-6b:ctx-6b:assistant"
+    assert (
+        _status_shared_meta(final_status)["stream"]["event_id"]
+        == "task-6b:ctx-6b:task-6b:stream:status"
+    )
 
 
 @pytest.mark.asyncio
@@ -470,7 +491,7 @@ async def test_streaming_includes_usage_in_final_status_metadata() -> None:
     final_status = [
         event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
     ][-1]
-    usage = final_status.metadata["opencode"]["usage"]
+    usage = _status_shared_meta(final_status)["usage"]
     assert usage["input_tokens"] == 12
     assert usage["output_tokens"] == 4
     assert usage["total_tokens"] == 16
@@ -548,11 +569,11 @@ async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> 
         for event in queue.events
         if isinstance(event, TaskStatusUpdateEvent)
         and event.final is False
-        and (event.metadata or {}).get("opencode", {}).get("interrupt", {}).get("type")
+        and (event.metadata or {}).get("shared", {}).get("interrupt", {}).get("type")
         == "permission"
     ]
     assert len(interrupt_statuses) == 1
-    interrupt = interrupt_statuses[0].metadata["opencode"]["interrupt"]
+    interrupt = _interrupt_meta(interrupt_statuses[0])
     assert interrupt["request_id"] == "perm-req-1"
     assert interrupt["details"]["permission"] == "read"
     assert "/data/project/.env.secret" in interrupt["details"]["patterns"]
@@ -584,11 +605,10 @@ async def test_streaming_emits_interrupt_status_for_question_asked_event() -> No
         for event in queue.events
         if isinstance(event, TaskStatusUpdateEvent)
         and event.final is False
-        and (event.metadata or {}).get("opencode", {}).get("interrupt", {}).get("type")
-        == "question"
+        and (event.metadata or {}).get("shared", {}).get("interrupt", {}).get("type") == "question"
     ]
     assert len(interrupt_statuses) == 1
-    interrupt = interrupt_statuses[0].metadata["opencode"]["interrupt"]
+    interrupt = _interrupt_meta(interrupt_statuses[0])
     assert interrupt["request_id"] == "q-req-1"
     assert isinstance(interrupt["details"]["questions"], list)
     assert "tool" not in interrupt["details"]
@@ -636,7 +656,7 @@ async def test_streaming_treats_embedded_markers_as_plain_text_without_typed_par
     def _final_state(block_type: str) -> str:
         parts = []
         for ev in updates:
-            if ev.artifact.metadata["opencode"]["block_type"] == block_type:
+            if _artifact_stream_meta(ev)["block_type"] == block_type:
                 if not ev.append:
                     parts = [_part_text(ev)]
                 else:
@@ -701,9 +721,7 @@ async def test_streaming_emits_structured_tool_part_updates() -> None:
     )
 
     updates = _artifact_updates(queue)
-    tool_updates = [
-        ev for ev in updates if ev.artifact.metadata["opencode"]["block_type"] == "tool_call"
-    ]
+    tool_updates = [ev for ev in updates if _artifact_stream_meta(ev)["block_type"] == "tool_call"]
     assert len(tool_updates) == 3
     merged = "".join(_part_text(ev) for ev in tool_updates)
     assert '"status":"pending"' in merged
@@ -731,7 +749,7 @@ async def test_streaming_flushes_partial_marker_on_eof_as_current_block_type() -
     updates = _artifact_updates(queue)
     assert updates
     assert "".join(_part_text(ev) for ev in updates) == "hello <thin"
-    assert all(ev.artifact.metadata["opencode"]["block_type"] == "text" for ev in updates)
+    assert all(_artifact_stream_meta(ev)["block_type"] == "text" for ev in updates)
 
 
 @pytest.mark.asyncio
@@ -826,7 +844,7 @@ async def test_streaming_suppresses_reasoning_snapshot_reset_after_delta() -> No
     reasoning_updates = [
         event
         for event in _artifact_updates(queue)
-        if event.artifact.metadata["opencode"]["block_type"] == "reasoning"
+        if _artifact_stream_meta(event)["block_type"] == "reasoning"
     ]
     assert len(reasoning_updates) == 1
     assert _part_text(reasoning_updates[0]) == "reasoning line\n\n"
@@ -861,7 +879,7 @@ async def test_streaming_supports_message_part_delta_events() -> None:
     reasoning_updates = [
         event
         for event in _artifact_updates(queue)
-        if event.artifact.metadata["opencode"]["block_type"] == "reasoning"
+        if _artifact_stream_meta(event)["block_type"] == "reasoning"
     ]
     assert reasoning_updates
     merged = "".join(_part_text(ev) for ev in reasoning_updates)
@@ -899,7 +917,7 @@ async def test_streaming_buffers_delta_until_part_updated_arrives() -> None:
     reasoning_updates = [
         event
         for event in _artifact_updates(queue)
-        if event.artifact.metadata["opencode"]["block_type"] == "reasoning"
+        if _artifact_stream_meta(event)["block_type"] == "reasoning"
     ]
     assert reasoning_updates
     merged = "".join(_part_text(ev) for ev in reasoning_updates)
@@ -940,6 +958,6 @@ async def test_streaming_keeps_multiple_message_ids_in_same_request_window() -> 
     )
 
     updates = _artifact_updates(queue)
-    message_ids = [ev.artifact.metadata["opencode"].get("message_id") for ev in updates]
+    message_ids = [_artifact_stream_meta(ev).get("message_id") for ev in updates]
     assert "msg-a" in message_ids
     assert "msg-b" in message_ids

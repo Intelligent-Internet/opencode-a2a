@@ -3,6 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+SHARED_METADATA_NAMESPACE = "shared"
+SHARED_SESSION_BINDING_FIELD = "metadata.shared.session.id"
+SHARED_SESSION_METADATA_FIELD = "metadata.shared.session"
+SHARED_STREAM_METADATA_FIELD = "metadata.shared.stream"
+SHARED_INTERRUPT_METADATA_FIELD = "metadata.shared.interrupt"
+SHARED_USAGE_METADATA_FIELD = "metadata.shared.usage"
+OPENCODE_DIRECTORY_METADATA_FIELD = "metadata.opencode.directory"
+
 
 @dataclass(frozen=True)
 class SessionQueryMethodContract:
@@ -98,7 +106,7 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
             "request.format",
             "request.system",
             "request.variant",
-            "metadata.opencode.directory",
+            OPENCODE_DIRECTORY_METADATA_FIELD,
         ),
         result_fields=("ok", "session_id"),
         notification_response_status=204,
@@ -112,7 +120,7 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
             "request.model",
             "request.variant",
             "request.parts",
-            "metadata.opencode.directory",
+            OPENCODE_DIRECTORY_METADATA_FIELD,
         ),
         result_fields=("item",),
         notification_response_status=204,
@@ -122,7 +130,7 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
         required_params=("session_id", "request.agent", "request.command"),
         optional_params=(
             "request.model",
-            "metadata.opencode.directory",
+            OPENCODE_DIRECTORY_METADATA_FIELD,
         ),
         result_fields=("item",),
         notification_response_status=204,
@@ -162,19 +170,19 @@ SESSION_QUERY_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
 
 INTERRUPT_CALLBACK_METHOD_CONTRACTS: dict[str, InterruptMethodContract] = {
     "reply_permission": InterruptMethodContract(
-        method="opencode.permission.reply",
+        method="a2a.interrupt.permission.reply",
         required_params=("request_id", "reply"),
         optional_params=("message", "metadata"),
         notification_response_status=204,
     ),
     "reply_question": InterruptMethodContract(
-        method="opencode.question.reply",
+        method="a2a.interrupt.question.reply",
         required_params=("request_id", "answers"),
         optional_params=("metadata",),
         notification_response_status=204,
     ),
     "reject_question": InterruptMethodContract(
-        method="opencode.question.reject",
+        method="a2a.interrupt.question.reject",
         required_params=("request_id",),
         optional_params=("metadata",),
         notification_response_status=204,
@@ -223,6 +231,66 @@ def _build_method_contract_params(
     if unsupported:
         params["unsupported"] = list(unsupported)
     return params
+
+
+def build_session_binding_extension_params(
+    *,
+    deployment_context: dict[str, str | bool],
+    directory_override_enabled: bool,
+) -> dict[str, Any]:
+    return {
+        "metadata_field": SHARED_SESSION_BINDING_FIELD,
+        "behavior": "prefer_metadata_binding_else_create_session",
+        "supported_metadata": [
+            "shared.session.id",
+            "opencode.directory",
+        ],
+        "provider_private_metadata": ["opencode.directory"],
+        "directory_override_enabled": directory_override_enabled,
+        "shared_workspace_across_consumers": True,
+        "tenant_isolation": "none",
+        "deployment_context": deployment_context,
+        "notes": [
+            (
+                "If metadata.shared.session.id is provided, the server will send the "
+                "message to that upstream session."
+            ),
+            (
+                "Otherwise, the server will create a new upstream session and cache "
+                "the (identity, contextId)->session_id mapping in memory with TTL."
+            ),
+        ],
+    }
+
+
+def build_streaming_extension_params() -> dict[str, Any]:
+    return {
+        "artifact_metadata_field": SHARED_STREAM_METADATA_FIELD,
+        "status_metadata_field": SHARED_STREAM_METADATA_FIELD,
+        "interrupt_metadata_field": SHARED_INTERRUPT_METADATA_FIELD,
+        "session_metadata_field": SHARED_SESSION_METADATA_FIELD,
+        "usage_metadata_field": SHARED_USAGE_METADATA_FIELD,
+        "block_types": ["text", "reasoning", "tool_call"],
+        "stream_fields": {
+            "block_type": f"{SHARED_STREAM_METADATA_FIELD}.block_type",
+            "source": f"{SHARED_STREAM_METADATA_FIELD}.source",
+            "message_id": f"{SHARED_STREAM_METADATA_FIELD}.message_id",
+            "event_id": f"{SHARED_STREAM_METADATA_FIELD}.event_id",
+            "sequence": f"{SHARED_STREAM_METADATA_FIELD}.sequence",
+            "role": f"{SHARED_STREAM_METADATA_FIELD}.role",
+        },
+        "interrupt_fields": {
+            "request_id": f"{SHARED_INTERRUPT_METADATA_FIELD}.request_id",
+            "type": f"{SHARED_INTERRUPT_METADATA_FIELD}.type",
+            "details": f"{SHARED_INTERRUPT_METADATA_FIELD}.details",
+        },
+        "usage_fields": {
+            "input_tokens": f"{SHARED_USAGE_METADATA_FIELD}.input_tokens",
+            "output_tokens": f"{SHARED_USAGE_METADATA_FIELD}.output_tokens",
+            "total_tokens": f"{SHARED_USAGE_METADATA_FIELD}.total_tokens",
+            "cost": f"{SHARED_USAGE_METADATA_FIELD}.cost",
+        },
+    }
 
 
 def build_session_query_extension_params(
@@ -292,7 +360,7 @@ def build_session_query_extension_params(
         "context_semantics": {
             "a2a_context_id_field": "contextId",
             "a2a_context_id_prefix": context_id_prefix,
-            "upstream_session_id_field": "metadata.opencode.session_id",
+            "upstream_session_id_field": SHARED_SESSION_BINDING_FIELD,
         },
     }
 
@@ -328,10 +396,11 @@ def build_interrupt_callback_extension_params(
         "question_reply_contract": {
             "answers": "array of answer arrays (same order as asked questions)"
         },
-        "metadata_namespace": "opencode",
+        "request_id_field": f"{SHARED_INTERRUPT_METADATA_FIELD}.request_id",
         "supported_metadata": ["opencode.directory"],
+        "provider_private_metadata": ["opencode.directory"],
         "context_fields": {
-            "directory": "metadata.opencode.directory",
+            "directory": OPENCODE_DIRECTORY_METADATA_FIELD,
         },
         "success_result_fields": list(INTERRUPT_SUCCESS_RESULT_FIELDS),
         "errors": {

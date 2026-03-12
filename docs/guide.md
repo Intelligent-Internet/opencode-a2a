@@ -47,12 +47,14 @@ Key variables to understand protocol behavior:
 - Streaming (`/v1/message:stream`) emits incremental
   `TaskArtifactUpdateEvent` and then
   `TaskStatusUpdateEvent(final=true)`. Stream artifacts carry
-  `artifact.metadata.opencode.block_type` with values
+  `artifact.metadata.shared.stream.block_type` with values
   `text` / `reasoning` / `tool_call`. All chunks share one stream
   artifact ID and preserve original timeline via
-  `artifact.metadata.opencode.event_id`. `artifact.metadata.opencode.message_id`
-  remains best-effort metadata: when upstream omits `message_id`, service
-  falls back to a stable request-scoped message identity. A final snapshot is
+  `artifact.metadata.shared.stream.event_id`.
+  `artifact.metadata.shared.stream.message_id` remains best-effort metadata:
+  when upstream omits `message_id`, service falls back to a stable
+  request-scoped message identity. `artifact.metadata.shared.stream.sequence`
+  carries the canonical per-request stream sequence. A final snapshot is
   only emitted when stream
   chunks did not already produce the same final text.
   Stream routing is schema-first: the service classifies chunks primarily by
@@ -61,15 +63,15 @@ Key variables to understand protocol behavior:
   out-of-order deltas are buffered and replayed when the corresponding
   `part.updated` arrives. Structured `tool` parts are emitted as `tool_call`
   blocks with normalized state payload. Final status event metadata may include
-  normalized token usage at `metadata.opencode.usage` with fields like
+  normalized token usage at `metadata.shared.usage` with fields like
   `input_tokens`, `output_tokens`, `total_tokens`, and optional `cost`.
   Interrupt events (`permission.asked` / `question.asked`) are mapped to
   `TaskStatusUpdateEvent(final=false, state=input-required)` with details at
-  `metadata.opencode.interrupt` (including `request_id`, interrupt `type`, and
+  `metadata.shared.interrupt` (including `request_id`, interrupt `type`, and
   minimal callback payload).
   Non-streaming requests return a `Task` directly.
 - Non-streaming `message:send` responses may include normalized token usage at
-  `Task.metadata.opencode.usage` with the same field schema.
+  `Task.metadata.shared.usage` with the same field schema.
 - Requests require `Authorization: Bearer <token>`; otherwise `401` is
   returned. Agent Card endpoints are public.
 - Within one `opencode-a2a-serve` instance, all consumers share the same
@@ -96,7 +98,7 @@ Key variables to understand protocol behavior:
 
 To continue a historical OpenCode session, include this metadata key in each invoke request:
 
-- `metadata.opencode.session_id`: target OpenCode session ID
+- `metadata.shared.session.id`: target upstream session ID
 
 Server behavior:
 
@@ -117,8 +119,10 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
       "content": [{"text": "Continue the previous session and restate the key conclusion."}]
     },
     "metadata": {
-      "opencode": {
-        "session_id": "<session_id>"
+      "shared": {
+        "session": {
+          "id": "<session_id>"
+        }
       }
     }
   }'
@@ -142,8 +146,8 @@ This service exposes OpenCode session list/message-history queries and session c
   - message history => `Message`
   - `contextId` is an A2A context key derived by the adapter
     (format: `ctx:opencode-session:<session_id>`, not raw OpenCode session ID)
-  - OpenCode session identity is exposed explicitly at `metadata.opencode.session_id`
-  - session title is available at `metadata.opencode.title`
+  - OpenCode session identity is exposed explicitly at `metadata.shared.session.id`
+  - session title is available at `metadata.shared.session.title`
 
 ### Session List (`opencode.sessions.list`)
 
@@ -286,33 +290,34 @@ Response:
 - disabled => JSON-RPC error `METHOD_DISABLED`
 - notification (no `id`) => HTTP `204 No Content`
 
-## OpenCode Interrupt Callback (A2A Extension)
+## Shared Interrupt Callback (A2A Extension)
 
-When stream metadata reports an interrupt request at `metadata.opencode.interrupt`,
+When stream metadata reports an interrupt request at `metadata.shared.interrupt`,
 clients can reply through JSON-RPC extension methods:
 
-- `opencode.permission.reply`
+- `a2a.interrupt.permission.reply`
   - required: `request_id`
   - required: `reply` (`once` / `always` / `reject`)
   - optional: `message`
   - optional: `metadata.opencode.directory`
-- `opencode.question.reply`
+- `a2a.interrupt.question.reply`
   - required: `request_id`
   - required: `answers` (`Array<Array<string>>`)
   - optional: `metadata.opencode.directory`
-- `opencode.question.reject`
+- `a2a.interrupt.question.reject`
   - required: `request_id`
   - optional: `metadata.opencode.directory`
 
 Notes:
 
 - `request_id` must be a live interrupt request observed from stream metadata
-  (`metadata.opencode.interrupt.request_id`).
+  (`metadata.shared.interrupt.request_id`).
 - The server keeps an in-memory interrupt binding cache; callbacks with unknown
   or expired `request_id` are rejected.
 - Callback requests are validated against interrupt type and caller identity.
-- Callback context variables use nested metadata namespace:
-  `params.metadata.opencode.*` (for example `metadata.opencode.directory`).
+- Callback context variables use the shared method contract plus
+  OpenCode-private metadata when needed
+  (`params.metadata.opencode.directory`).
 - Successful callback responses are minimal: only `ok` and `request_id`.
 - Error types:
   - `INTERRUPT_REQUEST_NOT_FOUND`
@@ -330,7 +335,7 @@ curl -sS http://127.0.0.1:8000/ \
   -d '{
     "jsonrpc": "2.0",
     "id": 3,
-    "method": "opencode.permission.reply",
+    "method": "a2a.interrupt.permission.reply",
     "params": {
       "request_id": "<request_id>",
       "reply": "once",
@@ -420,7 +425,7 @@ uv run pytest
 The contract check fails when any of these drift:
 - SSOT (`extension_contracts.py`)
 - Agent Card extension params
-- OpenAPI `POST /` extension metadata (`x-opencode-extension-contracts`) or examples
+- OpenAPI `POST /` extension metadata (`x-a2a-extension-contracts`) or examples
 - Notification behavior (`204 No Content`) for extension methods
 
 ## Development Setup

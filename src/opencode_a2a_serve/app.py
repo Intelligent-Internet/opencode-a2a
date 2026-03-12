@@ -48,7 +48,9 @@ from .extension_contracts import (
     SESSION_CONTROL_METHODS,
     SESSION_QUERY_METHODS,
     build_interrupt_callback_extension_params,
+    build_session_binding_extension_params,
     build_session_query_extension_params,
+    build_streaming_extension_params,
 )
 from .jsonrpc_ext import (
     SESSION_CONTEXT_PREFIX,
@@ -66,9 +68,10 @@ _REQUEST_BODY_BYTES: ContextVar[bytes | None] = ContextVar(
 if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
 
-SESSION_BINDING_EXTENSION_URI = "urn:opencode-a2a:opencode-session-binding/v1"
-SESSION_QUERY_EXTENSION_URI = "urn:opencode-a2a:opencode-session-query/v1"
-INTERRUPT_CALLBACK_EXTENSION_URI = "urn:opencode-a2a:opencode-interrupt-callback/v1"
+SESSION_BINDING_EXTENSION_URI = "urn:a2a:session-binding/v1"
+STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
+SESSION_QUERY_EXTENSION_URI = "urn:opencode-a2a:session-query/v1"
+INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
 
 
 class OpencodeRequestHandler(DefaultRequestHandler):
@@ -270,8 +273,8 @@ def _build_agent_card_description(
         "Supports HTTP+JSON and JSON-RPC transports, standard A2A messaging "
         "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
         "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), "
-        "OpenCode session-query extensions, and interrupt callback extensions "
-        "(permission/question reply)."
+        "shared session-binding and streaming contracts, OpenCode session-query "
+        "extensions, and shared interrupt callback extensions."
     )
     parts: list[str] = [base, summary]
     parts.append(
@@ -307,9 +310,9 @@ def _build_jsonrpc_extension_openapi_description() -> str:
     return (
         "A2A JSON-RPC entrypoint. Supports core A2A methods "
         "(message/send, message/stream, tasks/get, tasks/cancel, tasks/resubscribe) "
-        "and OpenCode extension methods.\n\n"
-        f"Session query/control extension methods: {session_methods}.\n"
-        f"Interrupt callback extension methods: {interrupt_methods}.\n\n"
+        "plus OpenCode session-query methods and shared interrupt callback methods.\n\n"
+        f"OpenCode session query/control methods: {session_methods}.\n"
+        f"Shared interrupt callback methods: {interrupt_methods}.\n\n"
         "Notification semantics: extension requests without JSON-RPC id return HTTP 204."
     )
 
@@ -464,8 +467,8 @@ def _build_rest_message_openapi_examples() -> dict[str, Any]:
                     "content": [{"text": "Continue previous work and summarize next steps."}],
                 },
                 "metadata": {
-                    "opencode": {
-                        "session_id": "s-1",
+                    "shared": {
+                        "session": {"id": "s-1"},
                     }
                 },
             },
@@ -478,6 +481,11 @@ def _patch_jsonrpc_openapi_contract(
     *,
     deployment_context: dict[str, str | bool],
 ) -> None:
+    session_binding = build_session_binding_extension_params(
+        deployment_context=deployment_context,
+        directory_override_enabled=bool(deployment_context["allow_directory_override"]),
+    )
+    streaming = build_streaming_extension_params()
     session_query = build_session_query_extension_params(
         deployment_context=deployment_context,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
@@ -500,7 +508,9 @@ def _patch_jsonrpc_openapi_contract(
                 if isinstance(post, dict):
                     post["summary"] = "Handle A2A JSON-RPC Requests"
                     post["description"] = _build_jsonrpc_extension_openapi_description()
-                    post["x-opencode-extension-contracts"] = {
+                    post["x-a2a-extension-contracts"] = {
+                        "session_binding": session_binding,
+                        "streaming": streaming,
                         "session_query": session_query,
                         "interrupt_callback": interrupt_callback,
                     }
@@ -592,6 +602,11 @@ def build_agent_card(settings: Settings) -> AgentCard:
         )
         security.append({"oauth2": list(settings.a2a_oauth_scopes.keys())})
 
+    session_binding_extension_params = build_session_binding_extension_params(
+        deployment_context=deployment_context,
+        directory_override_enabled=settings.a2a_allow_directory_override,
+    )
+    streaming_extension_params = build_streaming_extension_params()
     session_query_extension_params = build_session_query_extension_params(
         deployment_context=deployment_context,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
@@ -617,33 +632,22 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     uri=SESSION_BINDING_EXTENSION_URI,
                     required=False,
                     description=(
-                        "Contract to bind A2A messages to an existing OpenCode session "
-                        "when continuing a previous chat. Clients should pass "
-                        "metadata.opencode.session_id. The metadata.opencode.directory field is "
-                        "also "
-                        "supported under server-side directory boundary validation."
+                        "Shared contract to bind A2A messages to an existing upstream "
+                        "session when continuing a previous chat. Clients should pass "
+                        "metadata.shared.session.id. The metadata.opencode.directory field "
+                        "remains available as an OpenCode-private override under "
+                        "server-side directory boundary validation."
                     ),
-                    params={
-                        "metadata_namespace": "opencode",
-                        "metadata_key": "opencode.session_id",
-                        "behavior": "prefer_metadata_binding_else_create_session",
-                        "supported_metadata": ["opencode.session_id", "opencode.directory"],
-                        "directory_override_enabled": settings.a2a_allow_directory_override,
-                        "shared_workspace_across_consumers": True,
-                        "tenant_isolation": "none",
-                        "deployment_context": deployment_context,
-                        "notes": [
-                            (
-                                "If metadata.opencode.session_id is provided, the server will "
-                                "send the message to that OpenCode session_id."
-                            ),
-                            (
-                                "Otherwise, the server will create a new OpenCode session and "
-                                "cache the (identity, contextId)->session_id mapping in memory "
-                                "with TTL."
-                            ),
-                        ],
-                    },
+                    params=session_binding_extension_params,
+                ),
+                AgentExtension(
+                    uri=STREAMING_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Shared streaming metadata contract for canonical block hints, "
+                        "timeline identity, usage, and interactive interrupt metadata."
+                    ),
+                    params=streaming_extension_params,
                 ),
                 AgentExtension(
                     uri=SESSION_QUERY_EXTENSION_URI,
@@ -658,8 +662,8 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     uri=INTERRUPT_CALLBACK_EXTENSION_URI,
                     required=False,
                     description=(
-                        "Handle interactive interrupt callbacks generated by OpenCode "
-                        "(permission/question asked events) through JSON-RPC methods."
+                        "Handle interactive interrupt callbacks generated during "
+                        "streaming through shared JSON-RPC methods."
                     ),
                     params=interrupt_callback_extension_params,
                 ),
@@ -694,13 +698,13 @@ def build_agent_card(settings: Settings) -> AgentCard:
             ),
             AgentSkill(
                 id="opencode.interrupt.callback",
-                name="OpenCode Interrupt Callback",
+                name="Shared Interrupt Callback",
                 description=(
                     "Reply permission/question interrupts emitted during streaming via "
-                    "JSON-RPC methods opencode.permission.reply, "
-                    "opencode.question.reply, and opencode.question.reject."
+                    "JSON-RPC methods a2a.interrupt.permission.reply, "
+                    "a2a.interrupt.question.reply, and a2a.interrupt.question.reject."
                 ),
-                tags=["opencode", "interrupt", "permission", "question"],
+                tags=["interrupt", "permission", "question", "shared"],
                 examples=[
                     "Reply once/always/reject to a permission request by request_id.",
                     "Submit answers for a question request by request_id.",
@@ -808,13 +812,16 @@ def create_app(settings: Settings) -> FastAPI:
             return None
         return payload if isinstance(payload, dict) else None
 
-    def _detect_opencode_extension_method(payload: dict | None) -> str | None:
+    def _detect_sensitive_extension_method(payload: dict | None) -> str | None:
         if payload is None:
             return None
         method = payload.get("method")
         if not isinstance(method, str):
             return None
-        if method.startswith("opencode."):
+        sensitive_methods = set(SESSION_QUERY_METHODS.values()) | set(
+            INTERRUPT_CALLBACK_METHODS.values()
+        )
+        if method in sensitive_methods:
             return method
         return None
 
@@ -926,7 +933,7 @@ def create_app(settings: Settings) -> FastAPI:
                 body, token = await _get_request_body(request)
                 # Detect session-query JSON-RPC methods regardless of deployment prefixes/root_path.
                 payload = _parse_json_body(body)
-                sensitive_method = _detect_opencode_extension_method(payload)
+                sensitive_method = _detect_sensitive_extension_method(payload)
 
                 if sensitive_method:
                     logger.debug(

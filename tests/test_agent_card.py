@@ -2,6 +2,7 @@ from opencode_a2a_serve.app import (
     INTERRUPT_CALLBACK_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_QUERY_EXTENSION_URI,
+    STREAMING_EXTENSION_URI,
     build_agent_card,
 )
 from opencode_a2a_serve.jsonrpc_ext import SESSION_CONTEXT_PREFIX
@@ -44,15 +45,21 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert context["variant"] == "safe"
     assert context["allow_directory_override"] is False
     assert context["shared_workspace_across_consumers"] is True
-    assert binding.params["metadata_namespace"] == "opencode"
-    assert binding.params["metadata_key"] == "opencode.session_id"
+    assert binding.params["metadata_field"] == "metadata.shared.session.id"
     assert binding.params["supported_metadata"] == [
-        "opencode.session_id",
+        "shared.session.id",
         "opencode.directory",
     ]
+    assert binding.params["provider_private_metadata"] == ["opencode.directory"]
     assert binding.params["directory_override_enabled"] is False
     assert binding.params["shared_workspace_across_consumers"] is True
     assert binding.params["tenant_isolation"] == "none"
+
+    streaming = ext_by_uri[STREAMING_EXTENSION_URI]
+    assert streaming.params["artifact_metadata_field"] == "metadata.shared.stream"
+    assert streaming.params["interrupt_metadata_field"] == "metadata.shared.interrupt"
+    assert streaming.params["usage_metadata_field"] == "metadata.shared.usage"
+    assert streaming.params["stream_fields"]["sequence"] == "metadata.shared.stream.sequence"
 
     session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
     assert session_query.params["deployment_context"]["project"] == "alpha"
@@ -107,7 +114,7 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     )
     assert (
         session_query.params["context_semantics"]["upstream_session_id_field"]
-        == "metadata.opencode.session_id"
+        == "metadata.shared.session.id"
     )
     assert session_query.params["errors"]["business_codes"] == {
         "SESSION_NOT_FOUND": -32001,
@@ -129,8 +136,9 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert interrupt.params["deployment_context"]["project"] == "alpha"
     assert interrupt.params["shared_workspace_across_consumers"] is True
     assert interrupt.params["tenant_isolation"] == "none"
-    assert interrupt.params["metadata_namespace"] == "opencode"
+    assert interrupt.params["request_id_field"] == "metadata.shared.interrupt.request_id"
     assert interrupt.params["supported_metadata"] == ["opencode.directory"]
+    assert interrupt.params["provider_private_metadata"] == ["opencode.directory"]
     assert interrupt.params["context_fields"]["directory"] == "metadata.opencode.directory"
     assert interrupt.params["errors"]["business_codes"] == {
         "INTERRUPT_REQUEST_NOT_FOUND": -32004,
@@ -153,9 +161,9 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
         "actual",
     ]
     for method_name in (
-        "opencode.permission.reply",
-        "opencode.question.reply",
-        "opencode.question.reject",
+        "a2a.interrupt.permission.reply",
+        "a2a.interrupt.question.reply",
+        "a2a.interrupt.question.reject",
     ):
         assert (
             interrupt.params["method_contracts"][method_name]["notification_response_status"] == 204

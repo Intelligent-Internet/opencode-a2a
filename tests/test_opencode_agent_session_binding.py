@@ -9,7 +9,7 @@ from tests.helpers import DummyChatOpencodeClient, DummyEventQueue, make_request
 
 
 @pytest.mark.asyncio
-async def test_agent_prefers_metadata_opencode_session_id() -> None:
+async def test_agent_prefers_metadata_shared_session_id() -> None:
     client = DummyChatOpencodeClient()
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
     q = DummyEventQueue()
@@ -18,7 +18,7 @@ async def test_agent_prefers_metadata_opencode_session_id() -> None:
         task_id="t-1",
         context_id="c-1",
         text="hello",
-        metadata={"opencode": {"session_id": "ses-bound"}},
+        metadata={"shared": {"session": {"id": "ses-bound"}}},
     )
     await executor.execute(ctx, q)
 
@@ -41,7 +41,7 @@ async def test_agent_caches_bound_session_id_for_followup_requests() -> None:
         task_id="t-1",
         context_id="c-1",
         text="hello",
-        metadata={"opencode": {"session_id": "ses-bound"}},
+        metadata={"shared": {"session": {"id": "ses-bound"}}},
     )
     await executor.execute(ctx1, q)
 
@@ -117,7 +117,7 @@ async def test_agent_uses_stable_fallback_message_id_when_upstream_missing_messa
     )
 
     task = next(event for event in q.events if isinstance(event, Task))
-    assert "message_id" not in task.metadata["opencode"]
+    assert "message_id" not in task.metadata["shared"]["session"]
     assert task.status.message.message_id == "t-fallback:c-fallback:assistant"
 
 
@@ -161,7 +161,7 @@ async def test_agent_includes_usage_in_non_stream_task_metadata() -> None:
     )
 
     task = next(event for event in q.events if isinstance(event, Task))
-    usage = task.metadata["opencode"]["usage"]
+    usage = task.metadata["shared"]["usage"]
     assert usage["input_tokens"] == 7
     assert usage["output_tokens"] == 3
     assert usage["total_tokens"] == 10

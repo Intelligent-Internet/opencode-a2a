@@ -89,7 +89,7 @@ async def test_session_hijack_prevention(mock_client):
         context_id="context-B",
         identity="user-2",
         user_input="hello",
-        metadata={"opencode": {"session_id": "session-1"}},
+        metadata={"shared": {"session": {"id": "session-1"}}},
     )
 
     # This should fail and emit an error
@@ -250,7 +250,7 @@ async def test_preferred_session_claim_is_released_on_upstream_failure():
         context_id="context-A",
         identity="user-1",
         user_input="hello",
-        metadata={"opencode": {"session_id": "session-X"}},
+        metadata={"shared": {"session": {"id": "session-X"}}},
     )
 
     await executor.execute(context, event_queue)
@@ -283,7 +283,7 @@ async def test_preferred_session_claim_is_released_on_upstream_cancellation():
         context_id="context-A",
         identity="user-1",
         user_input="hello",
-        metadata={"opencode": {"session_id": "session-X"}},
+        metadata={"shared": {"session": {"id": "session-X"}}},
     )
 
     with pytest.raises(asyncio.CancelledError):

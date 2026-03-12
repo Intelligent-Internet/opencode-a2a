@@ -393,7 +393,7 @@ def _as_a2a_session_task(session: Any) -> dict[str, Any] | None:
         context_id=context_id,
         # Model OpenCode sessions as completed A2A Tasks for stable downstream rendering.
         status=TaskStatus(state=TaskState.completed),
-        metadata={"opencode": {"session_id": session_id, "title": title}},
+        metadata={"shared": {"session": {"id": session_id, "title": title}}},
     )
     return task.model_dump(by_alias=True, exclude_none=True)
 
@@ -430,7 +430,7 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
         role=role,
         parts=[Part(root=TextPart(text=text))],
         context_id=context_id,
-        metadata={"opencode": {"session_id": session_id}},
+        metadata={"shared": {"session": {"id": session_id}}},
     )
     return msg.model_dump(by_alias=True, exclude_none=True)
 
@@ -545,7 +545,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
 
         opencode_metadata: dict[str, Any] | None = None
         if isinstance(metadata, dict):
-            unknown_metadata_fields = sorted(set(metadata) - {"opencode"})
+            unknown_metadata_fields = sorted(set(metadata) - {"opencode", "shared"})
             if unknown_metadata_fields:
                 prefixed_fields = [f"metadata.{field}" for field in unknown_metadata_fields]
                 return None, self._generate_error_response(
@@ -570,6 +570,17 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 )
             if isinstance(raw_opencode_metadata, dict):
                 opencode_metadata = raw_opencode_metadata
+            raw_shared_metadata = metadata.get("shared")
+            if raw_shared_metadata is not None and not isinstance(raw_shared_metadata, dict):
+                return None, self._generate_error_response(
+                    request_id,
+                    A2AError(
+                        root=InvalidParamsError(
+                            message="metadata.shared must be an object",
+                            data={"type": "INVALID_FIELD", "field": "metadata.shared"},
+                        )
+                    ),
+                )
 
         directory = None
         if opencode_metadata is not None:
