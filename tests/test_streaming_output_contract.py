@@ -385,6 +385,54 @@ async def test_streaming_emits_events_without_message_id_using_stable_fallback()
 
 
 @pytest.mark.asyncio
+async def test_streaming_emits_snapshot_when_message_id_missing_and_stream_is_partial() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="text",
+                delta="partial ",
+                message_id=None,
+            ),
+        ],
+        response_text="partial final answer",
+        response_message_id=None,
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-6b", context_id="ctx-6b", text="hello"), queue
+    )
+
+    updates = _artifact_updates(queue)
+    assert len(updates) == 2
+    first, second = updates
+
+    assert _part_text(first) == "partial "
+    assert first.append is False
+    assert first.last_chunk is None
+    assert first.artifact.metadata["opencode"]["source"] == "delta"
+    assert first.artifact.metadata["opencode"]["message_id"] == "task-6b:ctx-6b:assistant"
+    assert first.artifact.metadata["opencode"]["event_id"] == "task-6b:ctx-6b:task-6b:stream:1"
+
+    assert _part_text(second) == "partial final answer"
+    assert second.append is True
+    assert second.last_chunk is True
+    assert second.artifact.metadata["opencode"]["source"] == "final_snapshot"
+    assert second.artifact.metadata["opencode"]["message_id"] == "task-6b:ctx-6b:assistant"
+    assert second.artifact.metadata["opencode"]["event_id"] == "task-6b:ctx-6b:task-6b:stream:2"
+
+    final_status = [
+        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+    ][-1]
+    assert final_status.metadata["opencode"]["message_id"] == "task-6b:ctx-6b:assistant"
+    assert final_status.metadata["opencode"]["event_id"] == "task-6b:ctx-6b:task-6b:stream:status"
+
+
+@pytest.mark.asyncio
 async def test_streaming_includes_usage_in_final_status_metadata() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[
