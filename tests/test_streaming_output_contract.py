@@ -3,7 +3,13 @@ import asyncio
 import pytest
 from a2a.types import Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
-from opencode_a2a_serve.agent import OpencodeAgentExecutor
+from opencode_a2a_serve.agent import (
+    BlockType,
+    OpencodeAgentExecutor,
+    _extract_token_usage,
+    _extract_tool_part_payload,
+    _StreamOutputState,
+)
 from opencode_a2a_serve.opencode_client import OpencodeMessage
 from tests.helpers import DummyEventQueue, make_request_context, make_settings
 
@@ -211,6 +217,16 @@ def _question_asked_event(*, session_id: str, request_id: str) -> dict:
     }
 
 
+def _interrupt_resolved_event(*, session_id: str, request_id: str, event_type: str) -> dict:
+    return {
+        "type": event_type,
+        "properties": {
+            "requestID": request_id,
+            "sessionID": session_id,
+        },
+    }
+
+
 def _artifact_updates(queue: DummyEventQueue) -> list[TaskArtifactUpdateEvent]:
     return [event for event in queue.events if isinstance(event, TaskArtifactUpdateEvent)]
 
@@ -218,6 +234,11 @@ def _artifact_updates(queue: DummyEventQueue) -> list[TaskArtifactUpdateEvent]:
 def _part_text(event: TaskArtifactUpdateEvent) -> str:
     part = event.artifact.parts[0]
     return getattr(part, "text", None) or getattr(part.root, "text", "")
+
+
+def _part_data(event: TaskArtifactUpdateEvent) -> dict:
+    part = event.artifact.parts[0]
+    return getattr(part, "data", None) or getattr(part.root, "data", {})
 
 
 def _artifact_stream_meta(event: TaskArtifactUpdateEvent) -> dict:
@@ -230,6 +251,76 @@ def _status_shared_meta(event: TaskStatusUpdateEvent) -> dict:
 
 def _interrupt_meta(event: TaskStatusUpdateEvent) -> dict:
     return _status_shared_meta(event)["interrupt"]
+
+
+def test_stream_output_state_deduplicates_non_accumulating_tool_chunks() -> None:
+    state = _StreamOutputState(
+        user_text="",
+        stable_message_id="msg-stable",
+        event_id_namespace="task:ctx:stream",
+    )
+
+    assert state.register_chunk(
+        block_type=BlockType.TOOL_CALL,
+        content_key='{"status":"pending"}',
+        append=False,
+        accumulate_content=False,
+    ) == (True, False)
+    assert state.register_chunk(
+        block_type=BlockType.TOOL_CALL,
+        content_key='{"status":"pending"}',
+        append=True,
+        accumulate_content=False,
+    ) == (False, False)
+    assert state.register_chunk(
+        block_type=BlockType.TOOL_CALL,
+        content_key='{"status":"running"}',
+        append=True,
+        accumulate_content=False,
+    ) == (True, True)
+
+
+def test_extract_tool_part_payload_normalizes_structured_state() -> None:
+    assert _extract_tool_part_payload(
+        {
+            "callID": " call-1 ",
+            "tool": " bash ",
+            "state": {
+                "status": " running ",
+                "title": "Execute command",
+                "subtitle": "phase 1",
+                "input": {"cmd": "pwd"},
+                "output": {"stdout": "/workspace"},
+                "error": None,
+            },
+        }
+    ) == {
+        "call_id": "call-1",
+        "tool": "bash",
+        "status": "running",
+        "title": "Execute command",
+        "subtitle": "phase 1",
+        "input": {"cmd": "pwd"},
+        "output": {"stdout": "/workspace"},
+    }
+    assert _extract_tool_part_payload({"callID": " ", "tool": None, "state": {}}) is None
+
+
+def test_extract_token_usage_ignores_non_step_finish_part_payload() -> None:
+    assert (
+        _extract_token_usage(
+            {
+                "properties": {
+                    "part": {
+                        "type": "tool",
+                        "tokens": {"input": 9, "output": 3, "total": 12},
+                        "cost": 0.4,
+                    }
+                }
+            }
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -502,6 +593,66 @@ async def test_streaming_includes_usage_in_final_status_metadata() -> None:
 
 
 @pytest.mark.asyncio
+async def test_streaming_ignores_non_step_finish_usage_like_part_payloads() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="tool",
+                delta="",
+                part_id="prt-tool-usage-lookalike",
+                part_overrides={
+                    "callID": "call-usage-lookalike",
+                    "tool": "bash",
+                    "tokens": {"input": 99, "output": 1, "total": 100},
+                    "cost": 1.2,
+                    "state": {"status": "running"},
+                },
+            ),
+        ],
+        response_text="answer",
+        response_raw={
+            "info": {
+                "tokens": {
+                    "input": 11,
+                    "output": 5,
+                    "reasoning": 0,
+                    "cache": {"read": 0, "write": 0},
+                },
+                "cost": 0.0009,
+            }
+        },
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-usage-guard",
+            context_id="ctx-usage-guard",
+            text="hello",
+        ),
+        queue,
+    )
+
+    final_status = [
+        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+    ][-1]
+    usage = _status_shared_meta(final_status)["usage"]
+    assert usage["input_tokens"] == 11
+    assert usage["output_tokens"] == 5
+    assert usage["cost"] == 0.0009
+    tool_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "tool_call"
+    ]
+    assert len(tool_updates) == 1
+
+
+@pytest.mark.asyncio
 async def test_streaming_final_status_state_is_completed() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[],
@@ -611,9 +762,135 @@ async def test_streaming_emits_interrupt_status_for_question_asked_event() -> No
     assert len(interrupt_statuses) == 1
     interrupt = _interrupt_meta(interrupt_statuses[0])
     assert interrupt["request_id"] == "q-req-1"
-    assert isinstance(interrupt["details"]["questions"], list)
+    assert interrupt["details"]["questions"] == [
+        {
+            "header": "Confirm",
+            "question": "Proceed?",
+            "options": [{"label": "Yes", "value": "yes"}],
+        }
+    ]
     assert "tool" not in interrupt["details"]
     assert interrupt_statuses[0].status.state == TaskState.input_required
+
+
+@pytest.mark.asyncio
+async def test_streaming_normalizes_question_interrupt_details() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            {
+                "type": "question.asked",
+                "properties": {
+                    "id": "q-req-rich",
+                    "sessionID": "ses-1",
+                    "questions": [
+                        {
+                            "header": " Confirm ",
+                            "question": " Proceed? ",
+                            "ignored": "drop-me",
+                            "options": [
+                                {
+                                    "label": " Yes ",
+                                    "value": " yes ",
+                                    "description": " continue ",
+                                    "extra": "drop-me",
+                                },
+                                {
+                                    "label": " ",
+                                    "value": "no",
+                                },
+                                "invalid",
+                            ],
+                        },
+                        {
+                            "ignored": "only-invalid",
+                            "options": [{"extra": "drop-me"}],
+                        },
+                    ],
+                },
+            },
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="answer"),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-question-normalized",
+            context_id="ctx-question-normalized",
+            text="hello",
+        ),
+        queue,
+    )
+
+    interrupt_status = next(
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent)
+        and event.final is False
+        and (event.metadata or {}).get("shared", {}).get("interrupt", {}).get("type") == "question"
+    )
+    interrupt = _interrupt_meta(interrupt_status)
+    assert interrupt["details"]["questions"] == [
+        {
+            "header": "Confirm",
+            "question": "Proceed?",
+            "options": [
+                {
+                    "label": "Yes",
+                    "value": "yes",
+                    "description": "continue",
+                },
+                {
+                    "value": "no",
+                },
+            ],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_streaming_resolved_interrupt_only_clears_internal_pending_state() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _permission_asked_event(session_id="ses-1", request_id="perm-req-resolve"),
+            _interrupt_resolved_event(
+                session_id="ses-1",
+                request_id="perm-req-resolve",
+                event_type="permission.replied",
+            ),
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="answer"),
+        ],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-interrupt-resolved",
+            context_id="ctx-interrupt-resolved",
+            text="hello",
+        ),
+        queue,
+    )
+
+    interrupt_statuses = [
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent)
+        and event.final is False
+        and (event.metadata or {}).get("shared", {}).get("interrupt") is not None
+    ]
+    assert len(interrupt_statuses) == 1
+    assert _interrupt_meta(interrupt_statuses[0])["request_id"] == "perm-req-resolve"
+    final_status = [
+        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+    ][-1]
+    assert "interrupt" not in (final_status.metadata or {}).get("shared", {})
 
 
 def _unique(items: list[str]) -> list[str]:
@@ -724,10 +1001,11 @@ async def test_streaming_emits_structured_tool_part_updates() -> None:
     updates = _artifact_updates(queue)
     tool_updates = [ev for ev in updates if _artifact_stream_meta(ev)["block_type"] == "tool_call"]
     assert len(tool_updates) == 3
-    merged = "".join(_part_text(ev) for ev in tool_updates)
-    assert '"status":"pending"' in merged
-    assert '"status":"running"' in merged
-    assert '"status":"completed"' in merged
+    payloads = [_part_data(ev) for ev in tool_updates]
+    assert [payload["status"] for payload in payloads] == ["pending", "running", "completed"]
+    assert all(payload["call_id"] == "call-1" for payload in payloads)
+    assert all(payload["tool"] == "bash" for payload in payloads)
+    assert all(getattr(ev.artifact.parts[0].root, "kind", None) == "data" for ev in tool_updates)
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,7 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
     Artifact,
+    DataPart,
     Message,
     Part,
     Role,
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 _INTERRUPT_ASKED_EVENT_TYPES = {"permission.asked", "question.asked"}
 _INTERRUPT_RESOLVED_EVENT_TYPES = {"permission.replied", "question.replied", "question.rejected"}
+_USAGE_PART_TYPES = {"step-finish"}
 
 
 class BlockType(str, Enum):
@@ -46,7 +48,9 @@ class BlockType(str, Enum):
 
 @dataclass(frozen=True)
 class _NormalizedStreamChunk:
-    text: str
+    part: Part
+    content_key: str
+    accumulate_content: bool
     append: bool
     block_type: BlockType
     source: str
@@ -99,10 +103,15 @@ class _StreamOutputState:
         return bool(user_text) and text.strip() == user_text
 
     def register_chunk(
-        self, *, block_type: BlockType, text: str, append: bool
+        self,
+        *,
+        block_type: BlockType,
+        content_key: str,
+        append: bool,
+        accumulate_content: bool = True,
     ) -> tuple[bool, bool]:
         previous = self.content_buffers.get(block_type, "")
-        next_value = f"{previous}{text}" if append else text
+        next_value = f"{previous}{content_key}" if append and accumulate_content else content_key
         if next_value == previous:
             return False, False
         self.content_buffers[block_type] = next_value
@@ -601,7 +610,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                         task_id=task_id,
                         context_id=context_id,
                         artifact_id=stream_artifact_id,
-                        text=response_text,
+                        part=Part(root=TextPart(text=response_text)),
                         append=stream_state.emitted_stream_chunk,
                         last_chunk=True,
                         artifact_metadata=_build_stream_artifact_metadata(
@@ -985,7 +994,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 artifact_id=f"{task_id}:error",
-                text=message,
+                part=Part(root=TextPart(text=message)),
                 append=False,
                 last_chunk=True,
             )
@@ -1041,16 +1050,18 @@ class OpencodeAgentExecutor(AgentExecutor):
         async def _emit_chunks(chunks: list[_NormalizedStreamChunk]) -> None:
             for chunk in chunks:
                 resolved_message_id = stream_state.resolve_message_id(chunk.message_id)
+                chunk_text = getattr(chunk.part.root, "text", "")
                 if stream_state.should_drop_initial_user_echo(
-                    chunk.text,
+                    chunk_text,
                     block_type=chunk.block_type,
                     role=chunk.role,
                 ):
                     continue
                 should_emit, effective_append = stream_state.register_chunk(
                     block_type=chunk.block_type,
-                    text=chunk.text,
+                    content_key=chunk.content_key,
                     append=chunk.append,
+                    accumulate_content=chunk.accumulate_content,
                 )
                 if not should_emit:
                     continue
@@ -1060,7 +1071,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     task_id=task_id,
                     context_id=context_id,
                     artifact_id=artifact_id,
-                    text=chunk.text,
+                    part=chunk.part,
                     append=effective_append,
                     last_chunk=False,
                     artifact_metadata=_build_stream_artifact_metadata(
@@ -1078,7 +1089,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     session_id,
                     chunk.block_type,
                     effective_append,
-                    chunk.text,
+                    chunk.content_key,
                 )
 
         async def _emit_interrupt_status(
@@ -1112,7 +1123,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 )
             )
 
-        def _new_chunk(
+        def _new_text_chunk(
             *,
             text: str,
             append: bool,
@@ -1122,7 +1133,30 @@ class OpencodeAgentExecutor(AgentExecutor):
             role: str | None,
         ) -> _NormalizedStreamChunk:
             return _NormalizedStreamChunk(
-                text=text,
+                part=Part(root=TextPart(text=text)),
+                content_key=text,
+                accumulate_content=True,
+                append=append,
+                block_type=block_type,
+                source=source,
+                message_id=message_id,
+                role=role,
+            )
+
+        def _new_data_chunk(
+            *,
+            data: Mapping[str, Any],
+            content_key: str,
+            append: bool,
+            block_type: BlockType,
+            source: str,
+            message_id: str | None,
+            role: str | None,
+        ) -> _NormalizedStreamChunk:
+            return _NormalizedStreamChunk(
+                part=Part(root=DataPart(data=dict(data))),
+                content_key=content_key,
+                accumulate_content=False,
                 append=append,
                 block_type=block_type,
                 source=source,
@@ -1171,7 +1205,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             state.buffer = f"{state.buffer}{delta_text}"
             state.saw_delta = True
             return [
-                _new_chunk(
+                _new_text_chunk(
                     text=delta_text,
                     append=True,
                     block_type=state.block_type,
@@ -1199,7 +1233,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 if not delta_text:
                     return []
                 return [
-                    _new_chunk(
+                    _new_text_chunk(
                         text=delta_text,
                         append=True,
                         block_type=state.block_type,
@@ -1226,19 +1260,25 @@ class OpencodeAgentExecutor(AgentExecutor):
             part: Mapping[str, Any],
             message_id: str | None,
         ) -> list[_NormalizedStreamChunk]:
-            tool_chunk = _serialize_tool_part(part)
-            if not tool_chunk:
+            tool_payload = _extract_tool_part_payload(part)
+            if tool_payload is None:
                 return []
+            content_key = json.dumps(
+                tool_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
             if message_id:
                 state.message_id = message_id
             previous = state.buffer
-            if tool_chunk == previous:
+            if content_key == previous:
                 return []
-            state.buffer = tool_chunk
-            text = tool_chunk if not previous else f"\n{tool_chunk}"
+            state.buffer = content_key
             return [
-                _new_chunk(
-                    text=text,
+                _new_data_chunk(
+                    data=tool_payload,
+                    content_key=content_key,
                     append=bool(previous),
                     block_type=state.block_type,
                     source="tool_part_update",
@@ -1429,7 +1469,7 @@ async def _enqueue_artifact_update(
     task_id: str,
     context_id: str,
     artifact_id: str,
-    text: str,
+    part: Part,
     append: bool | None,
     last_chunk: bool | None,
     artifact_metadata: Mapping[str, Any] | None = None,
@@ -1438,7 +1478,7 @@ async def _enqueue_artifact_update(
     normalized_last_chunk = True if last_chunk is True else None
     artifact = Artifact(
         artifact_id=artifact_id,
-        parts=[Part(root=TextPart(text=text))],
+        parts=[part],
         metadata=dict(artifact_metadata) if artifact_metadata else None,
     )
     await event_queue.enqueue_event(
@@ -1593,7 +1633,10 @@ def _extract_token_usage(payload: Any) -> dict[str, Any] | None:
         if isinstance(props_info, Mapping):
             candidates.append(props_info)
         part = props.get("part")
-        if isinstance(part, Mapping):
+        if (
+            isinstance(part, Mapping)
+            and _extract_stream_part_type(part, props) in _USAGE_PART_TYPES
+        ):
             candidates.append(part)
 
     for candidate in candidates:
@@ -1700,6 +1743,53 @@ def _extract_string_list(value: Any) -> list[str]:
     return result
 
 
+def _extract_optional_string(source: Mapping[str, Any], key: str) -> str | None:
+    value = source.get(key)
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return normalized
+
+
+def _normalize_interrupt_question_options(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    options: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        normalized_option: dict[str, str] = {}
+        for key in ("label", "value", "description"):
+            normalized = _extract_optional_string(item, key)
+            if normalized is not None:
+                normalized_option[key] = normalized
+        if normalized_option:
+            options.append(normalized_option)
+    return options
+
+
+def _normalize_interrupt_questions(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    questions: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        normalized_question: dict[str, Any] = {}
+        for key in ("header", "question"):
+            normalized = _extract_optional_string(item, key)
+            if normalized is not None:
+                normalized_question[key] = normalized
+        options = _normalize_interrupt_question_options(item.get("options"))
+        if options:
+            normalized_question["options"] = options
+        if normalized_question:
+            questions.append(normalized_question)
+    return questions
+
+
 def _extract_interrupt_asked_request_id(props: Mapping[str, Any]) -> str | None:
     return _extract_first_nonempty_string(
         props,
@@ -1726,7 +1816,7 @@ def _extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] |
         return None
     if event_type == "permission.asked":
         details: dict[str, Any] = {
-            "permission": props.get("permission"),
+            "permission": _extract_optional_string(props, "permission"),
             "patterns": _extract_string_list(props.get("patterns")),
         }
         return {
@@ -1734,8 +1824,7 @@ def _extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] |
             "interrupt_type": "permission",
             "details": details,
         }
-    questions = props.get("questions")
-    details = {"questions": questions if isinstance(questions, list) else []}
+    details = {"questions": _normalize_interrupt_questions(props.get("questions"))}
     return {
         "request_id": request_id,
         "interrupt_type": "question",
@@ -1798,7 +1887,7 @@ def _resolve_stream_block_type(
     return _map_part_type_to_block_type(_extract_stream_part_type(part, props))
 
 
-def _serialize_tool_part(part: Mapping[str, Any]) -> str | None:
+def _extract_tool_part_payload(part: Mapping[str, Any]) -> dict[str, Any] | None:
     payload: dict[str, Any] = {}
     for source_key in ("callID",):
         value = part.get(source_key)
@@ -1827,7 +1916,7 @@ def _serialize_tool_part(part: Mapping[str, Any]) -> str | None:
                 payload[key] = value
     if not payload:
         return None
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return payload
 
 
 def _build_history(context: RequestContext) -> list[Message]:
