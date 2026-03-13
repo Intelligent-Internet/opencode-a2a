@@ -38,6 +38,7 @@ pip-delete-this-directory.txt
 
 # Local logs
 logs/
+run/
 
 # Unit test / coverage reports
 htmlcov/

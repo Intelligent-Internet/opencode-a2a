@@ -104,9 +104,37 @@ Key variables to understand protocol behavior:
 - Agent Card declares OAuth2 only when both
   `A2A_OAUTH_AUTHORIZATION_URL` and `A2A_OAUTH_TOKEN_URL` are set.
 
-## Session Continuation Contract
+## Extension Capability Overview
 
-To continue a historical OpenCode session, include this metadata key in each invoke request:
+The Agent Card declares six extension URIs. Some are shared contracts that any
+consumer may rely on; others stay OpenCode-specific even though they are
+transported through A2A JSON-RPC.
+
+Important distinction:
+
+- Agent Card extension declarations answer "what capability is available?"
+- Runtime payload metadata answers "what happened on this request/stream?"
+
+Clients should not treat runtime metadata alone as a substitute for capability
+discovery when an extension URI is already declared.
+
+| Extension URI | Scope | Trigger / Call Path | Runtime fields or methods | Consumer expectation |
+| --- | --- | --- | --- | --- |
+| `urn:a2a:session-binding/v1` | Shared | Main chat `message/send`, `message:stream` | `metadata.shared.session.id` | Bind a request to an existing upstream session when present; otherwise let the server create/cache a new one |
+| `urn:a2a:model-selection/v1` | Shared | Main chat `message/send`, `message:stream` | `metadata.shared.model.providerID`, `metadata.shared.model.modelID` | Override the default upstream model for one request only |
+| `urn:a2a:stream-hints/v1` | Shared | Streaming responses | `metadata.shared.stream`, `metadata.shared.usage`, `metadata.shared.interrupt`, `metadata.shared.session` | Render blocks/usage/interrupts from canonical stream metadata and understand which shared hints may appear |
+| `urn:opencode-a2a:session-query/v1` | OpenCode-specific | JSON-RPC `POST /` | `opencode.sessions.*` methods | Discover/query external sessions and call OpenCode session control methods |
+| `urn:opencode-a2a:provider-discovery/v1` | OpenCode-specific | JSON-RPC `POST /` | `opencode.providers.*`, `opencode.models.*` methods | Fetch normalized OpenCode provider/model summaries |
+| `urn:a2a:interactive-interrupt/v1` | Shared | JSON-RPC `POST /` | `a2a.interrupt.*` methods | Reply to shared interrupt callbacks observed from stream metadata |
+
+## Shared Session Binding Contract
+
+Agent Card capability:
+
+- URI: `urn:a2a:session-binding/v1`
+
+To continue a historical OpenCode session, include this metadata key in each
+invoke request:
 
 - `metadata.shared.session.id`: target upstream session ID
 
@@ -115,6 +143,20 @@ Server behavior:
 - If provided, the request is sent to that exact OpenCode session.
 - If omitted, a new session is created and cached by
   `(identity, contextId) -> session_id`.
+- `contextId` remains the A2A conversation context key for task continuity; it
+  is not a replacement for the upstream session identifier.
+- OpenCode-private context such as `metadata.opencode.directory` may be
+  supplied alongside `metadata.shared.session.id`, but it does not change the
+  shared session-binding key.
+
+Consumer guidance:
+
+- Use this extension declaration to decide whether the server explicitly
+  supports shared session rebinding.
+- On the request path, write the upstream session identity to
+  `metadata.shared.session.id`.
+- On the response/query path, treat `metadata.shared.session` as runtime
+  metadata and not as a separate capability declaration.
 
 Minimal example:
 
@@ -139,6 +181,10 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 ```
 
 ## Shared Model Selection Contract
+
+Agent Card capability:
+
+- URI: `urn:a2a:model-selection/v1`
 
 To override the default upstream model for one main-chat request, include:
 
@@ -177,6 +223,56 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
     }
   }'
 ```
+
+## Shared Stream Hints Contract
+
+Agent Card capability:
+
+- URI: `urn:a2a:stream-hints/v1`
+
+This extension declares that streaming and final task payloads use canonical
+shared metadata for block, usage, interrupt, and session hints.
+
+Declaration versus runtime:
+
+- The URI `urn:a2a:stream-hints/v1` is the capability declaration.
+- The actual request/stream payloads carry the runtime hints under shared
+  metadata fields.
+
+Shared runtime fields:
+
+- `metadata.shared.stream`
+  - block-level stream metadata such as `block_type`, `source`, `message_id`,
+    `event_id`, `sequence`, and `role`
+- `metadata.shared.usage`
+  - normalized usage data such as `input_tokens`, `output_tokens`,
+    `total_tokens`, and optional `cost`
+- `metadata.shared.interrupt`
+  - normalized interrupt request or resolution metadata including `request_id`,
+    `type`, `phase`, and callback-safe details
+- `metadata.shared.session`
+  - session-level metadata such as the bound upstream session ID and session
+    title when available
+
+Consumer guidance:
+
+- Use the extension declaration to know the server emits canonical shared
+  stream hints.
+- Use runtime metadata to render block timelines, token usage, and interactive
+  interruptions.
+- Do not infer capability support only from seeing one runtime field on one
+  response; rely on Agent Card discovery first when possible.
+- Treat `metadata.shared.interrupt` as observation data. Callback operations
+  are a separate shared capability declared by
+  `urn:a2a:interactive-interrupt/v1`.
+
+Minimal stream semantics summary:
+
+- `text`, `reasoning`, and `tool_call` are emitted as canonical block types
+- `message_id` and `event_id` preserve stable timeline identity where possible
+- `sequence` is the per-request canonical stream sequence
+- final task/status metadata may repeat normalized usage and interrupt context
+  even after the streaming phase ends
 
 ## OpenCode Session Query & Provider Discovery (A2A Extensions)
 

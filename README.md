@@ -116,7 +116,8 @@ uv run pytest
 ## Documentation Map
 
 - [docs/guide.md](docs/guide.md)
-  Product behavior, API contracts, streaming/session/interrupt details.
+  Product behavior, API contracts, extension capability overview, and
+  streaming/session/interrupt details.
 - [scripts/README.md](scripts/README.md)
   Entry points for init, deploy, lightweight deploy, local start, and
   uninstall scripts.
