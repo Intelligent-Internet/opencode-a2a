@@ -1,27 +1,88 @@
 # opencode-a2a-serve
 
-> Turn OpenCode into a stateful A2A service with a clear security boundary and production-friendly deployment workflow.
+> Turn OpenCode into a stateful A2A service with a clear runtime boundary and production-friendly deployment workflow.
 
-## Vision
+`opencode-a2a-serve` exposes OpenCode through standard A2A interfaces and adds
+the operational pieces that raw agent runtimes usually do not provide by
+default: authentication, session continuity, streaming contracts, interrupt
+handling, deployment tooling, and explicit security guidance.
 
-Provide a practical adapter layer that lets individuals and small teams expose OpenCode through standard A2A interfaces (REST + JSON-RPC) while keeping operations, auth, and session behavior explicit and auditable.
+## Why This Project Exists
 
-## Core Value
+OpenCode is useful as an interactive runtime, but applications and gateways
+need a stable service layer around it. This repository provides that layer by:
 
-- Protocol bridge: map A2A message/task semantics to OpenCode session/message/event APIs.
-- Stateful interaction: support session continuation and reconnection workflows.
-- Operational readiness: include systemd multi-instance deployment scripts and guardrails.
-- Security baseline: enforce bearer-token auth and document key risk boundaries.
+- bridging A2A transport contracts to OpenCode session/message/event APIs
+- making session and interrupt behavior explicit and auditable
+- packaging deployment scripts and operational guidance for long-running use
 
-## Core Capabilities
+## What It Already Provides
 
-- A2A HTTP+JSON endpoints (`/v1/message:send`, `/v1/message:stream`, `GET /v1/tasks/{task_id}:subscribe`).
-- A2A JSON-RPC endpoint (`POST /`) for standard methods and OpenCode-oriented extensions.
-- Streaming with incremental task artifacts and terminal status events.
-- Session continuation via `metadata.shared.session.id`.
-- Request-scoped model selection via `metadata.shared.model`.
-- OpenCode session query/control (`opencode.sessions.*`) and provider/model discovery (`opencode.providers.*`, `opencode.models.*`) extension methods.
-- Shared interrupt callback methods.
+- A2A HTTP+JSON endpoints (`/v1/message:send`, `/v1/message:stream`,
+  `GET /v1/tasks/{task_id}:subscribe`)
+- A2A JSON-RPC endpoint (`POST /`) for standard methods and OpenCode-oriented
+  extensions
+- SSE streaming with normalized `text`, `reasoning`, and `tool_call` blocks
+- session continuation via `metadata.shared.session.id`
+- request-scoped model selection via `metadata.shared.model`
+- OpenCode session query/control extensions and provider/model discovery
+- systemd multi-instance deployment and lightweight current-user deployment
+
+## Design Principle
+
+One `OpenCode + opencode-a2a-serve` instance pair is treated as a
+single-tenant trust boundary.
+
+- OpenCode may manage multiple projects/directories, but one deployed instance
+  is not a secure multi-tenant runtime.
+- Shared-instance identity/session checks are best-effort coordination, not
+  hard tenant isolation.
+- For mutually untrusted tenants, deploy separate instance pairs with isolated
+  Linux users or containers, isolated workspace roots, and isolated
+  credentials.
+
+## Logical Components
+
+```mermaid
+flowchart TD
+    Hub["A2A client / a2a-client-hub / app"] --> Api["opencode-a2a-serve transport"]
+    Api --> Mapping["Task / session / interrupt mapping"]
+    Mapping --> Runtime["OpenCode HTTP runtime"]
+
+    Api --> Auth["Bearer auth + request logging controls"]
+    Api --> Deploy["systemd and lightweight deployment scripts"]
+    Runtime --> Workspace["Shared workspace / environment boundary"]
+```
+
+This repository wraps OpenCode in a service layer. It does not change OpenCode
+into a hard multi-tenant isolation platform.
+
+## Recommended Client Side
+
+If you need a client-side integration layer to consume this service, prefer
+[a2a-client-hub](https://github.com/liujuanjuan1984/a2a-client-hub).
+
+It is a better place for client concerns such as A2A consumption, upstream
+adapter normalization, and application-facing integration, while
+`opencode-a2a-serve` stays focused on the server/runtime boundary around
+OpenCode.
+
+## Security Model
+
+This project improves the service boundary around OpenCode, but it is not a
+hard multi-tenant isolation layer.
+
+- `A2A_BEARER_TOKEN` protects the A2A surface, but it is not a tenant
+  isolation boundary inside one deployed instance.
+- LLM provider keys are consumed by the OpenCode process. Prompt injection or
+  indirect exfiltration attempts may still expose sensitive values.
+- systemd deploy defaults use operator-provisioned root-only secret files
+  unless `ENABLE_SECRET_PERSISTENCE=true` is explicitly enabled.
+
+Read before deployment:
+
+- [SECURITY.md](SECURITY.md)
+- [scripts/deploy_readme.md](scripts/deploy_readme.md)
 
 ## Quick Start & Development
 
@@ -45,33 +106,26 @@ A2A_BEARER_TOKEN=dev-token uv run opencode-a2a-serve
 
 Default address: `http://127.0.0.1:8000`
 
-Development & validation baseline:
+Baseline validation:
 
 ```bash
 uv run pre-commit run --all-files
-uv run mypy src/opencode_a2a_serve
 uv run pytest
 ```
 
-For deployment and operations scripts, see [`scripts/README.md`](scripts/README.md).
-
 ## Documentation Map
 
-- Product/protocol behavior:
-  - [`docs/guide.md`](docs/guide.md)
-- Script entry and operations:
-  - [`scripts/README.md`](scripts/README.md)
-  - [`scripts/deploy_readme.md`](scripts/deploy_readme.md)
-  - [`scripts/deploy_light_readme.md`](scripts/deploy_light_readme.md)
-  - [`scripts/init_system_readme.md`](scripts/init_system_readme.md)
-  - [`scripts/start_services_readme.md`](scripts/start_services_readme.md)
-  - [`scripts/uninstall_readme.md`](scripts/uninstall_readme.md)
-
-## Security Boundary
-
-- `A2A_BEARER_TOKEN` is required for startup.
-- LLM provider keys are consumed by the OpenCode process. This model is best suited for trusted/internal environments unless stronger credential isolation is introduced.
-- Within one service instance, consumers share the same underlying OpenCode workspace/environment (not tenant-isolated by default).
+- [docs/guide.md](docs/guide.md)
+  Product behavior, API contracts, streaming/session/interrupt details.
+- [scripts/README.md](scripts/README.md)
+  Entry points for init, deploy, lightweight deploy, local start, and
+  uninstall scripts.
+- [scripts/deploy_readme.md](scripts/deploy_readme.md)
+  systemd deployment, runtime secret strategy, and operations guidance.
+- [scripts/deploy_light_readme.md](scripts/deploy_light_readme.md)
+  current-user lightweight deployment without systemd.
+- [SECURITY.md](SECURITY.md)
+  threat model, deployment caveats, and vulnerability disclosure guidance.
 
 ## License
 

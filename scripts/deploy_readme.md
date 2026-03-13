@@ -1,18 +1,20 @@
 # Deploy Script Guide (`deploy.sh`)
 
-This document explains `scripts/deploy.sh` and helper scripts under `scripts/deploy/`.
+This document explains `scripts/deploy.sh` and helper scripts under
+`scripts/deploy/`.
 
 Scope:
 
 - systemd multi-instance deployment flow
 - deploy inputs, precedence, generated runtime files
-- deployment operations and script-layer security notes
+- runtime secret strategy and operational caveats
 
 Out of scope:
 
 - product/API transport contract and JSON-RPC semantics
 
 For product/protocol behavior, see [`../docs/guide.md`](../docs/guide.md).
+For the overall threat model, see [`../SECURITY.md`](../SECURITY.md).
 
 ## Prerequisites
 
@@ -24,71 +26,94 @@ For product/protocol behavior, see [`../docs/guide.md`](../docs/guide.md).
 
 For one-time host bootstrap, see [`init_system_readme.md`](./init_system_readme.md).
 
+## Directory Layout
+
+Each project instance gets an isolated directory under `DATA_ROOT`
+(default `/data/opencode-a2a/<project>`):
+
+- `workspace/`: writable OpenCode workspace
+- `config/`: root-only config directory for env files
+- `logs/`: service logs
+- `run/`: runtime files
+
+Default permissions:
+
+- `DATA_ROOT`: `711` (traversable, not listable)
+- project root + `workspace` + `logs` + `run`: `700`
+- `config/`: `700` (root-only), env files `600`
+
 ## Quick Deploy
 
+Default behavior:
+
+- `ENABLE_SECRET_PERSISTENCE=false` by default.
+- In that default mode, deploy scripts do **not** write `GH_TOKEN`,
+  `A2A_BEARER_TOKEN`, or provider keys to disk.
+- The script expects operators to pre-provision root-only runtime secret files:
+  - `config/opencode.auth.env`
+  - `config/a2a.secret.env`
+  - `config/opencode.secret.env` (optional provider keys)
+- If those files are missing, the first deploy attempt creates `*.example`
+  templates under `config/` and stops before services are started.
+
+Recommended secure workflow:
+
+1. Bootstrap project directories and example files:
+
 ```bash
-GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
+./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
+```
+
+2. Populate runtime secret files as `root` using the generated templates:
+
+```bash
+sudo cp /data/opencode-a2a/alpha/config/opencode.auth.env.example /data/opencode-a2a/alpha/config/opencode.auth.env
+sudo cp /data/opencode-a2a/alpha/config/a2a.secret.env.example /data/opencode-a2a/alpha/config/a2a.secret.env
+sudoedit /data/opencode-a2a/alpha/config/opencode.auth.env
+sudoedit /data/opencode-a2a/alpha/config/a2a.secret.env
+```
+
+3. Re-run deploy:
+
+```bash
+./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
+```
+
+Explicit persistence opt-in (legacy-style one-step deploy):
+
+```bash
+read -rsp 'GH_TOKEN: ' GH_TOKEN; echo
+read -rsp 'A2A_BEARER_TOKEN: ' A2A_BEARER_TOKEN; echo
+GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
 ./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
 ```
 
 HTTPS public URL example:
 
 ```bash
-GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
+GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
 ./scripts/deploy.sh project=alpha a2a_port=8010 a2a_public_url=https://a2a.example.com
-```
-
-Upgrade existing instance after shared-code update:
-
-```bash
-GH_TOKEN='<gh-token>' A2A_BEARER_TOKEN='<a2a-token>' \
-./scripts/deploy.sh project=alpha update_a2a=true force_restart=true
 ```
 
 ## Input Model
 
 ### Precedence
 
-For values that support both env and CLI:
+For values that support both environment variables and CLI keys:
 
 `CLI key=value` > process env > built-in default.
-
-### Required Secrets
-
-- `GH_TOKEN`
-- `A2A_BEARER_TOKEN`
-
-### CLI Keys
-
-Supported keys (case-insensitive):
-
-- `project` / `project_name`
-- `data_root`
-- `a2a_port`, `a2a_host`, `a2a_public_url`
-- `a2a_streaming`, `a2a_log_level`, `a2a_otel_instrumentation_enabled`
-- `a2a_log_payloads`, `a2a_log_body_limit`
-- `a2a_cancel_abort_timeout_seconds`, `a2a_enable_session_shell`
-- `opencode_provider_id`, `opencode_model_id`, `opencode_lsp`, `opencode_log_level`
-- `opencode_timeout`, `opencode_timeout_stream`
-- `repo_url`, `repo_branch`
-- `git_identity_name`, `git_identity_email`
-- `update_a2a`, `force_restart`
-
-Sensitive values are blocked from CLI keys by design.
-
-## Configuration Details
 
 ### Secret Variables
 
 | ENV Name | Required | Default | CLI Support | Notes |
 | --- | --- | --- | --- | --- |
-| `GH_TOKEN` | Yes | None | No | Used by OpenCode and `gh auth login`. |
-| `A2A_BEARER_TOKEN` | Yes | None | No | Written to `a2a.env`. |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | Optional | None | No | Persisted to `opencode.secret.env` when provided. |
-| `OPENAI_API_KEY` | Optional | None | No | Persisted to `opencode.secret.env` when provided. |
-| `ANTHROPIC_API_KEY` | Optional | None | No | Persisted to `opencode.secret.env` when provided. |
-| `AZURE_OPENAI_API_KEY` | Optional | None | No | Persisted to `opencode.secret.env` when provided. |
-| `OPENROUTER_API_KEY` | Optional | None | No | Persisted to `opencode.secret.env` when provided. |
+| `GH_TOKEN` | Conditionally | None | No | Required when `ENABLE_SECRET_PERSISTENCE=true`; otherwise provide it through `opencode.auth.env`. |
+| `A2A_BEARER_TOKEN` | Conditionally | None | No | Required when `ENABLE_SECRET_PERSISTENCE=true`; otherwise provide it through `a2a.secret.env`. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Optional | None | No | Persisted only when `ENABLE_SECRET_PERSISTENCE=true`. |
+| `OPENAI_API_KEY` | Optional | None | No | Persisted only when `ENABLE_SECRET_PERSISTENCE=true`. |
+| `ANTHROPIC_API_KEY` | Optional | None | No | Persisted only when `ENABLE_SECRET_PERSISTENCE=true`. |
+| `AZURE_OPENAI_API_KEY` | Optional | None | No | Persisted only when `ENABLE_SECRET_PERSISTENCE=true`. |
+| `OPENROUTER_API_KEY` | Optional | None | No | Persisted only when `ENABLE_SECRET_PERSISTENCE=true`. |
 
 ### Non-Secret Input Variables
 
@@ -100,7 +125,7 @@ Sensitive values are blocked from CLI keys by design.
 | `UV_PYTHON_DIR_GROUP` | - | Optional | `opencode` | Optional shared-group access control. |
 | `DATA_ROOT` | `data_root` | Optional | `/data/opencode-a2a` | Instance root directory. |
 | `OPENCODE_BIND_HOST` | - | Optional | `127.0.0.1` | OpenCode bind host. |
-| `OPENCODE_BIND_PORT` | - | Optional | `A2A_PORT + 1` (fallback `4096`) | OpenCode bind port. |
+| `OPENCODE_BIND_PORT` | - | Optional | `A2A_PORT + 1` fallback to `4096` | Multi-instance should use unique port. |
 | `OPENCODE_LOG_LEVEL` | `opencode_log_level` | Optional | `WARNING` | OpenCode log level. `WARNING` is normalized to `WARN` before launch. |
 | `OPENCODE_EXTRA_ARGS` | - | Optional | empty | Extra OpenCode startup args. |
 | `OPENCODE_PROVIDER_ID` | `opencode_provider_id` | Optional | None | Written to `a2a.env`. |
@@ -110,6 +135,7 @@ Sensitive values are blocked from CLI keys by design.
 | `OPENCODE_TIMEOUT_STREAM` | `opencode_timeout_stream` | Optional | None | OpenCode stream timeout. |
 | `GIT_IDENTITY_NAME` | `git_identity_name` | Optional | `OpenCode-<project>` | Git name for instance user. |
 | `GIT_IDENTITY_EMAIL` | `git_identity_email` | Optional | `<project>@example.com` | Git email for instance user. |
+| `ENABLE_SECRET_PERSISTENCE` | `enable_secret_persistence` | Optional | `false` | Explicitly allow deploy to write root-only secret env files. |
 | `REPO_URL` | `repo_url` | Optional | None | Optional repository URL to auto-clone into `workspace/` on first deploy. |
 | `REPO_BRANCH` | `repo_branch` | Optional | None | Optional branch used with `REPO_URL` during first clone. |
 | `A2A_HOST` | `a2a_host` | Optional | `127.0.0.1` | A2A bind host. |
@@ -129,20 +155,21 @@ Sensitive values are blocked from CLI keys by design.
 | --- | --- | --- | --- |
 | `A2A_PROJECT` | derived from `project=<name>` | `config/a2a.env` | Generated by `setup_instance.sh`; not direct deploy input. |
 
-## Generated Layout and Files
+## Generated Config Files
 
-Per project instance (default: `/data/opencode-a2a/<project>`):
+For each project (`/data/opencode-a2a/<project>/config/`):
 
-- `workspace/`
-- `config/`
-- `logs/`
-- `run/`
+- `opencode.env`: OpenCode-only non-secret settings
+- `opencode.auth.env`: root-only runtime secret file for `GH_TOKEN`
+- `opencode.secret.env`: optional provider secret file for OpenCode runtime
+- `a2a.env`: A2A-only non-secret settings
+- `a2a.secret.env`: root-only runtime secret file for `A2A_BEARER_TOKEN`
+- `*.example`: root-only templates generated by deploy for secret provisioning
 
-Generated config files:
-
-- `config/opencode.env`
-- `config/opencode.secret.env`
-- `config/a2a.env`
+When `ENABLE_SECRET_PERSISTENCE=true`, deploy writes these secret files as
+`600 root:root` and systemd loads them via `EnvironmentFile`. When the flag is
+not enabled, operators are expected to provision the real secret files
+themselves from the generated templates.
 
 ## Provider Coverage (Deploy Script Layer)
 
@@ -154,7 +181,22 @@ Generated config files:
 | Azure OpenAI | `AZURE_OPENAI_API_KEY` | No explicit provider-specific check |
 | OpenRouter | `OPENROUTER_API_KEY` | No explicit provider-specific check |
 
-Known gap: provider/model validation is partial in deploy scripts.
+Known gaps:
+
+- provider/model validation is still partial in deploy scripts
+- deploy scripts do not replace OpenCode's own provider configuration rules
+
+## Security Notes
+
+- `a2a_enable_session_shell=true` enables `opencode.sessions.shell`, a
+  high-risk capability that can execute shell commands in workspace context.
+- Enable shell control only for trusted operators/internal use with strong
+  token governance and audit controls.
+- This architecture does not provide hard guarantees that provider keys are
+  inaccessible to agents.
+- Deploy writes EnvironmentFile entries with single-line validation to reduce
+  newline-based injection risk, but operators should still treat env files as
+  privileged configuration surfaces.
 
 ## Service Operations
 
@@ -187,9 +229,3 @@ Remove one instance:
 ```
 
 See [`uninstall_readme.md`](./uninstall_readme.md) for safety behavior.
-
-## Security Notes
-
-- `a2a_enable_session_shell=true` enables `opencode.sessions.shell`, a high-risk capability that can execute shell commands in workspace context.
-- Enable shell control only for trusted operators/internal use with strong token governance and audit controls.
-- This architecture does not provide hard credential isolation from agent behavior.

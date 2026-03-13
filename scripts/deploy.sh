@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Docs: scripts/deploy_readme.md
 # Deploy one isolated OpenCode + A2A systemd instance.
+# Secret env vars are only required when persisting them during deploy or when
+# setup actions need them.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,8 +11,6 @@ source "${SCRIPT_DIR}/deploy/provider_secret_env_keys.sh"
 PROVIDER_SECRET_ENV_LIST="$(join_provider_secret_env_keys " | ")"
 
 PROJECT_NAME=""
-GH_TOKEN="${GH_TOKEN:-}"
-A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN:-}"
 A2A_PORT_INPUT=""
 A2A_HOST_INPUT=""
 A2A_PUBLIC_URL_INPUT=""
@@ -32,6 +32,7 @@ OPENCODE_TIMEOUT_INPUT=""
 OPENCODE_TIMEOUT_STREAM_INPUT=""
 GIT_IDENTITY_NAME_INPUT=""
 GIT_IDENTITY_EMAIL_INPUT=""
+ENABLE_SECRET_PERSISTENCE_INPUT=""
 UPDATE_A2A_INPUT=""
 FORCE_RESTART_INPUT=""
 
@@ -119,6 +120,9 @@ for arg in "$@"; do
     git_identity_email)
       GIT_IDENTITY_EMAIL_INPUT="$value"
       ;;
+    enable_secret_persistence)
+      ENABLE_SECRET_PERSISTENCE_INPUT="$value"
+      ;;
     update_a2a)
       UPDATE_A2A_INPUT="$value"
       ;;
@@ -136,17 +140,17 @@ for arg in "$@"; do
   esac
 done
 
-if [[ -z "$PROJECT_NAME" || -z "$GH_TOKEN" || -z "$A2A_BEARER_TOKEN" ]]; then
+if [[ -z "$PROJECT_NAME" ]]; then
   cat >&2 <<USAGE
 Usage:
-  GH_TOKEN=<token> A2A_BEARER_TOKEN=<token> [<PROVIDER_SECRET_ENV>=<key>] \
+  [GH_TOKEN=<token>] [A2A_BEARER_TOKEN=<token>] [<PROVIDER_SECRET_ENV>=<key>] \
   ./scripts/deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
   [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_otel_instrumentation_enabled=<bool>] \
   [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [a2a_cancel_abort_timeout_seconds=<seconds>] \
   [a2a_enable_session_shell=<bool>] \
   [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=<bool>] [opencode_log_level=<level>] \
   [repo_url=<url>] [repo_branch=<branch>] \
-  [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] \
+  [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] [enable_secret_persistence=<bool>] \
   [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
 
 Provider secret env vars:
@@ -185,6 +189,7 @@ export OPENCODE_BIND_HOST="${OPENCODE_BIND_HOST:-127.0.0.1}"
 export OPENCODE_LOG_LEVEL="${OPENCODE_LOG_LEVEL:-WARNING}"
 export OPENCODE_EXTRA_ARGS="${OPENCODE_EXTRA_ARGS:-}"
 export OPENCODE_LSP="${OPENCODE_LSP:-false}"
+export ENABLE_SECRET_PERSISTENCE="${ENABLE_SECRET_PERSISTENCE:-false}"
 
 if [[ -n "$A2A_HOST_INPUT" ]]; then
   export A2A_HOST="$A2A_HOST_INPUT"
@@ -224,6 +229,7 @@ export_if_present "A2A_LOG_PAYLOADS" "$A2A_LOG_PAYLOADS_INPUT"
 export_if_present "A2A_LOG_BODY_LIMIT" "$A2A_LOG_BODY_LIMIT_INPUT"
 export_if_present "A2A_CANCEL_ABORT_TIMEOUT_SECONDS" "$A2A_CANCEL_ABORT_TIMEOUT_SECONDS_INPUT"
 export_if_present "A2A_ENABLE_SESSION_SHELL" "$A2A_ENABLE_SESSION_SHELL_INPUT"
+export_if_present "ENABLE_SECRET_PERSISTENCE" "$ENABLE_SECRET_PERSISTENCE_INPUT"
 
 is_truthy() {
   case "${1,,}" in
