@@ -986,11 +986,59 @@ def create_app(settings: Settings) -> FastAPI:
         version = payload.get("jsonrpc")
         return isinstance(method, str) and isinstance(version, str)
 
+    class _RequestBodyTooLargeError(Exception):
+        def __init__(self, *, limit: int, actual_size: int) -> None:
+            super().__init__("Request body too large")
+            self.limit = limit
+            self.actual_size = actual_size
+
+    def _request_body_too_large_response(
+        *,
+        path: str,
+        method: str,
+        error: _RequestBodyTooLargeError,
+    ) -> JSONResponse:
+        logger.warning(
+            "A2A request %s %s rejected: body_size=%s exceeds max_request_body_bytes=%s",
+            method,
+            path,
+            error.actual_size,
+            error.limit,
+        )
+        return JSONResponse(
+            {"error": "Request body too large", "max_bytes": error.limit},
+            status_code=413,
+        )
+
     async def _get_request_body(request: Request) -> tuple[bytes, Token | None]:
         cached = _REQUEST_BODY_BYTES.get()
         if cached is not None:
             return cached, None
-        body = await request.body()
+
+        limit = settings.a2a_max_request_body_bytes
+        content_length = _parse_content_length(request.headers.get("content-length"))
+        if limit > 0 and content_length is not None and content_length > limit:
+            raise _RequestBodyTooLargeError(limit=limit, actual_size=content_length)
+
+        if hasattr(request, "_body"):
+            body = request._body
+            if limit > 0 and len(body) > limit:
+                raise _RequestBodyTooLargeError(limit=limit, actual_size=len(body))
+        elif limit <= 0:
+            body = await request.body()
+        else:
+            total = 0
+            chunks: list[bytes] = []
+            async for chunk in request.stream():
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > limit:
+                    raise _RequestBodyTooLargeError(limit=limit, actual_size=total)
+                chunks.append(chunk)
+            body = b"".join(chunks)
+            request._body = body
+
         token = _REQUEST_BODY_BYTES.set(body)
         return body, token
 
@@ -1002,36 +1050,14 @@ def create_app(settings: Settings) -> FastAPI:
             return await call_next(request)
 
         try:
-            path = request.url.path
-            content_length = _parse_content_length(request.headers.get("content-length"))
-            if content_length is not None and content_length > limit:
-                reason = "content-length=%s exceeds max_request_body_bytes=%s"
-                logger.warning(
-                    "A2A request %s %s rejected: " + reason,
-                    request.method,
-                    path,
-                    content_length,
-                    limit,
-                )
-                return JSONResponse(
-                    {"error": "Request body too large", "max_bytes": limit},
-                    status_code=413,
-                )
-
-            body, token = await _get_request_body(request)
-            if len(body) > limit:
-                logger.warning(
-                    "A2A request %s %s rejected: body_size=%s exceeds max_request_body_bytes=%s",
-                    request.method,
-                    path,
-                    len(body),
-                    limit,
-                )
-                return JSONResponse(
-                    {"error": "Request body too large", "max_bytes": limit},
-                    status_code=413,
-                )
+            _, token = await _get_request_body(request)
             return await call_next(request)
+        except _RequestBodyTooLargeError as error:
+            return _request_body_too_large_response(
+                path=request.url.path,
+                method=request.method,
+                error=error,
+            )
         finally:
             if token is not None:
                 _REQUEST_BODY_BYTES.reset(token)
@@ -1062,6 +1088,12 @@ def create_app(settings: Settings) -> FastAPI:
                     status_code=400,
                 )
             return await call_next(request)
+        except _RequestBodyTooLargeError as error:
+            return _request_body_too_large_response(
+                path=request.url.path,
+                method=request.method,
+                error=error,
+            )
         finally:
             if token is not None:
                 _REQUEST_BODY_BYTES.reset(token)
@@ -1162,6 +1194,12 @@ def create_app(settings: Settings) -> FastAPI:
                 _decode_payload_preview(response_body, limit=limit),
             )
             return response
+        except _RequestBodyTooLargeError as error:
+            return _request_body_too_large_response(
+                path=request.url.path,
+                method=request.method,
+                error=error,
+            )
         finally:
             if token is not None:
                 _REQUEST_BODY_BYTES.reset(token)

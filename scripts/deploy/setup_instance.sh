@@ -106,6 +106,18 @@ require_positive_integer() {
   fi
 }
 
+data_root_supports_protect_home() {
+  local root="${1%/}"
+  case "$root" in
+    /home|/root|/run/user|/home/*|/root/*|/run/user/*)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
 # DATA_ROOT must be traversable by the per-project system user. In hardened
 # deployments, using a non-traversable DATA_ROOT (missing o+x) will break
 # OpenCode writes to $HOME/.cache, $HOME/.local/share, and $HOME/.local/state.
@@ -333,7 +345,6 @@ systemd_override_tmp="$(mktemp)"
 {
   echo "[Service]"
   echo "PrivateDevices=true"
-  echo "ProtectHome=true"
   echo "ProtectKernelTunables=true"
   echo "ProtectKernelModules=true"
   echo "ProtectControlGroups=true"
@@ -343,6 +354,11 @@ systemd_override_tmp="$(mktemp)"
   echo "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"
   echo "TasksMax=${A2A_SYSTEMD_TASKS_MAX}"
   echo "LimitNOFILE=${A2A_SYSTEMD_LIMIT_NOFILE}"
+  if data_root_supports_protect_home "${DATA_ROOT}"; then
+    echo "ProtectHome=true"
+  else
+    echo "# ProtectHome omitted because DATA_ROOT is under /home, /root, or /run/user"
+  fi
   if [[ -n "${A2A_SYSTEMD_MEMORY_MAX}" ]]; then
     echo "MemoryMax=${A2A_SYSTEMD_MEMORY_MAX}"
   fi

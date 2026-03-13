@@ -187,7 +187,6 @@ Each deployed project also gets instance-specific systemd drop-ins at:
 Default drop-in baseline:
 
 - `PrivateDevices=true`
-- `ProtectHome=true`
 - `ProtectKernelTunables=true`
 - `ProtectKernelModules=true`
 - `ProtectControlGroups=true`
@@ -197,6 +196,13 @@ Default drop-in baseline:
 - `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`
 - `TasksMax=512`
 - `LimitNOFILE=65536`
+
+Conditional path guard:
+
+- `ProtectHome=true` is enabled automatically when `DATA_ROOT` is outside
+  `/home`, `/root`, and `/run/user`
+- it is omitted automatically for those paths so `data_root=/home/...` style
+  deployments do not regress
 
 Optional resource overrides:
 

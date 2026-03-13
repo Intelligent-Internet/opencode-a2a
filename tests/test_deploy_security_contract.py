@@ -39,6 +39,8 @@ def test_setup_instance_generates_examples_and_requires_runtime_secret_files() -
     assert "Value for ${key} contains a newline or carriage return" in SETUP_INSTANCE_TEXT
     assert ': "${A2A_MAX_REQUEST_BODY_BYTES:=1048576}"' in SETUP_INSTANCE_TEXT
     assert ': "${A2A_STRICT_ISOLATION:=false}"' in SETUP_INSTANCE_TEXT
+    assert "data_root_supports_protect_home()" in SETUP_INSTANCE_TEXT
+    assert "/home|/root|/run/user|/home/*|/root/*|/run/user/*" in SETUP_INSTANCE_TEXT
     assert "TemporaryFileSystem=${DATA_ROOT}:ro" in SETUP_INSTANCE_TEXT
     assert "BindPaths=${PROJECT_DIR}:${PROJECT_DIR}" in SETUP_INSTANCE_TEXT
     request_limit_line = (
