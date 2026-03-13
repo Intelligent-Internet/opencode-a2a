@@ -284,7 +284,7 @@ def _build_agent_card_description(
     )
     parts: list[str] = [base, summary]
     parts.append(
-        "Within one opencode-a2a-serve instance, all consumers share the same "
+        "Within one opencode-a2a-server instance, all consumers share the same "
         "underlying OpenCode workspace/environment."
     )
     project = deployment_context.get("project")

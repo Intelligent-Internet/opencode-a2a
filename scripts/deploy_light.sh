@@ -245,7 +245,7 @@ is_opencode_running() {
 is_a2a_running() {
   local pid
   pid="$(a2a_pid 2>/dev/null || true)"
-  pid_matches_tokens "$pid" "opencode-a2a-serve"
+  pid_matches_tokens "$pid" "opencode-a2a-server"
 }
 
 cleanup_stale_pidfiles() {
@@ -477,7 +477,7 @@ start_a2a() {
     if [[ -n "$OPENCODE_TIMEOUT_STREAM" ]]; then
       export OPENCODE_TIMEOUT_STREAM
     fi
-    exec uv run opencode-a2a-serve
+    exec uv run opencode-a2a-server
   ) >>"$A2A_LOG_FILE" 2>&1 &
   echo "$!" >"$A2A_PID_FILE"
 }
@@ -505,7 +505,7 @@ stop_instance() {
   fi
 
   if [[ -n "$a2a_current_pid" ]]; then
-    terminate_pid "$a2a_current_pid" "opencode-a2a-serve"
+    terminate_pid "$a2a_current_pid" "opencode-a2a-server"
   fi
   if [[ -n "$opencode_current_pid" ]]; then
     terminate_pid "$opencode_current_pid" "opencode serve"

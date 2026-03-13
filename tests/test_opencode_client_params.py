@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from opencode_a2a_serve.opencode_client import OpencodeClient, UpstreamContractError
+from opencode_a2a_server.opencode_client import OpencodeClient, UpstreamContractError
 from tests.helpers import make_settings
 
 

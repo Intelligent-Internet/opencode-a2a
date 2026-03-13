@@ -159,7 +159,7 @@ USAGE
   exit 1
 fi
 
-export OPENCODE_A2A_DIR="${OPENCODE_A2A_DIR:-/opt/opencode-a2a/opencode-a2a-serve}"
+export OPENCODE_A2A_DIR="${OPENCODE_A2A_DIR:-/opt/opencode-a2a/opencode-a2a-server}"
 export OPENCODE_CORE_DIR="${OPENCODE_CORE_DIR:-/opt/.opencode}"
 export UV_PYTHON_DIR="${UV_PYTHON_DIR:-/opt/uv-python}"
 export UV_PYTHON_DIR_GROUP="${UV_PYTHON_DIR_GROUP-opencode}"

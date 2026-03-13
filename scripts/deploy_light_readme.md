@@ -8,7 +8,7 @@ This script does **not** replace the systemd deployment flow:
 
 - It keeps the current two-process runtime model:
   - `opencode serve`
-  - `opencode-a2a-serve`
+  - `opencode-a2a-server`
 - It does not create system users, isolated data roots, or systemd units.
 - It is best suited for single-user or small-team environments that already trust the current host user and workspace.
 
@@ -93,7 +93,7 @@ On `start`, the script:
 1. validates required inputs and local commands
 2. starts `opencode serve`
 3. waits until `GET /session` succeeds on the configured OpenCode bind address
-4. starts `opencode-a2a-serve`
+4. starts `opencode-a2a-server`
 5. waits until the local Agent Card endpoint responds successfully
 
 If either process fails readiness, the script stops any already-started child process and exits non-zero.

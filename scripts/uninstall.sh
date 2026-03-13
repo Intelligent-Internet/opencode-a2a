@@ -63,7 +63,7 @@ if [[ "$DATA_ROOT" =~ [[:space:]] ]]; then
 fi
 
 UNIT_OPENCODE="opencode@${PROJECT_NAME}.service"
-UNIT_A2A="opencode-a2a@${PROJECT_NAME}.service"
+UNIT_A2A="opencode-a2a-server@${PROJECT_NAME}.service"
 
 APPLY="false"
 if [[ "$CONFIRM_INPUT" == "UNINSTALL" ]]; then

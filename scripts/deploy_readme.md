@@ -20,8 +20,8 @@ For the overall threat model, see [`../SECURITY.md`](../SECURITY.md).
 
 - `systemd` and `sudo` available
 - OpenCode core path prepared (default `/opt/.opencode`)
-- repo path prepared (default `/opt/opencode-a2a/opencode-a2a-serve`)
-- A2A venv prepared (default `${OPENCODE_A2A_DIR}/.venv/bin/opencode-a2a-serve`)
+- repo path prepared (default `/opt/opencode-a2a/opencode-a2a-server`)
+- A2A venv prepared (default `${OPENCODE_A2A_DIR}/.venv/bin/opencode-a2a-server`)
 - uv python pool prepared (default `/opt/uv-python`)
 
 For one-time host bootstrap, see [`init_system_readme.md`](./init_system_readme.md).
@@ -119,7 +119,7 @@ For values that support both environment variables and CLI keys:
 
 | ENV Name | CLI Key | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `OPENCODE_A2A_DIR` | - | Optional | `/opt/opencode-a2a/opencode-a2a-serve` | Repo path. |
+| `OPENCODE_A2A_DIR` | - | Optional | `/opt/opencode-a2a/opencode-a2a-server` | Repo path. |
 | `OPENCODE_CORE_DIR` | - | Optional | `/opt/.opencode` | OpenCode core path. |
 | `UV_PYTHON_DIR` | - | Optional | `/opt/uv-python` | uv python pool path. |
 | `UV_PYTHON_DIR_GROUP` | - | Optional | `opencode` | Optional shared-group access control. |
@@ -204,21 +204,21 @@ Status:
 
 ```bash
 sudo systemctl status opencode@<project>.service
-sudo systemctl status opencode-a2a@<project>.service
+sudo systemctl status opencode-a2a-server@<project>.service
 ```
 
 Recent logs:
 
 ```bash
 sudo journalctl -u opencode@<project>.service -n 200 --no-pager
-sudo journalctl -u opencode-a2a@<project>.service -n 200 --no-pager
+sudo journalctl -u opencode-a2a-server@<project>.service -n 200 --no-pager
 ```
 
 Follow logs:
 
 ```bash
 sudo journalctl -u opencode@<project>.service -f
-sudo journalctl -u opencode-a2a@<project>.service -f
+sudo journalctl -u opencode-a2a-server@<project>.service -f
 ```
 
 Remove one instance:

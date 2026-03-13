@@ -29,6 +29,6 @@ start_or_restart() {
 }
 
 start_or_restart "opencode@${PROJECT_NAME}.service"
-start_or_restart "opencode-a2a@${PROJECT_NAME}.service"
+start_or_restart "opencode-a2a-server@${PROJECT_NAME}.service"
 
-sudo systemctl status "opencode-a2a@${PROJECT_NAME}.service" --no-pager
+sudo systemctl status "opencode-a2a-server@${PROJECT_NAME}.service" --no-pager

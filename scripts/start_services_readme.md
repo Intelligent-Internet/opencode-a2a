@@ -19,7 +19,7 @@ Then run:
 The script starts:
 
 - `opencode serve`
-- `uv run opencode-a2a-serve`
+- `uv run opencode-a2a-server`
 
 It also stops previous matching local processes before startup.
 

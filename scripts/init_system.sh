@@ -5,14 +5,14 @@ set -euo pipefail
 
 OPENCODE_CORE_DIR="/opt/.opencode"
 SHARED_WRAPPER_DIR="/opt/opencode-a2a"
-OPENCODE_A2A_DIR="${SHARED_WRAPPER_DIR}/opencode-a2a-serve"
+OPENCODE_A2A_DIR="${SHARED_WRAPPER_DIR}/opencode-a2a-server"
 UV_PYTHON_DIR="/opt/uv-python"
 UV_PYTHON_DIR_MODE="770"
 UV_PYTHON_DIR_FINAL_MODE="750"
 UV_PYTHON_DIR_GROUP="opencode"
 UV_PYTHON_INSTALL_DIR="$UV_PYTHON_DIR"
 DATA_ROOT="/data/opencode-a2a"
-OPENCODE_A2A_REPO="https://github.com/Intelligent-Internet/opencode-a2a-serve.git"
+OPENCODE_A2A_REPO="https://github.com/Intelligent-Internet/opencode-a2a-server.git"
 OPENCODE_A2A_BRANCH="main"
 OPENCODE_INSTALLER_URL="https://opencode.ai/install"
 OPENCODE_INSTALLER_VERSION="1.2.5"
@@ -586,7 +586,7 @@ fi
 log_done "Repository check completed."
 
 log_start "Checking A2A virtual environment..."
-if [[ -x "${OPENCODE_A2A_DIR}/.venv/bin/opencode-a2a-serve" ]]; then
+if [[ -x "${OPENCODE_A2A_DIR}/.venv/bin/opencode-a2a-server" ]]; then
   log_done "A2A venv already initialized; skip."
 else
   if ! command -v uv >/dev/null 2>&1; then

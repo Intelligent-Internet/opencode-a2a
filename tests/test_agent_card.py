@@ -1,4 +1,4 @@
-from opencode_a2a_serve.app import (
+from opencode_a2a_server.app import (
     INTERRUPT_CALLBACK_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
     PROVIDER_DISCOVERY_EXTENSION_URI,
@@ -7,7 +7,7 @@ from opencode_a2a_serve.app import (
     STREAMING_EXTENSION_URI,
     build_agent_card,
 )
-from opencode_a2a_serve.jsonrpc_ext import SESSION_CONTEXT_PREFIX
+from opencode_a2a_server.jsonrpc_ext import SESSION_CONTEXT_PREFIX
 from tests.helpers import make_settings
 
 

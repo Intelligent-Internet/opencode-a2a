@@ -172,7 +172,7 @@ rm -f "$opencode_auth_example_tmp"
 
 a2a_secret_example_tmp="$(mktemp)"
 cat <<'EOF' >"$a2a_secret_example_tmp"
-# Root-only runtime secret file for opencode-a2a@.service.
+# Root-only runtime secret file for opencode-a2a-server@.service.
 # Populate A2A_BEARER_TOKEN here if ENABLE_SECRET_PERSISTENCE is not enabled during deploy.
 A2A_BEARER_TOKEN=<a2a-bearer-token>
 EOF

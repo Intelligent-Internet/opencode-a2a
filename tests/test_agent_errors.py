@@ -5,7 +5,7 @@ import pytest
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import Task, TaskState, TaskStatusUpdateEvent
 
-from opencode_a2a_serve.agent import OpencodeAgentExecutor
+from opencode_a2a_server.agent import OpencodeAgentExecutor
 from tests.helpers import configure_mock_client_runtime, make_request_context_mock
 
 

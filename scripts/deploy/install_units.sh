@@ -11,7 +11,7 @@ set -euo pipefail
 
 UNIT_DIR="/etc/systemd/system"
 OPENCODE_UNIT="${UNIT_DIR}/opencode@.service"
-A2A_UNIT="${UNIT_DIR}/opencode-a2a@.service"
+A2A_UNIT="${UNIT_DIR}/opencode-a2a-server@.service"
 
 sudo install -d -m 755 "$UNIT_DIR"
 

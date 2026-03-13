@@ -3,8 +3,8 @@ import asyncio
 import pytest
 from a2a.types import Task
 
-from opencode_a2a_serve.agent import OpencodeAgentExecutor
-from opencode_a2a_serve.opencode_client import OpencodeMessage
+from opencode_a2a_server.agent import OpencodeAgentExecutor
+from opencode_a2a_server.opencode_client import OpencodeMessage
 from tests.helpers import DummyChatOpencodeClient, DummyEventQueue, make_request_context
 
 

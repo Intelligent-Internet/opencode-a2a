@@ -1,8 +1,8 @@
-# opencode-a2a-serve
+# opencode-a2a-server
 
 > Turn OpenCode into a stateful A2A service with a clear runtime boundary and production-friendly deployment workflow.
 
-`opencode-a2a-serve` exposes OpenCode through standard A2A interfaces and adds
+`opencode-a2a-server` exposes OpenCode through standard A2A interfaces and adds
 the operational pieces that raw agent runtimes usually do not provide by
 default: authentication, session continuity, streaming contracts, interrupt
 handling, deployment tooling, and explicit security guidance.
@@ -30,7 +30,7 @@ need a stable service layer around it. This repository provides that layer by:
 
 ## Design Principle
 
-One `OpenCode + opencode-a2a-serve` instance pair is treated as a
+One `OpenCode + opencode-a2a-server` instance pair is treated as a
 single-tenant trust boundary.
 
 - OpenCode may manage multiple projects/directories, but one deployed instance
@@ -45,7 +45,7 @@ single-tenant trust boundary.
 
 ```mermaid
 flowchart TD
-    Hub["A2A client / a2a-client-hub / app"] --> Api["opencode-a2a-serve transport"]
+    Hub["A2A client / a2a-client-hub / app"] --> Api["opencode-a2a-server transport"]
     Api --> Mapping["Task / session / interrupt mapping"]
     Mapping --> Runtime["OpenCode HTTP runtime"]
 
@@ -64,7 +64,7 @@ If you need a client-side integration layer to consume this service, prefer
 
 It is a better place for client concerns such as A2A consumption, upstream
 adapter normalization, and application-facing integration, while
-`opencode-a2a-serve` stays focused on the server/runtime boundary around
+`opencode-a2a-server` stays focused on the server/runtime boundary around
 OpenCode.
 
 ## Security Model
@@ -101,7 +101,7 @@ uv sync --all-extras
 3. Start this service:
 
 ```bash
-A2A_BEARER_TOKEN=dev-token uv run opencode-a2a-serve
+A2A_BEARER_TOKEN=dev-token uv run opencode-a2a-server
 ```
 
 Default address: `http://127.0.0.1:8000`

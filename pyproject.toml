@@ -1,5 +1,5 @@
 [project]
-name = "opencode-a2a-serve"
+name = "opencode-a2a-server"
 version = "0.1.0"
 description = "A2A wrapper service for opencode"
 readme = "README.md"
@@ -42,12 +42,12 @@ dev = [
 ]
 
 [project.scripts]
-opencode-a2a-serve = "opencode_a2a_serve.app:main"
+opencode-a2a-server = "opencode_a2a_server.app:main"
 
 [project.urls]
-Homepage = "https://github.com/Intelligent-Internet/opencode-a2a-serve"
-Repository = "https://github.com/Intelligent-Internet/opencode-a2a-serve"
-Issues = "https://github.com/Intelligent-Internet/opencode-a2a-serve/issues"
+Homepage = "https://github.com/Intelligent-Internet/opencode-a2a-server"
+Repository = "https://github.com/Intelligent-Internet/opencode-a2a-server"
+Issues = "https://github.com/Intelligent-Internet/opencode-a2a-server/issues"
 
 [tool.ruff]
 line-length = 100
@@ -64,7 +64,7 @@ package = true
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src/opencode_a2a_serve"]
+files = ["src/opencode_a2a_server"]
 ignore_missing_imports = true
 show_error_codes = true
 pretty = true
@@ -72,4 +72,4 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [tool.pytest.ini_options]
-addopts = "--cov=src/opencode_a2a_serve --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=src/opencode_a2a_server --cov-report=term-missing --cov-fail-under=80"

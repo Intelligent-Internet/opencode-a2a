@@ -18,7 +18,7 @@ and JSON-RPC extension details (README stays at overview level).
 
 This section keeps only the protocol-relevant variables.
 For the full runtime variable catalog and defaults, see
-[`../src/opencode_a2a_serve/config.py`](../src/opencode_a2a_serve/config.py).
+[`../src/opencode_a2a_server/config.py`](../src/opencode_a2a_server/config.py).
 For deploy-time inputs and systemd-oriented parameters, see
 [`../scripts/deploy_readme.md`](../scripts/deploy_readme.md).
 
@@ -84,7 +84,7 @@ Key variables to understand protocol behavior:
   `Task.metadata.shared.usage` with the same field schema.
 - Requests require `Authorization: Bearer <token>`; otherwise `401` is
   returned. Agent Card endpoints are public.
-- Within one `opencode-a2a-serve` instance, all consumers share the same
+- Within one `opencode-a2a-server` instance, all consumers share the same
   underlying OpenCode workspace/environment. This deployment model is not
   tenant-isolated by default.
 - Error handling:
@@ -503,7 +503,7 @@ If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscr
 - Upstream interruption is best-effort: if upstream returns 404, network errors, or other HTTP errors, A2A cancellation still completes with `TaskState.canceled`.
 - Idempotency contract: repeated `tasks/cancel` on an already `canceled` task returns the current terminal task state without error.
 - Terminal subscribe contract: calling `subscribe` on a terminal task replays one terminal `Task` snapshot and then closes the stream.
-- The cancel path emits metric log records (`logger=opencode_a2a_serve.agent`):
+- The cancel path emits metric log records (`logger=opencode_a2a_server.agent`):
   - `a2a_cancel_requests_total`
   - `a2a_cancel_abort_attempt_total`
   - `a2a_cancel_abort_success_total`
@@ -516,7 +516,7 @@ If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscr
 When changing extension methods/errors or extension metadata, validate the
 single-source contract and generated surfaces together:
 
-1. Update `src/opencode_a2a_serve/extension_contracts.py` first (SSOT).
+1. Update `src/opencode_a2a_server/extension_contracts.py` first (SSOT).
 2. Run focused contract checks:
 
 ```bash
@@ -527,7 +527,7 @@ uv run pytest tests/test_extension_contract_consistency.py
 
 ```bash
 uv run pre-commit run --all-files
-uv run mypy src/opencode_a2a_serve
+uv run mypy src/opencode_a2a_server
 uv run pytest
 ```
 
@@ -541,7 +541,7 @@ The contract check fails when any of these drift:
 
 ```bash
 uv run pre-commit install
-uv run mypy src/opencode_a2a_serve
+uv run mypy src/opencode_a2a_server
 uv run pytest
 ```
 

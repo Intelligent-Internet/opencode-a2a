@@ -7,8 +7,8 @@ import pytest
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import TaskState, TaskStatusUpdateEvent
 
-from opencode_a2a_serve.agent import OpencodeAgentExecutor
-from opencode_a2a_serve.opencode_client import OpencodeClient
+from opencode_a2a_server.agent import OpencodeAgentExecutor
+from opencode_a2a_server.opencode_client import OpencodeClient
 from tests.helpers import configure_mock_client_runtime, make_request_context_mock
 
 
@@ -63,7 +63,7 @@ async def test_cancel_interrupts_running_execute_and_keeps_queue_open(caplog):
     )
     cancel_queue = AsyncMock(spec=EventQueue)
 
-    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_serve.agent"):
+    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_server.agent"):
         await asyncio.wait_for(executor.cancel(cancel_context, cancel_queue), timeout=1.0)
 
     cancel_events = [call.args[0] for call in cancel_queue.enqueue_event.call_args_list]
@@ -233,7 +233,7 @@ async def test_cancel_remains_responsive_when_abort_session_hangs(caplog) -> Non
         call_context_enabled=False,
     )
     cancel_queue = AsyncMock(spec=EventQueue)
-    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_serve.agent"):
+    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_server.agent"):
         await asyncio.wait_for(executor.cancel(cancel_context, cancel_queue), timeout=0.5)
 
     cancel_events = [call.args[0] for call in cancel_queue.enqueue_event.call_args_list]

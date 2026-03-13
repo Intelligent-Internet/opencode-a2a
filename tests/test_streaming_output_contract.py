@@ -3,14 +3,14 @@ import asyncio
 import pytest
 from a2a.types import Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
-from opencode_a2a_serve.agent import (
+from opencode_a2a_server.agent import (
     BlockType,
     OpencodeAgentExecutor,
     _extract_token_usage,
     _extract_tool_part_payload,
     _StreamOutputState,
 )
-from opencode_a2a_serve.opencode_client import OpencodeMessage
+from opencode_a2a_server.opencode_client import OpencodeMessage
 from tests.helpers import DummyEventQueue, make_request_context, make_settings
 
 

@@ -3,8 +3,8 @@ import logging
 import httpx
 import pytest
 
-from opencode_a2a_serve.config import Settings
-from opencode_a2a_serve.opencode_client import UpstreamContractError
+from opencode_a2a_server.config import Settings
+from opencode_a2a_server.opencode_client import UpstreamContractError
 from tests.helpers import DummySessionQueryOpencodeClient as DummyOpencodeClient
 from tests.helpers import make_settings
 
@@ -20,7 +20,7 @@ def _session_meta(payload: dict) -> dict:
 
 @pytest.mark.asyncio
 async def test_session_query_extension_requires_bearer_token(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     monkeypatch.setattr(app_module, "OpencodeClient", DummyOpencodeClient)
     app = app_module.create_app(
@@ -49,7 +49,7 @@ async def test_session_query_extension_requires_bearer_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -122,7 +122,7 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_provider_discovery_extension_returns_normalized_catalog(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -182,7 +182,7 @@ async def test_provider_discovery_extension_returns_normalized_catalog(monkeypat
 
 @pytest.mark.asyncio
 async def test_provider_discovery_extension_rejects_invalid_provider_id(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -212,7 +212,7 @@ async def test_provider_discovery_extension_rejects_invalid_provider_id(monkeypa
 
 @pytest.mark.asyncio
 async def test_provider_discovery_extension_maps_payload_mismatch(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -243,7 +243,7 @@ async def test_provider_discovery_extension_maps_payload_mismatch(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_non_array_upstream_payload(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class WeirdPayloadClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -276,7 +276,7 @@ async def test_session_query_extension_rejects_non_array_upstream_payload(monkey
 
 @pytest.mark.asyncio
 async def test_session_query_extension_session_title_is_extracted_or_placeholder(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class TitlePayloadClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -304,7 +304,7 @@ async def test_session_query_extension_session_title_is_extracted_or_placeholder
 
 @pytest.mark.asyncio
 async def test_session_query_extension_keeps_session_with_empty_title(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class EmptyTitlePayloadClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -332,7 +332,7 @@ async def test_session_query_extension_keeps_session_with_empty_title(monkeypatc
 
 @pytest.mark.asyncio
 async def test_session_query_extension_message_role_and_id_from_info(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class InfoRoleClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -371,7 +371,7 @@ async def test_session_query_extension_message_role_and_id_from_info(monkeypatch
 
 @pytest.mark.asyncio
 async def test_session_query_extension_accepts_top_level_list_payload(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class ListPayloadClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -420,7 +420,7 @@ async def test_session_query_extension_accepts_top_level_list_payload(monkeypatc
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class AltKeyPayloadClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -462,7 +462,7 @@ async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypa
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_cursor_limit(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -504,7 +504,7 @@ async def test_session_query_extension_rejects_cursor_limit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_page_size_pagination(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -545,7 +545,7 @@ async def test_session_query_extension_rejects_page_size_pagination(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_session_query_extension_maps_404_to_session_not_found(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class NotFoundOpencodeClient(DummyOpencodeClient):
         async def list_messages(self, session_id: str, *, params=None):
@@ -580,10 +580,10 @@ async def test_session_query_extension_maps_404_to_session_not_found(monkeypatch
 
 @pytest.mark.asyncio
 async def test_session_query_extension_does_not_log_response_bodies(monkeypatch, caplog):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     monkeypatch.setattr(app_module, "OpencodeClient", DummyOpencodeClient)
-    caplog.set_level(logging.DEBUG, logger="opencode_a2a_serve.app")
+    caplog.set_level(logging.DEBUG, logger="opencode_a2a_server.app")
 
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=True, **_BASE_SETTINGS)
@@ -611,7 +611,7 @@ async def test_session_query_extension_does_not_log_response_bodies(monkeypatch,
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_success(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -663,7 +663,7 @@ async def test_session_prompt_async_extension_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_rejects_invalid_params(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -762,7 +762,7 @@ async def test_session_prompt_async_extension_rejects_invalid_params(monkeypatch
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_rejects_owner_mismatch(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -797,7 +797,7 @@ async def test_session_prompt_async_extension_rejects_owner_mismatch(monkeypatch
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_reuses_directory_boundary_validation(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -842,7 +842,7 @@ async def test_session_prompt_async_extension_reuses_directory_boundary_validati
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_honors_directory_override_switch(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -889,7 +889,7 @@ async def test_session_prompt_async_extension_honors_directory_override_switch(m
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_maps_404_to_session_not_found(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class NotFoundPromptAsyncClient(DummyOpencodeClient):
         async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
@@ -926,7 +926,7 @@ async def test_session_prompt_async_extension_maps_404_to_session_not_found(monk
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_maps_non_204_to_payload_error(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class InvalidPromptAsyncStatusClient(DummyOpencodeClient):
         async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
@@ -963,7 +963,7 @@ async def test_session_prompt_async_extension_maps_non_204_to_payload_error(monk
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_maps_500_to_upstream_http_error(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class UpstreamErrorPromptAsyncClient(DummyOpencodeClient):
         async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
@@ -1001,7 +1001,7 @@ async def test_session_prompt_async_extension_maps_500_to_upstream_http_error(mo
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_maps_network_error_to_unreachable(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class NetworkErrorPromptAsyncClient(DummyOpencodeClient):
         async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
@@ -1037,8 +1037,8 @@ async def test_session_prompt_async_extension_maps_network_error_to_unreachable(
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_release_failure_does_not_override_response(monkeypatch, caplog):
-    import opencode_a2a_serve.app as app_module
-    from opencode_a2a_serve.agent import OpencodeAgentExecutor
+    import opencode_a2a_server.app as app_module
+    from opencode_a2a_server.agent import OpencodeAgentExecutor
 
     class NetworkErrorPromptAsyncClient(DummyOpencodeClient):
         async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
@@ -1086,7 +1086,7 @@ async def test_session_prompt_async_release_failure_does_not_override_response(m
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_notification_returns_204(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -1117,7 +1117,7 @@ async def test_session_prompt_async_extension_notification_returns_204(monkeypat
 
 @pytest.mark.asyncio
 async def test_session_command_extension_success(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -1167,7 +1167,7 @@ async def test_session_command_extension_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_command_extension_accepts_request_model(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -1210,7 +1210,7 @@ async def test_session_command_extension_accepts_request_model(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_command_extension_rejects_invalid_params(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -1260,7 +1260,7 @@ async def test_session_command_extension_rejects_invalid_params(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_command_extension_maps_404_to_session_not_found(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class NotFoundCommandClient(DummyOpencodeClient):
         async def session_command(self, session_id: str, request: dict, *, directory=None):
@@ -1297,7 +1297,7 @@ async def test_session_command_extension_maps_404_to_session_not_found(monkeypat
 
 @pytest.mark.asyncio
 async def test_session_shell_extension_disabled_by_default(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -1331,7 +1331,7 @@ async def test_session_shell_extension_disabled_by_default(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_shell_extension_success_when_enabled(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -1382,7 +1382,7 @@ async def test_session_shell_extension_success_when_enabled(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_shell_extension_rejects_invalid_params(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -1446,7 +1446,7 @@ async def test_session_shell_extension_rejects_invalid_params(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_shell_extension_rejects_owner_mismatch(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -1491,7 +1491,7 @@ async def test_session_shell_extension_rejects_owner_mismatch(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_command_extension_maps_500_to_upstream_http_error(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class UpstreamErrorCommandClient(DummyOpencodeClient):
         async def session_command(self, session_id: str, request: dict, *, directory=None):
@@ -1529,7 +1529,7 @@ async def test_session_command_extension_maps_500_to_upstream_http_error(monkeyp
 
 @pytest.mark.asyncio
 async def test_session_shell_extension_maps_network_error_to_unreachable(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class NetworkErrorShellClient(DummyOpencodeClient):
         async def session_shell(self, session_id: str, request: dict, *, directory=None):
@@ -1570,7 +1570,7 @@ async def test_session_shell_extension_maps_network_error_to_unreachable(monkeyp
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_permission_reply(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class InterruptClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -1645,7 +1645,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_legacy_permission_fields(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -1674,7 +1674,7 @@ async def test_interrupt_callback_extension_rejects_legacy_permission_fields(mon
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_legacy_metadata_directory(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -1710,7 +1710,7 @@ async def test_interrupt_callback_extension_rejects_legacy_metadata_directory(mo
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class InterruptClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -1810,7 +1810,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class NotFoundInterruptClient(DummyOpencodeClient):
         async def permission_reply(
@@ -1858,7 +1858,7 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class ExpiredInterruptClient(DummyOpencodeClient):
         def resolve_interrupt_request(self, request_id: str):
@@ -1890,7 +1890,7 @@ async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class InterruptClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -1938,7 +1938,7 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class InterruptClient(DummyOpencodeClient):
         pass
@@ -1976,7 +1976,7 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_identity_mismatch(monkeypatch):
-    import opencode_a2a_serve.app as app_module
+    import opencode_a2a_server.app as app_module
 
     class InterruptClient(DummyOpencodeClient):
         pass
