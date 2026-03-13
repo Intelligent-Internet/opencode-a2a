@@ -3,6 +3,10 @@
 # Initialize host prerequisites for OpenCode + A2A (idempotent).
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./init_system_uv_release_manifest.sh
+source "${SCRIPT_DIR}/init_system_uv_release_manifest.sh"
+
 OPENCODE_CORE_DIR="/opt/.opencode"
 SHARED_WRAPPER_DIR="/opt/opencode-a2a"
 OPENCODE_A2A_DIR="${SHARED_WRAPPER_DIR}/opencode-a2a-server"
@@ -18,16 +22,6 @@ OPENCODE_INSTALLER_URL="https://opencode.ai/install"
 OPENCODE_INSTALLER_VERSION="1.2.5"
 OPENCODE_INSTALLER_SHA256="fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e"
 OPENCODE_INSTALL_CMD="--version ${OPENCODE_INSTALLER_VERSION}"
-UV_VERSION="0.10.7"
-UV_RELEASE_BASE_URL="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}"
-UV_TARBALL_X86_64_GNU="uv-x86_64-unknown-linux-gnu.tar.gz"
-UV_TARBALL_X86_64_GNU_SHA256="9ac6cee4e379a5abfca06e78a777b26b7ba1f81cb7935b97054d80d85ac00774" # pragma: allowlist secret
-UV_TARBALL_X86_64_MUSL="uv-x86_64-unknown-linux-musl.tar.gz"
-UV_TARBALL_X86_64_MUSL_SHA256="992529add6024e67135b1c80617abd2eca7be2cf0b99b3911f923de815bd8dc1" # pragma: allowlist secret
-UV_TARBALL_AARCH64_GNU="uv-aarch64-unknown-linux-gnu.tar.gz"
-UV_TARBALL_AARCH64_GNU_SHA256="20efc27d946860093650bcf26096a016b10fdaf03b13c33b75fbde02962beea9" # pragma: allowlist secret
-UV_TARBALL_AARCH64_MUSL="uv-aarch64-unknown-linux-musl.tar.gz"
-UV_TARBALL_AARCH64_MUSL_SHA256="115291f9943531a3b63db3a2eabda8b74b8da4831551679382cb309c9debd9f7" # pragma: allowlist secret
 
 # Feature toggles.
 INSTALL_PACKAGES="true"
