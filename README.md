@@ -13,6 +13,12 @@ Provide a practical adapter layer that lets individuals and small teams expose O
 - Operational readiness: include systemd multi-instance deployment scripts and guardrails.
 - Security baseline: enforce bearer-token auth and document key risk boundaries.
 
+## Design Principle
+
+- Single-tenant runtime boundary: OpenCode may manage multiple projects/directories, but one OpenCode + `opencode-a2a-serve` instance pair is treated as one trust boundary, not a secure multi-tenant runtime.
+- Shared-instance usage is best-effort coordination, not tenant isolation: identity/session ownership checks reduce accidental cross-session access, but they do not provide per-tenant OS/process/secret isolation.
+- For mutually untrusted tenants, deploy separate instance pairs with isolated Linux users or containers, isolated workspace roots, and isolated credentials.
+
 ## Core Capabilities
 
 - A2A HTTP+JSON endpoints (`/v1/message:send`, `/v1/message:stream`, `GET /v1/tasks/{task_id}:subscribe`).
@@ -71,7 +77,7 @@ For deployment and operations scripts, see [`scripts/README.md`](scripts/README.
 
 - `A2A_BEARER_TOKEN` is required for startup.
 - LLM provider keys are consumed by the OpenCode process. This model is best suited for trusted/internal environments unless stronger credential isolation is introduced.
-- Within one service instance, consumers share the same underlying OpenCode workspace/environment (not tenant-isolated by default).
+- Within one service instance, consumers share the same underlying OpenCode workspace/environment. Treat one OpenCode + A2A instance pair as a single-tenant trust boundary; it is not tenant-isolated by default.
 
 ## License
 
