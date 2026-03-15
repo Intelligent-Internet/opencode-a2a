@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # Docs: scripts/deploy_light_readme.md
-# Lightweight background supervisor for one local OpenCode + A2A instance.
+# Lightweight foreground launcher for one local OpenCode + A2A instance.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 ACTION="${1:-}"
-if [[ -n "$ACTION" ]]; then
+if [[ "$ACTION" == "start" ]]; then
   shift
 fi
 
-INSTANCE="default"
 WORKDIR=""
-
 A2A_HOST="127.0.0.1"
 A2A_PORT="8000"
 A2A_PUBLIC_URL=""
@@ -37,17 +35,14 @@ OPENCODE_EXTRA_ARGS=""
 OPENCODE_TIMEOUT=""
 OPENCODE_TIMEOUT_STREAM=""
 
-LOG_ROOT="${ROOT_DIR}/logs/light"
-RUN_ROOT="${ROOT_DIR}/run/light"
 START_TIMEOUT_SECONDS="20"
 
 usage() {
   cat <<'USAGE'
 Usage:
-  A2A_BEARER_TOKEN=<token> ./scripts/deploy_light.sh start workdir=/abs/path [instance=dev] [a2a_host=127.0.0.1] [a2a_port=8000] [a2a_public_url=http://127.0.0.1:8000] [a2a_project=<name>] [a2a_log_level=INFO] [a2a_streaming=true] [a2a_log_payloads=false] [a2a_log_body_limit=0] [a2a_allow_directory_override=true] [a2a_enable_session_shell=false] [a2a_cancel_abort_timeout_seconds=2.0] [opencode_bin=opencode] [opencode_bind_host=127.0.0.1] [opencode_bind_port=4096] [opencode_log_level=WARNING] [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=false] [opencode_extra_args='...'] [opencode_timeout=120] [opencode_timeout_stream=300] [log_root=./logs/light] [run_root=./run/light] [start_timeout_seconds=20]
-  ./scripts/deploy_light.sh stop [instance=dev] [run_root=./run/light]
-  ./scripts/deploy_light.sh status [instance=dev] [run_root=./run/light] [log_root=./logs/light]
-  A2A_BEARER_TOKEN=<token> ./scripts/deploy_light.sh restart workdir=/abs/path [instance=dev]
+  A2A_BEARER_TOKEN=<token> ./scripts/deploy_light.sh [start] workdir=/abs/path [a2a_host=127.0.0.1] [a2a_port=8000] [a2a_public_url=http://127.0.0.1:8000] [a2a_project=<name>] [a2a_log_level=INFO] [a2a_streaming=true] [a2a_log_payloads=false] [a2a_log_body_limit=0] [a2a_allow_directory_override=true] [a2a_enable_session_shell=false] [a2a_cancel_abort_timeout_seconds=2.0] [opencode_bin=opencode] [opencode_bind_host=127.0.0.1] [opencode_bind_port=4096] [opencode_log_level=WARNING] [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=false] [opencode_extra_args='...'] [opencode_timeout=120] [opencode_timeout_stream=300] [start_timeout_seconds=20]
+
+This script runs in the foreground. Use external process managers (nohup, pm2, systemd) for background execution.
 USAGE
 }
 
@@ -63,9 +58,6 @@ for arg in "$@"; do
   key="${arg%%=*}"
   value="${arg#*=}"
   case "${key,,}" in
-    instance)
-      INSTANCE="$value"
-      ;;
     workdir)
       WORKDIR="$value"
       ;;
@@ -132,14 +124,11 @@ for arg in "$@"; do
     opencode_timeout_stream)
       OPENCODE_TIMEOUT_STREAM="$value"
       ;;
-    log_root)
-      LOG_ROOT="$value"
-      ;;
-    run_root)
-      RUN_ROOT="$value"
-      ;;
     start_timeout_seconds)
       START_TIMEOUT_SECONDS="$value"
+      ;;
+    instance|log_root|run_root)
+      # Recognized but ignored for backward compatibility in arguments
       ;;
     *)
       die "Unknown argument: $arg"
@@ -147,7 +136,7 @@ for arg in "$@"; do
   esac
 done
 
-if [[ -z "$ACTION" ]]; then
+if [[ -z "$WORKDIR" ]]; then
   usage
   exit 1
 fi
@@ -155,16 +144,6 @@ fi
 if [[ -z "$A2A_PUBLIC_URL" ]]; then
   A2A_PUBLIC_URL="http://${A2A_HOST}:${A2A_PORT}"
 fi
-
-INSTANCE_RUN_DIR="${RUN_ROOT}/${INSTANCE}"
-INSTANCE_LOG_DIR="${LOG_ROOT}/${INSTANCE}"
-
-OPENCODE_PID_FILE="${INSTANCE_RUN_DIR}/opencode.pid"
-A2A_PID_FILE="${INSTANCE_RUN_DIR}/a2a.pid"
-METADATA_FILE="${INSTANCE_RUN_DIR}/metadata.env"
-
-OPENCODE_LOG_FILE="${INSTANCE_LOG_DIR}/opencode.log"
-A2A_LOG_FILE="${INSTANCE_LOG_DIR}/a2a.log"
 
 normalize_probe_host() {
   case "$1" in
@@ -186,76 +165,10 @@ format_http_host() {
   fi
 }
 
-refresh_probe_urls() {
-  OPENCODE_PROBE_HOST="$(normalize_probe_host "$OPENCODE_BIND_HOST")"
-  A2A_PROBE_HOST="$(normalize_probe_host "$A2A_HOST")"
-  OPENCODE_READY_URL="http://$(format_http_host "$OPENCODE_PROBE_HOST"):${OPENCODE_BIND_PORT}/session"
-  A2A_READY_URL="http://$(format_http_host "$A2A_PROBE_HOST"):${A2A_PORT}/.well-known/agent-card.json"
-}
-
-refresh_probe_urls
-
-read_pid() {
-  local pid_file="$1"
-  if [[ ! -f "$pid_file" ]]; then
-    return 1
-  fi
-  local pid
-  pid="$(cat "$pid_file" 2>/dev/null || true)"
-  if [[ -z "$pid" ]]; then
-    return 1
-  fi
-  printf '%s\n' "$pid"
-}
-
-pid_matches_tokens() {
-  local pid="$1"
-  shift
-  if [[ -z "$pid" ]] || ! kill -0 "$pid" >/dev/null 2>&1; then
-    return 1
-  fi
-  local cmdline
-  cmdline="$(tr '\0' ' ' <"/proc/${pid}/cmdline" 2>/dev/null || true)"
-  if [[ -z "$cmdline" ]]; then
-    return 1
-  fi
-  local token
-  for token in "$@"; do
-    if [[ "$cmdline" != *"$token"* ]]; then
-      return 1
-    fi
-  done
-  return 0
-}
-
-opencode_pid() {
-  read_pid "$OPENCODE_PID_FILE"
-}
-
-a2a_pid() {
-  read_pid "$A2A_PID_FILE"
-}
-
-is_opencode_running() {
-  local pid
-  pid="$(opencode_pid 2>/dev/null || true)"
-  pid_matches_tokens "$pid" "opencode" "serve"
-}
-
-is_a2a_running() {
-  local pid
-  pid="$(a2a_pid 2>/dev/null || true)"
-  pid_matches_tokens "$pid" "opencode-a2a-server"
-}
-
-cleanup_stale_pidfiles() {
-  if ! is_opencode_running; then
-    rm -f "$OPENCODE_PID_FILE"
-  fi
-  if ! is_a2a_running; then
-    rm -f "$A2A_PID_FILE"
-  fi
-}
+OPENCODE_PROBE_HOST="$(normalize_probe_host "$OPENCODE_BIND_HOST")"
+OPENCODE_READY_URL="http://$(format_http_host "$OPENCODE_PROBE_HOST"):${OPENCODE_BIND_PORT}/session"
+A2A_PROBE_HOST="$(normalize_probe_host "$A2A_HOST")"
+A2A_READY_URL="http://$(format_http_host "$A2A_PROBE_HOST"):${A2A_PORT}/.well-known/agent-card.json"
 
 validate_port() {
   local label="$1"
@@ -311,12 +224,15 @@ import sys
 import urllib.request
 
 url = sys.argv[1]
-with urllib.request.urlopen(url, timeout=1.5) as response:
-    if response.status != 200:
-        raise SystemExit(1)
-    body = response.read().decode("utf-8")
-    if body:
-        json.loads(body)
+try:
+    with urllib.request.urlopen(url, timeout=1.5) as response:
+        if response.status != 200:
+            sys.exit(1)
+        body = response.read().decode("utf-8")
+        if body:
+            json.loads(body)
+except Exception:
+    sys.exit(1)
 PY
 }
 
@@ -349,52 +265,9 @@ wait_for_http_ready() {
   return 1
 }
 
-write_metadata() {
-  local tmp_file
-  tmp_file="$(mktemp)"
-  {
-    printf 'INSTANCE=%q\n' "$INSTANCE"
-    printf 'WORKDIR=%q\n' "$WORKDIR"
-    printf 'A2A_HOST=%q\n' "$A2A_HOST"
-    printf 'A2A_PORT=%q\n' "$A2A_PORT"
-    printf 'A2A_PUBLIC_URL=%q\n' "$A2A_PUBLIC_URL"
-    printf 'A2A_PROJECT=%q\n' "$A2A_PROJECT"
-    printf 'OPENCODE_BIND_HOST=%q\n' "$OPENCODE_BIND_HOST"
-    printf 'OPENCODE_BIND_PORT=%q\n' "$OPENCODE_BIND_PORT"
-    printf 'OPENCODE_BASE_URL=%q\n' "http://$(format_http_host "$OPENCODE_PROBE_HOST"):${OPENCODE_BIND_PORT}"
-    printf 'OPENCODE_LOG_FILE=%q\n' "$OPENCODE_LOG_FILE"
-    printf 'A2A_LOG_FILE=%q\n' "$A2A_LOG_FILE"
-  } >"$tmp_file"
-  mv "$tmp_file" "$METADATA_FILE"
-}
-
-load_metadata() {
-  if [[ -f "$METADATA_FILE" ]]; then
-    # shellcheck disable=SC1090
-    source "$METADATA_FILE"
-  fi
-}
-
-terminate_pid() {
-  local pid="$1"
-  local label="$2"
-  if [[ -z "$pid" ]] || ! kill -0 "$pid" >/dev/null 2>&1; then
-    return 0
-  fi
-  kill "$pid" >/dev/null 2>&1 || true
-  for _ in $(seq 1 50); do
-    if ! kill -0 "$pid" >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 0.2
-  done
-  echo "Force killing ${label} (pid=${pid})..." >&2
-  kill -9 "$pid" >/dev/null 2>&1 || true
-}
-
 require_start_prerequisites() {
-  [[ -n "${A2A_BEARER_TOKEN:-}" ]] || die "A2A_BEARER_TOKEN is required for start/restart."
-  [[ -n "$WORKDIR" ]] || die "workdir is required for start/restart."
+  [[ -n "${A2A_BEARER_TOKEN:-}" ]] || die "A2A_BEARER_TOKEN is required."
+  [[ -n "$WORKDIR" ]] || die "workdir is required."
   [[ -d "$WORKDIR" ]] || die "workdir does not exist: $WORKDIR"
   command -v uv >/dev/null 2>&1 || die "uv not found in PATH."
 
@@ -413,7 +286,28 @@ require_start_prerequisites() {
   export OPENCODE_BIN_RESOLVED
 }
 
-start_opencode() {
+OPENCODE_PID=""
+A2A_PID=""
+
+cleanup() {
+  echo "Stopping services..."
+  if [[ -n "$A2A_PID" ]]; then
+    kill "$A2A_PID" >/dev/null 2>&1 || true
+    wait "$A2A_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$OPENCODE_PID" ]]; then
+    kill "$OPENCODE_PID" >/dev/null 2>&1 || true
+    wait "$OPENCODE_PID" >/dev/null 2>&1 || true
+  fi
+  exit 0
+}
+
+trap cleanup SIGINT SIGTERM EXIT
+
+start_instance() {
+  require_start_prerequisites
+
+  # 1. Start opencode
   (
     cd "$WORKDIR"
     export OPENCODE_BIN="$OPENCODE_BIN_RESOLVED"
@@ -425,11 +319,15 @@ start_opencode() {
     export OPENCODE_LSP
     export OPENCODE_EXTRA_ARGS
     exec "${ROOT_DIR}/scripts/deploy/run_opencode.sh"
-  ) >>"$OPENCODE_LOG_FILE" 2>&1 &
-  echo "$!" >"$OPENCODE_PID_FILE"
-}
+  ) &
+  OPENCODE_PID=$!
 
-start_a2a() {
+  echo "Starting OpenCode (pid=${OPENCODE_PID})..."
+  if ! wait_for_http_ready "OpenCode" "$OPENCODE_READY_URL" "$START_TIMEOUT_SECONDS"; then
+    die "OpenCode failed to become ready."
+  fi
+
+  # 2. Start A2A
   local opencode_base_url="http://$(format_http_host "$OPENCODE_PROBE_HOST"):${OPENCODE_BIND_PORT}"
   (
     cd "$ROOT_DIR"
@@ -447,148 +345,27 @@ start_a2a() {
     export A2A_BEARER_TOKEN
     export OPENCODE_BASE_URL="$opencode_base_url"
     export OPENCODE_DIRECTORY="$WORKDIR"
-    if [[ -n "$OPENCODE_PROVIDER_ID" ]]; then
-      export OPENCODE_PROVIDER_ID
-    fi
-    if [[ -n "$OPENCODE_MODEL_ID" ]]; then
-      export OPENCODE_MODEL_ID
-    fi
-    if [[ -n "$OPENCODE_TIMEOUT" ]]; then
-      export OPENCODE_TIMEOUT
-    fi
-    if [[ -n "$OPENCODE_TIMEOUT_STREAM" ]]; then
-      export OPENCODE_TIMEOUT_STREAM
-    fi
+    [[ -n "$OPENCODE_PROVIDER_ID" ]] && export OPENCODE_PROVIDER_ID
+    [[ -n "$OPENCODE_MODEL_ID" ]] && export OPENCODE_MODEL_ID
+    [[ -n "$OPENCODE_TIMEOUT" ]] && export OPENCODE_TIMEOUT
+    [[ -n "$OPENCODE_TIMEOUT_STREAM" ]] && export OPENCODE_TIMEOUT_STREAM
     exec uv run opencode-a2a-server
-  ) >>"$A2A_LOG_FILE" 2>&1 &
-  echo "$!" >"$A2A_PID_FILE"
-}
+  ) &
+  A2A_PID=$!
 
-stop_instance() {
-  cleanup_stale_pidfiles
-
-  local running=0
-  local a2a_current_pid=""
-  local opencode_current_pid=""
-
-  if is_a2a_running; then
-    a2a_current_pid="$(a2a_pid)"
-    running=1
-  fi
-  if is_opencode_running; then
-    opencode_current_pid="$(opencode_pid)"
-    running=1
-  fi
-
-  if ((running == 0)); then
-    rm -f "$OPENCODE_PID_FILE" "$A2A_PID_FILE"
-    echo "Instance '${INSTANCE}' is not running."
-    return 0
-  fi
-
-  if [[ -n "$a2a_current_pid" ]]; then
-    terminate_pid "$a2a_current_pid" "opencode-a2a-server"
-  fi
-  if [[ -n "$opencode_current_pid" ]]; then
-    terminate_pid "$opencode_current_pid" "opencode serve"
-  fi
-
-  rm -f "$OPENCODE_PID_FILE" "$A2A_PID_FILE"
-  echo "Instance '${INSTANCE}' stopped."
-}
-
-status_instance() {
-  cleanup_stale_pidfiles
-  load_metadata
-  refresh_probe_urls
-
-  local opencode_state="stopped"
-  local a2a_state="stopped"
-  local overall_exit=0
-
-  if is_opencode_running; then
-    opencode_state="running (pid=$(opencode_pid))"
-  else
-    overall_exit=1
-  fi
-
-  if is_a2a_running; then
-    a2a_state="running (pid=$(a2a_pid))"
-  else
-    overall_exit=1
-  fi
-
-  cat <<INFO
-Instance: ${INSTANCE}
-Workdir: ${WORKDIR:-unknown}
-OpenCode: ${opencode_state}
-A2A: ${a2a_state}
-OpenCode log: ${OPENCODE_LOG_FILE}
-A2A log: ${A2A_LOG_FILE}
-OpenCode ready URL: ${OPENCODE_READY_URL}
-A2A ready URL: ${A2A_READY_URL}
-Public URL: ${A2A_PUBLIC_URL:-unknown}
-INFO
-
-  return "$overall_exit"
-}
-
-start_instance() {
-  require_start_prerequisites
-  cleanup_stale_pidfiles
-
-  if is_opencode_running || is_a2a_running; then
-    status_instance || true
-    die "Instance '${INSTANCE}' is already running or partially running; use stop/restart first."
-  fi
-
-  mkdir -p "$INSTANCE_RUN_DIR" "$INSTANCE_LOG_DIR"
-  write_metadata
-
-  start_opencode
-  if ! wait_for_http_ready "OpenCode" "$OPENCODE_READY_URL" "$START_TIMEOUT_SECONDS"; then
-    stop_instance >/dev/null 2>&1 || true
-    die "OpenCode failed to become ready. Check log: $OPENCODE_LOG_FILE"
-  fi
-
-  start_a2a
+  echo "Starting A2A (pid=${A2A_PID})..."
   if ! wait_for_http_ready "A2A" "$A2A_READY_URL" "$START_TIMEOUT_SECONDS"; then
-    stop_instance >/dev/null 2>&1 || true
-    die "A2A service failed to become ready. Check log: $A2A_LOG_FILE"
+    die "A2A service failed to become ready."
   fi
 
   cat <<INFO
-Instance '${INSTANCE}' started.
-Workdir: ${WORKDIR}
-OpenCode pid: $(opencode_pid)
-A2A pid: $(a2a_pid)
-OpenCode log: ${OPENCODE_LOG_FILE}
-A2A log: ${A2A_LOG_FILE}
+Instance started. logging to stdout/stderr.
 Agent Card: ${A2A_PUBLIC_URL}/.well-known/agent-card.json
 REST endpoint: ${A2A_PUBLIC_URL}/v1/message:send
 INFO
+
+  wait -n "$OPENCODE_PID" "$A2A_PID"
+  echo "One service exited. Shutting down."
 }
 
-restart_instance() {
-  stop_instance || true
-  start_instance
-}
-
-case "${ACTION,,}" in
-  start)
-    start_instance
-    ;;
-  stop)
-    stop_instance
-    ;;
-  status)
-    status_instance
-    ;;
-  restart)
-    restart_instance
-    ;;
-  *)
-    usage
-    die "Unknown action: ${ACTION}"
-    ;;
-esac
+start_instance
