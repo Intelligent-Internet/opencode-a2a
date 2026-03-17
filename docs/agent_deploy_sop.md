@@ -21,7 +21,7 @@ The operator or calling agent should be able to:
     for formal multi-instance deployment
   - `scripts/deploy.sh`: source-based systemd deployment for development or
     debugging against a repository checkout
-  - `scripts/deploy_light.sh`: lightweight current-user background supervisor
+  - `scripts/deploy_light.sh`: lightweight current-user foreground launcher
 - This SOP does not replace protocol documentation. For API and runtime
   behavior, see [`guide.md`](./guide.md).
 - This SOP does not define Docker or Kubernetes flows.
@@ -299,15 +299,14 @@ Minimum example:
 
 ```bash
 export A2A_BEARER_TOKEN='<a2a-token>'
-./scripts/deploy_light.sh start workdir=/abs/path/to/workspace
+./scripts/deploy_light.sh workdir=/abs/path/to/workspace
 ```
 
 Example with explicit ports and instance name:
 
 ```bash
 export A2A_BEARER_TOKEN='<a2a-token>'
-./scripts/deploy_light.sh start \
-  instance=demo \
+./scripts/deploy_light.sh \
   workdir=/srv/workspaces/demo \
   a2a_host=127.0.0.1 \
   a2a_port=8010 \
@@ -321,20 +320,22 @@ If provider keys are needed, export them in the same shell before startup:
 ```bash
 export OPENAI_API_KEY='<openai-key>'
 export A2A_BEARER_TOKEN='<a2a-token>'
-./scripts/deploy_light.sh start workdir=/abs/path/to/workspace
+./scripts/deploy_light.sh workdir=/abs/path/to/workspace
 ```
 
-### Lifecycle Commands
+### Lifecycle and Stop Behavior
 
-```bash
-./scripts/deploy_light.sh status
-./scripts/deploy_light.sh stop
-./scripts/deploy_light.sh restart workdir=/abs/path/to/workspace
-```
+`deploy_light.sh` runs in the foreground and no longer exposes
+`start` / `stop` / `status` / `restart` action verbs.
+
+- Stop it with `Ctrl+C` in an interactive shell.
+- If you need background supervision, wrap it with an external process manager
+  such as `systemd --user`, `nohup`, or `pm2`.
+- To restart it, stop the current process and re-run the same command.
 
 ### Readiness Checks
 
-`deploy_light.sh start` already waits for both:
+`deploy_light.sh` already waits for both:
 
 1. OpenCode runtime readiness
 2. local Agent Card readiness
@@ -348,12 +349,8 @@ curl -fsS http://127.0.0.1:8000/.well-known/agent-card.json
 
 ### Release
 
-```bash
-./scripts/deploy_light.sh stop
-```
-
-This stops the current-user background processes and preserves local logs/run
-metadata under `logs/light/<instance>/` and `run/light/<instance>/`.
+Stopping the foreground process preserves local logs/run metadata under
+`logs/light/<instance>/` and `run/light/<instance>/`.
 
 ## Failure Modes and Recovery Guidance
 
@@ -404,6 +401,6 @@ sudo journalctl -u opencode-a2a-server@alpha.service -n 200 --no-pager
 ### lightweight deploy
 
 1. export `A2A_BEARER_TOKEN` and any needed provider keys
-2. execute `deploy_light.sh start`
+2. execute `deploy_light.sh ...`
 3. verify `/health` or Agent Card
-4. later run `deploy_light.sh stop`
+4. later stop the foreground process or hand it over to your process manager

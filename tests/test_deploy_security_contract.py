@@ -79,7 +79,9 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
     assert "a2a.secret.env" in DEPLOY_README_TEXT
     assert "release-based systemd deployment" in DEPLOY_RELEASE_README_TEXT
     assert "source-based multi-instance systemd deployment" in SCRIPTS_INDEX_TEXT
+    assert "lightweight local foreground launcher" in SCRIPTS_INDEX_TEXT
     assert "release-based, systemd-managed, recommended" in AGENT_DEPLOY_SOP_TEXT
+    assert "deploy_light.sh start" not in AGENT_DEPLOY_SOP_TEXT
 
 
 def test_uninstall_removes_instance_systemd_overrides() -> None:
