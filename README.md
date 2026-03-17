@@ -56,13 +56,18 @@ Detailed consumption guidance:
 One `OpenCode + opencode-a2a-server` instance pair is treated as a
 single-tenant trust boundary.
 
+This repository's intended scaling model is parameterized self-deployment:
+consumers should launch their own isolated instance pairs through the provided
+deployment scripts instead of sharing one runtime across mutually untrusted
+tenants.
+
 - OpenCode may manage multiple projects/directories, but one deployed instance
   is not a secure multi-tenant runtime.
 - Shared-instance identity/session checks are best-effort coordination, not
   hard tenant isolation.
 - For mutually untrusted tenants, deploy separate instance pairs with isolated
-  Linux users or containers, isolated workspace roots, and isolated
-  credentials.
+  Linux users or containers, isolated workspace roots, isolated credentials,
+  and distinct runtime ports.
 
 ## Logical Components
 
