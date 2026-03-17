@@ -28,13 +28,11 @@ For one-time host bootstrap, see [`init_system_readme.md`](./init_system_readme.
 
 ## Parameterized Self-Deployment Contract
 
-`deploy.sh` is the systemd-oriented entry point for parameterized
-self-deployment in trusted operator environments.
+`deploy.sh` is the systemd-oriented entry point for parameterized self-deployment in trusted operator environments.
 
 Its contract is intentionally simple:
 
-- accept non-interactive `key=value` inputs while keeping secrets in env vars
-  or root-only files
+- accept non-interactive `key=value` inputs while keeping secrets in env vars or root-only files
 - provision or update one isolated instance directory per `project`
 - install/start the corresponding systemd units for that instance
 - exit non-zero when validation, setup, or service startup fails

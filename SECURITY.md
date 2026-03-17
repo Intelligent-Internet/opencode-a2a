@@ -13,9 +13,7 @@ not fully isolate upstream model credentials from OpenCode runtime behavior.
   tenant-isolation boundary inside one deployed instance.
 - One `OpenCode + opencode-a2a-server` instance pair is treated as a
   single-tenant trust boundary by design.
-- Tenant isolation across consumers is expected to come from parameterized
-  self-deployment of separate instance pairs with distinct Linux users,
-  workspace roots, credentials, and runtime ports.
+- Tenant isolation across consumers is expected to come from parameterized self-deployment of separate instance pairs with distinct Linux users, workspace roots, credentials, and runtime ports.
 - Within one instance, consumers share the same underlying OpenCode
   workspace/environment by default.
 - LLM provider keys are consumed by the `opencode` process. Prompt injection or

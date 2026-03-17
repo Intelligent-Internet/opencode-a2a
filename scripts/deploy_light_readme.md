@@ -13,9 +13,6 @@ This script does **not** replace the systemd deployment flow:
 - It is best suited for single-user or small-team environments that already trust the current host user and workspace.
 
 For production-oriented multi-instance deployment, continue using [`deploy.sh`](./deploy_readme.md).
-For trusted local automation, this script is the lightweight parameterized
-self-deployment entry point when the caller already controls the current Linux
-user and workspace root.
 
 ## Usage
 
