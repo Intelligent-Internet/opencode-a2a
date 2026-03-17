@@ -16,9 +16,9 @@ Executable scripts live in this directory. This file is the entry index for scri
 ## Script Docs Index
 
 - [`init_release_system_readme.md`](./init_release_system_readme.md): release-based host bootstrap for formal deployments (script: [`init_release_system.sh`](./init_release_system.sh))
-- [`init_system_readme.md`](./init_system_readme.md): source-based host bootstrap for development/debugging (script: [`init_system.sh`](./init_system.sh))
+- [`init_system_readme.md`](./init_system_readme.md): source-based host bootstrap for contributor/internal debugging (script: [`init_system.sh`](./init_system.sh))
 - [`deploy_release_readme.md`](./deploy_release_readme.md): release-based multi-instance systemd deployment (script: [`deploy_release.sh`](./deploy_release.sh))
-- [`deploy_readme.md`](./deploy_readme.md): source-based multi-instance systemd deployment (script: [`deploy.sh`](./deploy.sh))
+- [`deploy_readme.md`](./deploy_readme.md): source-based multi-instance systemd deployment for contributor/internal debugging (script: [`deploy.sh`](./deploy.sh))
 - [`deploy_light_readme.md`](./deploy_light_readme.md): lightweight local foreground launcher for one current-user instance (script: [`deploy_light.sh`](./deploy_light.sh))
 - [`start_services_readme.md`](./start_services_readme.md): local foreground runner (script: [`start_services.sh`](./start_services.sh))
 - [`uninstall_readme.md`](./uninstall_readme.md): preview-first instance removal (script: [`uninstall.sh`](./uninstall.sh))

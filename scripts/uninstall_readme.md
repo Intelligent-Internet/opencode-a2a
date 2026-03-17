@@ -35,5 +35,5 @@ Optional:
 
 ## Related Docs
 
-- deployment flow: [`deploy_readme.md`](./deploy_readme.md)
-- local run flow: [`start_services_readme.md`](./start_services_readme.md)
+- formal deployment flow: [`deploy_release_readme.md`](./deploy_release_readme.md)
+- source-based debug deployment: [`deploy_readme.md`](./deploy_readme.md)
