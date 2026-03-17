@@ -28,11 +28,10 @@ Start one instance:
 ./scripts/deploy_light.sh workdir=/abs/path/to/workspace
 ```
 
-Example with explicit ports and instance name:
+Example with explicit ports:
 
 ```bash
 ./scripts/deploy_light.sh \
-  instance=demo \
   workdir=/srv/workspaces/demo \
   a2a_host=127.0.0.1 \
   a2a_port=8010 \
@@ -46,8 +45,6 @@ Example with explicit ports and instance name:
 - `workdir`:
   required; becomes the default `OPENCODE_DIRECTORY`
   exposed to the A2A layer
-- `instance`:
-  accepted for backward-compatible parsing only; no longer used to isolate pid/log directories
 - `a2a_host` / `a2a_port` / `a2a_public_url`:
   A2A listen address and published URL
 - `opencode_bind_host` / `opencode_bind_port`:
@@ -56,8 +53,6 @@ Example with explicit ports and instance name:
   default upstream provider/model selection
 - `opencode_lsp`:
   whether to enable LSP in generated OpenCode config content
-- `log_root` / `run_root`:
-  accepted for backward-compatible parsing only; no longer used for pid/log layout management
 - `start_timeout_seconds`:
   readiness wait budget for both OpenCode and A2A startup
 

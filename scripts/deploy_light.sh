@@ -6,29 +6,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-ACTION="${1:-}"
-case "${ACTION,,}" in
-  "")
-    ACTION="start"
-    ;;
-  start)
-    ACTION="start"
-    shift
-    ;;
-  stop|status|restart)
-    ACTION="${ACTION,,}"
-    shift
-    ;;
-  *=*)
-    ACTION="start"
-    ;;
-  *)
-    echo "Unknown action: ${ACTION}" >&2
-    usage
-    exit 1
-    ;;
-esac
-
 WORKDIR=""
 A2A_HOST="127.0.0.1"
 A2A_PORT="8000"
@@ -60,7 +37,7 @@ START_TIMEOUT_SECONDS="20"
 usage() {
   cat <<'USAGE'
 Usage:
-  A2A_BEARER_TOKEN=<token> ./scripts/deploy_light.sh [start] workdir=/abs/path [a2a_host=127.0.0.1] [a2a_port=8000] [a2a_public_url=http://127.0.0.1:8000] [a2a_project=<name>] [a2a_log_level=INFO] [a2a_streaming=true] [a2a_log_payloads=false] [a2a_log_body_limit=0] [a2a_allow_directory_override=true] [a2a_enable_session_shell=false] [a2a_cancel_abort_timeout_seconds=2.0] [opencode_bin=opencode] [opencode_bind_host=127.0.0.1] [opencode_bind_port=4096] [opencode_log_level=WARNING] [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=false] [opencode_extra_args='...'] [opencode_timeout=120] [opencode_timeout_stream=300] [start_timeout_seconds=20]
+  A2A_BEARER_TOKEN=<token> ./scripts/deploy_light.sh workdir=/abs/path [a2a_host=127.0.0.1] [a2a_port=8000] [a2a_public_url=http://127.0.0.1:8000] [a2a_project=<name>] [a2a_log_level=INFO] [a2a_streaming=true] [a2a_log_payloads=false] [a2a_log_body_limit=0] [a2a_allow_directory_override=true] [a2a_enable_session_shell=false] [a2a_cancel_abort_timeout_seconds=2.0] [opencode_bin=opencode] [opencode_bind_host=127.0.0.1] [opencode_bind_port=4096] [opencode_log_level=WARNING] [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=false] [opencode_extra_args='...'] [opencode_timeout=120] [opencode_timeout_stream=300] [start_timeout_seconds=20]
 
 This script runs in the foreground. Use external process managers (nohup, pm2, systemd) for background execution.
 USAGE
@@ -73,10 +50,26 @@ die() {
 
 unsupported_action() {
   local action="$1"
-  echo "deploy_light.sh is a foreground launcher and no longer supports ${action}." >&2
-  echo "Use your process manager to manage the launched process lifecycle." >&2
+  echo "deploy_light.sh no longer supports action verbs like ${action}." >&2
+  echo "Run it directly with key=value arguments, and use your process manager to manage lifecycle." >&2
   exit 1
 }
+
+ACTION="${1:-}"
+case "${ACTION,,}" in
+  "")
+    ;;
+  start|stop|status|restart)
+    unsupported_action "${ACTION,,}"
+    ;;
+  *=*)
+    ;;
+  *)
+    echo "Unknown action: ${ACTION}" >&2
+    usage
+    exit 1
+    ;;
+esac
 
 for arg in "$@"; do
   if [[ "$arg" != *=* ]]; then
@@ -154,18 +147,11 @@ for arg in "$@"; do
     start_timeout_seconds)
       START_TIMEOUT_SECONDS="$value"
       ;;
-    instance|log_root|run_root)
-      # Recognized but ignored for backward compatibility in arguments
-      ;;
     *)
       die "Unknown argument: $arg"
       ;;
   esac
 done
-
-if [[ "$ACTION" != "start" ]]; then
-  unsupported_action "$ACTION"
-fi
 
 if [[ -z "$WORKDIR" ]]; then
   usage
