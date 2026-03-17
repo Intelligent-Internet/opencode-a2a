@@ -1,6 +1,6 @@
 # Lightweight Local Deploy Guide (`deploy_light.sh`)
 
-This document describes `scripts/deploy_light.sh`, a lightweight background supervisor for one local OpenCode + A2A instance.
+This document describes `scripts/deploy_light.sh`, a lightweight foreground launcher for one local OpenCode + A2A instance.
 
 It is intended for trusted local/self-host scenarios where the operator wants to reuse the current Linux user, an existing workspace directory, and the current repository checkout.
 
@@ -25,22 +25,13 @@ export A2A_BEARER_TOKEN='<a2a-token>'
 Start one instance:
 
 ```bash
-./scripts/deploy_light.sh start workdir=/abs/path/to/workspace
+./scripts/deploy_light.sh workdir=/abs/path/to/workspace
 ```
 
-Common lifecycle commands:
+Example with explicit ports:
 
 ```bash
-./scripts/deploy_light.sh status
-./scripts/deploy_light.sh stop
-./scripts/deploy_light.sh restart workdir=/abs/path/to/workspace
-```
-
-Example with explicit ports and instance name:
-
-```bash
-./scripts/deploy_light.sh start \
-  instance=demo \
+./scripts/deploy_light.sh \
   workdir=/srv/workspaces/demo \
   a2a_host=127.0.0.1 \
   a2a_port=8010 \
@@ -52,10 +43,8 @@ Example with explicit ports and instance name:
 ## Key Inputs
 
 - `workdir`:
-  required for `start` / `restart`; becomes the default `OPENCODE_DIRECTORY`
+  required; becomes the default `OPENCODE_DIRECTORY`
   exposed to the A2A layer
-- `instance`:
-  instance identifier used to isolate pid/log directories
 - `a2a_host` / `a2a_port` / `a2a_public_url`:
   A2A listen address and published URL
 - `opencode_bind_host` / `opencode_bind_port`:
@@ -64,31 +53,12 @@ Example with explicit ports and instance name:
   default upstream provider/model selection
 - `opencode_lsp`:
   whether to enable LSP in generated OpenCode config content
-- `log_root` / `run_root`:
-  root directories for per-instance logs and pid/metadata files
 - `start_timeout_seconds`:
   readiness wait budget for both OpenCode and A2A startup
 
-## Instance Layout
-
-For `instance=demo`, the script writes:
-
-- runtime metadata and pid files under `run/light/demo/`
-- process logs under `logs/light/demo/`
-
-Each instance uses separate files for:
-
-- `opencode.pid`
-- `a2a.pid`
-- `metadata.env`
-- `opencode.log`
-- `a2a.log`
-
-This avoids the broad `pgrep -f` matching used by the foreground local runner and reduces the risk of touching unrelated local processes.
-
 ## Readiness Behavior
 
-On `start`, the script:
+On launch, the script:
 
 1. validates required inputs and local commands
 2. starts `opencode serve`
