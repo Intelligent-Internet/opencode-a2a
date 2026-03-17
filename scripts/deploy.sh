@@ -326,14 +326,13 @@ if is_truthy "$A2A_ENABLE_SESSION_SHELL"; then
   fi
 fi
 
-if [[ "$UPDATE_A2A" == "true" ]]; then
-  if [[ "$A2A_INSTALL_MODE" == "release" ]]; then
-    "${SCRIPT_DIR}/deploy/update_a2a_release.sh"
-  else
-    "${SCRIPT_DIR}/deploy/update_a2a.sh"
+if [[ "$A2A_INSTALL_MODE" == "release" ]]; then
+  if [[ "$UPDATE_A2A" == "true" ]]; then
+    export FORCE_A2A_RELEASE_INSTALL="true"
   fi
-elif [[ "$A2A_INSTALL_MODE" == "release" ]]; then
   "${SCRIPT_DIR}/deploy/install_release_runtime.sh"
+elif [[ "$UPDATE_A2A" == "true" ]]; then
+  "${SCRIPT_DIR}/deploy/update_a2a.sh"
 fi
 
 "${SCRIPT_DIR}/deploy/install_units.sh"

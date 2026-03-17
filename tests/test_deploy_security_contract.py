@@ -58,7 +58,7 @@ def test_deploy_supports_release_and_source_install_modes() -> None:
     assert "A2A_INSTALL_MODE must be source or release" in DEPLOY_SH_TEXT
     assert 'if [[ "$A2A_INSTALL_MODE" == "release" ]]; then' in DEPLOY_SH_TEXT
     assert '"${SCRIPT_DIR}/deploy/install_release_runtime.sh"' in DEPLOY_SH_TEXT
-    assert '"${SCRIPT_DIR}/deploy/update_a2a_release.sh"' in DEPLOY_SH_TEXT
+    assert 'export FORCE_A2A_RELEASE_INSTALL="true"' in DEPLOY_SH_TEXT
     assert "Environment=A2A_BIN=${A2A_BIN}" in INSTALL_UNITS_TEXT
     assert "ExecStart=${DEPLOY_HELPER_DIR}/run_a2a.sh" in INSTALL_UNITS_TEXT
     assert "ExecStart=${DEPLOY_HELPER_DIR}/run_opencode.sh" in INSTALL_UNITS_TEXT

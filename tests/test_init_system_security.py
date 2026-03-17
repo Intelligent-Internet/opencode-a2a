@@ -62,7 +62,7 @@ def test_node_install_flow_avoids_remote_setup_scripts() -> None:
     assert "Install Node.js >= ${NODE_MAJOR} manually" in INIT_SYSTEM_TEXT
 
 
-def test_repo_bootstrap_defaults_to_release_ref() -> None:
+def test_repo_bootstrap_defaults_to_main_ref() -> None:
     assert _extract_var(INIT_SYSTEM_TEXT, "OPENCODE_A2A_REF") == "main"
     assert _extract_var(INIT_SYSTEM_TEXT, "INSTALL_A2A_SOURCE") == "true"
     assert "OPENCODE_A2A_REPO_READY=0" in INIT_SYSTEM_TEXT
