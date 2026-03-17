@@ -17,7 +17,7 @@ UV_PYTHON_DIR_GROUP="opencode"
 UV_PYTHON_INSTALL_DIR="$UV_PYTHON_DIR"
 DATA_ROOT="/data/opencode-a2a"
 OPENCODE_A2A_REPO="https://github.com/Intelligent-Internet/opencode-a2a-server.git"
-OPENCODE_A2A_BRANCH="main"
+OPENCODE_A2A_REF="release"
 OPENCODE_INSTALLER_URL="https://opencode.ai/install"
 OPENCODE_INSTALLER_VERSION="1.2.5"
 OPENCODE_INSTALLER_SHA256="fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e"
@@ -201,6 +201,69 @@ verify_file_checksum() {
     return 1
   fi
   return 0
+}
+
+extract_github_repo_slug() {
+  local repo_url="$1"
+  repo_url="${repo_url%.git}"
+
+  case "$repo_url" in
+    https://github.com/*/*)
+      printf '%s\n' "${repo_url#https://github.com/}"
+      ;;
+    git@github.com:*)
+      printf '%s\n' "${repo_url#git@github.com:}"
+      ;;
+    ssh://git@github.com/*)
+      printf '%s\n' "${repo_url#ssh://git@github.com/}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+fetch_github_latest_release_tag() {
+  local repo_slug="$1"
+  local tag=""
+
+  if command -v gh >/dev/null 2>&1; then
+    tag="$(gh api "repos/${repo_slug}/releases/latest" --jq '.tag_name' 2>/dev/null || true)"
+  fi
+  if [[ -z "$tag" ]]; then
+    tag="$(
+      curl -fsSL -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${repo_slug}/releases/latest" 2>/dev/null | \
+        tr -d '\n' | sed -n 's/.*"tag_name":"\([^"]*\)".*/\1/p'
+    )"
+  fi
+  if [[ -z "$tag" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$tag"
+}
+
+resolve_opencode_a2a_ref() {
+  local repo_url="$1"
+  local requested_ref="$2"
+  local repo_slug=""
+  local resolved_ref="$requested_ref"
+
+  case "$requested_ref" in
+    "" )
+      return 0
+      ;;
+    release|latest-release)
+      if ! repo_slug="$(extract_github_repo_slug "$repo_url")"; then
+        return 1
+      fi
+      if ! resolved_ref="$(fetch_github_latest_release_tag "$repo_slug")"; then
+        return 1
+      fi
+      ;;
+  esac
+
+  printf '%s\n' "$resolved_ref"
 }
 
 detect_linux_libc() {
@@ -651,8 +714,19 @@ else
         warn "git clone failed. Ensure SSH key is configured or manually clone into $OPENCODE_A2A_DIR."
         INCOMPLETE=1
       else
-        if [[ -n "$OPENCODE_A2A_BRANCH" ]]; then
-          $SUDO git -C "$OPENCODE_A2A_DIR" checkout "$OPENCODE_A2A_BRANCH"
+        resolved_opencode_a2a_ref=""
+        if ! resolved_opencode_a2a_ref="$(resolve_opencode_a2a_ref "$OPENCODE_A2A_REPO" "$OPENCODE_A2A_REF")"; then
+          warn "Failed to resolve opencode-a2a-server ref from $OPENCODE_A2A_REF."
+          warn "Set OPENCODE_A2A_REF to an exact release tag, branch, or commit and retry."
+          INCOMPLETE=1
+        elif [[ -n "$resolved_opencode_a2a_ref" ]]; then
+          log_start "Checking out opencode-a2a-server ref: $resolved_opencode_a2a_ref"
+          if ! $SUDO git -C "$OPENCODE_A2A_DIR" checkout "$resolved_opencode_a2a_ref"; then
+            warn "git checkout failed for ref $resolved_opencode_a2a_ref."
+            INCOMPLETE=1
+          else
+            log_done "Checked out opencode-a2a-server ref: $resolved_opencode_a2a_ref"
+          fi
         fi
         log_done "Repo cloned to $OPENCODE_A2A_DIR"
       fi

@@ -109,27 +109,55 @@ Read before deployment:
 - [SECURITY.md](SECURITY.md)
 - [scripts/deploy_readme.md](scripts/deploy_readme.md)
 
-## Quick Start & Development
+## Install Released CLI
 
-1. Start OpenCode:
+Released versions are published to PyPI and mapped to Git tags / GitHub
+Releases. This is the recommended entry point for users.
+
+Install the latest release:
+
+```bash
+uv tool install opencode-a2a-server
+```
+
+Upgrade an existing installation:
+
+```bash
+uv tool upgrade opencode-a2a-server
+```
+
+Install an exact release:
+
+```bash
+uv tool install "opencode-a2a-server==0.1.0"
+```
+
+Start the released CLI:
 
 ```bash
 opencode serve
+A2A_BEARER_TOKEN=prod-token opencode-a2a-server
 ```
 
-2. Install dependencies:
+Default address: `http://127.0.0.1:8000`
+
+## Development From Source
+
+Use the repository checkout directly only for development, local debugging, or
+validation against unreleased changes on `main`.
+
+1. Install dependencies:
 
 ```bash
 uv sync --all-extras
 ```
 
-3. Start this service:
+2. Start this service from the source tree:
 
 ```bash
+opencode serve
 A2A_BEARER_TOKEN=dev-token uv run opencode-a2a-server
 ```
-
-Default address: `http://127.0.0.1:8000`
 
 Baseline validation:
 

@@ -100,6 +100,11 @@ One-time host bootstrap:
 ./scripts/init_system.sh
 ```
 
+`init_system.sh` defaults to the latest GitHub Release tag of
+`opencode-a2a-server`, not `main`. If you need a reproducible rollback target,
+edit `OPENCODE_A2A_REF` in [`scripts/init_system.sh`](../scripts/init_system.sh)
+to an exact release tag before bootstrap.
+
 ### Secret Strategy
 
 `deploy.sh` supports two secret modes.

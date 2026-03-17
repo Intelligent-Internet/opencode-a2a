@@ -55,6 +55,8 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
     assert "a2a-client-hub" in README_TEXT
     assert "```mermaid" in README_TEXT
     assert "[SECURITY.md](SECURITY.md)" in README_TEXT
+    assert "uv tool install opencode-a2a-server" in README_TEXT
+    assert "Install Released CLI" in README_TEXT
     assert "secret persistence is opt-in" in SECURITY_TEXT
     assert "single-tenant trust boundary" in SECURITY_TEXT
     assert "ENABLE_SECRET_PERSISTENCE=false" in DEPLOY_README_TEXT
