@@ -1,11 +1,8 @@
 # Lightweight Local Deploy Guide (`deploy_light.sh`)
 
-This document describes `scripts/deploy_light.sh`, a lightweight foreground
-launcher for one local OpenCode + A2A instance.
+This document describes `scripts/deploy_light.sh`, a lightweight foreground launcher for one local OpenCode + A2A instance.
 
-It is intended for trusted local/self-host scenarios where the operator wants to
-reuse the current Linux user, an existing workspace directory, and the current
-repository checkout.
+It is intended for trusted local/self-host scenarios where the operator wants to reuse the current Linux user, an existing workspace directory, and the current repository checkout.
 
 This script does **not** replace the systemd deployment flow:
 
@@ -13,20 +10,9 @@ This script does **not** replace the systemd deployment flow:
   - `opencode serve`
   - `opencode-a2a-server`
 - It does not create system users, isolated data roots, or systemd units.
-- It is best suited for single-user or small-team environments that already
-  trust the current host user and workspace.
+- It is best suited for single-user or small-team environments that already trust the current host user and workspace.
 
-For production-oriented multi-instance deployment, continue using
-[`deploy.sh`](./deploy_readme.md).
-
-## Foreground Convergence
-
-`deploy_light.sh` has converged into a foreground launcher. It no longer manages
-background process lifecycles, `stop/status/restart`, or per-instance PID/log
-files.
-
-Use `nohup`, `pm2`, `systemd`, or another external supervisor when detached
-execution, restart policy, or log capture is required.
+For production-oriented multi-instance deployment, continue using [`deploy.sh`](./deploy_readme.md).
 
 ## Usage
 
@@ -39,14 +25,10 @@ export A2A_BEARER_TOKEN='<a2a-token>'
 Start one instance:
 
 ```bash
-./scripts/deploy_light.sh workdir=/abs/path/to/workspace
-```
-
-The script also accepts an optional `start` command for backward compatibility:
-
-```bash
 ./scripts/deploy_light.sh start workdir=/abs/path/to/workspace
 ```
+
+`deploy_light.sh` no longer supports `status`, `stop`, or `restart`. Use `nohup`, `pm2`, `systemd`, or another external supervisor when detached execution, restart policy, or log capture is required.
 
 Example with explicit ports and instance name:
 
@@ -64,10 +46,10 @@ Example with explicit ports and instance name:
 ## Key Inputs
 
 - `workdir`:
-  required; becomes the default `OPENCODE_DIRECTORY` exposed to the A2A layer
+  required for `start`; becomes the default `OPENCODE_DIRECTORY`
+  exposed to the A2A layer
 - `instance`:
-  accepted for backward-compatible parsing, but no longer used to isolate
-  runtime metadata or log files
+  accepted for backward-compatible parsing only; no longer used to isolate pid/log directories
 - `a2a_host` / `a2a_port` / `a2a_public_url`:
   A2A listen address and published URL
 - `opencode_bind_host` / `opencode_bind_port`:
@@ -77,8 +59,7 @@ Example with explicit ports and instance name:
 - `opencode_lsp`:
   whether to enable LSP in generated OpenCode config content
 - `log_root` / `run_root`:
-  accepted for backward-compatible parsing only; no longer used for pid/log
-  layout management
+  accepted for backward-compatible parsing only; no longer used for pid/log layout management
 - `start_timeout_seconds`:
   readiness wait budget for both OpenCode and A2A startup
 
@@ -92,21 +73,15 @@ On `start`, the script:
 4. starts `opencode-a2a-server`
 5. waits until the local Agent Card endpoint responds successfully
 
-If either process fails readiness, the script stops any already-started child
-process and exits non-zero.
-
-After startup, if either child process exits, the launcher stops the other child
-process and exits with the child status.
+If either process fails readiness, the script stops any already-started child process and exits non-zero.
 
 ## Security / Scope Notes
 
 - `A2A_BEARER_TOKEN` is still required.
 - Provider secrets are inherited from the current shell environment.
 - The current Linux user remains the trust boundary.
-- All consumers of one lightweight instance still share the same underlying
-  workspace/environment.
-- This flow is not tenant-isolated and is not a replacement for stronger
-  deployment isolation.
+- All consumers of one lightweight instance still share the same underlying workspace/environment.
+- This flow is not tenant-isolated and is not a replacement for stronger deployment isolation.
 
 ## Related Docs
 
