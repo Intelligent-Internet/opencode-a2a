@@ -40,10 +40,18 @@ The script accepts an optional `start` command for backward compatibility:
 ./scripts/deploy_light.sh start workdir=/abs/path/to/workspace
 ```
 
-Recommended consumption with `pm2`:
+Complete local example:
 
 ```bash
-pm2 start ./scripts/deploy_light.sh --name "a2a-alpha" -- workdir=/data/alpha a2a_port=8010
+export A2A_BEARER_TOKEN='your-token-test'
+./scripts/deploy_light.sh start \
+  instance=demo \
+  workdir=/home/juanjuan/opencode-a2a-serve \
+  a2a_host=127.0.0.1 \
+  a2a_port=38010 \
+  a2a_public_url=http://127.0.0.1:38010 \
+  opencode_bind_host=127.0.0.1 \
+  opencode_bind_port=34106
 ```
 
 ## Key Inputs

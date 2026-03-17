@@ -215,3 +215,4 @@ issue_*.md
 
 # Local OpenCode OpenAPI snapshots (high-churn, local reference only)
 docs/operations/opencode/
+.swival/
