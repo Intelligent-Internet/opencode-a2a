@@ -4,6 +4,7 @@ from unittest import mock
 import pytest
 from pydantic import ValidationError
 
+from opencode_a2a_server import __version__
 from opencode_a2a_server.config import Settings
 
 
@@ -32,6 +33,7 @@ def test_settings_valid():
         assert settings.a2a_max_request_body_bytes == 2048
         assert settings.a2a_cancel_abort_timeout_seconds == 0.75
         assert settings.a2a_enable_session_shell is True
+        assert settings.a2a_version == __version__
 
 
 def test_parse_oauth_scopes():

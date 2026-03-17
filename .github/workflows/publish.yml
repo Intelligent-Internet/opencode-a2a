@@ -1,0 +1,66 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Build package artifacts
+        run: uv build --no-sources
+
+      - name: Verify published version matches tag
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+
+          dist_dir = pathlib.Path("dist")
+          wheels = sorted(dist_dir.glob("opencode_a2a_server-*.whl"))
+          if not wheels:
+              raise SystemExit("No wheel produced in dist/")
+          wheel = wheels[0].name
+          version = wheel.removeprefix("opencode_a2a_server-").split("-py3", 1)[0]
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          if version != tag:
+              raise SystemExit(f"Wheel version {version!r} does not match tag {tag!r}")
+          print(f"Validated release version: {version}")
+          PY
+
+      - name: Smoke test wheel install
+        run: bash ./scripts/smoke_test_built_cli.sh
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.whl

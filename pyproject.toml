@@ -1,10 +1,14 @@
+[build-system]
+requires = ["setuptools>=77", "setuptools-scm[toml]>=8"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "opencode-a2a-server"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A2A wrapper service for opencode"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 authors = [
     { name = "liujuanjuan1984@Intelligent-Internet" },
 ]
@@ -12,7 +16,6 @@ keywords = ["a2a", "opencode", "fastapi", "json-rpc", "sse"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -61,6 +64,10 @@ quote-style = "double"
 
 [tool.uv]
 package = true
+
+[tool.setuptools_scm]
+fallback_version = "0.1.0"
+tag_regex = "^v?(?P<version>.+)$"
 
 [tool.mypy]
 python_version = "3.11"

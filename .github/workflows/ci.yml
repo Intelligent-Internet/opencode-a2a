@@ -45,3 +45,9 @@ jobs:
 
       - name: Run dependency vulnerability audit
         run: uv run pip-audit
+
+      - name: Build package artifacts
+        run: uv build --no-sources
+
+      - name: Smoke test built CLI
+        run: bash ./scripts/smoke_test_built_cli.sh
