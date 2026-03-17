@@ -494,6 +494,7 @@ ensure_dir() {
 
 log_start "System initialization."
 INCOMPLETE=0
+OPENCODE_A2A_REPO_READY=0
 
 log_start "Checking and installing base packages..."
 if is_truthy "$INSTALL_PACKAGES"; then
@@ -700,6 +701,7 @@ log_done "uv Python version check completed."
 log_start "Checking repository state..."
 if [[ -d "$OPENCODE_A2A_DIR/.git" ]]; then
   log_done "Repo exists; skip clone: $OPENCODE_A2A_DIR"
+  OPENCODE_A2A_REPO_READY=1
 else
   if [[ -d "$OPENCODE_A2A_DIR" && -n "$(ls -A "$OPENCODE_A2A_DIR" 2>/dev/null)" ]]; then
     warn "Directory not empty and not a git repo; skip clone: $OPENCODE_A2A_DIR"
@@ -725,8 +727,11 @@ else
             warn "git checkout failed for ref $resolved_opencode_a2a_ref."
             INCOMPLETE=1
           else
+            OPENCODE_A2A_REPO_READY=1
             log_done "Checked out opencode-a2a-server ref: $resolved_opencode_a2a_ref"
           fi
+        else
+          OPENCODE_A2A_REPO_READY=1
         fi
         log_done "Repo cloned to $OPENCODE_A2A_DIR"
       fi
@@ -738,6 +743,9 @@ log_done "Repository check completed."
 log_start "Checking A2A virtual environment..."
 if [[ -x "${OPENCODE_A2A_DIR}/.venv/bin/opencode-a2a-server" ]]; then
   log_done "A2A venv already initialized; skip."
+elif [[ "$OPENCODE_A2A_REPO_READY" -ne 1 ]]; then
+  warn "Repository ref is not ready; skipping A2A venv creation."
+  INCOMPLETE=1
 else
   if ! command -v uv >/dev/null 2>&1; then
     warn "uv not available; cannot create A2A venv."

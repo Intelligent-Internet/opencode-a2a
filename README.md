@@ -129,7 +129,7 @@ uv tool upgrade opencode-a2a-server
 Install an exact release:
 
 ```bash
-uv tool install "opencode-a2a-server==0.1.0"
+uv tool install "opencode-a2a-server==<version>"
 ```
 
 Start the released CLI:
