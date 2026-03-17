@@ -14,7 +14,7 @@ need a stable service layer around it. This repository provides that layer by:
 
 - bridging A2A transport contracts to OpenCode session/message/event APIs
 - making session and interrupt behavior explicit and auditable
-- packaging deployment scripts and operational guidance for long-running use
+- packaging release-first deployment scripts and operational guidance for long-running use
 
 ## What It Already Provides
 
@@ -26,7 +26,7 @@ need a stable service layer around it. This repository provides that layer by:
 - session continuation via `metadata.shared.session.id`
 - request-scoped model selection via `metadata.shared.model`
 - OpenCode session query/control extensions and provider/model discovery
-- systemd multi-instance deployment and lightweight current-user deployment
+- released CLI install/upgrade flow and release-based systemd deployment
 
 ## Extension Capability Overview
 
@@ -75,7 +75,7 @@ flowchart TD
     Mapping --> Runtime["OpenCode HTTP runtime"]
 
     Api --> Auth["Bearer auth + request logging controls"]
-    Api --> Deploy["systemd and lightweight deployment scripts"]
+    Api --> Deploy["release-based deployment tooling"]
     Runtime --> Workspace["Shared workspace / environment boundary"]
 ```
 
@@ -107,12 +107,14 @@ hard multi-tenant isolation layer.
 Read before deployment:
 
 - [SECURITY.md](SECURITY.md)
-- [scripts/deploy_readme.md](scripts/deploy_readme.md)
+- [scripts/deploy_release_readme.md](scripts/deploy_release_readme.md)
 
-## Install Released CLI
+## User Paths
 
 Released versions are published to PyPI and mapped to Git tags / GitHub
 Releases. This is the recommended entry point for users.
+
+### Path 1: Run a Released CLI in an Existing User Environment
 
 Install the latest release:
 
@@ -132,39 +134,56 @@ Install an exact release:
 uv tool install "opencode-a2a-server==<version>"
 ```
 
-Start the released CLI:
+Run it against an existing project/workspace:
 
 ```bash
 opencode serve
-A2A_BEARER_TOKEN=prod-token opencode-a2a-server
+A2A_BEARER_TOKEN=prod-token \
+A2A_PUBLIC_URL=http://127.0.0.1:8000 \
+OPENCODE_DIRECTORY=/abs/path/to/workspace \
+opencode-a2a-server
 ```
 
 Default address: `http://127.0.0.1:8000`
 
-For long-running systemd deployments, prefer the release-based scripts:
+This path is for users who already manage their own shell, workspace, and
+process lifecycle. No host bootstrap script is required.
+
+### Path 2: Formal systemd Deploy From a Released Version
+
+For long-running systemd deployments, use the release-based scripts:
+
+```bash
+./scripts/init_release_system.sh
+./scripts/deploy_release.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
+```
+
+This path is for users who want:
+
+- isolated Linux users and per-project directories
+- systemd-managed restart behavior
+- root-only secret files
+- published package versions as the deployment boundary
+
+Primary operator docs:
 
 - [scripts/init_release_system.sh](scripts/init_release_system.sh)
 - [scripts/deploy_release.sh](scripts/deploy_release.sh)
+- [scripts/deploy_release_readme.md](scripts/deploy_release_readme.md)
+- [docs/release_deploy_smoke_test.md](docs/release_deploy_smoke_test.md)
 
-The older source-based deployment scripts remain available for contributors and
-debugging workflows that intentionally track a repository checkout.
-
-## Development From Source
+## Contributor Paths
 
 Use the repository checkout directly only for development, local debugging, or
-validation against unreleased changes on `main`.
+validation against unreleased changes. Source-based deploy/bootstrap docs are
+kept for contributors and internal debugging, not as the recommended user path.
 
-1. Install dependencies:
+Quick source run:
 
 ```bash
 uv sync --all-extras
-```
-
-2. Start this service from the source tree:
-
-```bash
 opencode serve
-A2A_BEARER_TOKEN=dev-token uv run opencode-a2a-server
+A2A_BEARER_TOKEN=dev-token OPENCODE_DIRECTORY=/abs/path/to/workspace uv run opencode-a2a-server
 ```
 
 Baseline validation:
@@ -176,25 +195,30 @@ uv run pytest
 
 ## Documentation Map
 
+### User / Operator Docs
+
 - [docs/guide.md](docs/guide.md)
   Product behavior, API contracts, and detailed streaming/session/interrupt
   consumption guidance.
 - [docs/agent_deploy_sop.md](docs/agent_deploy_sop.md)
-  Operator-facing SOP for choosing, starting, verifying, and releasing
-  `deploy_release.sh`, `deploy.sh`, and `deploy_light.sh`.
+  Operator-facing SOP for release-based deployment, verification, and uninstall.
 - [docs/release_deploy_smoke_test.md](docs/release_deploy_smoke_test.md)
   Real-host smoke test checklist for release-based systemd deployment.
-- [scripts/README.md](scripts/README.md)
-  Entry points for init, deploy, lightweight deploy, local start, and
-  uninstall scripts.
 - [scripts/deploy_release_readme.md](scripts/deploy_release_readme.md)
   Release-based systemd deployment guide for published package versions.
 - [scripts/init_release_system_readme.md](scripts/init_release_system_readme.md)
   Release-based host bootstrap guide that avoids source checkout.
+- [scripts/uninstall_readme.md](scripts/uninstall_readme.md)
+  Preview-first uninstall flow for deployed instances.
+- [scripts/README.md](scripts/README.md)
+  Full script index, including contributor/internal paths.
+
+### Contributor / Internal Docs
+
 - [scripts/deploy_readme.md](scripts/deploy_readme.md)
-  Source-based systemd deployment, runtime secret strategy, and operations guidance.
-- [scripts/deploy_light_readme.md](scripts/deploy_light_readme.md)
-  current-user lightweight deployment without systemd.
+  Source-based systemd deployment for development/debugging only.
+- [scripts/init_system_readme.md](scripts/init_system_readme.md)
+  Source-based host bootstrap for contributor/internal workflows.
 - [SECURITY.md](SECURITY.md)
   threat model, deployment caveats, and vulnerability disclosure guidance.
 

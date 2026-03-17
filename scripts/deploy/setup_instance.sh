@@ -8,6 +8,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../shell_helpers.sh
+source "${SCRIPT_DIR}/../shell_helpers.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/provider_secret_env_keys.sh"
 
@@ -56,13 +58,6 @@ SECRET_ENV_KEYS=("${PROVIDER_SECRET_ENV_KEYS[@]}")
 SYSTEMD_UNIT_DIR="/etc/systemd/system"
 OPENCODE_OVERRIDE_DIR="${SYSTEMD_UNIT_DIR}/opencode@${PROJECT_NAME}.service.d"
 A2A_OVERRIDE_DIR="${SYSTEMD_UNIT_DIR}/opencode-a2a-server@${PROJECT_NAME}.service.d"
-
-is_truthy() {
-  case "${1,,}" in
-    1|true|yes|on) return 0 ;;
-    *) return 1 ;;
-  esac
-}
 
 PERSIST_SECRETS="false" # pragma: allowlist secret
 if is_truthy "${ENABLE_SECRET_PERSISTENCE}"; then

@@ -4,6 +4,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./shell_helpers.sh
+source "${SCRIPT_DIR}/shell_helpers.sh"
 # shellcheck source=./init_system_uv_release_manifest.sh
 source "${SCRIPT_DIR}/init_system_uv_release_manifest.sh"
 
@@ -73,13 +75,6 @@ warn() {
 die() {
   echo "[init] ERROR: $*" >&2
   exit 1
-}
-
-is_truthy() {
-  case "${1,,}" in
-    1|true|yes|on) return 0 ;;
-    *) return 1 ;;
-  esac
 }
 
 SUDO=""

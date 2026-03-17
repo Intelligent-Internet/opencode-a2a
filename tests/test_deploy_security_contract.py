@@ -58,7 +58,7 @@ def test_deploy_supports_release_and_source_install_modes() -> None:
     assert "A2A_INSTALL_MODE must be source or release" in DEPLOY_SH_TEXT
     assert 'if [[ "$A2A_INSTALL_MODE" == "release" ]]; then' in DEPLOY_SH_TEXT
     assert '"${SCRIPT_DIR}/deploy/install_release_runtime.sh"' in DEPLOY_SH_TEXT
-    assert '"${SCRIPT_DIR}/deploy/update_a2a_release.sh"' in DEPLOY_SH_TEXT
+    assert 'export FORCE_A2A_RELEASE_INSTALL="true"' in DEPLOY_SH_TEXT
     assert "Environment=A2A_BIN=${A2A_BIN}" in INSTALL_UNITS_TEXT
     assert "ExecStart=${DEPLOY_HELPER_DIR}/run_a2a.sh" in INSTALL_UNITS_TEXT
     assert "ExecStart=${DEPLOY_HELPER_DIR}/run_opencode.sh" in INSTALL_UNITS_TEXT
@@ -70,7 +70,7 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
     assert "```mermaid" in README_TEXT
     assert "[SECURITY.md](SECURITY.md)" in README_TEXT
     assert "uv tool install opencode-a2a-server" in README_TEXT
-    assert "Install Released CLI" in README_TEXT
+    assert "Path 1: Run a Released CLI in an Existing User Environment" in README_TEXT
     assert "scripts/deploy_release.sh" in README_TEXT
     assert "secret persistence is opt-in" in SECURITY_TEXT
     assert "single-tenant trust boundary" in SECURITY_TEXT
@@ -80,6 +80,9 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
     assert "release-based systemd deployment" in DEPLOY_RELEASE_README_TEXT
     assert "source-based multi-instance systemd deployment" in SCRIPTS_INDEX_TEXT
     assert "release-based, systemd-managed, recommended" in AGENT_DEPLOY_SOP_TEXT
+    assert "deploy_light.sh" not in README_TEXT
+    assert "deploy_light.sh" not in SCRIPTS_INDEX_TEXT
+    assert "deploy_light.sh" not in AGENT_DEPLOY_SOP_TEXT
 
 
 def test_uninstall_removes_instance_systemd_overrides() -> None:

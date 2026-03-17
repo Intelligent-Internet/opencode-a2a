@@ -6,6 +6,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./shell_helpers.sh
+source "${SCRIPT_DIR}/shell_helpers.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/deploy/provider_secret_env_keys.sh"
 PROVIDER_SECRET_ENV_LIST="$(join_provider_secret_env_keys " | ")"
@@ -285,13 +287,6 @@ export_if_present "A2A_SYSTEMD_MEMORY_MAX" "$A2A_SYSTEMD_MEMORY_MAX_INPUT"
 export_if_present "A2A_SYSTEMD_CPU_QUOTA" "$A2A_SYSTEMD_CPU_QUOTA_INPUT"
 export_if_present "ENABLE_SECRET_PERSISTENCE" "$ENABLE_SECRET_PERSISTENCE_INPUT"
 
-is_truthy() {
-  case "${1,,}" in
-    1|true|yes|on) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
 case "${A2A_INSTALL_MODE,,}" in
   source|release)
     A2A_INSTALL_MODE="${A2A_INSTALL_MODE,,}"
@@ -326,14 +321,13 @@ if is_truthy "$A2A_ENABLE_SESSION_SHELL"; then
   fi
 fi
 
-if [[ "$UPDATE_A2A" == "true" ]]; then
-  if [[ "$A2A_INSTALL_MODE" == "release" ]]; then
-    "${SCRIPT_DIR}/deploy/update_a2a_release.sh"
-  else
-    "${SCRIPT_DIR}/deploy/update_a2a.sh"
+if [[ "$A2A_INSTALL_MODE" == "release" ]]; then
+  if [[ "$UPDATE_A2A" == "true" ]]; then
+    export FORCE_A2A_RELEASE_INSTALL="true"
   fi
-elif [[ "$A2A_INSTALL_MODE" == "release" ]]; then
   "${SCRIPT_DIR}/deploy/install_release_runtime.sh"
+elif [[ "$UPDATE_A2A" == "true" ]]; then
+  "${SCRIPT_DIR}/deploy/update_a2a.sh"
 fi
 
 "${SCRIPT_DIR}/deploy/install_units.sh"

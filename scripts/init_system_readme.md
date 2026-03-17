@@ -2,6 +2,9 @@
 
 This document describes `scripts/init_system.sh`.
 
+This path is for contributor/internal debugging only. It is not a recommended
+user bootstrap path.
+
 The script prepares shared host prerequisites for source-based OpenCode + A2A deployment and is designed to be idempotent.
 
 ## Usage
@@ -60,4 +63,7 @@ The script does not accept runtime arguments. Adjust defaults by editing constan
 
 ## Next Step
 
-After bootstrap, use [`deploy_readme.md`](./deploy_readme.md) for source-based systemd deploys, or [`deploy_release_readme.md`](./deploy_release_readme.md) for released package deploys.
+After bootstrap, use [`deploy_readme.md`](./deploy_readme.md) only when you
+intentionally need source-based systemd debugging, or
+[`deploy_release_readme.md`](./deploy_release_readme.md) for released package
+deploys.

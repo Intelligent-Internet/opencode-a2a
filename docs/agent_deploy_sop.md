@@ -2,26 +2,27 @@
 
 Related issue: `#145`
 
-This SOP explains how a consumer-side agent can provision, verify, and release
-its own `opencode-a2a-server` instance pair.
+This SOP explains how an operator can provision, verify, and release a formal
+`opencode-a2a-server` deployment.
 
 ## Goal
 
 The operator or calling agent should be able to:
 
-1. choose the correct deployment path
-2. start one isolated OpenCode + `opencode-a2a-server` instance
+1. bootstrap one host for released package deployment
+2. start one isolated OpenCode + `opencode-a2a-server` instance with systemd
 3. verify readiness and basic availability
 4. stop or uninstall the instance safely when it is no longer needed
 
 ## Scope and Boundaries
 
-- This SOP covers three supported startup paths:
+- This SOP covers the release-based systemd deployment path:
   - `scripts/deploy_release.sh`: release-based, systemd-managed, recommended
     for formal multi-instance deployment
-  - `scripts/deploy.sh`: source-based systemd deployment for development or
-    debugging against a repository checkout
-  - `scripts/deploy_light.sh`: lightweight current-user background supervisor
+- Source-based systemd/bootstrap paths remain available only for
+  contributor/internal debugging and are documented under `scripts/`.
+- Existing-user self-start is documented in the repository README as direct CLI
+  commands, not as a deployment script path.
 - This SOP does not replace protocol documentation. For API and runtime
   behavior, see [`guide.md`](./guide.md).
 - This SOP does not define Docker or Kubernetes flows.
@@ -31,8 +32,6 @@ The operator or calling agent should be able to:
 | Mode | Script | Best for | Trust boundary | Secret handling |
 | --- | --- | --- | --- | --- |
 | release systemd deploy | `scripts/deploy_release.sh` | long-running, production-oriented deployments pinned to published package versions | isolated project directory under `DATA_ROOT`, systemd units, root-managed config | supports secure default two-step provisioning; `ENABLE_SECRET_PERSISTENCE=true` is optional and explicit |
-| source systemd deploy | `scripts/deploy.sh` | contributor or debugging scenarios that intentionally run from a repository checkout | isolated project directory under `DATA_ROOT`, systemd units, root-managed config | supports secure default two-step provisioning; `ENABLE_SECRET_PERSISTENCE=true` is optional and explicit |
-| lightweight deploy | `scripts/deploy_light.sh` | trusted local/self-host use under the current Linux user | current user and current workspace | secrets come from the current shell environment; `ENABLE_SECRET_PERSISTENCE` does not apply |
 
 Use `deploy_release.sh` when you need:
 
@@ -42,33 +41,16 @@ Use `deploy_release.sh` when you need:
 - multiple named instances on one host
 - published package versions as the deployment boundary
 
-Use `deploy.sh` when you intentionally need source-based behavior:
-
-- validate unreleased changes from a repository checkout
-- debug systemd behavior against local source changes
-
-Use `deploy_light.sh` when you need:
-
-- fast local startup
-- no systemd units
-- no root-managed instance layout
-- one trusted current-user runtime boundary
-
 ## Shared Input Contract
 
 ### Required Inputs
 
-For `deploy_release.sh` and `deploy.sh`:
+For `deploy_release.sh`:
 
 - `project=<name>`
 - `GH_TOKEN` and `A2A_BEARER_TOKEN`
   - required immediately when `ENABLE_SECRET_PERSISTENCE=true`
   - otherwise required in root-only secret env files before the second deploy
-
-For `deploy_light.sh`:
-
-- `A2A_BEARER_TOKEN`
-- `workdir=/abs/path/to/workspace`
 
 ### Common Optional Inputs
 
@@ -254,107 +236,6 @@ Notes:
 - uninstall may return exit code `2` when completion includes non-fatal warnings
 - uninstall removes instance-specific systemd drop-ins before `daemon-reload`
 
-## Path B: Source Systemd Deploy (`deploy.sh`)
-
-Use this path only when you intentionally want the deployed instance to track a
-repository checkout instead of a published package version.
-
-Recommended bootstrap:
-
-```bash
-./scripts/init_system.sh
-```
-
-Recommended deploy:
-
-```bash
-./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
-```
-
-Use cases:
-
-- validating unreleased changes on a host with systemd
-- reproducing deployment issues against a working tree
-- contributor-oriented debugging where source checkout is the intended boundary
-
-For operational details, parameters, and caveats, see
-[`../scripts/deploy_readme.md`](../scripts/deploy_readme.md).
-
-## Path C: Lightweight Deploy (`deploy_light.sh`)
-
-This path is for trusted local or self-host scenarios under the current Linux
-user.
-
-### Key Differences from `deploy_release.sh`
-
-- no systemd units
-- no root-only instance config layout
-- no `ENABLE_SECRET_PERSISTENCE`
-- provider keys and `A2A_BEARER_TOKEN` are inherited directly from the current
-  shell environment
-
-### Start Instructions
-
-Minimum example:
-
-```bash
-export A2A_BEARER_TOKEN='<a2a-token>'
-./scripts/deploy_light.sh start workdir=/abs/path/to/workspace
-```
-
-Example with explicit ports and instance name:
-
-```bash
-export A2A_BEARER_TOKEN='<a2a-token>'
-./scripts/deploy_light.sh start \
-  instance=demo \
-  workdir=/srv/workspaces/demo \
-  a2a_host=127.0.0.1 \
-  a2a_port=8010 \
-  a2a_public_url=http://127.0.0.1:8010 \
-  opencode_bind_host=127.0.0.1 \
-  opencode_bind_port=4106
-```
-
-If provider keys are needed, export them in the same shell before startup:
-
-```bash
-export OPENAI_API_KEY='<openai-key>'
-export A2A_BEARER_TOKEN='<a2a-token>'
-./scripts/deploy_light.sh start workdir=/abs/path/to/workspace
-```
-
-### Lifecycle Commands
-
-```bash
-./scripts/deploy_light.sh status
-./scripts/deploy_light.sh stop
-./scripts/deploy_light.sh restart workdir=/abs/path/to/workspace
-```
-
-### Readiness Checks
-
-`deploy_light.sh start` already waits for both:
-
-1. OpenCode runtime readiness
-2. local Agent Card readiness
-
-You can still verify manually:
-
-```bash
-curl -fsS http://127.0.0.1:8000/health
-curl -fsS http://127.0.0.1:8000/.well-known/agent-card.json
-```
-
-### Release
-
-```bash
-./scripts/deploy_light.sh stop
-```
-
-This stops the current-user background processes and preserves local logs/run
-metadata under `logs/light/<instance>/` and `run/light/<instance>/`.
-
 ## Failure Modes and Recovery Guidance
 
 Common failure classes:
@@ -384,8 +265,6 @@ sudo journalctl -u opencode-a2a-server@alpha.service -n 200 --no-pager
 - Do not pass secrets through CLI flags or `key=value` arguments.
 - `ENABLE_SECRET_PERSISTENCE=true` is an explicit tradeoff, not the secure
   default.
-- `deploy_light.sh` assumes the current user is already trusted with provider
-  keys and workspace access.
 - `A2A_ENABLE_SESSION_SHELL=true` remains a high-risk switch and should be
   limited to trusted internal cases.
 - One deployed instance pair is a single-tenant trust boundary, not a secure
@@ -395,15 +274,13 @@ sudo journalctl -u opencode-a2a-server@alpha.service -n 200 --no-pager
 
 ### systemd deploy
 
-1. run `init_system.sh` once per host if needed
+1. run `init_release_system.sh` once per host if needed
 2. choose secret mode
-3. execute `deploy_release.sh` for formal systemd deploys, or `deploy.sh` only when you intentionally need source-based behavior
+3. execute `deploy_release.sh` for formal systemd deploys
 4. verify service state and `/health`
 5. later run `uninstall.sh` with preview first
 
-### lightweight deploy
+### contributor/internal source debug
 
-1. export `A2A_BEARER_TOKEN` and any needed provider keys
-2. execute `deploy_light.sh start`
-3. verify `/health` or Agent Card
-4. later run `deploy_light.sh stop`
+1. use [`../scripts/init_system_readme.md`](../scripts/init_system_readme.md) only when you intentionally need a source checkout on a systemd host
+2. use [`../scripts/deploy_readme.md`](../scripts/deploy_readme.md) only for contributor/internal debugging against unreleased source changes

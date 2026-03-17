@@ -1,5 +1,8 @@
 # Source Deploy Guide (`deploy.sh`)
 
+This path is for contributor/internal debugging only. It is not a recommended
+user deployment path.
+
 This document explains the source-based `scripts/deploy.sh` path and helper scripts under
 `scripts/deploy/`.
 
@@ -29,7 +32,9 @@ For one-time source bootstrap, see [`init_system_readme.md`](./init_system_readm
 
 ## Parameterized Self-Deployment Contract
 
-`deploy.sh` is the systemd-oriented entry point for parameterized self-deployment in trusted operator environments.
+`deploy.sh` is the systemd-oriented entry point for contributor/internal
+debugging in trusted operator environments where the runtime boundary is a
+repository checkout instead of a published release.
 
 Its contract is intentionally simple:
 
