@@ -6,6 +6,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./shell_helpers.sh
+source "${SCRIPT_DIR}/shell_helpers.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/deploy/provider_secret_env_keys.sh"
 PROVIDER_SECRET_ENV_LIST="$(join_provider_secret_env_keys " | ")"
@@ -284,13 +286,6 @@ export_if_present "A2A_SYSTEMD_LIMIT_NOFILE" "$A2A_SYSTEMD_LIMIT_NOFILE_INPUT"
 export_if_present "A2A_SYSTEMD_MEMORY_MAX" "$A2A_SYSTEMD_MEMORY_MAX_INPUT"
 export_if_present "A2A_SYSTEMD_CPU_QUOTA" "$A2A_SYSTEMD_CPU_QUOTA_INPUT"
 export_if_present "ENABLE_SECRET_PERSISTENCE" "$ENABLE_SECRET_PERSISTENCE_INPUT"
-
-is_truthy() {
-  case "${1,,}" in
-    1|true|yes|on) return 0 ;;
-    *) return 1 ;;
-  esac
-}
 
 case "${A2A_INSTALL_MODE,,}" in
   source|release)

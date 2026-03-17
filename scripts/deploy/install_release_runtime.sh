@@ -3,6 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../shell_helpers.sh
+source "${SCRIPT_DIR}/../shell_helpers.sh"
 
 : "${A2A_TOOL_DIR:?}"
 : "${A2A_TOOL_BIN_DIR:?}"
@@ -14,13 +16,6 @@ A2A_PYTHON_VERSION="${A2A_PYTHON_VERSION:-3.13}"
 FORCE_A2A_RELEASE_INSTALL="${FORCE_A2A_RELEASE_INSTALL:-false}"
 A2A_BIN="${A2A_BIN:-${A2A_TOOL_BIN_DIR}/opencode-a2a-server}"
 SUDO=""
-
-is_truthy() {
-  case "${1,,}" in
-    1|true|yes|on) return 0 ;;
-    *) return 1 ;;
-  esac
-}
 
 if ! command -v uv >/dev/null 2>&1; then
   echo "uv not found in PATH; cannot install released runtime" >&2
