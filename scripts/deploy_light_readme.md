@@ -80,5 +80,4 @@ If either process fails readiness, the script stops any already-started child pr
 
 - runtime behavior and API contracts: [`../docs/guide.md`](../docs/guide.md)
 - script index: [`./README.md`](./README.md)
-- foreground local runner: [`./start_services_readme.md`](./start_services_readme.md)
 - systemd deployment flow: [`./deploy_readme.md`](./deploy_readme.md)

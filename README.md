@@ -221,8 +221,6 @@ uv run pytest
   Source-based systemd deployment for development/debugging only.
 - [scripts/init_system_readme.md](scripts/init_system_readme.md)
   Source-based host bootstrap for contributor/internal workflows.
-- [scripts/start_services_readme.md](scripts/start_services_readme.md)
-  Older local source-run helper details.
 - [SECURITY.md](SECURITY.md)
   threat model, deployment caveats, and vulnerability disclosure guidance.
 
