@@ -7,6 +7,8 @@ the operational pieces that raw agent runtimes usually do not provide by
 default: authentication, session continuity, streaming contracts, interrupt
 handling, deployment tooling, and explicit security guidance.
 
+Contribution workflow and repository expectations live in [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Why This Project Exists
 
 OpenCode is useful as an interactive runtime, but applications and gateways
@@ -50,6 +52,8 @@ Detailed consumption guidance:
 - Shared stream hints: [`docs/guide.md#shared-stream-hints-contract`](docs/guide.md#shared-stream-hints-contract)
 - OpenCode session query and provider discovery: [`docs/guide.md#opencode-session-query--provider-discovery-a2a-extensions`](docs/guide.md#opencode-session-query--provider-discovery-a2a-extensions)
 - Shared interrupt callback: [`docs/guide.md#shared-interrupt-callback-a2a-extension`](docs/guide.md#shared-interrupt-callback-a2a-extension)
+- Compatibility profile and retention guidance:
+  [`docs/guide.md#compatibility-profile`](docs/guide.md#compatibility-profile)
 
 ## Design Principle
 
@@ -214,6 +218,10 @@ uv run pre-commit run --all-files
 uv run pytest
 ```
 
+Contributor workflow details:
+
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+
 ## Documentation Map
 
 ### User / Operator Docs
@@ -221,6 +229,8 @@ uv run pytest
 - [docs/guide.md](docs/guide.md)
   Product behavior, API contracts, and detailed streaming/session/interrupt
   consumption guidance.
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+  Contributor workflow, validation baseline, and documentation expectations.
 - [docs/agent_deploy_sop.md](docs/agent_deploy_sop.md)
   Operator-facing SOP for release-based deployment, verification, and uninstall.
 - [docs/release_deploy_smoke_test.md](docs/release_deploy_smoke_test.md)
