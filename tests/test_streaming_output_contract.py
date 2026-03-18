@@ -1,7 +1,15 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
-from a2a.types import Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
+from a2a.types import (
+    FilePart,
+    FileWithUri,
+    Task,
+    TaskArtifactUpdateEvent,
+    TaskState,
+    TaskStatusUpdateEvent,
+)
 
 from opencode_a2a_server.agent import (
     BlockType,
@@ -11,7 +19,12 @@ from opencode_a2a_server.agent import (
     _StreamOutputState,
 )
 from opencode_a2a_server.opencode_client import OpencodeMessage
-from tests.helpers import DummyEventQueue, make_request_context, make_settings
+from tests.helpers import (
+    DummyEventQueue,
+    make_request_context,
+    make_request_context_with_parts,
+    make_settings,
+)
 
 
 class DummyStreamingClient:
@@ -51,13 +64,14 @@ class DummyStreamingClient:
     async def send_message(
         self,
         session_id: str,
-        text: str,
+        text: str | None = None,
         *,
+        parts: list[dict] | None = None,
         directory: str | None = None,
         model_override: dict[str, str] | None = None,
         timeout_override=None,  # noqa: ANN001
     ) -> OpencodeMessage:
-        del text, directory, model_override, timeout_override
+        del text, parts, directory, model_override, timeout_override
         self._in_flight_send += 1
         self.max_in_flight_send = max(self.max_in_flight_send, self._in_flight_send)
         await asyncio.sleep(self._send_delay)
@@ -251,6 +265,38 @@ def _status_shared_meta(event: TaskStatusUpdateEvent) -> dict:
 
 def _interrupt_meta(event: TaskStatusUpdateEvent) -> dict:
     return _status_shared_meta(event)["interrupt"]
+
+
+@pytest.mark.asyncio
+async def test_streaming_accepts_file_input_without_breaking_contract() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[],
+        response_text="final answer from send_message",
+        response_message_id="msg-1",
+    )
+    executor = OpencodeAgentExecutor(client=client, streaming_enabled=True)
+    queue = DummyEventQueue()
+    context = make_request_context_with_parts(
+        task_id="task-1",
+        context_id="ctx-1",
+        parts=[
+            FilePart(
+                file=FileWithUri(
+                    uri="file:///tmp/report.pdf",
+                    mimeType="application/pdf",
+                    name="report.pdf",
+                )
+            )
+        ],
+        call_context=SimpleNamespace(state={"a2a_streaming_request": True}),
+    )
+
+    await executor.execute(context, queue)
+
+    status_events = [event for event in queue.events if isinstance(event, TaskStatusUpdateEvent)]
+
+    assert status_events[-1].final is True
+    assert status_events[-1].status.state == TaskState.completed
 
 
 def test_stream_output_state_deduplicates_non_accumulating_tool_chunks() -> None:

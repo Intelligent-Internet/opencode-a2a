@@ -249,6 +249,54 @@ async def test_send_message_falls_back_to_default_model_on_partial_override(monk
 
 
 @pytest.mark.asyncio
+async def test_send_message_accepts_structured_parts(monkeypatch):
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    seen = {}
+
+    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
+        seen["path"] = path
+        seen["params"] = params
+        seen["json"] = json
+        return _DummyResponse({"info": {"id": "m-1"}, "parts": [{"type": "text", "text": "ok"}]})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    await client.send_message(
+        "ses-1",
+        parts=[
+            {"type": "text", "text": "describe"},
+            {
+                "type": "file",
+                "url": "file:///tmp/report.pdf",
+                "mime": "application/pdf",
+                "filename": "report.pdf",
+            },
+        ],
+    )
+
+    assert seen["path"] == "/session/ses-1/message"
+    assert seen["json"]["parts"] == [
+        {"type": "text", "text": "describe"},
+        {
+            "type": "file",
+            "url": "file:///tmp/report.pdf",
+            "mime": "application/pdf",
+            "filename": "report.pdf",
+        },
+    ]
+
+    await client.close()
+
+
+@pytest.mark.asyncio
 async def test_list_provider_catalog_calls_provider_endpoint(monkeypatch):
     client = OpencodeClient(
         make_settings(

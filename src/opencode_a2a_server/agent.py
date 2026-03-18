@@ -32,6 +32,12 @@ from a2a.types import (
 )
 
 from .opencode_client import OpencodeClient
+from .parts_mapper import (
+    UnsupportedA2AInputError,
+    extract_text_from_a2a_parts,
+    map_a2a_parts_to_opencode_parts,
+    summarize_a2a_parts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -463,7 +469,30 @@ class OpencodeAgentExecutor(AgentExecutor):
         identity = (call_context.state.get("identity") if call_context else None) or "anonymous"
 
         streaming_request = self._should_stream(context)
-        user_text = context.get_user_input().strip()
+        message_parts = (
+            getattr(context.message, "parts", None) if context.message is not None else None
+        )
+        try:
+            request_parts = map_a2a_parts_to_opencode_parts(message_parts)
+        except UnsupportedA2AInputError as exc:
+            await self._emit_error(
+                event_queue,
+                task_id=task_id,
+                context_id=context_id,
+                message=str(exc),
+                state=TaskState.failed,
+                streaming_request=streaming_request,
+            )
+            return
+
+        user_text = extract_text_from_a2a_parts(message_parts) or context.get_user_input().strip()
+        session_title = user_text or summarize_a2a_parts(message_parts)
+        text_only_request = (
+            len(request_parts) == 1
+            and request_parts[0].get("type") == "text"
+            and request_parts[0].get("text") == user_text
+        )
+        use_structured_parts = bool(request_parts) and not text_only_request
         bound_session_id = _extract_shared_session_id(context)
         model_override = _extract_shared_model(context)
 
@@ -495,24 +524,28 @@ class OpencodeAgentExecutor(AgentExecutor):
             )
             return
 
-        if not user_text:
+        if not user_text and not request_parts:
             await self._emit_error(
                 event_queue,
                 task_id=task_id,
                 context_id=context_id,
-                message="Only text input is supported.",
+                message="Only text and file input are supported.",
                 state=TaskState.failed,
                 streaming_request=streaming_request,
             )
             return
 
         logger.debug(
-            "Received message identity=%s task_id=%s context_id=%s streaming=%s text=%s",
+            (
+                "Received message identity=%s task_id=%s context_id=%s "
+                "streaming=%s text=%s part_count=%s"
+            ),
             identity,
             task_id,
             context_id,
             streaming_request,
             user_text,
+            len(request_parts),
         )
 
         stream_artifact_id = f"{task_id}:stream"
@@ -538,7 +571,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             session_id, pending_preferred_claim = await self._get_or_create_session(
                 identity,
                 context_id,
-                user_text,
+                session_title or user_text,
                 preferred_session_id=bound_session_id,
                 directory=directory,
             )
@@ -571,20 +604,25 @@ class OpencodeAgentExecutor(AgentExecutor):
                     final=False,
                 )
             )
+            send_kwargs: dict[str, Any] = {
+                "directory": directory,
+                "model_override": model_override,
+            }
             if streaming_request:
+                send_kwargs["timeout_override"] = self._client.stream_timeout
+
+            if not use_structured_parts:
                 response = await self._client.send_message(
                     session_id,
                     user_text,
-                    directory=directory,
-                    model_override=model_override,
-                    timeout_override=self._client.stream_timeout,
+                    **send_kwargs,
                 )
             else:
                 response = await self._client.send_message(
                     session_id,
-                    user_text,
-                    directory=directory,
-                    model_override=model_override,
+                    user_text or None,
+                    parts=request_parts,
+                    **send_kwargs,
                 )
 
             if pending_preferred_claim:

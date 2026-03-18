@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, PropertyMock
 
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
-from a2a.types import Message, MessageSendParams, Role, TextPart
+from a2a.types import Message, MessageSendParams, Part, Role, TextPart
 
 from opencode_a2a_server.config import Settings
 from opencode_a2a_server.opencode_client import OpencodeMessage
@@ -92,6 +92,29 @@ def make_request_context(
     return RequestContext(request=params, task_id=task_id, context_id=context_id)
 
 
+def make_request_context_with_parts(
+    *,
+    task_id: str,
+    context_id: str,
+    parts: list[Part | TextPart],
+    metadata: dict[str, Any] | None = None,
+    message_id: str = "req-1",
+    call_context: Any = None,
+) -> RequestContext:
+    message = Message(
+        message_id=message_id,
+        role=Role.user,
+        parts=parts,
+    )
+    params = MessageSendParams(message=message, metadata=metadata)
+    return RequestContext(
+        request=params,
+        task_id=task_id,
+        context_id=context_id,
+        call_context=call_context,
+    )
+
+
 class DummyChatOpencodeClient:
     def __init__(self, settings: Settings | None = None) -> None:
         self.created_sessions = 0
@@ -120,17 +143,18 @@ class DummyChatOpencodeClient:
     async def send_message(
         self,
         session_id: str,
-        text: str,
+        text: str | None = None,
         *,
+        parts: list[dict[str, Any]] | None = None,
         directory: str | None = None,
         model_override: dict[str, str] | None = None,
         timeout_override=None,  # noqa: ANN001
     ) -> OpencodeMessage:
-        del directory, timeout_override
+        del directory, timeout_override, parts
         self.sent_session_ids.append(session_id)
         self.sent_model_overrides.append(model_override)
         return OpencodeMessage(
-            text=f"echo:{text}",
+            text=f"echo:{text or ''}",
             session_id=session_id,
             message_id="m-1",
             raw={},

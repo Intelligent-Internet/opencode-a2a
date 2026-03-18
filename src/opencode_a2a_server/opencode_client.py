@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -330,20 +330,30 @@ class OpencodeClient:
     async def send_message(
         self,
         session_id: str,
-        text: str,
+        text: str | None = None,
         *,
+        parts: Sequence[Mapping[str, Any]] | None = None,
         directory: str | None = None,
         model_override: Mapping[str, Any] | None = None,
         timeout_override: float | None | object = _UNSET,
     ) -> OpencodeMessage:
-        payload: dict[str, Any] = {
-            "parts": [
+        payload_parts: list[dict[str, Any]]
+        if parts is not None:
+            payload_parts = [dict(part) for part in parts]
+        elif isinstance(text, str):
+            payload_parts = [
                 {
                     "type": "text",
                     "text": text,
                 }
             ]
-        }
+        else:
+            raise ValueError("send_message requires either text or parts")
+
+        if not payload_parts:
+            raise ValueError("send_message parts must not be empty")
+
+        payload: dict[str, Any] = {"parts": payload_parts}
         resolved_model = self._normalize_model_ref(model_override)
         if resolved_model is None:
             resolved_model = self._normalize_model_ref(

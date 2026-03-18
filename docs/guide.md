@@ -45,6 +45,11 @@ Key variables to understand protocol behavior:
 ## Service Behavior
 
 - The service forwards A2A `message:send` to OpenCode session/message calls.
+- Main chat input supports structured A2A `parts` passthrough:
+  - `TextPart` is forwarded as an OpenCode text part.
+  - `FilePart(FileWithBytes)` is forwarded as a `file` part with a `data:` URL.
+  - `FilePart(FileWithUri)` is forwarded as a `file` part with the original URI.
+  - `DataPart` is currently rejected explicitly; it is not silently downgraded.
 - Main chat requests may override the default upstream model via
   `metadata.shared.model` with `{ providerID, modelID }`.
 - Task state defaults to `completed` for successful turns.
@@ -107,6 +112,46 @@ Key variables to understand protocol behavior:
   verification for OAuth2 is not implemented yet.
 - Agent Card declares OAuth2 only when both
   `A2A_OAUTH_AUTHORIZATION_URL` and `A2A_OAUTH_TOKEN_URL` are set.
+
+## Multipart Input Example
+
+Minimal JSON-RPC example with text + file input:
+
+```bash
+curl -sS http://127.0.0.1:8000/ \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "req-1",
+    "method": "message/send",
+    "params": {
+      "message": {
+        "messageId": "msg-multipart-1",
+        "role": "user",
+        "parts": [
+          {
+            "kind": "text",
+            "text": "Please summarize this file."
+          },
+          {
+            "kind": "file",
+            "file": {
+              "name": "report.pdf",
+              "mimeType": "application/pdf",
+              "uri": "file:///workspace/report.pdf"
+            }
+          }
+        ]
+      }
+    }
+  }'
+```
+
+Current compatibility note:
+
+- `TextPart` and `FilePart` are supported.
+- `DataPart` is rejected with an explicit error until a stable mapping policy is defined.
 
 ## Extension Capability Overview
 
