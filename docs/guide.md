@@ -717,13 +717,20 @@ If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscr
 - Upstream interruption is best-effort: if upstream returns 404, network errors, or other HTTP errors, A2A cancellation still completes with `TaskState.canceled`.
 - Idempotency contract: repeated `tasks/cancel` on an already `canceled` task returns the current terminal task state without error.
 - Terminal subscribe contract: calling `subscribe` on a terminal task replays one terminal `Task` snapshot and then closes the stream.
-- The cancel path emits metric log records (`logger=opencode_a2a_server.agent`):
+- The service emits lightweight metric log records (`logger=opencode_a2a_server.agent`):
+  - `a2a_stream_requests_total`
+  - `a2a_stream_active` (`value=1` when a stream starts, `value=-1` when it closes)
+  - `opencode_stream_retries_total`
+  - `tool_call_chunks_emitted_total`
+  - `interrupt_requests_total`
+  - `interrupt_resolved_total`
+- The cancel path also emits:
   - `a2a_cancel_requests_total`
   - `a2a_cancel_abort_attempt_total`
   - `a2a_cancel_abort_success_total`
   - `a2a_cancel_abort_timeout_total`
-- `a2a_cancel_abort_error_total`
-- `a2a_cancel_duration_ms` (with `abort_outcome` label)
+  - `a2a_cancel_abort_error_total`
+  - `a2a_cancel_duration_ms` (with `abort_outcome` label)
 
 ## Extension Contract Change Checklist
 

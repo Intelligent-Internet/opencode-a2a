@@ -41,7 +41,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
-from .agent import OpencodeAgentExecutor
+from .agent import OpencodeAgentExecutor, _emit_metric
 from .config import Settings
 from .extension_contracts import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
@@ -141,8 +141,11 @@ class OpencodeRequestHandler(DefaultRequestHandler):
             result_aggregator,
             producer_task,
         ) = await self._setup_message_execution(params, context)
+        _emit_metric("a2a_stream_requests_total")
+        _emit_metric("a2a_stream_active")
         consumer = EventConsumer(queue)
         producer_task.add_done_callback(consumer.agent_task_callback)
+        stream_completed = False
 
         try:
             async for event in result_aggregator.consume_and_emit(consumer):
@@ -150,12 +153,19 @@ class OpencodeRequestHandler(DefaultRequestHandler):
                     self._validate_task_id_match(task_id, event.id)
                 await self._send_push_notification_if_needed(task_id, result_aggregator)
                 yield event
+            stream_completed = True
         except (asyncio.CancelledError, GeneratorExit):
             logger.warning("Client disconnected. Cancelling producer task %s", task_id)
             producer_task.cancel()
             await queue.close(immediate=True)
             raise
         finally:
+            _emit_metric("a2a_stream_active", -1)
+            logger.debug(
+                "A2A stream request closed task_id=%s completed=%s",
+                task_id,
+                stream_completed,
+            )
             cleanup_task = asyncio.create_task(self._cleanup_producer(producer_task, task_id))
             cleanup_task.set_name(f"cleanup_producer:{task_id}")
             self._track_background_task(cleanup_task)

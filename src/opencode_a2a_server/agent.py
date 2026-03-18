@@ -46,6 +46,21 @@ _INTERRUPT_RESOLVED_EVENT_TYPES = {"permission.replied", "question.replied", "qu
 _USAGE_PART_TYPES = {"step-finish"}
 
 
+def _emit_metric(
+    name: str,
+    value: float = 1.0,
+    **labels: str | int | float | bool,
+) -> None:
+    if labels:
+        labels_text = ",".join(
+            f"{key}={str(label).lower() if isinstance(label, bool) else label}"
+            for key, label in sorted(labels.items())
+        )
+        logger.debug("metric=%s value=%s labels=%s", name, value, labels_text)
+        return
+    logger.debug("metric=%s value=%s", name, value)
+
+
 class BlockType(str, Enum):
     TEXT = "text"
     REASONING = "reasoning"
@@ -377,14 +392,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         value: float = 1.0,
         **labels: str | int | float | bool,
     ) -> None:
-        if labels:
-            labels_text = ",".join(
-                f"{key}={str(label).lower() if isinstance(label, bool) else label}"
-                for key, label in sorted(labels.items())
-            )
-            logger.debug("metric=%s value=%s labels=%s", name, value, labels_text)
-            return
-        logger.debug("metric=%s value=%s", name, value)
+        _emit_metric(name, value, **labels)
 
     def _resolve_and_validate_directory(self, requested: str | None) -> str | None:
         """Normalizes and validates the directory parameter against workspace boundaries.
@@ -1146,6 +1154,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                     effective_append,
                     chunk.content_key,
                 )
+                if chunk.block_type == BlockType.TOOL_CALL:
+                    _emit_metric("tool_call_chunks_emitted_total")
 
         async def _emit_interrupt_status(
             *,
@@ -1186,6 +1196,10 @@ class OpencodeAgentExecutor(AgentExecutor):
                     ),
                 )
             )
+            if phase == "asked":
+                _emit_metric("interrupt_requests_total")
+            elif phase == "resolved":
+                _emit_metric("interrupt_resolved_total")
 
         def _new_text_chunk(
             *,
@@ -1519,6 +1533,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 except Exception:
                     if stop_event.is_set():
                         break
+                    _emit_metric("opencode_stream_retries_total")
                     logger.exception("OpenCode event stream failed; retrying")
                     await asyncio.sleep(backoff)
                     backoff = min(backoff * 2, max_backoff)
