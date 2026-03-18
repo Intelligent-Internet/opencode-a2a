@@ -47,22 +47,24 @@ def test_openapi_rest_message_routes_include_schema_and_examples() -> None:
         assert isinstance(examples, dict)
         assert "basic_message" in examples
         assert "continue_session" in examples
+        assert "message_with_file_input" in examples
 
 
 def test_openapi_jsonrpc_examples_include_core_message_methods() -> None:
     app = create_app(make_settings(a2a_bearer_token="test-token"))
     openapi = app.openapi()
     post = openapi["paths"]["/"]["post"]
-    example_values = (
+    examples = (
         post.get("requestBody", {})
         .get("content", {})
         .get("application/json", {})
         .get("examples", {})
-        .values()
     )
+    example_values = examples.values()
     methods = {value.get("value", {}).get("method") for value in example_values}
     assert "message/send" in methods
     assert "message/stream" in methods
+    assert "message_send_file_input" in examples
 
 
 @pytest.mark.asyncio

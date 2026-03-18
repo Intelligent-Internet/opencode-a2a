@@ -22,6 +22,11 @@ def test_agent_card_description_reflects_actual_transport_capabilities() -> None
     assert (
         "all consumers share the same underlying OpenCode workspace/environment" in card.description
     )
+    assert "single-tenant, self-hosted coding workflows" in card.description
+    assert card.capabilities.streaming is True
+    assert card.default_input_modes == ["text/plain", "application/octet-stream"]
+    assert list(card.security_schemes.keys()) == ["bearerAuth"]
+    assert card.security == [{"bearerAuth": []}]
 
 
 def test_agent_card_injects_deployment_context_into_extensions() -> None:
@@ -47,8 +52,10 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert context["model_id"] == "gemini-2.5-flash"
     assert context["agent"] == "code-reviewer"
     assert context["variant"] == "safe"
+    assert context["deployment_profile"] == "single_tenant_shared_workspace"
     assert context["allow_directory_override"] is False
     assert context["shared_workspace_across_consumers"] is True
+    assert context["tenant_isolation"] == "none"
     assert binding.params["metadata_field"] == "metadata.shared.session.id"
     assert binding.params["supported_metadata"] == [
         "shared.session.id",
@@ -223,6 +230,10 @@ def test_agent_card_chat_examples_include_project_hint_when_configured() -> None
     card = build_agent_card(make_settings(a2a_bearer_token="test-token", a2a_project="alpha"))
     chat_skill = next(skill for skill in card.skills if skill.id == "opencode.chat")
     assert any("project alpha" in example for example in chat_skill.examples)
+    assert any("attached diff" in example for example in chat_skill.examples)
+    assert "TextPart and FilePart" in chat_skill.description
+    assert "core-a2a" in chat_skill.tags
+    assert "portable" in chat_skill.tags
 
 
 def test_agent_card_contracts_include_shell_when_enabled() -> None:
@@ -243,3 +254,19 @@ def test_agent_card_contracts_include_shell_when_enabled() -> None:
     wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
     assert "opencode.sessions.shell" in wire_contract.params["all_jsonrpc_methods"]
     assert wire_contract.params["extensions"]["conditionally_available_methods"] == {}
+
+    session_skill = next(skill for skill in card.skills if skill.id == "opencode.sessions.query")
+    assert any("opencode.sessions.shell" in example for example in session_skill.examples)
+
+
+def test_agent_card_skills_hide_shell_when_disabled_by_default() -> None:
+    card = build_agent_card(make_settings(a2a_bearer_token="test-token"))
+
+    session_skill = next(skill for skill in card.skills if skill.id == "opencode.sessions.query")
+    provider_skill = next(skill for skill in card.skills if skill.id == "opencode.providers.query")
+
+    assert "provider-private" in session_skill.tags
+    assert "provider-private" in provider_skill.tags
+    assert "provider-private" in session_skill.description
+    assert "provider-private" in provider_skill.description
+    assert all("opencode.sessions.shell" not in example for example in session_skill.examples)

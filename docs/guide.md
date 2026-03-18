@@ -25,7 +25,6 @@ For deploy-time inputs and systemd-oriented parameters, see
 Key variables to understand protocol behavior:
 
 - `A2A_BEARER_TOKEN`: required for all authenticated runtime requests.
-- `A2A_STREAMING`: enables/disables SSE endpoint `/v1/message:stream`.
 - `A2A_ALLOW_DIRECTORY_OVERRIDE`: controls whether clients may pass
   `metadata.opencode.directory`.
 - `A2A_ENABLE_SESSION_SHELL`: gates high-risk JSON-RPC method
@@ -39,13 +38,13 @@ Key variables to understand protocol behavior:
   behavior for `(identity, contextId) -> session_id`.
 - `A2A_CANCEL_ABORT_TIMEOUT_SECONDS`: best-effort timeout for upstream
   `session.abort` in cancel flow.
-- `A2A_OAUTH_AUTHORIZATION_URL` / `A2A_OAUTH_TOKEN_URL` /
-  `A2A_OAUTH_METADATA_URL` / `A2A_OAUTH_SCOPES`: declarative OAuth2 metadata in
-  Agent Card only (no runtime OAuth verification in this service).
+- Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
 
 ## Service Behavior
 
 - The service forwards A2A `message:send` to OpenCode session/message calls.
+- Streaming is always enabled in this server profile; `message:stream` is part
+  of the stable runtime baseline.
 - Main chat input supports structured A2A `parts` passthrough:
   - `TextPart` is forwarded as an OpenCode text part.
   - `FilePart(FileWithBytes)` is forwarded as a `file` part with a `data:` URL.
@@ -54,6 +53,9 @@ Key variables to understand protocol behavior:
 - Main chat requests may override the default upstream model via
   `metadata.shared.model` with `{ providerID, modelID }`.
 - Task state defaults to `completed` for successful turns.
+- The deployment profile is single-tenant and shared-workspace: one server
+  instance exposes one OpenCode workspace/environment to all consumers bound to
+  that instance.
 - Streaming (`/v1/message:stream`) emits incremental
   `TaskArtifactUpdateEvent` and then
   `TaskStatusUpdateEvent(final=true)`. Stream artifacts carry
@@ -109,11 +111,6 @@ Key variables to understand protocol behavior:
     boundary bypass.
   - If `A2A_ALLOW_DIRECTORY_OVERRIDE=false`, only the default directory is
     accepted.
-- OAuth2 settings are currently declarative in Agent Card only; runtime token
-  verification for OAuth2 is not implemented yet.
-- Agent Card declares OAuth2 only when both
-  `A2A_OAUTH_AUTHORIZATION_URL` and `A2A_OAUTH_TOKEN_URL` are set.
-
 ## Wire Contract
 
 The service publishes a machine-readable wire contract through Agent Card and
@@ -185,8 +182,10 @@ Retention guidance:
   current deployment model.
 - Treat shared model selection metadata as a stable runtime metadata contract
   for the main chat path.
-- Treat `opencode.*` and `a2a.interrupt.*` JSON-RPC methods as declared custom
-  extensions that remain stable within the current major line.
+- Treat `a2a.interrupt.*` methods as shared extensions.
+- Treat `opencode.sessions.*`, `opencode.providers.*`, and `opencode.models.*`
+  as provider-private OpenCode extensions rather than portable A2A baseline
+  capabilities.
 - Treat `opencode.sessions.shell` as deployment-conditional and discover it
   from the declared profile and current wire contract before calling it.
 

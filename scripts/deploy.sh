@@ -16,7 +16,6 @@ PROJECT_NAME=""
 A2A_PORT_INPUT=""
 A2A_HOST_INPUT=""
 A2A_PUBLIC_URL_INPUT=""
-A2A_STREAMING_INPUT=""
 A2A_LOG_LEVEL_INPUT=""
 A2A_OTEL_INSTRUMENTATION_ENABLED_INPUT=""
 A2A_LOG_PAYLOADS_INPUT=""
@@ -80,9 +79,6 @@ for arg in "$@"; do
       ;;
     a2a_public_url)
       A2A_PUBLIC_URL_INPUT="$value"
-      ;;
-    a2a_streaming)
-      A2A_STREAMING_INPUT="$value"
       ;;
     a2a_log_level)
       A2A_LOG_LEVEL_INPUT="$value"
@@ -187,7 +183,7 @@ if [[ -z "$PROJECT_NAME" ]]; then
 Usage:
   [GH_TOKEN=<token>] [A2A_BEARER_TOKEN=<token>] [<PROVIDER_SECRET_ENV>=<key>] \
   ./scripts/deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
-  [a2a_streaming=<bool>] [a2a_log_level=<level>] [a2a_otel_instrumentation_enabled=<bool>] \
+  [a2a_log_level=<level>] [a2a_otel_instrumentation_enabled=<bool>] \
   [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [a2a_max_request_body_bytes=<int>] \
   [a2a_cancel_abort_timeout_seconds=<seconds>] [a2a_enable_session_shell=<bool>] \
   [a2a_strict_isolation=<bool>] [a2a_systemd_tasks_max=<int>] [a2a_systemd_limit_nofile=<int>] \
@@ -269,11 +265,10 @@ fi
 if [[ -n "$A2A_PUBLIC_URL_INPUT" ]]; then
   export A2A_PUBLIC_URL="$A2A_PUBLIC_URL_INPUT"
 else
-  export A2A_PUBLIC_URL="http://${A2A_HOST}:${A2A_PORT}"
+export A2A_PUBLIC_URL="http://${A2A_HOST}:${A2A_PORT}"
 fi
 
 export A2A_LOG_LEVEL="${A2A_LOG_LEVEL:-WARNING}"
-export A2A_STREAMING="${A2A_STREAMING:-true}"
 export A2A_OTEL_INSTRUMENTATION_ENABLED="${A2A_OTEL_INSTRUMENTATION_ENABLED:-false}"
 export A2A_LOG_PAYLOADS="${A2A_LOG_PAYLOADS:-false}"
 export A2A_LOG_BODY_LIMIT="${A2A_LOG_BODY_LIMIT:-0}"
@@ -284,7 +279,6 @@ export A2A_STRICT_ISOLATION="${A2A_STRICT_ISOLATION:-false}"
 export A2A_SYSTEMD_TASKS_MAX="${A2A_SYSTEMD_TASKS_MAX:-512}"
 export A2A_SYSTEMD_LIMIT_NOFILE="${A2A_SYSTEMD_LIMIT_NOFILE:-65536}"
 export_if_present "A2A_LOG_LEVEL" "$A2A_LOG_LEVEL_INPUT"
-export_if_present "A2A_STREAMING" "$A2A_STREAMING_INPUT"
 export_if_present "A2A_OTEL_INSTRUMENTATION_ENABLED" "$A2A_OTEL_INSTRUMENTATION_ENABLED_INPUT"
 export_if_present "A2A_LOG_PAYLOADS" "$A2A_LOG_PAYLOADS_INPUT"
 export_if_present "A2A_LOG_BODY_LIMIT" "$A2A_LOG_BODY_LIMIT_INPUT"
