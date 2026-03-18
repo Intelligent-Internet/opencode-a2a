@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 ERR_SESSION_NOT_FOUND = SESSION_QUERY_ERROR_BUSINESS_CODES["SESSION_NOT_FOUND"]
 ERR_SESSION_FORBIDDEN = SESSION_QUERY_ERROR_BUSINESS_CODES["SESSION_FORBIDDEN"]
-ERR_METHOD_DISABLED = SESSION_QUERY_ERROR_BUSINESS_CODES["METHOD_DISABLED"]
+ERR_METHOD_NOT_SUPPORTED = -32601
 ERR_UPSTREAM_UNREACHABLE = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_UNREACHABLE"]
 ERR_UPSTREAM_HTTP_ERROR = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_HTTP_ERROR"]
 ERR_INTERRUPT_NOT_FOUND = INTERRUPT_ERROR_BUSINESS_CODES["INTERRUPT_REQUEST_NOT_FOUND"]
@@ -601,7 +601,8 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         *args: Any,
         opencode_client: OpencodeClient,
         methods: dict[str, str],
-        enable_session_shell: bool = False,
+        protocol_version: str,
+        supported_methods: list[str],
         directory_resolver: Callable[[str | None], str | None] | None = None,
         session_claim: Callable[..., Awaitable[bool]] | None = None,
         session_claim_finalize: Callable[..., Awaitable[None]] | None = None,
@@ -614,13 +615,14 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         self._method_get_session_messages = methods["get_session_messages"]
         self._method_prompt_async = methods["prompt_async"]
         self._method_command = methods["command"]
-        self._method_shell = methods["shell"]
+        self._method_shell = methods.get("shell")
         self._method_list_providers = methods["list_providers"]
         self._method_list_models = methods["list_models"]
         self._method_reply_permission = methods["reply_permission"]
         self._method_reply_question = methods["reply_question"]
         self._method_reject_question = methods["reject_question"]
-        self._enable_session_shell = bool(enable_session_shell)
+        self._protocol_version = protocol_version
+        self._supported_methods = list(supported_methods)
         missing_control_hooks = [
             name
             for name, hook in (
@@ -779,8 +781,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         session_control_methods = {
             self._method_prompt_async,
             self._method_command,
-            self._method_shell,
         }
+        if self._method_shell is not None:
+            session_control_methods.add(self._method_shell)
         interrupt_callback_methods = {
             self._method_reply_permission,
             self._method_reply_question,
@@ -793,7 +796,32 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             | session_control_methods
             | interrupt_callback_methods
         ):
-            return await super()._handle_requests(request)
+            core_methods = {
+                "message/send",
+                "message/stream",
+                "tasks/get",
+                "tasks/cancel",
+                "tasks/resubscribe",
+            }
+            if base_request.method in core_methods:
+                return await super()._handle_requests(request)
+
+            if base_request.id is None:
+                return Response(status_code=204)
+
+            return self._generate_error_response(
+                base_request.id,
+                JSONRPCError(
+                    code=ERR_METHOD_NOT_SUPPORTED,
+                    message=f"Unsupported method: {base_request.method}",
+                    data={
+                        "type": "METHOD_NOT_SUPPORTED",
+                        "method": base_request.method,
+                        "supported_methods": self._supported_methods,
+                        "protocol_version": self._protocol_version,
+                    },
+                ),
+            )
 
         params = base_request.params or {}
         if not isinstance(params, dict):
@@ -1219,23 +1247,6 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                         message=str(exc),
                         data={"type": "INVALID_FIELD", "field": "metadata.opencode.directory"},
                     )
-                ),
-            )
-
-        if base_request.method == self._method_shell and not self._enable_session_shell:
-            _log_shell_audit("disabled")
-            if base_request.id is None:
-                return Response(status_code=204)
-            return self._generate_error_response(
-                base_request.id,
-                JSONRPCError(
-                    code=ERR_METHOD_DISABLED,
-                    message="Method disabled",
-                    data={
-                        "type": "METHOD_DISABLED",
-                        "method": base_request.method,
-                        "session_id": session_id,
-                    },
                 ),
             )
 

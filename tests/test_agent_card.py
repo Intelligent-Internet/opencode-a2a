@@ -1,10 +1,12 @@
 from opencode_a2a_server.app import (
+    COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
     PROVIDER_DISCOVERY_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_QUERY_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
+    WIRE_CONTRACT_EXTENSION_URI,
     build_agent_card,
 )
 from opencode_a2a_server.jsonrpc_ext import SESSION_CONTEXT_PREFIX
@@ -80,11 +82,10 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert session_query.params["control_methods"] == {
         "prompt_async": "opencode.sessions.prompt_async",
         "command": "opencode.sessions.command",
-        "shell": "opencode.sessions.shell",
     }
     assert session_query.params["methods"]["prompt_async"] == "opencode.sessions.prompt_async"
     assert session_query.params["methods"]["command"] == "opencode.sessions.command"
-    assert session_query.params["methods"]["shell"] == "opencode.sessions.shell"
+    assert "shell" not in session_query.params["methods"]
     assert session_query.params["control_method_flags"]["opencode.sessions.shell"] == {
         "enabled_by_default": False,
         "config_key": "A2A_ENABLE_SESSION_SHELL",
@@ -95,7 +96,6 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     ]
     prompt_contract = session_query.params["method_contracts"]["opencode.sessions.prompt_async"]
     command_contract = session_query.params["method_contracts"]["opencode.sessions.command"]
-    shell_contract = session_query.params["method_contracts"]["opencode.sessions.shell"]
     list_contract = session_query.params["method_contracts"]["opencode.sessions.list"]
     messages_contract = session_query.params["method_contracts"]["opencode.sessions.messages.list"]
     assert prompt_contract["params"]["required"] == ["session_id", "request.parts"]
@@ -106,12 +106,6 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
         "request.arguments",
     ]
     assert command_contract["result"]["fields"] == ["item"]
-    assert shell_contract["params"]["required"] == [
-        "session_id",
-        "request.agent",
-        "request.command",
-    ]
-    assert shell_contract["result"]["fields"] == ["item"]
     assert list_contract["notification_response_status"] == 204
     assert messages_contract["notification_response_status"] == 204
     assert prompt_contract["notification_response_status"] == 204
@@ -120,7 +114,8 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert result_envelope["opencode.sessions.messages.list"]["fields"] == ["items"]
     assert result_envelope["opencode.sessions.prompt_async"]["fields"] == ["ok", "session_id"]
     assert result_envelope["opencode.sessions.command"]["fields"] == ["item"]
-    assert result_envelope["opencode.sessions.shell"]["fields"] == ["item"]
+    assert "opencode.sessions.shell" not in session_query.params["method_contracts"]
+    assert "opencode.sessions.shell" not in result_envelope
     assert (
         session_query.params["context_semantics"]["a2a_context_id_prefix"] == SESSION_CONTEXT_PREFIX
     )
@@ -131,11 +126,17 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert session_query.params["errors"]["business_codes"] == {
         "SESSION_NOT_FOUND": -32001,
         "SESSION_FORBIDDEN": -32006,
-        "METHOD_DISABLED": -32007,
         "UPSTREAM_UNREACHABLE": -32002,
         "UPSTREAM_HTTP_ERROR": -32003,
         "UPSTREAM_PAYLOAD_ERROR": -32005,
     }
+    assert session_query.params["errors"]["error_data_fields"] == [
+        "type",
+        "method",
+        "session_id",
+        "upstream_status",
+        "detail",
+    ]
     assert session_query.params["errors"]["invalid_params_data_fields"] == [
         "type",
         "field",
@@ -196,8 +197,49 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
             interrupt.params["method_contracts"][method_name]["notification_response_status"] == 204
         )
 
+    compatibility = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
+    assert compatibility.params["extension_retention"][MODEL_SELECTION_EXTENSION_URI] == {
+        "surface": "core-runtime-metadata",
+        "availability": "always",
+        "retention": "stable",
+    }
+    shell_policy = compatibility.params["method_retention"]["opencode.sessions.shell"]
+    assert shell_policy["availability"] == "disabled"
+    assert shell_policy["retention"] == "deployment-conditional"
+    assert shell_policy["toggle"] == "A2A_ENABLE_SESSION_SHELL"
+
+    wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
+    assert MODEL_SELECTION_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
+    assert "opencode.sessions.shell" not in wire_contract.params["all_jsonrpc_methods"]
+    assert wire_contract.params["extensions"]["conditionally_available_methods"] == {
+        "opencode.sessions.shell": {
+            "reason": "disabled_by_configuration",
+            "toggle": "A2A_ENABLE_SESSION_SHELL",
+        }
+    }
+
 
 def test_agent_card_chat_examples_include_project_hint_when_configured() -> None:
     card = build_agent_card(make_settings(a2a_bearer_token="test-token", a2a_project="alpha"))
     chat_skill = next(skill for skill in card.skills if skill.id == "opencode.chat")
     assert any("project alpha" in example for example in chat_skill.examples)
+
+
+def test_agent_card_contracts_include_shell_when_enabled() -> None:
+    card = build_agent_card(
+        make_settings(a2a_bearer_token="test-token", a2a_enable_session_shell=True)
+    )
+    ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
+
+    session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
+    assert session_query.params["control_methods"]["shell"] == "opencode.sessions.shell"
+    assert session_query.params["methods"]["shell"] == "opencode.sessions.shell"
+    assert "opencode.sessions.shell" in session_query.params["method_contracts"]
+
+    compatibility = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
+    shell_policy = compatibility.params["method_retention"]["opencode.sessions.shell"]
+    assert shell_policy["availability"] == "enabled"
+
+    wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
+    assert "opencode.sessions.shell" in wire_contract.params["all_jsonrpc_methods"]
+    assert wire_contract.params["extensions"]["conditionally_available_methods"] == {}

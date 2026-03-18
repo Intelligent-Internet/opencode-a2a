@@ -11,6 +11,15 @@ SHARED_INTERRUPT_METADATA_FIELD = "metadata.shared.interrupt"
 SHARED_USAGE_METADATA_FIELD = "metadata.shared.usage"
 OPENCODE_DIRECTORY_METADATA_FIELD = "metadata.opencode.directory"
 
+SESSION_BINDING_EXTENSION_URI = "urn:a2a:session-binding/v1"
+MODEL_SELECTION_EXTENSION_URI = "urn:a2a:model-selection/v1"
+STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
+SESSION_QUERY_EXTENSION_URI = "urn:opencode-a2a:session-query/v1"
+PROVIDER_DISCOVERY_EXTENSION_URI = "urn:opencode-a2a:provider-discovery/v1"
+INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
+COMPATIBILITY_PROFILE_EXTENSION_URI = "urn:a2a:compatibility-profile/v1"
+WIRE_CONTRACT_EXTENSION_URI = "urn:a2a:wire-contract/v1"
+
 
 @dataclass(frozen=True)
 class SessionQueryMethodContract:
@@ -156,10 +165,30 @@ SESSION_CONTROL_METHODS: dict[str, str] = {
     key: SESSION_QUERY_METHODS[key] for key in SESSION_CONTROL_METHOD_KEYS
 }
 
+CORE_JSONRPC_METHODS: tuple[str, ...] = (
+    "message/send",
+    "message/stream",
+    "tasks/get",
+    "tasks/cancel",
+    "tasks/resubscribe",
+)
+CORE_HTTP_ENDPOINTS: tuple[str, ...] = (
+    "POST /v1/message:send",
+    "POST /v1/message:stream",
+    "GET /v1/tasks/{id}",
+    "POST /v1/tasks/{id}:cancel",
+    "GET /v1/tasks/{id}:subscribe",
+)
+WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS: tuple[str, ...] = (
+    "type",
+    "method",
+    "supported_methods",
+    "protocol_version",
+)
+
 SESSION_QUERY_ERROR_BUSINESS_CODES: dict[str, int] = {
     "SESSION_NOT_FOUND": -32001,
     "SESSION_FORBIDDEN": -32006,
-    "METHOD_DISABLED": -32007,
     "UPSTREAM_UNREACHABLE": -32002,
     "UPSTREAM_HTTP_ERROR": -32003,
     "UPSTREAM_PAYLOAD_ERROR": -32005,
@@ -264,6 +293,21 @@ PROVIDER_DISCOVERY_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
     "field",
     "fields",
 )
+
+
+def build_supported_jsonrpc_methods(*, session_shell_enabled: bool) -> list[str]:
+    methods = [
+        *CORE_JSONRPC_METHODS,
+        SESSION_QUERY_METHODS["list_sessions"],
+        SESSION_QUERY_METHODS["get_session_messages"],
+        SESSION_CONTROL_METHODS["prompt_async"],
+        SESSION_CONTROL_METHODS["command"],
+        *PROVIDER_DISCOVERY_METHODS.values(),
+        *INTERRUPT_CALLBACK_METHODS.values(),
+    ]
+    if session_shell_enabled:
+        methods.append(SESSION_CONTROL_METHODS["shell"])
+    return methods
 
 
 def _build_method_contract_params(
@@ -389,11 +433,20 @@ def build_session_query_extension_params(
     deployment_context: dict[str, str | bool],
     context_id_prefix: str,
 ) -> dict[str, Any]:
+    session_shell_enabled = bool(deployment_context.get("session_shell_enabled"))
+    methods = dict(SESSION_QUERY_METHODS)
+    control_methods = dict(SESSION_CONTROL_METHODS)
+    if not session_shell_enabled:
+        methods.pop("shell", None)
+        control_methods.pop("shell", None)
+
     method_contracts: dict[str, Any] = {}
     result_envelope_by_method: dict[str, Any] = {}
     pagination_applies_to: list[str] = []
 
     for method_contract in SESSION_QUERY_METHOD_CONTRACTS.values():
+        if method_contract.method == SESSION_QUERY_METHODS["shell"] and not session_shell_enabled:
+            continue
         params_contract = _build_method_contract_params(
             required=method_contract.required_params,
             optional=method_contract.optional_params,
@@ -422,8 +475,8 @@ def build_session_query_extension_params(
             pagination_applies_to.append(method_contract.method)
 
     return {
-        "methods": dict(SESSION_QUERY_METHODS),
-        "control_methods": dict(SESSION_CONTROL_METHODS),
+        "methods": methods,
+        "control_methods": control_methods,
         "control_method_flags": {
             SESSION_QUERY_METHODS["shell"]: {
                 "enabled_by_default": False,
@@ -587,4 +640,171 @@ def build_provider_discovery_extension_params(
                 "downstream callers do not need to parse raw OpenCode payloads."
             ),
         ],
+    }
+
+
+def build_compatibility_profile_params(
+    *,
+    protocol_version: str,
+    deployment_context: dict[str, str | bool],
+) -> dict[str, Any]:
+    session_shell_enabled = bool(deployment_context.get("session_shell_enabled"))
+    method_retention: dict[str, dict[str, Any]] = {
+        method: {
+            "surface": "core",
+            "availability": "always",
+            "retention": "required",
+        }
+        for method in CORE_JSONRPC_METHODS
+    }
+    method_retention.update(
+        {
+            method: {
+                "surface": "extension",
+                "availability": "always",
+                "retention": "stable",
+                "extension_uri": SESSION_QUERY_EXTENSION_URI,
+            }
+            for method in (
+                SESSION_QUERY_METHODS["list_sessions"],
+                SESSION_QUERY_METHODS["get_session_messages"],
+                SESSION_CONTROL_METHODS["prompt_async"],
+                SESSION_CONTROL_METHODS["command"],
+            )
+        }
+    )
+    method_retention[SESSION_CONTROL_METHODS["shell"]] = {
+        "surface": "extension",
+        "availability": "enabled" if session_shell_enabled else "disabled",
+        "retention": "deployment-conditional",
+        "extension_uri": SESSION_QUERY_EXTENSION_URI,
+        "toggle": "A2A_ENABLE_SESSION_SHELL",
+    }
+    method_retention.update(
+        {
+            method: {
+                "surface": "extension",
+                "availability": "always",
+                "retention": "stable",
+                "extension_uri": PROVIDER_DISCOVERY_EXTENSION_URI,
+            }
+            for method in PROVIDER_DISCOVERY_METHODS.values()
+        }
+    )
+    method_retention.update(
+        {
+            method: {
+                "surface": "extension",
+                "availability": "always",
+                "retention": "stable",
+                "extension_uri": INTERRUPT_CALLBACK_EXTENSION_URI,
+            }
+            for method in INTERRUPT_CALLBACK_METHODS.values()
+        }
+    )
+    return {
+        "profile_id": "opencode-a2a-baseline-v1",
+        "protocol_version": protocol_version,
+        "core": {
+            "jsonrpc_methods": list(CORE_JSONRPC_METHODS),
+            "http_endpoints": list(CORE_HTTP_ENDPOINTS),
+        },
+        "extension_retention": {
+            SESSION_BINDING_EXTENSION_URI: {
+                "surface": "core-runtime-metadata",
+                "availability": "always",
+                "retention": "required",
+            },
+            MODEL_SELECTION_EXTENSION_URI: {
+                "surface": "core-runtime-metadata",
+                "availability": "always",
+                "retention": "stable",
+            },
+            STREAMING_EXTENSION_URI: {
+                "surface": "core-runtime-metadata",
+                "availability": "always",
+                "retention": "required",
+            },
+            SESSION_QUERY_EXTENSION_URI: {
+                "surface": "jsonrpc-extension",
+                "availability": "always",
+                "retention": "stable",
+            },
+            PROVIDER_DISCOVERY_EXTENSION_URI: {
+                "surface": "jsonrpc-extension",
+                "availability": "always",
+                "retention": "stable",
+            },
+            INTERRUPT_CALLBACK_EXTENSION_URI: {
+                "surface": "jsonrpc-extension",
+                "availability": "always",
+                "retention": "stable",
+            },
+        },
+        "method_retention": method_retention,
+        "consumer_guidance": [
+            "Treat core A2A methods as the stable interoperability baseline for generic clients.",
+            (
+                "Treat opencode.* and a2a.interrupt.* JSON-RPC methods as declared custom "
+                "extensions that remain stable within the current major line."
+            ),
+            (
+                "Treat opencode.sessions.shell as deployment-conditional and discover it from "
+                "the declared profile and current wire contract before calling it."
+            ),
+        ],
+    }
+
+
+def build_wire_contract_params(
+    *,
+    protocol_version: str,
+    deployment_context: dict[str, str | bool],
+) -> dict[str, Any]:
+    session_shell_enabled = bool(deployment_context.get("session_shell_enabled"))
+    extension_jsonrpc_methods = [
+        SESSION_QUERY_METHODS["list_sessions"],
+        SESSION_QUERY_METHODS["get_session_messages"],
+        SESSION_CONTROL_METHODS["prompt_async"],
+        SESSION_CONTROL_METHODS["command"],
+        *PROVIDER_DISCOVERY_METHODS.values(),
+        *INTERRUPT_CALLBACK_METHODS.values(),
+    ]
+    conditionally_available_methods: dict[str, dict[str, str]] = {}
+    if session_shell_enabled:
+        extension_jsonrpc_methods.append(SESSION_CONTROL_METHODS["shell"])
+    else:
+        conditionally_available_methods[SESSION_CONTROL_METHODS["shell"]] = {
+            "reason": "disabled_by_configuration",
+            "toggle": "A2A_ENABLE_SESSION_SHELL",
+        }
+
+    return {
+        "protocol_version": protocol_version,
+        "preferred_transport": "HTTP+JSON",
+        "additional_transports": ["JSON-RPC"],
+        "core": {
+            "jsonrpc_methods": list(CORE_JSONRPC_METHODS),
+            "http_endpoints": list(CORE_HTTP_ENDPOINTS),
+        },
+        "extensions": {
+            "jsonrpc_methods": extension_jsonrpc_methods,
+            "conditionally_available_methods": conditionally_available_methods,
+            "extension_uris": [
+                SESSION_BINDING_EXTENSION_URI,
+                MODEL_SELECTION_EXTENSION_URI,
+                STREAMING_EXTENSION_URI,
+                SESSION_QUERY_EXTENSION_URI,
+                PROVIDER_DISCOVERY_EXTENSION_URI,
+                INTERRUPT_CALLBACK_EXTENSION_URI,
+            ],
+        },
+        "all_jsonrpc_methods": build_supported_jsonrpc_methods(
+            session_shell_enabled=session_shell_enabled,
+        ),
+        "unsupported_method_error": {
+            "code": -32601,
+            "type": "METHOD_NOT_SUPPORTED",
+            "data_fields": list(WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS),
+        },
     }

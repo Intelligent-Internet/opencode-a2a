@@ -1324,8 +1324,9 @@ async def test_session_shell_extension_disabled_by_default(monkeypatch):
             },
         )
         payload = resp.json()
-        assert payload["error"]["code"] == -32007
-        assert payload["error"]["data"]["type"] == "METHOD_DISABLED"
+        assert payload["error"]["code"] == -32601
+        assert payload["error"]["data"]["type"] == "METHOD_NOT_SUPPORTED"
+        assert "opencode.sessions.shell" not in payload["error"]["data"]["supported_methods"]
         assert dummy.shell_calls == []
 
 

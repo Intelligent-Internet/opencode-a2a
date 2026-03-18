@@ -2,25 +2,27 @@ import httpx
 import pytest
 
 from opencode_a2a_server.app import (
+    COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
     PROVIDER_DISCOVERY_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_QUERY_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
+    WIRE_CONTRACT_EXTENSION_URI,
     build_agent_card,
     create_app,
 )
 from opencode_a2a_server.extension_contracts import (
     INTERRUPT_CALLBACK_METHODS,
-    PROVIDER_DISCOVERY_METHODS,
-    SESSION_QUERY_METHODS,
+    build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
     build_provider_discovery_extension_params,
     build_session_binding_extension_params,
     build_session_query_extension_params,
     build_streaming_extension_params,
+    build_wire_contract_params,
 )
 from opencode_a2a_server.jsonrpc_ext import SESSION_CONTEXT_PREFIX
 from tests.helpers import DummySessionQueryOpencodeClient as DummyOpencodeClient
@@ -37,8 +39,11 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
     session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
     provider_discovery = ext_by_uri[PROVIDER_DISCOVERY_EXTENSION_URI]
     interrupt_callback = ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI]
+    compatibility_profile = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
+    wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
     deployment_context = session_query.params["deployment_context"]
 
+    settings = make_settings(a2a_bearer_token="test-token")
     expected_session_binding = build_session_binding_extension_params(
         deployment_context=deployment_context,
         directory_override_enabled=True,
@@ -55,6 +60,14 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
         deployment_context=deployment_context,
     )
     expected_interrupt_callback = build_interrupt_callback_extension_params(
+        deployment_context=deployment_context,
+    )
+    expected_compatibility_profile = build_compatibility_profile_params(
+        protocol_version=settings.a2a_protocol_version,
+        deployment_context=deployment_context,
+    )
+    expected_wire_contract = build_wire_contract_params(
+        protocol_version=settings.a2a_protocol_version,
         deployment_context=deployment_context,
     )
 
@@ -76,6 +89,12 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
     assert interrupt_callback.params == expected_interrupt_callback, (
         "Interrupt callback extension drifted from extension_contracts SSOT."
     )
+    assert compatibility_profile.params == expected_compatibility_profile, (
+        "Compatibility profile extension drifted from extension_contracts SSOT."
+    )
+    assert wire_contract.params == expected_wire_contract, (
+        "Wire contract extension drifted from extension_contracts SSOT."
+    )
 
 
 def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
@@ -94,7 +113,10 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     session_query = contract["session_query"]
     provider_discovery = contract["provider_discovery"]
     interrupt_callback = contract["interrupt_callback"]
+    compatibility_profile = contract["compatibility_profile"]
+    wire_contract = contract["wire_contract"]
     deployment_context = session_query["deployment_context"]
+    settings = make_settings(a2a_bearer_token="test-token")
     expected_session_binding = build_session_binding_extension_params(
         deployment_context=deployment_context,
         directory_override_enabled=True,
@@ -111,6 +133,14 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
         deployment_context=deployment_context,
     )
     expected_interrupt_callback = build_interrupt_callback_extension_params(
+        deployment_context=deployment_context,
+    )
+    expected_compatibility_profile = build_compatibility_profile_params(
+        protocol_version=settings.a2a_protocol_version,
+        deployment_context=deployment_context,
+    )
+    expected_wire_contract = build_wire_contract_params(
+        protocol_version=settings.a2a_protocol_version,
         deployment_context=deployment_context,
     )
 
@@ -132,6 +162,12 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     assert interrupt_callback == expected_interrupt_callback, (
         "OpenAPI interrupt callback contract drifted from extension_contracts SSOT."
     )
+    assert compatibility_profile == expected_compatibility_profile, (
+        "OpenAPI compatibility profile contract drifted from extension_contracts SSOT."
+    )
+    assert wire_contract == expected_wire_contract, (
+        "OpenAPI wire contract drifted from extension_contracts SSOT."
+    )
 
     json_request_schema = (
         post.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema", {})
@@ -151,8 +187,8 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
         value.get("value", {}).get("method") for value in example_values if isinstance(value, dict)
     }
     expected_methods = (
-        set(SESSION_QUERY_METHODS.values())
-        | set(PROVIDER_DISCOVERY_METHODS.values())
+        set(session_query["methods"].values())
+        | set(provider_discovery["methods"].values())
         | set(INTERRUPT_CALLBACK_METHODS.values())
     )
     missing_methods = sorted(method for method in expected_methods if method not in example_methods)

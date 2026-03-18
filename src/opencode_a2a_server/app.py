@@ -44,16 +44,27 @@ from starlette.responses import StreamingResponse
 from .agent import OpencodeAgentExecutor
 from .config import Settings
 from .extension_contracts import (
+    COMPATIBILITY_PROFILE_EXTENSION_URI,
+    INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
+    MODEL_SELECTION_EXTENSION_URI,
+    PROVIDER_DISCOVERY_EXTENSION_URI,
     PROVIDER_DISCOVERY_METHODS,
+    SESSION_BINDING_EXTENSION_URI,
     SESSION_CONTROL_METHODS,
+    SESSION_QUERY_EXTENSION_URI,
     SESSION_QUERY_METHODS,
+    STREAMING_EXTENSION_URI,
+    WIRE_CONTRACT_EXTENSION_URI,
+    build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
     build_provider_discovery_extension_params,
     build_session_binding_extension_params,
     build_session_query_extension_params,
     build_streaming_extension_params,
+    build_supported_jsonrpc_methods,
+    build_wire_contract_params,
 )
 from .jsonrpc_ext import (
     SESSION_CONTEXT_PREFIX,
@@ -70,13 +81,6 @@ _REQUEST_BODY_BYTES: ContextVar[bytes | None] = ContextVar(
 
 if TYPE_CHECKING:
     from a2a.server.context import ServerCallContext
-
-SESSION_BINDING_EXTENSION_URI = "urn:a2a:session-binding/v1"
-MODEL_SELECTION_EXTENSION_URI = "urn:a2a:model-selection/v1"
-STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
-SESSION_QUERY_EXTENSION_URI = "urn:opencode-a2a:session-query/v1"
-PROVIDER_DISCOVERY_EXTENSION_URI = "urn:opencode-a2a:provider-discovery/v1"
-INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
 
 
 class OpencodeRequestHandler(DefaultRequestHandler):
@@ -310,23 +314,30 @@ def _build_chat_examples(project: str | None) -> list[str]:
     return examples
 
 
-def _build_jsonrpc_extension_openapi_description() -> str:
-    session_methods = ", ".join(sorted(SESSION_QUERY_METHODS.values()))
+def _build_jsonrpc_extension_openapi_description(*, session_shell_enabled: bool) -> str:
+    session_methods = [
+        SESSION_QUERY_METHODS["list_sessions"],
+        SESSION_QUERY_METHODS["get_session_messages"],
+        SESSION_QUERY_METHODS["prompt_async"],
+        SESSION_QUERY_METHODS["command"],
+    ]
+    if session_shell_enabled:
+        session_methods.append(SESSION_QUERY_METHODS["shell"])
     provider_methods = ", ".join(sorted(PROVIDER_DISCOVERY_METHODS.values()))
     interrupt_methods = ", ".join(sorted(INTERRUPT_CALLBACK_METHODS.values()))
     return (
         "A2A JSON-RPC entrypoint. Supports core A2A methods "
         "(message/send, message/stream, tasks/get, tasks/cancel, tasks/resubscribe) "
         "plus OpenCode session/provider extensions and shared interrupt callback methods.\n\n"
-        f"OpenCode session query/control methods: {session_methods}.\n"
+        f"OpenCode session query/control methods: {', '.join(session_methods)}.\n"
         f"OpenCode provider/model discovery methods: {provider_methods}.\n"
         f"Shared interrupt callback methods: {interrupt_methods}.\n\n"
         "Notification semantics: extension requests without JSON-RPC id return HTTP 204."
     )
 
 
-def _build_jsonrpc_extension_openapi_examples() -> dict[str, Any]:
-    return {
+def _build_jsonrpc_extension_openapi_examples(*, session_shell_enabled: bool) -> dict[str, Any]:
+    examples = {
         "message_send": {
             "summary": "Send message via JSON-RPC core method",
             "value": {
@@ -432,21 +443,6 @@ def _build_jsonrpc_extension_openapi_examples() -> dict[str, Any]:
                 },
             },
         },
-        "session_shell": {
-            "summary": "Run shell command in an existing session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 23,
-                "method": SESSION_QUERY_METHODS["shell"],
-                "params": {
-                    "session_id": "s-1",
-                    "request": {
-                        "agent": "code-reviewer",
-                        "command": "git status --short",
-                    },
-                },
-            },
-        },
         "providers_list": {
             "summary": "List available OpenCode providers",
             "value": {
@@ -493,6 +489,23 @@ def _build_jsonrpc_extension_openapi_examples() -> dict[str, Any]:
             },
         },
     }
+    if session_shell_enabled:
+        examples["session_shell"] = {
+            "summary": "Run shell command in an existing session",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 23,
+                "method": SESSION_QUERY_METHODS["shell"],
+                "params": {
+                    "session_id": "s-1",
+                    "request": {
+                        "agent": "code-reviewer",
+                        "command": "git status --short",
+                    },
+                },
+            },
+        }
+    return examples
 
 
 def _build_rest_message_openapi_examples() -> dict[str, Any]:
@@ -545,6 +558,7 @@ def _build_rest_message_openapi_examples() -> dict[str, Any]:
 
 def _patch_jsonrpc_openapi_contract(
     app: FastAPI,
+    settings: Settings,
     *,
     deployment_context: dict[str, str | bool],
 ) -> None:
@@ -566,6 +580,14 @@ def _patch_jsonrpc_openapi_contract(
     interrupt_callback = build_interrupt_callback_extension_params(
         deployment_context=deployment_context,
     )
+    compatibility_profile = build_compatibility_profile_params(
+        protocol_version=settings.a2a_protocol_version,
+        deployment_context=deployment_context,
+    )
+    wire_contract = build_wire_contract_params(
+        protocol_version=settings.a2a_protocol_version,
+        deployment_context=deployment_context,
+    )
     original_openapi = app.openapi
 
     def custom_openapi() -> dict[str, Any]:
@@ -580,7 +602,9 @@ def _patch_jsonrpc_openapi_contract(
                 post = root_path.get("post")
                 if isinstance(post, dict):
                     post["summary"] = "Handle A2A JSON-RPC Requests"
-                    post["description"] = _build_jsonrpc_extension_openapi_description()
+                    post["description"] = _build_jsonrpc_extension_openapi_description(
+                        session_shell_enabled=bool(deployment_context.get("session_shell_enabled")),
+                    )
                     post["x-a2a-extension-contracts"] = {
                         "session_binding": session_binding,
                         "model_selection": model_selection,
@@ -588,6 +612,8 @@ def _patch_jsonrpc_openapi_contract(
                         "session_query": session_query,
                         "provider_discovery": provider_discovery,
                         "interrupt_callback": interrupt_callback,
+                        "compatibility_profile": compatibility_profile,
+                        "wire_contract": wire_contract,
                     }
 
                     request_body = post.setdefault("requestBody", {})
@@ -596,7 +622,11 @@ def _patch_jsonrpc_openapi_contract(
                         if isinstance(content, dict):
                             app_json = content.setdefault("application/json", {})
                             if isinstance(app_json, dict):
-                                app_json["examples"] = _build_jsonrpc_extension_openapi_examples()
+                                app_json["examples"] = _build_jsonrpc_extension_openapi_examples(
+                                    session_shell_enabled=bool(
+                                        deployment_context.get("session_shell_enabled")
+                                    ),
+                                )
 
             rest_post_contracts: dict[str, dict[str, Any]] = {
                 "/v1/message:send": {
@@ -695,6 +725,14 @@ def build_agent_card(settings: Settings) -> AgentCard:
     interrupt_callback_extension_params = build_interrupt_callback_extension_params(
         deployment_context=deployment_context,
     )
+    compatibility_profile_params = build_compatibility_profile_params(
+        protocol_version=settings.a2a_protocol_version,
+        deployment_context=deployment_context,
+    )
+    wire_contract_params = build_wire_contract_params(
+        protocol_version=settings.a2a_protocol_version,
+        deployment_context=deployment_context,
+    )
 
     return AgentCard(
         name=settings.a2a_title,
@@ -766,6 +804,24 @@ def build_agent_card(settings: Settings) -> AgentCard:
                         "streaming through shared JSON-RPC methods."
                     ),
                     params=interrupt_callback_extension_params,
+                ),
+                AgentExtension(
+                    uri=COMPATIBILITY_PROFILE_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Expose the A2A compatibility profile defining core baselines, "
+                        "extension retention policies, and deployment-conditional methods."
+                    ),
+                    params=compatibility_profile_params,
+                ),
+                AgentExtension(
+                    uri=WIRE_CONTRACT_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Expose the wire-level contract declaring supported JSON-RPC methods, "
+                        "HTTP endpoints, and unified error contracts."
+                    ),
+                    params=wire_contract_params,
                 ),
             ],
         ),
@@ -885,27 +941,34 @@ def create_app(settings: Settings) -> FastAPI:
     agent_card = build_agent_card(settings)
     context_builder = IdentityAwareCallContextBuilder()
 
+    jsonrpc_methods = {
+        **SESSION_QUERY_METHODS,
+        **SESSION_CONTROL_METHODS,
+        **PROVIDER_DISCOVERY_METHODS,
+        **INTERRUPT_CALLBACK_METHODS,
+    }
+    if not settings.a2a_enable_session_shell:
+        jsonrpc_methods.pop("shell", None)
+
     # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.
     app = OpencodeSessionQueryJSONRPCApplication(
         agent_card=agent_card,
         http_handler=handler,
         context_builder=context_builder,
         opencode_client=client,
-        enable_session_shell=settings.a2a_enable_session_shell,
+        protocol_version=settings.a2a_protocol_version,
+        supported_methods=build_supported_jsonrpc_methods(
+            session_shell_enabled=settings.a2a_enable_session_shell,
+        ),
         directory_resolver=executor.resolve_directory_for_control,
         session_claim=executor.claim_session_for_control,
         session_claim_finalize=executor.finalize_session_for_control,
         session_claim_release=executor.release_session_for_control,
-        methods={
-            **SESSION_QUERY_METHODS,
-            **SESSION_CONTROL_METHODS,
-            **PROVIDER_DISCOVERY_METHODS,
-            **INTERRUPT_CALLBACK_METHODS,
-        },
+        methods=jsonrpc_methods,
     ).build(title=settings.a2a_title, version=settings.a2a_version, lifespan=lifespan)
     app.state.opencode_agent_executor = executor
     deployment_context = _build_deployment_context(settings)
-    _patch_jsonrpc_openapi_contract(app, deployment_context=deployment_context)
+    _patch_jsonrpc_openapi_contract(app, settings, deployment_context=deployment_context)
 
     rest_adapter = RESTAdapter(
         agent_card=agent_card,
