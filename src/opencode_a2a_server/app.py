@@ -24,10 +24,7 @@ from a2a.types import (
     AgentExtension,
     AgentInterface,
     AgentSkill,
-    AuthorizationCodeOAuthFlow,
     HTTPAuthSecurityScheme,
-    OAuth2SecurityScheme,
-    OAuthFlows,
     SecurityScheme,
     Task,
     TaskIdParams,
@@ -266,7 +263,9 @@ class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
 def _build_deployment_context(settings: Settings) -> dict[str, str | bool]:
     context: dict[str, str | bool] = {
         "allow_directory_override": settings.a2a_allow_directory_override,
+        "deployment_profile": "single_tenant_shared_workspace",
         "shared_workspace_across_consumers": True,
+        "tenant_isolation": "none",
         "session_shell_enabled": settings.a2a_enable_session_shell,
     }
     if settings.a2a_project:
@@ -289,17 +288,19 @@ def _build_agent_card_description(
 ) -> str:
     base = (settings.a2a_description or "").strip() or "A2A wrapper service for OpenCode."
     summary = (
-        "Supports HTTP+JSON and JSON-RPC transports, standard A2A messaging "
+        "Supports HTTP+JSON and JSON-RPC transports, streaming-first A2A messaging "
         "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
         "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), shared "
-        "session-binding/model-selection/streaming contracts, OpenCode "
-        "session-query/provider-discovery extensions, and shared interrupt "
+        "session-binding/model-selection/streaming contracts, provider-private "
+        "OpenCode session/provider/model extensions, and shared interrupt "
         "callback extensions."
     )
     parts: list[str] = [base, summary]
+    parts.append("This server profile is intended for single-tenant, self-hosted coding workflows.")
     parts.append(
         "Within one opencode-a2a-server instance, all consumers share the same "
-        "underlying OpenCode workspace/environment."
+        "underlying OpenCode workspace/environment; per-consumer workspace "
+        "isolation is not provided."
     )
     project = deployment_context.get("project")
     if isinstance(project, str) and project.strip():
@@ -318,9 +319,22 @@ def _build_chat_examples(project: str | None) -> list[str]:
     examples = [
         "Explain what this repository does.",
         "Summarize the API endpoints in this project.",
+        "Review the attached diff and summarize the highest-risk findings.",
     ]
     if project:
         examples.append(f"Summarize current work items for project {project}.")
+    return examples
+
+
+def _build_session_query_skill_examples(*, session_shell_enabled: bool) -> list[str]:
+    examples = [
+        "List OpenCode sessions (method opencode.sessions.list).",
+        "List messages for a session (method opencode.sessions.messages.list).",
+        "Send async prompt to a session (method opencode.sessions.prompt_async).",
+        "Send command to a session (method opencode.sessions.command).",
+    ]
+    if session_shell_enabled:
+        examples.append("Run shell in a session (method opencode.sessions.shell).")
     return examples
 
 
@@ -403,6 +417,34 @@ def _build_jsonrpc_extension_openapi_examples(*, session_shell_enabled: bool) ->
                             }
                         }
                     },
+                },
+            },
+        },
+        "message_send_file_input": {
+            "summary": "Send message with text + file input",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 104,
+                "method": "message/send",
+                "params": {
+                    "message": {
+                        "messageId": "msg-file-1",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "kind": "text",
+                                "text": "Review the attached file and summarize the main risks.",
+                            },
+                            {
+                                "kind": "file",
+                                "file": {
+                                    "name": "report.pdf",
+                                    "mimeType": "application/pdf",
+                                    "uri": "file:///workspace/report.pdf",
+                                },
+                            },
+                        ],
+                    }
                 },
             },
         },
@@ -527,6 +569,25 @@ def _build_rest_message_openapi_examples() -> dict[str, Any]:
                     "messageId": "msg-rest-1",
                     "role": "ROLE_USER",
                     "content": [{"text": "Explain what this repository does."}],
+                }
+            },
+        },
+        "message_with_file_input": {
+            "summary": "Send message with FilePart input (HTTP+JSON)",
+            "value": {
+                "message": {
+                    "messageId": "msg-rest-file-1",
+                    "role": "ROLE_USER",
+                    "content": [
+                        {"text": "Review the attached file and summarize the main risks."},
+                        {
+                            "file": {
+                                "name": "report.pdf",
+                                "mimeType": "application/pdf",
+                                "uri": "file:///workspace/report.pdf",
+                            }
+                        },
+                    ],
                 }
             },
         },
@@ -701,22 +762,6 @@ def build_agent_card(settings: Settings) -> AgentCard:
     }
     security: list[dict[str, list[str]]] = [{"bearerAuth": []}]
 
-    if settings.a2a_oauth_authorization_url and settings.a2a_oauth_token_url:
-        security_schemes["oauth2"] = SecurityScheme(
-            root=OAuth2SecurityScheme(
-                oauth2_metadata_url=settings.a2a_oauth_metadata_url,
-                flows=OAuthFlows(
-                    authorization_code=AuthorizationCodeOAuthFlow(
-                        authorization_url=settings.a2a_oauth_authorization_url,
-                        token_url=settings.a2a_oauth_token_url,
-                        refresh_url=None,
-                        scopes=settings.a2a_oauth_scopes,
-                    )
-                ),
-            )
-        )
-        security.append({"oauth2": list(settings.a2a_oauth_scopes.keys())})
-
     session_binding_extension_params = build_session_binding_extension_params(
         deployment_context=deployment_context,
         directory_override_enabled=settings.a2a_allow_directory_override,
@@ -752,10 +797,10 @@ def build_agent_card(settings: Settings) -> AgentCard:
         version=settings.a2a_version,
         protocol_version=settings.a2a_protocol_version,
         preferred_transport=TransportProtocol.http_json,
-        default_input_modes=["text/plain"],
+        default_input_modes=["text/plain", "application/octet-stream"],
         default_output_modes=["text/plain"],
         capabilities=AgentCapabilities(
-            streaming=settings.a2a_streaming,
+            streaming=True,
             extensions=[
                 AgentExtension(
                     uri=SESSION_BINDING_EXTENSION_URI,
@@ -840,36 +885,33 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 id="opencode.chat",
                 name="OpenCode Chat",
                 description=(
-                    "Handle message/send and message/stream requests by routing user text to "
-                    "OpenCode sessions with shared session binding and shared model selection."
+                    "Handle core A2A message/send and message/stream requests by routing "
+                    "TextPart and FilePart inputs to OpenCode sessions with shared session "
+                    "binding and shared model selection."
                 ),
-                tags=["assistant", "coding", "opencode"],
+                tags=["assistant", "coding", "opencode", "core-a2a", "portable"],
                 examples=_build_chat_examples(settings.a2a_project),
             ),
             AgentSkill(
                 id="opencode.sessions.query",
                 name="OpenCode Sessions Query",
                 description=(
-                    "Query OpenCode sessions/histories and trigger session control methods via "
-                    "JSON-RPC extensions (list/messages/prompt_async/command/shell)."
+                    "provider-private OpenCode session/history and session-control surface "
+                    "exposed through JSON-RPC extensions."
                 ),
-                tags=["opencode", "sessions", "history"],
-                examples=[
-                    "List OpenCode sessions (method opencode.sessions.list).",
-                    "List messages for a session (method opencode.sessions.messages.list).",
-                    "Send async prompt to a session (method opencode.sessions.prompt_async).",
-                    "Send command to a session (method opencode.sessions.command).",
-                    "Run shell in a session (method opencode.sessions.shell).",
-                ],
+                tags=["opencode", "sessions", "history", "provider-private"],
+                examples=_build_session_query_skill_examples(
+                    session_shell_enabled=settings.a2a_enable_session_shell
+                ),
             ),
             AgentSkill(
                 id="opencode.providers.query",
                 name="OpenCode Provider Catalog",
                 description=(
-                    "Query available OpenCode providers/models via JSON-RPC extensions "
-                    "(opencode.providers.list / opencode.models.list)."
+                    "provider-private OpenCode provider/model discovery surface exposed "
+                    "through JSON-RPC extensions."
                 ),
-                tags=["opencode", "providers", "models"],
+                tags=["opencode", "providers", "models", "provider-private"],
                 examples=[
                     "List available providers (method opencode.providers.list).",
                     "List available models for a provider (method opencode.models.list).",
@@ -932,7 +974,7 @@ def create_app(settings: Settings) -> FastAPI:
     client = OpencodeClient(settings)
     executor = OpencodeAgentExecutor(
         client,
-        streaming_enabled=settings.a2a_streaming,
+        streaming_enabled=True,
         cancel_abort_timeout_seconds=settings.a2a_cancel_abort_timeout_seconds,
         session_cache_ttl_seconds=settings.a2a_session_cache_ttl_seconds,
         session_cache_maxsize=settings.a2a_session_cache_maxsize,

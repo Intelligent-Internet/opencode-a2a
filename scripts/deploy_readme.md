@@ -161,7 +161,6 @@ For values that support both environment variables and CLI keys:
 | `A2A_HOST` | `a2a_host` | Optional | `127.0.0.1` | A2A bind host. |
 | `A2A_PORT` | `a2a_port` | Optional | `8000` | A2A bind port. |
 | `A2A_PUBLIC_URL` | `a2a_public_url` | Optional | `http://<A2A_HOST>:<A2A_PORT>` | Public URL in Agent Card. |
-| `A2A_STREAMING` | `a2a_streaming` | Optional | `true` | SSE streaming toggle. |
 | `A2A_LOG_LEVEL` | `a2a_log_level` | Optional | `WARNING` | A2A log level. |
 | `A2A_OTEL_INSTRUMENTATION_ENABLED` | `a2a_otel_instrumentation_enabled` | Optional | `false` | Generates `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED` in `a2a.env`. |
 | `A2A_LOG_PAYLOADS` | `a2a_log_payloads` | Optional | `false` | Payload logging toggle. |

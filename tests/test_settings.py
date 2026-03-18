@@ -36,16 +36,6 @@ def test_settings_valid():
         assert settings.a2a_version == __version__
 
 
-def test_parse_oauth_scopes():
-    env = {
-        "A2A_BEARER_TOKEN": "test",
-        "A2A_OAUTH_SCOPES": "scope1, scope2,,scope3 ",
-    }
-    with mock.patch.dict(os.environ, env, clear=True):
-        settings = Settings.from_env()
-        assert settings.a2a_oauth_scopes == {"scope1": "", "scope2": "", "scope3": ""}
-
-
 def test_settings_reject_negative_max_request_body_bytes():
     env = {
         "A2A_BEARER_TOKEN": "test-token",

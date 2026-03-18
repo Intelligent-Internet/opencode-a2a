@@ -703,7 +703,7 @@ def build_compatibility_profile_params(
         }
     )
     return {
-        "profile_id": "opencode-a2a-baseline-v1",
+        "profile_id": "opencode-a2a-single-tenant-coding-v1",
         "protocol_version": protocol_version,
         "core": {
             "jsonrpc_methods": list(CORE_JSONRPC_METHODS),
@@ -745,8 +745,18 @@ def build_compatibility_profile_params(
         "consumer_guidance": [
             "Treat core A2A methods as the stable interoperability baseline for generic clients.",
             (
-                "Treat opencode.* and a2a.interrupt.* JSON-RPC methods as declared custom "
-                "extensions that remain stable within the current major line."
+                "Treat this deployment as a single-tenant, shared-workspace coding profile; "
+                "do not assume per-consumer workspace or tenant isolation."
+            ),
+            (
+                "Treat opencode.sessions.*, opencode.providers.*, and opencode.models.* as "
+                "provider-private operational surfaces rather than portable A2A baseline "
+                "capabilities."
+            ),
+            (
+                "Treat a2a.interrupt.* methods as declared shared extensions and opencode.* "
+                "methods as vendor-specific extensions that remain stable within the current "
+                "major line."
             ),
             (
                 "Treat opencode.sessions.shell as deployment-conditional and discover it from "
