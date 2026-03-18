@@ -45,6 +45,8 @@ GIT_IDENTITY_EMAIL_INPUT=""
 ENABLE_SECRET_PERSISTENCE_INPUT=""
 UPDATE_A2A_INPUT=""
 FORCE_RESTART_INPUT=""
+DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS_INPUT=""
+DEPLOY_HEALTHCHECK_INTERVAL_SECONDS_INPUT=""
 
 for arg in "$@"; do
   if [[ "$arg" == *=* ]]; then
@@ -163,6 +165,12 @@ for arg in "$@"; do
     force_restart)
       FORCE_RESTART_INPUT="$value"
       ;;
+    deploy_healthcheck_timeout_seconds)
+      DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS_INPUT="$value"
+      ;;
+    deploy_healthcheck_interval_seconds)
+      DEPLOY_HEALTHCHECK_INTERVAL_SECONDS_INPUT="$value"
+      ;;
     *)
       if provider_env_key="$(provider_secret_env_for_cli_key "${key,,}" 2>/dev/null)"; then
         echo "Sensitive parameter '${key}' is not allowed via CLI. Use environment variable ${provider_env_key}." >&2
@@ -184,6 +192,7 @@ Usage:
   [a2a_cancel_abort_timeout_seconds=<seconds>] [a2a_enable_session_shell=<bool>] \
   [a2a_strict_isolation=<bool>] [a2a_systemd_tasks_max=<int>] [a2a_systemd_limit_nofile=<int>] \
   [a2a_systemd_memory_max=<value>] [a2a_systemd_cpu_quota=<value>] \
+  [deploy_healthcheck_timeout_seconds=<seconds>] [deploy_healthcheck_interval_seconds=<seconds>] \
   [install_mode=<source|release>] [release_version=<version>] \
   [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=<bool>] [opencode_log_level=<level>] \
   [repo_url=<url>] [repo_branch=<branch>] \
@@ -208,6 +217,8 @@ export A2A_TOOL_DIR="${A2A_TOOL_DIR:-${A2A_RELEASE_ROOT}/tool}"
 export A2A_TOOL_BIN_DIR="${A2A_TOOL_BIN_DIR:-${A2A_RELEASE_ROOT}/bin}"
 export DEPLOY_HELPER_DIR="${DEPLOY_HELPER_DIR:-}"
 export A2A_BIN="${A2A_BIN:-}"
+export DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS="${DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS:-30}"
+export DEPLOY_HEALTHCHECK_INTERVAL_SECONDS="${DEPLOY_HEALTHCHECK_INTERVAL_SECONDS:-1}"
 
 export_if_present() {
   local target="$1"
@@ -286,6 +297,8 @@ export_if_present "A2A_SYSTEMD_LIMIT_NOFILE" "$A2A_SYSTEMD_LIMIT_NOFILE_INPUT"
 export_if_present "A2A_SYSTEMD_MEMORY_MAX" "$A2A_SYSTEMD_MEMORY_MAX_INPUT"
 export_if_present "A2A_SYSTEMD_CPU_QUOTA" "$A2A_SYSTEMD_CPU_QUOTA_INPUT"
 export_if_present "ENABLE_SECRET_PERSISTENCE" "$ENABLE_SECRET_PERSISTENCE_INPUT"
+export_if_present "DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS" "$DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS_INPUT"
+export_if_present "DEPLOY_HEALTHCHECK_INTERVAL_SECONDS" "$DEPLOY_HEALTHCHECK_INTERVAL_SECONDS_INPUT"
 
 case "${A2A_INSTALL_MODE,,}" in
   source|release)
@@ -320,6 +333,8 @@ if is_truthy "$A2A_ENABLE_SESSION_SHELL"; then
     echo "WARNING: Recommend setting a2a_strict_isolation=true for shell-enabled systemd instances." >&2
   fi
 fi
+
+ensure_sudo_ready
 
 if [[ "$A2A_INSTALL_MODE" == "release" ]]; then
   if [[ "$UPDATE_A2A" == "true" ]]; then

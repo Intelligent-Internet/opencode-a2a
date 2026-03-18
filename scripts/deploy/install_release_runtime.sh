@@ -49,3 +49,4 @@ fi
 
 $SUDO install -m 755 "${SCRIPT_DIR}/run_opencode.sh" "${DEPLOY_HELPER_DIR}/run_opencode.sh"
 $SUDO install -m 755 "${SCRIPT_DIR}/run_a2a.sh" "${DEPLOY_HELPER_DIR}/run_a2a.sh"
+$SUDO install -m 644 "${SCRIPT_DIR}/provider_secret_env_keys.sh" "${DEPLOY_HELPER_DIR}/provider_secret_env_keys.sh"

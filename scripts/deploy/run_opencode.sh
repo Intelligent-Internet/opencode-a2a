@@ -2,6 +2,10 @@
 # Wrapper to run opencode serve with configured host/port/logging.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/provider_secret_env_keys.sh"
+
 OPENCODE_CORE_DIR="${OPENCODE_CORE_DIR:-/opt/.opencode}"
 OPENCODE_BIN="${OPENCODE_BIN:-${OPENCODE_CORE_DIR}/bin/opencode}"
 OPENCODE_LOG_LEVEL_RAW="${OPENCODE_LOG_LEVEL:-WARNING}"
@@ -11,7 +15,6 @@ OPENCODE_EXTRA_ARGS="${OPENCODE_EXTRA_ARGS:-}"
 OPENCODE_PROVIDER_ID="${OPENCODE_PROVIDER_ID:-}"
 OPENCODE_MODEL_ID="${OPENCODE_MODEL_ID:-}"
 OPENCODE_LSP="${OPENCODE_LSP:-false}"
-GOOGLE_GENERATIVE_AI_API_KEY="${GOOGLE_GENERATIVE_AI_API_KEY:-}"
 
 case "${OPENCODE_LOG_LEVEL_RAW^^}" in
   DEBUG|INFO|WARN|ERROR)
@@ -32,10 +35,10 @@ if [[ ! -x "$OPENCODE_BIN" ]]; then
 fi
 
 provider_lc="${OPENCODE_PROVIDER_ID,,}"
-model_lc="${OPENCODE_MODEL_ID,,}"
-if [[ "$provider_lc" == "google" || "$model_lc" == *"gemini"* ]]; then
-  if [[ -z "$GOOGLE_GENERATIVE_AI_API_KEY" ]]; then
-    echo "GOOGLE_GENERATIVE_AI_API_KEY is required when using Google/Gemini model settings" >&2
+required_secret_key=""
+if required_secret_key="$(required_provider_secret_env_key "$provider_lc" 2>/dev/null)"; then
+  if [[ -z "${!required_secret_key:-}" ]]; then
+    echo "${required_secret_key} is required when OPENCODE_PROVIDER_ID=${OPENCODE_PROVIDER_ID}" >&2
     exit 1
   fi
 fi

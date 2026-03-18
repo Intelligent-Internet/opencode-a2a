@@ -85,6 +85,10 @@ command -v systemctl
 command -v sudo
 ```
 
+`deploy_release.sh` now performs the effective non-interactive sudo preflight
+itself. In agent/non-TTY runs, the command fails fast unless `sudo -n` already
+works for the required operations.
+
 One-time host bootstrap:
 
 ```bash
@@ -203,6 +207,7 @@ curl -fsS http://127.0.0.1:8010/.well-known/agent-card.json
 Success criteria:
 
 - `deploy_release.sh` exits with code `0`
+- the command prints one JSON status line with `{"status":"ok","category":"ready",...}`
 - `opencode@<project>.service` and `opencode-a2a-server@<project>.service`
   are active/running
 - `GET /health` returns HTTP 200 with `{"status":"ok"}`
@@ -249,9 +254,10 @@ Common failure classes:
 Recommended response:
 
 1. inspect command stderr
-2. inspect systemd or local log files
-3. fix missing inputs or secret files
-4. re-run the same deploy command
+2. if present, parse the final JSON status line for `category`
+3. inspect systemd or local log files
+4. fix missing inputs or secret files
+5. re-run the same deploy command
 
 For systemd logs:
 

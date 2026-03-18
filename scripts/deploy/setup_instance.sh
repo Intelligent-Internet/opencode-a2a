@@ -101,6 +101,39 @@ require_positive_integer() {
   fi
 }
 
+runtime_secret_key_available() {
+  local key="$1"
+  if [[ -n "${!key:-}" ]]; then
+    return 0
+  fi
+  if sudo test -f "$OPENCODE_SECRET_ENV_FILE"; then
+    sudo grep -q "^${key}=.\+" "$OPENCODE_SECRET_ENV_FILE"
+    return $?
+  fi
+  return 1
+}
+
+validate_provider_secret_contract() {
+  local provider="${OPENCODE_PROVIDER_ID:-}"
+  local model="${OPENCODE_MODEL_ID:-}"
+  local required_key=""
+  if [[ -n "$provider" && -z "$model" ]]; then
+    echo "OPENCODE_MODEL_ID is required when OPENCODE_PROVIDER_ID is set." >&2
+    exit 1
+  fi
+  if [[ -n "$model" && -z "$provider" ]]; then
+    echo "OPENCODE_PROVIDER_ID is required when OPENCODE_MODEL_ID is set." >&2
+    exit 1
+  fi
+  if required_key="$(required_provider_secret_env_key "$provider" 2>/dev/null)"; then
+    if ! runtime_secret_key_available "$required_key"; then
+      echo "${required_key} is required when OPENCODE_PROVIDER_ID=${provider}." >&2
+      echo "Provide it via environment variable or ${OPENCODE_SECRET_ENV_FILE} before starting services." >&2
+      exit 1
+    fi
+  fi
+}
+
 data_root_supports_protect_home() {
   local root="${1%/}"
   case "$root" in
@@ -140,6 +173,7 @@ ensure_data_root_accessible "$DATA_ROOT"
 require_nonnegative_integer "A2A_MAX_REQUEST_BODY_BYTES" "$A2A_MAX_REQUEST_BODY_BYTES"
 require_positive_integer "A2A_SYSTEMD_TASKS_MAX" "$A2A_SYSTEMD_TASKS_MAX"
 require_positive_integer "A2A_SYSTEMD_LIMIT_NOFILE" "$A2A_SYSTEMD_LIMIT_NOFILE"
+validate_provider_secret_contract
 
 get_user_home() {
   getent passwd "$1" | awk -F: '{print $6}'

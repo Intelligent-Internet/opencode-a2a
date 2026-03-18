@@ -44,3 +44,26 @@ provider_secret_env_for_cli_key() {
       ;;
   esac
 }
+
+required_provider_secret_env_key() {
+  case "${1,,}" in
+    google)
+      echo "GOOGLE_GENERATIVE_AI_API_KEY"
+      ;;
+    openai)
+      echo "OPENAI_API_KEY"
+      ;;
+    anthropic)
+      echo "ANTHROPIC_API_KEY"
+      ;;
+    azure|azure-openai|azure_openai|azureopenai)
+      echo "AZURE_OPENAI_API_KEY"
+      ;;
+    openrouter)
+      echo "OPENROUTER_API_KEY"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}

@@ -3,6 +3,9 @@ from pathlib import Path
 DEPLOY_SH_TEXT = Path("scripts/deploy.sh").read_text()
 SETUP_INSTANCE_TEXT = Path("scripts/deploy/setup_instance.sh").read_text()
 INSTALL_UNITS_TEXT = Path("scripts/deploy/install_units.sh").read_text()
+ENABLE_INSTANCE_TEXT = Path("scripts/deploy/enable_instance.sh").read_text()
+RUN_OPENCODE_TEXT = Path("scripts/deploy/run_opencode.sh").read_text()
+INSTALL_RELEASE_RUNTIME_TEXT = Path("scripts/deploy/install_release_runtime.sh").read_text()
 README_TEXT = Path("README.md").read_text()
 SECURITY_TEXT = Path("SECURITY.md").read_text()
 DEPLOY_README_TEXT = Path("scripts/deploy_readme.md").read_text()
@@ -15,6 +18,15 @@ def test_deploy_defaults_to_operator_provisioned_runtime_secrets() -> None:
     expected_default = 'export ENABLE_SECRET_PERSISTENCE="${ENABLE_SECRET_PERSISTENCE:-false}"'
     assert expected_default in DEPLOY_SH_TEXT
     assert "enable_secret_persistence)" in DEPLOY_SH_TEXT
+    assert "ensure_sudo_ready" in DEPLOY_SH_TEXT
+    assert (
+        'export DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS="${DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS:-30}"'
+        in DEPLOY_SH_TEXT
+    )
+    assert (
+        'export DEPLOY_HEALTHCHECK_INTERVAL_SECONDS="${DEPLOY_HEALTHCHECK_INTERVAL_SECONDS:-1}"'
+        in DEPLOY_SH_TEXT
+    )
     assert 'if [[ -z "$PROJECT_NAME" ]]; then' in DEPLOY_SH_TEXT
     assert "GH_TOKEN=<token> A2A_BEARER_TOKEN=<token>" not in DEPLOY_SH_TEXT
 
@@ -51,6 +63,13 @@ def test_setup_instance_generates_examples_and_requires_runtime_secret_files() -
         '"${A2A_MAX_REQUEST_BODY_BYTES}"'
     )
     assert request_limit_line in SETUP_INSTANCE_TEXT
+    assert "validate_provider_secret_contract()" in SETUP_INSTANCE_TEXT
+    assert "OPENCODE_MODEL_ID is required when OPENCODE_PROVIDER_ID is set." in SETUP_INSTANCE_TEXT
+    assert "OPENCODE_PROVIDER_ID is required when OPENCODE_MODEL_ID is set." in SETUP_INSTANCE_TEXT
+    assert 'required_provider_secret_env_key "$provider"' in SETUP_INSTANCE_TEXT
+    assert (
+        "Provide it via environment variable or ${OPENCODE_SECRET_ENV_FILE}" in SETUP_INSTANCE_TEXT
+    )
 
 
 def test_deploy_supports_release_and_source_install_modes() -> None:
@@ -62,6 +81,27 @@ def test_deploy_supports_release_and_source_install_modes() -> None:
     assert "Environment=A2A_BIN=${A2A_BIN}" in INSTALL_UNITS_TEXT
     assert "ExecStart=${DEPLOY_HELPER_DIR}/run_a2a.sh" in INSTALL_UNITS_TEXT
     assert "ExecStart=${DEPLOY_HELPER_DIR}/run_opencode.sh" in INSTALL_UNITS_TEXT
+    assert (
+        'provider_secret_env_keys.sh" "${DEPLOY_HELPER_DIR}/provider_secret_env_keys.sh"'
+        in INSTALL_RELEASE_RUNTIME_TEXT
+    )
+
+
+def test_enable_instance_enforces_readiness_contract() -> None:
+    assert 'A2A_HEALTHCHECK_URL="${A2A_HEALTHCHECK_URL:-http://' in ENABLE_INSTANCE_TEXT
+    assert "curl not found in PATH; cannot probe /health" in ENABLE_INSTANCE_TEXT
+    assert 'fail_with_status 23 "readiness_timeout"' in ENABLE_INSTANCE_TEXT
+    assert (
+        'emit_status "ok" "ready" "systemd units active and /health returned ok"'
+        in ENABLE_INSTANCE_TEXT
+    )
+    assert 'printf \'{"status":"%s","category":"%s"' in ENABLE_INSTANCE_TEXT
+
+
+def test_run_opencode_enforces_known_provider_keys() -> None:
+    assert 'source "${SCRIPT_DIR}/provider_secret_env_keys.sh"' in RUN_OPENCODE_TEXT
+    assert 'required_provider_secret_env_key "$provider_lc"' in RUN_OPENCODE_TEXT
+    assert "is required when OPENCODE_PROVIDER_ID=${OPENCODE_PROVIDER_ID}" in RUN_OPENCODE_TEXT
 
 
 def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() -> None:
@@ -75,11 +115,17 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
     assert "secret persistence is opt-in" in SECURITY_TEXT
     assert "single-tenant trust boundary" in SECURITY_TEXT
     assert "ENABLE_SECRET_PERSISTENCE=false" in DEPLOY_README_TEXT
+    assert "refuse non-interactive runs when `sudo -n` is unavailable" in DEPLOY_README_TEXT
+    assert "machine-readable JSON status line" in DEPLOY_README_TEXT
+    assert "DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS" in DEPLOY_README_TEXT
+    assert "systemd_start_failed" in DEPLOY_README_TEXT
     assert "opencode.auth.env" in DEPLOY_README_TEXT
     assert "a2a.secret.env" in DEPLOY_README_TEXT
     assert "release-based systemd deployment" in DEPLOY_RELEASE_README_TEXT
     assert "source-based multi-instance systemd deployment" in SCRIPTS_INDEX_TEXT
     assert "release-based, systemd-managed, recommended" in AGENT_DEPLOY_SOP_TEXT
+    assert "non-interactive sudo preflight" in AGENT_DEPLOY_SOP_TEXT
+    assert '{"status":"ok","category":"ready"' in AGENT_DEPLOY_SOP_TEXT
     assert "deploy_light.sh" not in README_TEXT
     assert "deploy_light.sh" not in SCRIPTS_INDEX_TEXT
     assert "deploy_light.sh" not in AGENT_DEPLOY_SOP_TEXT

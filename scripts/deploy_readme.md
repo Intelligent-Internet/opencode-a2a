@@ -39,8 +39,11 @@ repository checkout instead of a published release.
 Its contract is intentionally simple:
 
 - accept non-interactive `key=value` inputs while keeping secrets in env vars or root-only files
+- refuse non-interactive runs when `sudo -n` is unavailable for required systemd steps
 - provision or update one isolated instance directory per `project`
 - install/start the corresponding systemd units for that instance
+- wait for `GET /health` to return `{"status":"ok"}` within a bounded timeout
+- print one machine-readable JSON status line on success or failure
 - exit non-zero when validation, setup, or service startup fails
 
 ## Directory Layout
@@ -171,6 +174,8 @@ For values that support both environment variables and CLI keys:
 | `A2A_SYSTEMD_LIMIT_NOFILE` | `a2a_systemd_limit_nofile` | Optional | `65536` | Per-instance `LimitNOFILE` systemd override. |
 | `A2A_SYSTEMD_MEMORY_MAX` | `a2a_systemd_memory_max` | Optional | None | Optional per-instance `MemoryMax` override. |
 | `A2A_SYSTEMD_CPU_QUOTA` | `a2a_systemd_cpu_quota` | Optional | None | Optional per-instance `CPUQuota` override. |
+| `DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS` | `deploy_healthcheck_timeout_seconds` | Optional | `30` | Deploy readiness timeout for `GET /health`. |
+| `DEPLOY_HEALTHCHECK_INTERVAL_SECONDS` | `deploy_healthcheck_interval_seconds` | Optional | `1` | Poll interval for deploy readiness checks. |
 
 ### Auto-Generated Runtime Variables
 
@@ -246,17 +251,17 @@ sudo systemctl cat opencode-a2a-server@<project>.service
 
 ## Provider Coverage (Deploy Script Layer)
 
-| Provider | Secret key persisted by deploy scripts | Startup key enforcement in `run_opencode.sh` |
+| Provider | Secret key persisted by deploy scripts | Deploy/startup key enforcement |
 | --- | --- | --- |
-| Google / Gemini | `GOOGLE_GENERATIVE_AI_API_KEY` | Yes (explicit checks for `provider=google` or gemini model pattern) |
-| OpenAI | `OPENAI_API_KEY` | No explicit provider-specific check |
-| Anthropic | `ANTHROPIC_API_KEY` | No explicit provider-specific check |
-| Azure OpenAI | `AZURE_OPENAI_API_KEY` | No explicit provider-specific check |
-| OpenRouter | `OPENROUTER_API_KEY` | No explicit provider-specific check |
+| Google | `GOOGLE_GENERATIVE_AI_API_KEY` | Yes (`setup_instance.sh` preflight + `run_opencode.sh` defense in depth) |
+| OpenAI | `OPENAI_API_KEY` | Yes (`setup_instance.sh` preflight + `run_opencode.sh` defense in depth) |
+| Anthropic | `ANTHROPIC_API_KEY` | Yes (`setup_instance.sh` preflight + `run_opencode.sh` defense in depth) |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY` | Yes (`setup_instance.sh` preflight + `run_opencode.sh` defense in depth) |
+| OpenRouter | `OPENROUTER_API_KEY` | Yes (`setup_instance.sh` preflight + `run_opencode.sh` defense in depth) |
 
 Known gaps:
 
-- provider/model validation is still partial in deploy scripts
+- deploy only enforces known provider IDs; custom providers still rely on operator knowledge and upstream runtime validation
 - deploy scripts do not replace OpenCode's own provider configuration rules
 
 ## Security Notes
@@ -293,6 +298,16 @@ Recent logs:
 sudo journalctl -u opencode@<project>.service -n 200 --no-pager
 sudo journalctl -u opencode-a2a-server@<project>.service -n 200 --no-pager
 ```
+
+Deploy status contract:
+
+- success: exit code `0` and one JSON line like `{"status":"ok","category":"ready",...}`
+- `20`: `systemd_reload_failed`
+- `21`: `systemd_start_failed`
+- `22`: `systemd_not_active`
+- `23`: `readiness_timeout`
+- `24`: `missing_dependency`
+- `31`: `invalid_argument`
 
 Follow logs:
 
