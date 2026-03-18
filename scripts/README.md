@@ -23,11 +23,12 @@ Executable scripts live in this directory. This file is the entry index for scri
 
 ## Other Scripts
 
-- [`doctor.sh`](./doctor.sh): local environment consistency checks
-- [`dependency_health.sh`](./dependency_health.sh): dependency health checks
+- [`doctor.sh`](./doctor.sh): local development regression entrypoint (`sync`/`pip check` + lint + tests)
+- [`dependency_health.sh`](./dependency_health.sh): dependency review entrypoint (`sync`/`pip check` + outdated + audit)
 - [`lint.sh`](./lint.sh): lint helper
 
 ## Notes
 
 - `deploy/` contains helper scripts orchestrated by `deploy.sh` and `deploy_release.sh`.
+- `doctor.sh` and `dependency_health.sh` intentionally remain separate entrypoints and share common prerequisites through [`health_common.sh`](./health_common.sh).
 - Keep script behavior details in `scripts/*_readme.md` to avoid drift.
