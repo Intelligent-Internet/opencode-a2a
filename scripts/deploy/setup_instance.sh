@@ -173,7 +173,6 @@ ensure_data_root_accessible "$DATA_ROOT"
 require_nonnegative_integer "A2A_MAX_REQUEST_BODY_BYTES" "$A2A_MAX_REQUEST_BODY_BYTES"
 require_positive_integer "A2A_SYSTEMD_TASKS_MAX" "$A2A_SYSTEMD_TASKS_MAX"
 require_positive_integer "A2A_SYSTEMD_LIMIT_NOFILE" "$A2A_SYSTEMD_LIMIT_NOFILE"
-validate_provider_secret_contract
 
 get_user_home() {
   getent passwd "$1" | awk -F: '{print $6}'
@@ -439,6 +438,7 @@ read_runtime_secret_value() {
 
 require_runtime_secret_file "$OPENCODE_AUTH_ENV_FILE" "GH_TOKEN" "$CONFIG_DIR/opencode.auth.env.example"
 require_runtime_secret_file "$A2A_SECRET_ENV_FILE" "A2A_BEARER_TOKEN" "$CONFIG_DIR/a2a.secret.env.example"
+validate_provider_secret_contract
 
 GH_TOKEN_FOR_SETUP="${GH_TOKEN:-}"
 if [[ -z "$GH_TOKEN_FOR_SETUP" ]]; then
