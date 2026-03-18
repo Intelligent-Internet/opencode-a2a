@@ -6,6 +6,7 @@ from a2a.server.events.event_queue import EventQueue
 from a2a.types import Task, TaskState, TaskStatusUpdateEvent
 
 from opencode_a2a_server.agent import OpencodeAgentExecutor
+from opencode_a2a_server.opencode_client import UpstreamContractError
 from tests.helpers import configure_mock_client_runtime, make_request_context_mock
 
 
@@ -190,3 +191,45 @@ async def test_streaming_execute_http_error_emits_status_update_with_metadata() 
     assert status.status.state == TaskState.failed
     assert status.metadata["opencode"]["error"]["type"] == "UPSTREAM_QUOTA_EXCEEDED"
     assert status.metadata["opencode"]["error"]["upstream_status"] == 429
+
+
+@pytest.mark.asyncio
+async def test_execute_upstream_payload_error_maps_to_task_error_type() -> None:
+    client = AsyncMock()
+
+    async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
+        del title, directory
+        return "ses-1"
+
+    client.create_session = create_session
+    client.send_message = AsyncMock(
+        side_effect=UpstreamContractError(
+            "OpenCode /session/{sessionID}/message returned non-JSON response "
+            "(status=200, content-type=text/plain, body=ProviderModelNotFoundError)"
+        )
+    )
+    configure_mock_client_runtime(client, directory="/tmp/workspace")
+
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    context = make_request_context_mock(
+        task_id="task-payload",
+        context_id="ctx-payload",
+        user_input="hello",
+        call_context_enabled=False,
+    )
+    event_queue = AsyncMock(spec=EventQueue)
+
+    await executor.execute(context, event_queue)
+
+    event = None
+    for call in event_queue.enqueue_event.call_args_list:
+        payload = call.args[0]
+        if isinstance(payload, Task):
+            event = payload
+            break
+
+    assert event is not None
+    assert event.status.state == TaskState.failed
+    assert event.metadata is not None
+    assert event.metadata["opencode"]["error"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+    assert "payload mismatch" in event.status.message.parts[0].root.text

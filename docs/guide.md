@@ -31,7 +31,8 @@ Key variables to understand protocol behavior:
 - `A2A_ENABLE_SESSION_SHELL`: gates high-risk JSON-RPC method
   `opencode.sessions.shell`.
 - `A2A_LOG_PAYLOADS` / `A2A_LOG_BODY_LIMIT`: payload logging behavior and
-  truncation.
+  truncation. When `A2A_LOG_LEVEL=DEBUG`, upstream OpenCode stream events are
+  also logged with preview truncation controlled by `A2A_LOG_BODY_LIMIT`.
 - `A2A_MAX_REQUEST_BODY_BYTES`: runtime request-body limit. Oversized requests
   return HTTP `413`.
 - `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`: session cache

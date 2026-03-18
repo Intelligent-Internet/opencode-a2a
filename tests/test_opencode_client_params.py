@@ -1,3 +1,5 @@
+import json as json_module
+
 import httpx
 import pytest
 
@@ -6,14 +8,27 @@ from tests.helpers import make_settings
 
 
 class _DummyResponse:
-    def __init__(self, payload=None, *, status_code: int = 200) -> None:
+    def __init__(
+        self,
+        payload=None,
+        *,
+        status_code: int = 200,
+        headers: dict[str, str] | None = None,
+        text: str = "",
+        json_error: Exception | None = None,
+    ) -> None:
         self._payload = {"ok": True} if payload is None else payload
         self.status_code = status_code
+        self.headers = {} if headers is None else headers
+        self.text = text
+        self._json_error = json_error
 
     def raise_for_status(self) -> None:
         return None
 
     def json(self):
+        if self._json_error is not None:
+            raise self._json_error
         return self._payload
 
 
@@ -292,6 +307,39 @@ async def test_send_message_accepts_structured_parts(monkeypatch):
             "filename": "report.pdf",
         },
     ]
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_send_message_raises_upstream_contract_error_for_non_json_response(monkeypatch):
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
+        del path, params, json
+        return _DummyResponse(
+            status_code=200,
+            headers={"content-type": "text/plain; charset=utf-8"},
+            text="ProviderModelNotFoundError: google/gemini-3-flash-preview",
+            json_error=json_module.JSONDecodeError("Expecting value", "", 0),
+        )
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    with pytest.raises(UpstreamContractError, match="returned non-JSON response") as exc_info:
+        await client.send_message("ses-1", "hello")
+
+    message = str(exc_info.value)
+    assert "status=200" in message
+    assert "content-type=text/plain" in message
+    assert "ProviderModelNotFoundError" in message
 
     await client.close()
 

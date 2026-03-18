@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -1306,6 +1307,75 @@ async def test_streaming_buffers_delta_until_part_updated_arrives() -> None:
     assert reasoning_updates
     merged = "".join(_part_text(ev) for ev in reasoning_updates)
     assert merged == "first second"
+
+
+@pytest.mark.asyncio
+async def test_streaming_logs_raw_upstream_events_at_debug(caplog) -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="tool",
+                delta="",
+                part_id="prt-tool-debug",
+                part_overrides={
+                    "callID": "call-debug",
+                    "tool": "bash",
+                    "state": {"status": "running"},
+                    "text": "x" * 80,
+                },
+            )
+        ],
+        response_text="done",
+    )
+    client.settings = make_settings(
+        a2a_bearer_token="test",
+        opencode_base_url="http://localhost",
+        a2a_log_body_limit=64,
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_server.agent"):
+        await executor.execute(
+            make_request_context(task_id="task-debug", context_id="ctx-debug", text="go"),
+            queue,
+        )
+
+    messages = [record.message for record in caplog.records]
+    assert any("OpenCode stream event type=message.part.updated" in message for message in messages)
+    assert any("part_type=tool" in message for message in messages)
+    assert any("part_id=prt-tool-debug" in message for message in messages)
+    assert any("payload=" in message and "[truncated]" in message for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_streaming_does_not_log_raw_upstream_events_above_debug(caplog) -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="reasoning",
+                delta="thinking",
+                part_id="prt-no-debug",
+            )
+        ],
+        response_text="done",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    with caplog.at_level(logging.INFO, logger="opencode_a2a_server.agent"):
+        await executor.execute(
+            make_request_context(task_id="task-no-debug", context_id="ctx-no-debug", text="go"),
+            queue,
+        )
+
+    assert not any("OpenCode stream event type=" in record.message for record in caplog.records)
 
 
 @pytest.mark.asyncio

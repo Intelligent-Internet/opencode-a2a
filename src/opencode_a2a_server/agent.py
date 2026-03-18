@@ -31,7 +31,7 @@ from a2a.types import (
     TextPart,
 )
 
-from .opencode_client import OpencodeClient
+from .opencode_client import OpencodeClient, UpstreamContractError
 from .parts_mapper import (
     UnsupportedA2AInputError,
     extract_text_from_a2a_parts,
@@ -739,6 +739,17 @@ class OpencodeAgentExecutor(AgentExecutor):
                 error_type="UPSTREAM_TIMEOUT",
                 streaming_request=streaming_request,
             )
+        except UpstreamContractError as exc:
+            logger.warning("OpenCode request failed with payload mismatch: %s", exc)
+            await self._emit_error(
+                event_queue,
+                task_id=task_id,
+                context_id=context_id,
+                message=f"OpenCode payload mismatch: {exc}",
+                state=TaskState.failed,
+                error_type="UPSTREAM_PAYLOAD_ERROR",
+                streaming_request=streaming_request,
+            )
         except Exception as exc:
             logger.exception("OpenCode request failed")
             await self._emit_error(
@@ -1348,6 +1359,10 @@ class OpencodeAgentExecutor(AgentExecutor):
                     ):
                         if stop_event.is_set():
                             break
+                        _log_stream_event_debug(
+                            event,
+                            limit=max(0, self._client.settings.a2a_log_body_limit),
+                        )
                         event_type = event.get("type")
                         if not isinstance(event_type, str):
                             continue
@@ -1938,6 +1953,40 @@ def _extract_stream_part_type(part: Mapping[str, Any], props: Mapping[str, Any])
         if normalized:
             return normalized
     return None
+
+
+def _preview_log_value(value: Any, *, limit: int) -> str:
+    try:
+        rendered = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        rendered = str(value)
+    if limit > 0 and len(rendered) > limit:
+        return f"{rendered[:limit]}...[truncated]"
+    return rendered
+
+
+def _log_stream_event_debug(event: Mapping[str, Any], *, limit: int) -> None:
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    event_type = event.get("type")
+    props = event.get("properties")
+    props_map = props if isinstance(props, Mapping) else {}
+    part = props_map.get("part")
+    part_map = part if isinstance(part, Mapping) else {}
+    delta = props_map.get("delta")
+    text = part_map.get("text")
+    logger.debug(
+        "OpenCode stream event type=%s session_id=%s message_id=%s part_id=%s part_type=%s "
+        "delta_len=%s text_len=%s payload=%s",
+        event_type if isinstance(event_type, str) else None,
+        _extract_stream_session_id(part_map, props_map),
+        _extract_stream_message_id(part_map, props_map),
+        _extract_stream_part_id(part_map, props_map),
+        _extract_stream_part_type(part_map, props_map),
+        len(delta) if isinstance(delta, str) else None,
+        len(text) if isinstance(text, str) else None,
+        _preview_log_value(event, limit=limit),
+    )
 
 
 def _map_part_type_to_block_type(part_type: str | None) -> BlockType | None:
