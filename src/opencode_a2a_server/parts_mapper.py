@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, Literal, TypedDict
 
 
 class UnsupportedA2AInputError(ValueError):
@@ -102,9 +102,12 @@ def _map_file_part(part: Any, *, index: int) -> OpencodeFileInputPart:
             f"request.parts[{index}] FilePart is missing the file payload."
         )
 
-    mime = _normalize_string(
-        getattr(file_value, "mime_type", None) or getattr(file_value, "mimeType", None)
-    ) or "application/octet-stream"
+    mime = (
+        _normalize_string(
+            getattr(file_value, "mime_type", None) or getattr(file_value, "mimeType", None)
+        )
+        or "application/octet-stream"
+    )
     name = _normalize_string(getattr(file_value, "name", None))
 
     bytes_value = _normalize_string(getattr(file_value, "bytes", None))
@@ -145,4 +148,4 @@ def _normalize_string(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     normalized = value.strip()
-    return cast(str, normalized) if normalized else None
+    return normalized if normalized else None
