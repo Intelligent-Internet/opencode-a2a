@@ -115,6 +115,7 @@ class _StreamOutputState:
     event_id_namespace: str
     content_buffers: dict[BlockType, str] = field(default_factory=dict)
     token_usage: dict[str, Any] | None = None
+    upstream_error: _UpstreamInBandError | None = None
     pending_interrupt_request_ids: set[str] = field(default_factory=set)
     saw_any_chunk: bool = False
     emitted_stream_chunk: bool = False
@@ -214,6 +215,14 @@ class _UpstreamErrorProfile:
     error_type: str
     state: TaskState
     default_message: str
+
+
+@dataclass(frozen=True)
+class _UpstreamInBandError:
+    error_type: str
+    state: TaskState
+    message: str
+    upstream_status: int | None = None
 
 
 _UPSTREAM_HTTP_ERROR_PROFILE_BY_STATUS: dict[int, _UpstreamErrorProfile] = {
@@ -354,6 +363,53 @@ def _format_stream_terminal_error(
     return _StreamTerminalSignal(
         state=TaskState.failed,
         error_type="UPSTREAM_EXECUTION_ERROR",
+        message=message,
+    )
+
+
+def _format_inband_upstream_error(
+    *,
+    source: str,
+    detail: str | None,
+    status: int | None,
+    error_name: str | None,
+) -> _UpstreamInBandError:
+    if status is not None:
+        profile = _resolve_upstream_error_profile(status)
+        if detail:
+            message = f"{profile.default_message} ({source}, status={status}, detail={detail})."
+        else:
+            message = f"{profile.default_message} ({source}, status={status})."
+        return _UpstreamInBandError(
+            error_type=profile.error_type,
+            state=profile.state,
+            message=message,
+            upstream_status=status,
+        )
+
+    if error_name == "ProviderAuthError":
+        if detail:
+            message = (
+                "OpenCode rejected the request due to authentication failure "
+                f"({source}, detail={detail})."
+            )
+        else:
+            message = f"OpenCode rejected the request due to authentication failure ({source})."
+        return _UpstreamInBandError(
+            error_type="UPSTREAM_UNAUTHORIZED",
+            state=TaskState.auth_required,
+            message=message,
+        )
+
+    if detail:
+        message = f"OpenCode execution failed ({source}, detail={detail})."
+    elif error_name:
+        message = f"OpenCode execution failed ({source}, error={error_name})."
+    else:
+        message = f"OpenCode execution failed ({source})."
+    return _UpstreamInBandError(
+        error_type="UPSTREAM_EXECUTION_ERROR",
+        state=TaskState.failed,
         message=message,
     )
 
@@ -743,6 +799,7 @@ class OpencodeAgentExecutor(AgentExecutor):
 
             response_text = response.text or ""
             resolved_message_id = stream_state.resolve_message_id(response.message_id)
+            response_error = _extract_upstream_error_from_response(response.raw)
             logger.debug(
                 "OpenCode response task_id=%s session_id=%s message_id=%s text=%s",
                 task_id,
@@ -751,16 +808,28 @@ class OpencodeAgentExecutor(AgentExecutor):
                 response_text,
             )
             if streaming_request:
+                resolved_token_usage = _merge_token_usage(
+                    _extract_token_usage(response.raw),
+                    stream_state.token_usage,
+                )
+                if response_error is not None:
+                    await self._emit_error(
+                        event_queue,
+                        task_id=task_id,
+                        context_id=context_id,
+                        message=response_error.message,
+                        state=response_error.state,
+                        error_type=response_error.error_type,
+                        upstream_status=response_error.upstream_status,
+                        streaming_request=True,
+                    )
+                    return
                 if stream_terminal_signal is None:
                     raise RuntimeError("Streaming terminal signal was not initialized")
                 terminal_signal = await _await_stream_terminal_signal(
                     stream_task=stream_task,
                     terminal_signal=stream_terminal_signal,
                     session_id=session_id,
-                )
-                resolved_token_usage = _merge_token_usage(
-                    _extract_token_usage(response.raw),
-                    stream_state.token_usage,
                 )
                 if terminal_signal.state != TaskState.completed:
                     await self._emit_error(
@@ -771,6 +840,17 @@ class OpencodeAgentExecutor(AgentExecutor):
                         state=terminal_signal.state,
                         error_type=terminal_signal.error_type,
                         upstream_status=terminal_signal.upstream_status,
+                        streaming_request=True,
+                    )
+                elif stream_state.upstream_error is not None:
+                    await self._emit_error(
+                        event_queue,
+                        task_id=task_id,
+                        context_id=context_id,
+                        message=stream_state.upstream_error.message,
+                        state=stream_state.upstream_error.state,
+                        error_type=stream_state.upstream_error.error_type,
+                        upstream_status=stream_state.upstream_error.upstream_status,
                         streaming_request=True,
                     )
                 else:
@@ -816,6 +896,18 @@ class OpencodeAgentExecutor(AgentExecutor):
                     _extract_token_usage(response.raw),
                     stream_state.token_usage,
                 )
+                if response_error is not None:
+                    await self._emit_error(
+                        event_queue,
+                        task_id=task_id,
+                        context_id=context_id,
+                        message=response_error.message,
+                        state=response_error.state,
+                        error_type=response_error.error_type,
+                        upstream_status=response_error.upstream_status,
+                        streaming_request=False,
+                    )
+                    return
                 response_text = response_text or "(No text content returned by OpenCode.)"
                 assistant_message = _build_assistant_message(
                     task_id=task_id,
@@ -1509,6 +1601,9 @@ class OpencodeAgentExecutor(AgentExecutor):
                             continue
                         event_session_id = _extract_event_session_id(event)
                         if event_session_id == session_id:
+                            upstream_error = _extract_upstream_error_from_event(event)
+                            if upstream_error is not None and stream_state.upstream_error is None:
+                                stream_state.upstream_error = upstream_error
                             signal = _extract_stream_terminal_signal(event)
                             if signal is not None and not terminal_signal.done():
                                 terminal_signal.set_result(signal)
@@ -1988,6 +2083,60 @@ def _extract_stream_terminal_signal(event: Mapping[str, Any]) -> _StreamTerminal
         status=upstream_status,
         error_name=error_name,
     )
+
+
+def _extract_upstream_error_from_payload(
+    payload: Mapping[str, Any] | None,
+    *,
+    source: str,
+) -> _UpstreamInBandError | None:
+    if not isinstance(payload, Mapping):
+        return None
+    error = payload.get("error")
+    if not isinstance(error, Mapping):
+        return None
+    error_name = _extract_first_nonempty_string(error, ("name",))
+    error_data = error.get("data")
+    error_data_map = error_data if isinstance(error_data, Mapping) else {}
+    detail = _extract_first_nonempty_string(
+        error_data_map, ("message",)
+    ) or _extract_first_nonempty_string(error, ("message",))
+    upstream_status = error_data_map.get("statusCode")
+    if not isinstance(upstream_status, int):
+        upstream_status = None
+    return _format_inband_upstream_error(
+        source=source,
+        detail=detail,
+        status=upstream_status,
+        error_name=error_name,
+    )
+
+
+def _extract_upstream_error_from_response(
+    response_raw: Mapping[str, Any] | None,
+) -> _UpstreamInBandError | None:
+    if not isinstance(response_raw, Mapping):
+        return None
+    info = response_raw.get("info")
+    if not isinstance(info, Mapping):
+        return None
+    return _extract_upstream_error_from_payload(info, source="response.info.error")
+
+
+def _extract_upstream_error_from_event(event: Mapping[str, Any]) -> _UpstreamInBandError | None:
+    event_type = event.get("type")
+    if not isinstance(event_type, str):
+        return None
+    props = event.get("properties")
+    if not isinstance(props, Mapping):
+        return None
+    if event_type == "session.error":
+        return _extract_upstream_error_from_payload(props, source="session.error")
+    if event_type == "message.updated":
+        info = props.get("info")
+        if isinstance(info, Mapping):
+            return _extract_upstream_error_from_payload(info, source="message.updated")
+    return None
 
 
 def _extract_string_list(value: Any) -> list[str]:
