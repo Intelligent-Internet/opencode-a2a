@@ -14,6 +14,7 @@ from .config import Settings
 from .text_parts import extract_text_from_parts
 
 _UNSET = object()
+logger = logging.getLogger(__name__)
 
 
 class UpstreamContractError(RuntimeError):
@@ -94,6 +95,57 @@ class OpencodeClient:
         raise RuntimeError(
             f"OpenCode {endpoint} response must be boolean; got {type(payload).__name__}"
         )
+
+    async def _get_json(
+        self,
+        path: str,
+        *,
+        endpoint: str,
+        params: Mapping[str, Any] | None = None,
+    ) -> Any:
+        response = await self._client.get(path, params=params)
+        response.raise_for_status()
+        return self._decode_json_response(response, endpoint=endpoint)
+
+    async def _post_json(
+        self,
+        path: str,
+        *,
+        endpoint: str,
+        params: Mapping[str, Any] | None = None,
+        json_body: Any = _UNSET,
+        timeout: float | None | object = _UNSET,
+    ) -> Any:
+        request_kwargs: dict[str, Any] = {}
+        if json_body is not _UNSET:
+            request_kwargs["json"] = json_body
+        if timeout is not _UNSET:
+            request_kwargs["timeout"] = timeout
+        response = await self._client.post(
+            path,
+            params=params,
+            **request_kwargs,
+        )
+        response.raise_for_status()
+        return self._decode_json_response(response, endpoint=endpoint)
+
+    async def _post_boolean(
+        self,
+        path: str,
+        *,
+        endpoint: str,
+        params: Mapping[str, Any] | None = None,
+        json_body: Any = _UNSET,
+        timeout: float | None | object = _UNSET,
+    ) -> bool:
+        data = await self._post_json(
+            path,
+            endpoint=endpoint,
+            params=params,
+            json_body=json_body,
+            timeout=timeout,
+        )
+        return self._require_boolean_response(endpoint=endpoint, payload=data)
 
     def _prune_interrupt_requests(self, *, now: float) -> None:
         expired = [
@@ -259,41 +311,41 @@ class OpencodeClient:
         payload: dict[str, Any] = {}
         if title:
             payload["title"] = title
-        response = await self._client.post(
-            "/session", params=self._query_params(directory=directory), json=payload
+        data = await self._post_json(
+            "/session",
+            endpoint="/session",
+            params=self._query_params(directory=directory),
+            json_body=payload,
         )
-        response.raise_for_status()
-        data = self._decode_json_response(response, endpoint="/session")
         session_id = data.get("id")
         if not session_id:
             raise RuntimeError("OpenCode session response missing id")
         return session_id
 
     async def abort_session(self, session_id: str, *, directory: str | None = None) -> bool:
-        response = await self._client.post(
+        return await self._post_boolean(
             f"/session/{session_id}/abort",
+            endpoint="/session/{sessionID}/abort",
             params=self._query_params(directory=directory),
         )
-        response.raise_for_status()
-        data = self._decode_json_response(response, endpoint="/session/{sessionID}/abort")
-        return self._require_boolean_response(endpoint="/session/{sessionID}/abort", payload=data)
 
     async def list_sessions(self, *, params: dict[str, Any] | None = None) -> Any:
         """List sessions from OpenCode."""
         # Note: directory override is not explicitly supported by list_sessions params yet.
         # If needed, we can add it later. For now we use the default.
-        response = await self._client.get("/session", params=self._merge_params(params))
-        response.raise_for_status()
-        return self._decode_json_response(response, endpoint="/session")
+        return await self._get_json(
+            "/session",
+            endpoint="/session",
+            params=self._merge_params(params),
+        )
 
     async def list_messages(self, session_id: str, *, params: dict[str, Any] | None = None) -> Any:
         """List messages for a session from OpenCode."""
-        response = await self._client.get(
+        return await self._get_json(
             f"/session/{session_id}/message",
+            endpoint="/session/{sessionID}/message",
             params=self._merge_params(params),
         )
-        response.raise_for_status()
-        return self._decode_json_response(response, endpoint="/session/{sessionID}/message")
 
     async def session_prompt_async(
         self,
@@ -321,13 +373,12 @@ class OpencodeClient:
         *,
         directory: str | None = None,
     ) -> Any:
-        response = await self._client.post(
+        return await self._post_json(
             f"/session/{session_id}/command",
+            endpoint="/session/{sessionID}/command",
             params=self._query_params(directory=directory),
-            json=request,
+            json_body=request,
         )
-        response.raise_for_status()
-        return self._decode_json_response(response, endpoint="/session/{sessionID}/command")
 
     async def session_shell(
         self,
@@ -336,20 +387,19 @@ class OpencodeClient:
         *,
         directory: str | None = None,
     ) -> Any:
-        response = await self._client.post(
+        return await self._post_json(
             f"/session/{session_id}/shell",
+            endpoint="/session/{sessionID}/shell",
             params=self._query_params(directory=directory),
-            json=request,
+            json_body=request,
         )
-        response.raise_for_status()
-        return self._decode_json_response(response, endpoint="/session/{sessionID}/shell")
 
     async def list_provider_catalog(self, *, directory: str | None = None) -> Any:
-        response = await self._client.get(
-            "/provider", params=self._query_params(directory=directory)
+        return await self._get_json(
+            "/provider",
+            endpoint="/provider",
+            params=self._query_params(directory=directory),
         )
-        response.raise_for_status()
-        return self._decode_json_response(response, endpoint="/provider")
 
     async def send_message(
         self,
@@ -389,23 +439,16 @@ class OpencodeClient:
             payload["model"] = normalized_model
 
         if self._log_payloads:
-            logger = logging.getLogger(__name__)
             logger.debug("OpenCode request payload=%s", payload)
 
-        request_kwargs: dict[str, Any] = {}
-        if timeout_override is not _UNSET:
-            request_kwargs["timeout"] = timeout_override
-
-        response = await self._client.post(
+        data = await self._post_json(
             f"/session/{session_id}/message",
+            endpoint="/session/{sessionID}/message",
             params=self._query_params(directory=directory),
-            json=payload,
-            **request_kwargs,
+            json_body=payload,
+            timeout=timeout_override,
         )
-        response.raise_for_status()
-        data = self._decode_json_response(response, endpoint="/session/{sessionID}/message")
         if self._log_payloads:
-            logger = logging.getLogger(__name__)
             logger.debug("OpenCode response payload=%s", data)
         text_content = extract_text_from_parts(data.get("parts", []))
         message_id = None
@@ -430,16 +473,11 @@ class OpencodeClient:
         payload: dict[str, Any] = {"reply": reply}
         if message:
             payload["message"] = message
-        params = self._query_params(directory=directory)
-        response = await self._client.post(
+        return await self._post_boolean(
             f"/permission/{request_id}/reply",
-            params=params,
-            json=payload,
-        )
-        response.raise_for_status()
-        data = self._decode_json_response(response, endpoint="/permission/{requestID}/reply")
-        return self._require_boolean_response(
-            endpoint="/permission/{requestID}/reply", payload=data
+            endpoint="/permission/{requestID}/reply",
+            params=self._query_params(directory=directory),
+            json_body=payload,
         )
 
     async def question_reply(
@@ -449,14 +487,12 @@ class OpencodeClient:
         answers: list[list[str]],
         directory: str | None = None,
     ) -> bool:
-        response = await self._client.post(
+        return await self._post_boolean(
             f"/question/{request_id}/reply",
+            endpoint="/question/{requestID}/reply",
             params=self._query_params(directory=directory),
-            json={"answers": answers},
+            json_body={"answers": answers},
         )
-        response.raise_for_status()
-        data = self._decode_json_response(response, endpoint="/question/{requestID}/reply")
-        return self._require_boolean_response(endpoint="/question/{requestID}/reply", payload=data)
 
     async def question_reject(
         self,
@@ -464,10 +500,8 @@ class OpencodeClient:
         *,
         directory: str | None = None,
     ) -> bool:
-        response = await self._client.post(
+        return await self._post_boolean(
             f"/question/{request_id}/reject",
+            endpoint="/question/{requestID}/reject",
             params=self._query_params(directory=directory),
         )
-        response.raise_for_status()
-        data = self._decode_json_response(response, endpoint="/question/{requestID}/reject")
-        return self._require_boolean_response(endpoint="/question/{requestID}/reject", payload=data)

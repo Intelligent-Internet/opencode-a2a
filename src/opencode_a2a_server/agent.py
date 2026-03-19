@@ -1925,34 +1925,12 @@ def _extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] |
             "permission": _extract_optional_string(props, "permission"),
             "patterns": _extract_string_list(props.get("patterns")),
         }
-        for key in (
-            "message",
-            "description",
-            "reason",
-            "prompt",
-            "display_message",
-            "displayMessage",
-        ):
-            val = _extract_optional_string(props, key)
-            if val is not None:
-                details[key] = val
         return {
             "request_id": request_id,
             "interrupt_type": "permission",
             "details": details,
         }
     details = {"questions": _normalize_interrupt_questions(props.get("questions"))}
-    for key in (
-        "message",
-        "description",
-        "reason",
-        "prompt",
-        "display_message",
-        "displayMessage",
-    ):
-        val = _extract_optional_string(props, key)
-        if val is not None:
-            details[key] = val
     return {
         "request_id": request_id,
         "interrupt_type": "question",

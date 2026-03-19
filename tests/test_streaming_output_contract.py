@@ -831,6 +831,8 @@ async def test_streaming_normalizes_question_interrupt_details() -> None:
                 "properties": {
                     "id": "q-req-rich",
                     "sessionID": "ses-1",
+                    "display_message": "Please confirm how the agent should continue.",
+                    "description": "This should stay out of shared interrupt details.",
                     "questions": [
                         {
                             "header": " Confirm ",
@@ -898,6 +900,8 @@ async def test_streaming_normalizes_question_interrupt_details() -> None:
             ],
         }
     ]
+    assert "display_message" not in interrupt["details"]
+    assert "description" not in interrupt["details"]
 
 
 @pytest.mark.asyncio
