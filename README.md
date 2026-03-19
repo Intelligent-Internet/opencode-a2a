@@ -145,6 +145,9 @@ uv tool install "opencode-a2a-server==<version>"
 Run it against an existing project/workspace:
 
 ```bash
+opencode auth login
+opencode models
+
 opencode serve --hostname 127.0.0.1 --port 4096
 
 A2A_BEARER_TOKEN=prod-token \
@@ -155,6 +158,21 @@ A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a-server serve
 ```
+
+Configure provider auth and default model on the OpenCode side first:
+
+- Add credentials with `opencode auth login` or `/connect`.
+- Set the default model in `opencode.json`, for example:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "google/gemini-3-pro"
+}
+```
+
+If your provider relies on environment variables instead of `opencode auth
+login`, export those variables before starting `opencode serve`.
 
 `OPENCODE_WORKSPACE_ROOT` is the default workspace root that this runtime
 exposes to OpenCode.
@@ -190,12 +208,13 @@ Common runtime variables:
 | `OPENCODE_TIMEOUT_STREAM` | No | None | Upstream OpenCode stream timeout override in seconds. |
 
 Provider auth and upstream model defaults belong to `opencode serve`, not to
-`opencode-a2a-server`. For provider-specific auth, model IDs, and config
-details, use the OpenCode official docs and CLI:
+`opencode-a2a-server`. Use the OpenCode CLI to authenticate providers and look
+up model IDs before starting the upstream server:
 
 - Providers: <https://opencode.ai/docs/providers/>
 - Models: <https://opencode.ai/docs/models/>
-- Local checks: `opencode auth list`, `opencode models`, `opencode models <provider>`
+- Local checks: `opencode auth login`, `opencode auth list`, `opencode models`,
+  `opencode models <provider>`
 
 This path is for users who already manage their own shell, workspace, and
 process lifecycle.
@@ -244,16 +263,6 @@ WantedBy=multi-user.target
 ```
 
 Replace `ExecStart` with the absolute path returned by `command -v opencode-a2a-server`.
-
-## Migration Notes
-
-- `OPENCODE_DIRECTORY` has been removed. Use `OPENCODE_WORKSPACE_ROOT`.
-- Built-in deploy/bootstrap wrappers have been removed. Use your own process
-  manager and supervisor.
-- Built-in `init-release-system`, `deploy-release`, and `uninstall-instance`
-  have been removed.
-- Secret storage, service users, restart policy, and supervisor configuration
-  are now operator-managed.
 
 ## Contributor Paths
 

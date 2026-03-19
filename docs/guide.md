@@ -57,6 +57,23 @@ Recommended two-process example:
 opencode serve --hostname 127.0.0.1 --port 4096
 ```
 
+Configure provider auth and the default model on the OpenCode side before
+starting that upstream process:
+
+- Add credentials with `opencode auth login` or `/connect`.
+- Check available model IDs with `opencode models` or `opencode models <provider>`.
+- Set the default model in `opencode.json`, for example:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "google/gemini-3-pro"
+}
+```
+
+If your provider uses environment variables for auth, export them before
+starting `opencode serve`.
+
 Then start `opencode-a2a-server` against that explicit upstream URL:
 
 ```bash
