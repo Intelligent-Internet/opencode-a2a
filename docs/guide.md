@@ -62,24 +62,26 @@ Key variables to understand protocol behavior:
   optional stream timeout override.
 - Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
 
-Minimal runtime example:
+Minimal managed-upstream example:
 
 ```bash
 A2A_BEARER_TOKEN=dev-token \
 A2A_HOST=127.0.0.1 \
 A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
-OPENCODE_BASE_URL=http://127.0.0.1:4096 \
+OPENCODE_MANAGED_SERVER=true \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a-server serve
 ```
 
-Minimal managed-upstream example:
+Advanced externally managed upstream example:
 
 ```bash
+OPENCODE_BASE_URL=http://127.0.0.1:4096 \
 A2A_BEARER_TOKEN=dev-token \
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
-OPENCODE_MANAGED_SERVER=true \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a-server serve
 ```

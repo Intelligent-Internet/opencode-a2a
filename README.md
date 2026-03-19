@@ -148,7 +148,10 @@ OPENCODE_MODEL_ID=gemini-3.1-pro-preview \
 opencode serve
 
 A2A_BEARER_TOKEN=prod-token \
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
+OPENCODE_MANAGED_SERVER=true \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a-server serve
 ```
@@ -160,11 +163,11 @@ Default address: `http://127.0.0.1:8000`
 
 OpenCode upstream modes:
 
-- External upstream: you start and manage `opencode serve` yourself, then point
-  `OPENCODE_BASE_URL` at that HTTP endpoint.
 - Managed upstream: set `OPENCODE_MANAGED_SERVER=true` and
   `opencode-a2a-server` will start a local `opencode serve`, capture its actual
   listening URL, and stop it on shutdown.
+- External upstream: you start and manage `opencode serve` yourself, then point
+  `OPENCODE_BASE_URL` at that HTTP endpoint.
 
 Common runtime variables:
 
@@ -218,7 +221,7 @@ Use any supervisor you prefer for long-running operation:
 The project no longer ships built-in host bootstrap or process-manager
 wrappers. The official product surface is the runtime entrypoint itself.
 
-Minimal `systemd` example:
+Minimal self-managed `systemd` example:
 
 1. Create an env file such as `/etc/opencode-a2a/alpha.env`:
 
@@ -227,7 +230,7 @@ A2A_BEARER_TOKEN=replace-me
 A2A_HOST=127.0.0.1
 A2A_PORT=8000
 A2A_PUBLIC_URL=https://a2a.example.com
-OPENCODE_BASE_URL=http://127.0.0.1:4096
+OPENCODE_MANAGED_SERVER=true
 OPENCODE_WORKSPACE_ROOT=/srv/my-workspace
 ```
 
@@ -257,8 +260,25 @@ Minimal managed-upstream foreground example:
 
 ```bash
 A2A_BEARER_TOKEN=dev-token \
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 OPENCODE_MANAGED_SERVER=true \
+OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
+opencode-a2a-server serve
+```
+
+Advanced: externally managed upstream
+
+Use this mode when you intentionally want `opencode serve` and
+`opencode-a2a-server` to be supervised independently.
+
+```bash
+OPENCODE_BASE_URL=http://127.0.0.1:4096 \
+A2A_BEARER_TOKEN=dev-token \
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
+A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a-server serve
 ```
@@ -285,6 +305,9 @@ OPENCODE_MODEL_ID=gemini-3.1-pro-preview \
 opencode serve
 
 A2A_BEARER_TOKEN=dev-token \
+OPENCODE_BASE_URL=http://127.0.0.1:4096 \
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 uv run opencode-a2a-server serve
 ```

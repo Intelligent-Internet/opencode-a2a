@@ -46,7 +46,7 @@ class ManagedOpencodeServer:
             self.process.terminate()
             try:
                 await asyncio.wait_for(self.process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self.process.kill()
                 await self.process.wait()
         await self._output_task
@@ -106,7 +106,7 @@ async def launch_managed_opencode_server(settings: Settings) -> ManagedOpencodeS
             process.terminate()
             try:
                 await asyncio.wait_for(process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 process.kill()
                 await process.wait()
         await output_task
