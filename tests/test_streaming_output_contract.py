@@ -37,12 +37,16 @@ class DummyStreamingClient:
         response_message_id: str | None = "msg-1",
         response_raw: dict | None = None,
         send_delay: float = 0.02,
+        stream_event_delays: list[float] | None = None,
+        auto_idle: bool = True,
     ) -> None:
         self._stream_events_payload = stream_events_payload
         self._response_text = response_text
         self._response_message_id = response_message_id
         self._response_raw = response_raw or {}
         self._send_delay = send_delay
+        self._stream_event_delays = stream_event_delays or []
+        self._auto_idle = auto_idle
         self._in_flight_send = 0
         self.max_in_flight_send = 0
         self.stream_timeout = None
@@ -86,11 +90,19 @@ class DummyStreamingClient:
 
     async def stream_events(self, stop_event=None, *, directory: str | None = None):  # noqa: ANN001
         del directory
-        for event in self._stream_events_payload:
+        for index, event in enumerate(self._stream_events_payload):
             if stop_event and stop_event.is_set():
                 break
-            await asyncio.sleep(0)
+            delay = (
+                self._stream_event_delays[index] if index < len(self._stream_event_delays) else 0
+            )
+            await asyncio.sleep(delay)
             yield event
+        if self._auto_idle and not any(
+            event.get("type") in {"session.idle", "session.error"}
+            for event in self._stream_events_payload
+        ):
+            yield {"type": "session.idle", "properties": {"sessionID": "ses-1"}}
 
     def remember_interrupt_request(
         self,
@@ -405,6 +417,75 @@ async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types
     assert len(set(artifact_ids)) == 1
     event_ids = [_artifact_stream_meta(event)["event_id"] for event in updates]
     assert event_ids == [f"task-1:ctx-1:task-1:stream:{seq}" for seq in range(1, len(updates) + 1)]
+
+
+@pytest.mark.asyncio
+async def test_streaming_waits_for_session_idle_before_emitting_completed() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="text",
+                delta="late final answer",
+            ),
+        ],
+        response_text="",
+        send_delay=0,
+        stream_event_delays=[0.05],
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-late", context_id="ctx-late", text="hello"), queue
+    )
+
+    updates = _artifact_updates(queue)
+    assert updates
+    assert _part_text(updates[-1]) == "late final answer"
+
+    final_statuses = [
+        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+    ]
+    assert final_statuses
+    assert final_statuses[-1].status.state == TaskState.completed
+
+
+@pytest.mark.asyncio
+async def test_streaming_fails_when_event_stream_ends_before_terminal_signal() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="text",
+                delta="partial answer",
+            ),
+        ],
+        response_text="",
+        send_delay=0,
+        auto_idle=False,
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-no-terminal", context_id="ctx-no-terminal", text="hello"
+        ),
+        queue,
+    )
+
+    final_statuses = [
+        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+    ]
+    assert final_statuses
+    assert final_statuses[-1].status.state == TaskState.failed
+    assert final_statuses[-1].metadata is not None
+    assert final_statuses[-1].metadata["opencode"]["error"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
 
 
 @pytest.mark.asyncio

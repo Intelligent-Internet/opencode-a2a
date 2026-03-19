@@ -202,6 +202,14 @@ class _StreamOutputState:
 
 
 @dataclass(frozen=True)
+class _StreamTerminalSignal:
+    state: TaskState
+    error_type: str | None = None
+    message: str | None = None
+    upstream_status: int | None = None
+
+
+@dataclass(frozen=True)
 class _UpstreamErrorProfile:
     error_type: str
     state: TaskState
@@ -300,6 +308,83 @@ def _format_upstream_error(
         profile.state,
         f"{profile.default_message} ({request}, status={status}).",
     )
+
+
+def _format_stream_terminal_error(
+    *,
+    detail: str | None,
+    status: int | None,
+    error_name: str | None,
+) -> _StreamTerminalSignal:
+    if status is not None:
+        profile = _resolve_upstream_error_profile(status)
+        if detail:
+            message = (
+                f"{profile.default_message} (session.error, status={status}, detail={detail})."
+            )
+        else:
+            message = f"{profile.default_message} (session.error, status={status})."
+        return _StreamTerminalSignal(
+            state=profile.state,
+            error_type=profile.error_type,
+            message=message,
+            upstream_status=status,
+        )
+
+    if error_name == "ProviderAuthError":
+        if detail:
+            message = (
+                "OpenCode rejected the request due to authentication failure "
+                f"(session.error, detail={detail})."
+            )
+        else:
+            message = "OpenCode rejected the request due to authentication failure (session.error)."
+        return _StreamTerminalSignal(
+            state=TaskState.auth_required,
+            error_type="UPSTREAM_UNAUTHORIZED",
+            message=message,
+        )
+
+    if detail:
+        message = f"OpenCode execution failed (session.error, detail={detail})."
+    elif error_name:
+        message = f"OpenCode execution failed (session.error, error={error_name})."
+    else:
+        message = "OpenCode execution failed (session.error)."
+    return _StreamTerminalSignal(
+        state=TaskState.failed,
+        error_type="UPSTREAM_EXECUTION_ERROR",
+        message=message,
+    )
+
+
+async def _await_stream_terminal_signal(
+    *,
+    stream_task: asyncio.Task[None] | None,
+    terminal_signal: asyncio.Future[_StreamTerminalSignal],
+    session_id: str,
+) -> _StreamTerminalSignal:
+    if terminal_signal.done():
+        return terminal_signal.result()
+    if stream_task is None:
+        raise RuntimeError("Streaming task was not initialized")
+
+    done, _pending = await asyncio.wait(
+        {stream_task, terminal_signal},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    if terminal_signal in done:
+        return terminal_signal.result()
+    if stream_task in done:
+        with suppress(asyncio.CancelledError):
+            await stream_task
+        if terminal_signal.done():
+            return terminal_signal.result()
+        raise UpstreamContractError(
+            "OpenCode event stream ended before terminal signal "
+            f"(session_id={session_id}, expected session.idle or session.error)"
+        )
+    return await terminal_signal
 
 
 class _TTLCache:
@@ -574,6 +659,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             stable_message_id=f"{task_id}:{context_id}:assistant",
             event_id_namespace=f"{task_id}:{context_id}:{stream_artifact_id}",
         )
+        stream_terminal_signal: asyncio.Future[_StreamTerminalSignal] | None = None
         stop_event = asyncio.Event()
         stream_task: asyncio.Task[None] | None = None
         pending_preferred_claim = False
@@ -602,6 +688,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 self._running_directories[execution_key] = directory
 
             if streaming_request:
+                stream_terminal_signal = asyncio.get_running_loop().create_future()
                 stream_task = asyncio.create_task(
                     self._consume_opencode_stream(
                         session_id=session_id,
@@ -613,6 +700,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                         event_queue=event_queue,
                         stop_event=stop_event,
                         directory=directory,
+                        terminal_signal=stream_terminal_signal,
                     )
                 )
 
@@ -655,10 +743,6 @@ class OpencodeAgentExecutor(AgentExecutor):
 
             response_text = response.text or ""
             resolved_message_id = stream_state.resolve_message_id(response.message_id)
-            resolved_token_usage = _merge_token_usage(
-                _extract_token_usage(response.raw),
-                stream_state.token_usage,
-            )
             logger.debug(
                 "OpenCode response task_id=%s session_id=%s message_id=%s text=%s",
                 task_id,
@@ -667,7 +751,29 @@ class OpencodeAgentExecutor(AgentExecutor):
                 response_text,
             )
             if streaming_request:
-                if stream_state.should_emit_final_snapshot(response_text):
+                if stream_terminal_signal is None:
+                    raise RuntimeError("Streaming terminal signal was not initialized")
+                terminal_signal = await _await_stream_terminal_signal(
+                    stream_task=stream_task,
+                    terminal_signal=stream_terminal_signal,
+                    session_id=session_id,
+                )
+                resolved_token_usage = _merge_token_usage(
+                    _extract_token_usage(response.raw),
+                    stream_state.token_usage,
+                )
+                if terminal_signal.state != TaskState.completed:
+                    await self._emit_error(
+                        event_queue,
+                        task_id=task_id,
+                        context_id=context_id,
+                        message=terminal_signal.message or "OpenCode execution failed.",
+                        state=terminal_signal.state,
+                        error_type=terminal_signal.error_type,
+                        upstream_status=terminal_signal.upstream_status,
+                        streaming_request=True,
+                    )
+                elif stream_state.should_emit_final_snapshot(response_text):
                     sequence = stream_state.next_sequence()
                     await _enqueue_artifact_update(
                         event_queue=event_queue,
@@ -702,9 +808,13 @@ class OpencodeAgentExecutor(AgentExecutor):
                                 "source": "status",
                             },
                         ),
-                    )
+                    ),
                 )
             else:
+                resolved_token_usage = _merge_token_usage(
+                    _extract_token_usage(response.raw),
+                    stream_state.token_usage,
+                )
                 response_text = response_text or "(No text content returned by OpenCode.)"
                 assistant_message = _build_assistant_message(
                     task_id=task_id,
@@ -1115,6 +1225,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         stream_state: _StreamOutputState,
         event_queue: EventQueue,
         stop_event: asyncio.Event,
+        terminal_signal: asyncio.Future[_StreamTerminalSignal],
         directory: str | None = None,
     ) -> None:
         part_states: dict[str, _StreamPartState] = {}
@@ -1397,6 +1508,10 @@ class OpencodeAgentExecutor(AgentExecutor):
                             continue
                         event_session_id = _extract_event_session_id(event)
                         if event_session_id == session_id:
+                            signal = _extract_stream_terminal_signal(event)
+                            if signal is not None and not terminal_signal.done():
+                                terminal_signal.set_result(signal)
+                                stop_event.set()
                             usage = _extract_token_usage(event)
                             if usage is not None:
                                 stream_state.ingest_token_usage(usage)
@@ -1836,6 +1951,42 @@ def _extract_event_session_id(event: Mapping[str, Any]) -> str | None:
         if part_session_id:
             return part_session_id
     return None
+
+
+def _extract_stream_terminal_signal(event: Mapping[str, Any]) -> _StreamTerminalSignal | None:
+    event_type = event.get("type")
+    if event_type == "session.idle":
+        return _StreamTerminalSignal(state=TaskState.completed)
+    if event_type != "session.error":
+        return None
+    props = event.get("properties")
+    if not isinstance(props, Mapping):
+        return _StreamTerminalSignal(
+            state=TaskState.failed,
+            error_type="UPSTREAM_EXECUTION_ERROR",
+            message="OpenCode execution failed (session.error).",
+        )
+    error = props.get("error")
+    if not isinstance(error, Mapping):
+        return _StreamTerminalSignal(
+            state=TaskState.failed,
+            error_type="UPSTREAM_EXECUTION_ERROR",
+            message="OpenCode execution failed (session.error).",
+        )
+    error_name = _extract_first_nonempty_string(error, ("name",))
+    error_data = error.get("data")
+    error_data_map = error_data if isinstance(error_data, Mapping) else {}
+    detail = _extract_first_nonempty_string(
+        error_data_map, ("message",)
+    ) or _extract_first_nonempty_string(error, ("message",))
+    upstream_status = error_data_map.get("statusCode")
+    if not isinstance(upstream_status, int):
+        upstream_status = None
+    return _format_stream_terminal_error(
+        detail=detail,
+        status=upstream_status,
+        error_name=error_name,
+    )
 
 
 def _extract_string_list(value: Any) -> list[str]:
