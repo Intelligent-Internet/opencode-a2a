@@ -44,6 +44,19 @@ logger = logging.getLogger(__name__)
 _INTERRUPT_ASKED_EVENT_TYPES = {"permission.asked", "question.asked"}
 _INTERRUPT_RESOLVED_EVENT_TYPES = {"permission.replied", "question.replied", "question.rejected"}
 _USAGE_PART_TYPES = {"step-finish"}
+_SENSITIVE_LOG_FIELD_MARKERS = (
+    "api_key",
+    "apikey",
+    "authorization",
+    "bearer",
+    "cookie",
+    "credential",
+    "credentials",
+    "password",
+    "secret",
+    "set-cookie",
+    "token",
+)
 
 
 def _emit_metric(
@@ -2001,6 +2014,28 @@ def _preview_log_value(value: Any, *, limit: int) -> str:
     return rendered
 
 
+def _is_sensitive_log_field(key: str) -> bool:
+    normalized = key.strip().lower().replace("_", "-")
+    return any(marker in normalized for marker in _SENSITIVE_LOG_FIELD_MARKERS)
+
+
+def _sanitize_log_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if _is_sensitive_log_field(key_text):
+                sanitized[key_text] = "[redacted]"
+                continue
+            sanitized[key_text] = _sanitize_log_value(item)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_log_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_log_value(item) for item in value]
+    return value
+
+
 def _log_stream_event_debug(event: Mapping[str, Any], *, limit: int) -> None:
     if not logger.isEnabledFor(logging.DEBUG):
         return
@@ -2021,7 +2056,7 @@ def _log_stream_event_debug(event: Mapping[str, Any], *, limit: int) -> None:
         _extract_stream_part_type(part_map, props_map),
         len(delta) if isinstance(delta, str) else None,
         len(text) if isinstance(text, str) else None,
-        _preview_log_value(event, limit=limit),
+        _preview_log_value(_sanitize_log_value(event), limit=limit),
     )
 
 

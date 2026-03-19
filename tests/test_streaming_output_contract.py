@@ -1352,6 +1352,63 @@ async def test_streaming_logs_raw_upstream_events_at_debug(caplog) -> None:
 
 
 @pytest.mark.asyncio
+async def test_streaming_logs_interrupt_payload_at_debug_with_redaction(caplog) -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            {
+                "type": "permission.asked",
+                "properties": {
+                    "id": "perm-debug-1",
+                    "sessionID": "ses-1",
+                    "permission": "bash",
+                    "patterns": ["git push origin main"],
+                    "request": {
+                        "description": "Agent wants to push the branch.",
+                    },
+                    "context": {
+                        "reason": "The fix is ready for review.",
+                    },
+                    "prompt": {
+                        "message": "Allow the agent to push?",
+                    },
+                    "accessToken": "super-secret-token",
+                },
+            }
+        ],
+        response_text="done",
+    )
+    client.settings = make_settings(
+        a2a_bearer_token="test",
+        opencode_base_url="http://localhost",
+        a2a_log_body_limit=0,
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_server.agent"):
+        await executor.execute(
+            make_request_context(
+                task_id="task-interrupt-debug", context_id="ctx-interrupt-debug", text="go"
+            ),
+            queue,
+        )
+
+    messages = [record.message for record in caplog.records]
+    assert any("OpenCode stream event type=permission.asked" in message for message in messages)
+    assert any(
+        '"request":{"description":"Agent wants to push the branch."}' in message
+        for message in messages
+    )
+    assert any(
+        '"context":{"reason":"The fix is ready for review."}' in message for message in messages
+    )
+    assert any('"prompt":{"message":"Allow the agent to push?"}' in message for message in messages)
+    assert any('"accessToken":"[redacted]"' in message for message in messages)
+    assert not any("super-secret-token" in message for message in messages)
+
+
+@pytest.mark.asyncio
 async def test_streaming_does_not_log_raw_upstream_events_above_debug(caplog) -> None:
     client = DummyStreamingClient(
         stream_events_payload=[
