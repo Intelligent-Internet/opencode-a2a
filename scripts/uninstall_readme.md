@@ -8,7 +8,7 @@ one deployed project instance.
 ## Safety Model
 
 - Preview-first by default.
-- Destructive actions run only when `confirm=UNINSTALL` is provided.
+- Destructive actions run only when `--confirm UNINSTALL` is provided.
 - Shared systemd template units are never removed.
 
 ## Usage
@@ -16,18 +16,18 @@ one deployed project instance.
 Preview:
 
 ```bash
-opencode-a2a-server uninstall-instance project=<project>
+opencode-a2a-server uninstall-instance --project <project>
 ```
 
 Apply:
 
 ```bash
-opencode-a2a-server uninstall-instance project=<project> confirm=UNINSTALL
+opencode-a2a-server uninstall-instance --project <project> --confirm UNINSTALL
 ```
 
 Optional:
 
-- `data_root=/data/opencode-a2a`
+- `--data-root /data/opencode-a2a`
 
 ## Guardrails
 

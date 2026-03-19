@@ -34,44 +34,46 @@ opencode-a2a-server init-release-system
 Deploy the latest installed release:
 
 ```bash
-opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1
+opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1
 ```
 
 Deploy an exact package version:
 
 ```bash
 opencode-a2a-server deploy-release \
-  project=alpha \
-  a2a_port=8010 \
-  a2a_host=127.0.0.1 \
-  release_version=0.1.0
+  --project alpha \
+  --a2a-port 8010 \
+  --a2a-host 127.0.0.1 \
+  --release-version 0.1.0
 ```
 
 Update to the latest published release:
 
 ```bash
-opencode-a2a-server deploy-release project=alpha update_a2a=true force_restart=true
+opencode-a2a-server deploy-release --project alpha --update-a2a --force-restart
 ```
 
 Update to an exact published release:
 
 ```bash
 opencode-a2a-server deploy-release \
-  project=alpha \
-  release_version=0.1.0 \
-  update_a2a=true \
-  force_restart=true
+  --project alpha \
+  --release-version 0.1.0 \
+  --update-a2a \
+  --force-restart
 ```
 
 ## Notes
 
 - `opencode-a2a-server deploy-release` shares the same secret strategy, config
   layout, and systemd hardening model as `deploy.sh`
-- `release_version=<version>` pins the installed package version
-- if no explicit `release_version` is provided, first install uses the latest
+- `--release-version <version>` pins the installed package version
+- if no explicit `--release-version` is provided, first install uses the latest
   published package; later plain deploy reruns reuse the installed runtime
 - `scripts/deploy_release.sh` is a compatibility wrapper around the packaged
   CLI entrypoint
+- legacy `key=value` arguments remain accepted for compatibility wrappers, but
+  the packaged CLI now documents standard flags as the preferred contract
 - use [`deploy.sh`](./deploy_readme.md) only when you intentionally want a
   source-based systemd deploy for development or debugging
 - for real-host acceptance steps, see [`../docs/release_deploy_smoke_test.md`](../docs/release_deploy_smoke_test.md)

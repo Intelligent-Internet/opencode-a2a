@@ -171,7 +171,7 @@ For long-running systemd deployments, use the packaged release CLI:
 
 ```bash
 opencode-a2a-server init-release-system
-opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1
+opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1
 ```
 
 This path is for users who want:

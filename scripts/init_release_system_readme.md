@@ -17,7 +17,17 @@ opencode-a2a-server init-release-system
 Optional exact package version:
 
 ```bash
-A2A_RELEASE_VERSION=0.1.0 opencode-a2a-server init-release-system
+opencode-a2a-server init-release-system --release-version 0.1.0
+```
+
+Optional runtime path overrides:
+
+```bash
+opencode-a2a-server init-release-system \
+  --release-root /opt/opencode-a2a-release \
+  --tool-dir /opt/opencode-a2a-release/tool \
+  --tool-bin-dir /opt/opencode-a2a-release/bin \
+  --deploy-helper-dir /opt/opencode-a2a-release/runtime
 ```
 
 ## What It Does

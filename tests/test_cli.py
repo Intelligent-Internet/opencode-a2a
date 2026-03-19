@@ -18,6 +18,47 @@ def test_cli_help_does_not_require_runtime_settings(capsys: pytest.CaptureFixtur
     serve_mock.assert_not_called()
 
 
+def test_cli_init_release_system_help_exposes_release_flags(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["init-release-system", "--help"])
+
+    assert excinfo.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--release-version" in help_text
+    assert "--release-root" in help_text
+    assert "--tool-dir" in help_text
+    assert "Additional low-level bootstrap toggles remain environment-based" in help_text
+
+
+def test_cli_deploy_release_help_exposes_flag_contract(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["deploy-release", "--help"])
+
+    assert excinfo.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--project" in help_text
+    assert "--a2a-port" in help_text
+    assert "--release-version" in help_text
+    assert "Secrets such as GH_TOKEN" in help_text
+
+
+def test_cli_uninstall_help_exposes_flag_contract(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["uninstall-instance", "--help"])
+
+    assert excinfo.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--project" in help_text
+    assert "--confirm" in help_text
+    assert "Legacy key=value arguments are still accepted" in help_text
+
+
 def test_cli_version_does_not_require_runtime_settings(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -44,25 +85,113 @@ def test_cli_serve_subcommand_invokes_runtime() -> None:
     serve_mock.assert_called_once_with()
 
 
-def test_cli_init_release_system_subcommand_invokes_packaged_script() -> None:
+def test_cli_init_release_system_subcommand_invokes_packaged_script_with_env_overrides() -> None:
     with mock.patch("opencode_a2a_server.cli._run_packaged_script", return_value=0) as run_mock:
-        assert cli.main(["init-release-system"]) == 0
+        assert (
+            cli.main(
+                [
+                    "init-release-system",
+                    "--release-version",
+                    "0.2.1",
+                    "--release-root",
+                    "/opt/opencode-a2a-release",
+                    "--data-root",
+                    "/data/opencode-a2a",
+                ]
+            )
+            == 0
+        )
 
-    run_mock.assert_called_once_with("init_release_system.sh", [])
+    run_mock.assert_called_once_with(
+        "init_release_system.sh",
+        [],
+        env_overrides={
+            "A2A_RELEASE_VERSION": "0.2.1",
+            "A2A_RELEASE_ROOT": "/opt/opencode-a2a-release",
+            "DATA_ROOT": "/data/opencode-a2a",
+        },
+    )
 
 
-def test_cli_deploy_release_subcommand_invokes_packaged_script() -> None:
+def test_cli_deploy_release_subcommand_supports_legacy_key_value_args() -> None:
     with mock.patch("opencode_a2a_server.cli._run_packaged_script", return_value=0) as run_mock:
         assert cli.main(["deploy-release", "project=alpha"]) == 0
 
     run_mock.assert_called_once_with("deploy_release.sh", ["project=alpha"])
 
 
-def test_cli_uninstall_subcommand_invokes_packaged_script() -> None:
+def test_cli_deploy_release_subcommand_maps_flags_to_key_value_args() -> None:
+    with mock.patch("opencode_a2a_server.cli._run_packaged_script", return_value=0) as run_mock:
+        assert (
+            cli.main(
+                [
+                    "deploy-release",
+                    "--project",
+                    "alpha",
+                    "--a2a-port",
+                    "8010",
+                    "--a2a-host",
+                    "127.0.0.1",
+                    "--release-version",
+                    "0.2.1",
+                    "--a2a-enable-session-shell",
+                    "--a2a-strict-isolation",
+                    "--no-opencode-lsp",
+                    "--update-a2a",
+                    "--force-restart",
+                ]
+            )
+            == 0
+        )
+
+    run_mock.assert_called_once_with(
+        "deploy_release.sh",
+        [
+            "project=alpha",
+            "a2a_port=8010",
+            "a2a_host=127.0.0.1",
+            "a2a_enable_session_shell=true",
+            "a2a_strict_isolation=true",
+            "release_version=0.2.1",
+            "opencode_lsp=false",
+            "update_a2a=true",
+            "force_restart=true",
+        ],
+    )
+
+
+def test_cli_uninstall_subcommand_supports_legacy_key_value_args() -> None:
     with mock.patch("opencode_a2a_server.cli._run_packaged_script", return_value=0) as run_mock:
         assert cli.main(["uninstall-instance", "project=alpha"]) == 0
 
     run_mock.assert_called_once_with("uninstall.sh", ["project=alpha"])
+
+
+def test_cli_uninstall_subcommand_maps_flags_to_key_value_args() -> None:
+    with mock.patch("opencode_a2a_server.cli._run_packaged_script", return_value=0) as run_mock:
+        assert (
+            cli.main(
+                [
+                    "uninstall-instance",
+                    "--project",
+                    "alpha",
+                    "--data-root",
+                    "/data/opencode-a2a",
+                    "--confirm",
+                    "UNINSTALL",
+                ]
+            )
+            == 0
+        )
+
+    run_mock.assert_called_once_with(
+        "uninstall.sh",
+        [
+            "project=alpha",
+            "data_root=/data/opencode-a2a",
+            "confirm=UNINSTALL",
+        ],
+    )
 
 
 def test_cli_packages_release_scripts_as_assets() -> None:

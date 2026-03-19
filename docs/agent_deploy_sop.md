@@ -47,18 +47,18 @@ Use `deploy-release` when you need:
 
 For `opencode-a2a-server deploy-release`:
 
-- `project=<name>`
+- `--project <name>`
 - `GH_TOKEN` and `A2A_BEARER_TOKEN`
   - required immediately when `ENABLE_SECRET_PERSISTENCE=true`
   - otherwise required in root-only secret env files before the second deploy
 
 ### Common Optional Inputs
 
-- `a2a_host=<host>`
-- `a2a_port=<port>`
-- `a2a_public_url=<url>`
-- `opencode_provider_id=<id>`
-- `opencode_model_id=<id>`
+- `--a2a-host <host>`
+- `--a2a-port <port>`
+- `--a2a-public-url <url>`
+- `--opencode-provider-id <id>`
+- `--opencode-model-id <id>`
 
 ### Provider Keys
 
@@ -96,8 +96,8 @@ opencode-a2a-server init-release-system
 ```
 
 If you need an exact published package version for bootstrap or rollback,
-provide `A2A_RELEASE_VERSION=<version>` to `opencode-a2a-server init-release-system`
-and `release_version=<version>` to `opencode-a2a-server deploy-release`.
+provide `--release-version <version>` to `opencode-a2a-server init-release-system`
+and the same `--release-version <version>` to `opencode-a2a-server deploy-release`.
 
 ### Secret Strategy
 
@@ -123,7 +123,7 @@ Optional legacy-style mode:
 Bootstrap directories and example files:
 
 ```bash
-opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1
+opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1
 ```
 
 Populate the generated templates as `root`:
@@ -138,7 +138,7 @@ sudoedit /data/opencode-a2a/alpha/config/a2a.secret.env
 Re-run deploy to start services:
 
 ```bash
-opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1
+opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1
 ```
 
 #### Option A2: explicit secret persistence (`ENABLE_SECRET_PERSISTENCE=true`)
@@ -147,7 +147,7 @@ opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.
 read -rsp 'GH_TOKEN: ' GH_TOKEN; echo
 read -rsp 'A2A_BEARER_TOKEN: ' A2A_BEARER_TOKEN; echo
 GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1
+opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1 --enable-secret-persistence
 ```
 
 #### Option A3: shell-enabled systemd deploy with stricter isolation
@@ -157,11 +157,11 @@ Use this only for trusted operators who explicitly need
 
 ```bash
 opencode-a2a-server deploy-release \
-  project=alpha \
-  a2a_port=8010 \
-  a2a_host=127.0.0.1 \
-  a2a_enable_session_shell=true \
-  a2a_strict_isolation=true
+  --project alpha \
+  --a2a-port 8010 \
+  --a2a-host 127.0.0.1 \
+  --a2a-enable-session-shell \
+  --a2a-strict-isolation
 ```
 
 Recommended additions for shell-enabled instances:
@@ -174,13 +174,13 @@ Public URL example:
 
 ```bash
 GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_public_url=https://a2a.example.com
+opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-public-url https://a2a.example.com --enable-secret-persistence
 ```
 
 ### Update or Restart
 
 ```bash
-opencode-a2a-server deploy-release project=alpha update_a2a=true force_restart=true
+opencode-a2a-server deploy-release --project alpha --update-a2a --force-restart
 ```
 
 ### Readiness Checks
@@ -225,13 +225,13 @@ sudo systemctl cat opencode-a2a-server@alpha.service
 Preview first:
 
 ```bash
-opencode-a2a-server uninstall-instance project=alpha
+opencode-a2a-server uninstall-instance --project alpha
 ```
 
 Apply:
 
 ```bash
-opencode-a2a-server uninstall-instance project=alpha confirm=UNINSTALL
+opencode-a2a-server uninstall-instance --project alpha --confirm UNINSTALL
 ```
 
 Notes:

@@ -34,18 +34,18 @@ This smoke test does not replace protocol-level API tests or CI unit tests.
 Run at least these two variants:
 
 1. exact release pin
-   - `A2A_RELEASE_VERSION=0.1.0`
-   - `release_version=0.1.0`
+   - `opencode-a2a-server init-release-system --release-version 0.1.0`
+   - `opencode-a2a-server deploy-release --release-version 0.1.0`
 2. default latest release
-   - no explicit `A2A_RELEASE_VERSION`
-   - no explicit `release_version`
+   - no explicit `--release-version`
+   - no explicit `--release-version`
 
 ## Step 1: Host Bootstrap
 
 Bootstrap the host with the release-based path:
 
 ```bash
-A2A_RELEASE_VERSION=0.1.0 opencode-a2a-server init-release-system
+opencode-a2a-server init-release-system --release-version 0.1.0
 ```
 
 Checks:
@@ -65,7 +65,7 @@ Expected boundary:
 Run the first deploy:
 
 ```bash
-opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1 release_version=0.1.0
+opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1 --release-version 0.1.0
 ```
 
 Expected first-run behavior:
@@ -86,7 +86,7 @@ sudoedit /data/opencode-a2a/alpha/config/a2a.secret.env
 Re-run deploy:
 
 ```bash
-opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1 release_version=0.1.0
+opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1 --release-version 0.1.0
 ```
 
 ## Step 3: Service Readiness
@@ -129,13 +129,13 @@ sudo journalctl -u opencode-a2a-server@alpha.service -n 100 --no-pager
 Reinstall and restart the fixed version:
 
 ```bash
-opencode-a2a-server deploy-release project=alpha release_version=0.1.0 update_a2a=true force_restart=true
+opencode-a2a-server deploy-release --project alpha --release-version 0.1.0 --update-a2a --force-restart
 ```
 
 Then test the default latest-release path:
 
 ```bash
-opencode-a2a-server deploy-release project=alpha update_a2a=true force_restart=true
+opencode-a2a-server deploy-release --project alpha --update-a2a --force-restart
 ```
 
 Checks:
@@ -149,13 +149,13 @@ Checks:
 Preview:
 
 ```bash
-opencode-a2a-server uninstall-instance project=alpha
+opencode-a2a-server uninstall-instance --project alpha
 ```
 
 Apply:
 
 ```bash
-opencode-a2a-server uninstall-instance project=alpha confirm=UNINSTALL
+opencode-a2a-server uninstall-instance --project alpha --confirm UNINSTALL
 ```
 
 Checks:
