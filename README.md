@@ -17,13 +17,17 @@ handling, and an explicit deployment boundary.
 ## Logical Components
 
 ```mermaid
-flowchart LR
+flowchart TD
     Client["a2a-client-hub / any A2A client"]
-    Adapter["opencode-a2a-server\nA2A adapter service"]
-    Runtime["opencode serve\nOpenCode runtime"]
+
+    subgraph ServerSide["Server-side"]
+        Adapter["opencode-a2a-server\nA2A adapter service"]
+        Runtime["opencode serve\nOpenCode runtime"]
+
+        Adapter <--> Runtime
+    end
 
     Client <--> Adapter
-    Adapter <--> Runtime
 ```
 
 ## Quick Start
