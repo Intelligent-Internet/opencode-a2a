@@ -44,8 +44,6 @@ class OpencodeClient:
         self._settings = settings
         self._base_url = settings.opencode_base_url.rstrip("/")
         self._directory = settings.opencode_workspace_root
-        self._provider_id = settings.opencode_provider_id
-        self._model_id = settings.opencode_model_id
         self._agent = settings.opencode_agent
         self._system = settings.opencode_system
         self._variant = settings.opencode_variant
@@ -65,15 +63,6 @@ class OpencodeClient:
 
     async def close(self) -> None:
         await self._client.aclose()
-
-    async def rebind_base_url(self, base_url: str) -> None:
-        normalized = base_url.rstrip("/")
-        if normalized == self._base_url:
-            return
-        previous_client = self._client
-        self._base_url = normalized
-        self._client = self._build_http_client(self._base_url)
-        await previous_client.aclose()
 
     @staticmethod
     def _response_body_preview(response: httpx.Response, *, limit: int = 200) -> str:
@@ -189,10 +178,6 @@ class OpencodeClient:
     def settings(self) -> Settings:
         return self._settings
 
-    @property
-    def base_url(self) -> str:
-        return self._base_url
-
     def _query_params(self, directory: str | None = None) -> dict[str, str]:
         d = directory or self._directory
         if not d:
@@ -214,23 +199,6 @@ class OpencodeClient:
             # FastAPI query params are strings; keep them as-is. Coerce other primitives to str.
             params[key] = value if isinstance(value, str) else str(value)
         return params
-
-    @staticmethod
-    def _normalize_model_ref(value: Mapping[str, Any] | None) -> dict[str, str] | None:
-        if value is None:
-            return None
-        provider = value.get("providerID")
-        model = value.get("modelID")
-        if not isinstance(provider, str) or not isinstance(model, str):
-            return None
-        provider_id = provider.strip()
-        model_id = model.strip()
-        if not provider_id or not model_id:
-            return None
-        return {
-            "providerID": provider_id,
-            "modelID": model_id,
-        }
 
     async def stream_events(
         self, stop_event: asyncio.Event | None = None, *, directory: str | None = None
@@ -359,13 +327,6 @@ class OpencodeClient:
         response.raise_for_status()
         return self._decode_json_response(response, endpoint="/session/{sessionID}/shell")
 
-    async def list_provider_catalog(self, *, directory: str | None = None) -> Any:
-        response = await self._client.get(
-            "/provider", params=self._query_params(directory=directory)
-        )
-        response.raise_for_status()
-        return self._decode_json_response(response, endpoint="/provider")
-
     async def send_message(
         self,
         session_id: str,
@@ -373,7 +334,6 @@ class OpencodeClient:
         *,
         parts: Sequence[Mapping[str, Any]] | None = None,
         directory: str | None = None,
-        model_override: Mapping[str, Any] | None = None,
         timeout_override: float | None | object = _UNSET,
     ) -> OpencodeMessage:
         payload_parts: list[dict[str, Any]]
@@ -393,16 +353,6 @@ class OpencodeClient:
             raise ValueError("send_message parts must not be empty")
 
         payload: dict[str, Any] = {"parts": payload_parts}
-        resolved_model = self._normalize_model_ref(model_override)
-        if resolved_model is None:
-            resolved_model = self._normalize_model_ref(
-                {
-                    "providerID": self._provider_id,
-                    "modelID": self._model_id,
-                }
-            )
-        if resolved_model is not None:
-            payload["model"] = resolved_model
         if self._agent:
             payload["agent"] = self._agent
         if self._system:

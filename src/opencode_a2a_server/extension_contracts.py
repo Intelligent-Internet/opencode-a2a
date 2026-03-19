@@ -5,17 +5,14 @@ from typing import Any
 
 SHARED_SESSION_BINDING_FIELD = "metadata.shared.session.id"
 SHARED_SESSION_METADATA_FIELD = "metadata.shared.session"
-SHARED_MODEL_SELECTION_FIELD = "metadata.shared.model"
 SHARED_STREAM_METADATA_FIELD = "metadata.shared.stream"
 SHARED_INTERRUPT_METADATA_FIELD = "metadata.shared.interrupt"
 SHARED_USAGE_METADATA_FIELD = "metadata.shared.usage"
 OPENCODE_DIRECTORY_METADATA_FIELD = "metadata.opencode.directory"
 
 SESSION_BINDING_EXTENSION_URI = "urn:a2a:session-binding/v1"
-MODEL_SELECTION_EXTENSION_URI = "urn:a2a:model-selection/v1"
 STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
 SESSION_QUERY_EXTENSION_URI = "urn:opencode-a2a:session-query/v1"
-PROVIDER_DISCOVERY_EXTENSION_URI = "urn:opencode-a2a:provider-discovery/v1"
 INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
 COMPATIBILITY_PROFILE_EXTENSION_URI = "urn:a2a:compatibility-profile/v1"
 WIRE_CONTRACT_EXTENSION_URI = "urn:a2a:wire-contract/v1"
@@ -42,21 +39,9 @@ class InterruptMethodContract:
     notification_response_status: int | None = None
 
 
-@dataclass(frozen=True)
-class ProviderDiscoveryMethodContract:
-    method: str
-    required_params: tuple[str, ...] = ()
-    optional_params: tuple[str, ...] = ()
-    result_fields: tuple[str, ...] = ()
-    items_type: str | None = None
-    items_field: str | None = None
-    notification_response_status: int | None = None
-
-
 PROMPT_ASYNC_REQUEST_REQUIRED_FIELDS: tuple[str, ...] = ("parts",)
 PROMPT_ASYNC_REQUEST_OPTIONAL_FIELDS: tuple[str, ...] = (
     "messageID",
-    "model",
     "agent",
     "noReply",
     "tools",
@@ -72,7 +57,6 @@ COMMAND_REQUEST_REQUIRED_FIELDS: tuple[str, ...] = ("command", "arguments")
 COMMAND_REQUEST_OPTIONAL_FIELDS: tuple[str, ...] = (
     "messageID",
     "agent",
-    "model",
     "variant",
     "parts",
 )
@@ -81,7 +65,7 @@ COMMAND_REQUEST_ALLOWED_FIELDS: tuple[str, ...] = (
     *COMMAND_REQUEST_OPTIONAL_FIELDS,
 )
 SHELL_REQUEST_REQUIRED_FIELDS: tuple[str, ...] = ("agent", "command")
-SHELL_REQUEST_OPTIONAL_FIELDS: tuple[str, ...] = ("model",)
+SHELL_REQUEST_OPTIONAL_FIELDS: tuple[str, ...] = ()
 SHELL_REQUEST_ALLOWED_FIELDS: tuple[str, ...] = (
     *SHELL_REQUEST_REQUIRED_FIELDS,
     *SHELL_REQUEST_OPTIONAL_FIELDS,
@@ -121,7 +105,6 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
         required_params=("session_id", "request.parts"),
         optional_params=(
             "request.messageID",
-            "request.model",
             "request.agent",
             "request.noReply",
             "request.tools",
@@ -139,7 +122,6 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
         optional_params=(
             "request.messageID",
             "request.agent",
-            "request.model",
             "request.variant",
             "request.parts",
             OPENCODE_DIRECTORY_METADATA_FIELD,
@@ -150,10 +132,7 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
     "shell": SessionQueryMethodContract(
         method="opencode.sessions.shell",
         required_params=("session_id", "request.agent", "request.command"),
-        optional_params=(
-            "request.model",
-            OPENCODE_DIRECTORY_METADATA_FIELD,
-        ),
+        optional_params=(OPENCODE_DIRECTORY_METADATA_FIELD,),
         result_fields=("item",),
         notification_response_status=204,
     ),
@@ -235,28 +214,6 @@ INTERRUPT_CALLBACK_METHODS: dict[str, str] = {
     key: contract.method for key, contract in INTERRUPT_CALLBACK_METHOD_CONTRACTS.items()
 }
 
-PROVIDER_DISCOVERY_METHOD_CONTRACTS: dict[str, ProviderDiscoveryMethodContract] = {
-    "list_providers": ProviderDiscoveryMethodContract(
-        method="opencode.providers.list",
-        result_fields=("items", "default_by_provider", "connected"),
-        items_type="ProviderSummary[]",
-        items_field="items",
-        notification_response_status=204,
-    ),
-    "list_models": ProviderDiscoveryMethodContract(
-        method="opencode.models.list",
-        optional_params=("provider_id",),
-        result_fields=("items", "default_by_provider", "connected"),
-        items_type="ModelSummary[]",
-        items_field="items",
-        notification_response_status=204,
-    ),
-}
-
-PROVIDER_DISCOVERY_METHODS: dict[str, str] = {
-    key: contract.method for key, contract in PROVIDER_DISCOVERY_METHOD_CONTRACTS.items()
-}
-
 INTERRUPT_SUCCESS_RESULT_FIELDS: tuple[str, ...] = ("ok", "request_id")
 INTERRUPT_ERROR_BUSINESS_CODES: dict[str, int] = {
     "INTERRUPT_REQUEST_NOT_FOUND": -32004,
@@ -279,22 +236,6 @@ INTERRUPT_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
     "expected",
     "actual",
 )
-PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES: dict[str, int] = {
-    "UPSTREAM_UNREACHABLE": -32002,
-    "UPSTREAM_HTTP_ERROR": -32003,
-    "UPSTREAM_PAYLOAD_ERROR": -32005,
-}
-PROVIDER_DISCOVERY_ERROR_DATA_FIELDS: tuple[str, ...] = (
-    "type",
-    "method",
-    "upstream_status",
-    "detail",
-)
-PROVIDER_DISCOVERY_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
-    "type",
-    "field",
-    "fields",
-)
 
 
 def build_supported_jsonrpc_methods(*, session_shell_enabled: bool) -> list[str]:
@@ -304,7 +245,6 @@ def build_supported_jsonrpc_methods(*, session_shell_enabled: bool) -> list[str]
         SESSION_QUERY_METHODS["get_session_messages"],
         SESSION_CONTROL_METHODS["prompt_async"],
         SESSION_CONTROL_METHODS["command"],
-        *PROVIDER_DISCOVERY_METHODS.values(),
         *INTERRUPT_CALLBACK_METHODS.values(),
     ]
     if session_shell_enabled:
@@ -356,48 +296,6 @@ def build_session_binding_extension_params(
             ),
         ],
     }
-
-
-def build_model_selection_extension_params(
-    *,
-    deployment_context: dict[str, str | bool],
-) -> dict[str, Any]:
-    params: dict[str, Any] = {
-        "metadata_field": SHARED_MODEL_SELECTION_FIELD,
-        "behavior": "prefer_metadata_model_else_server_default",
-        "applies_to_methods": ["message/send", "message/stream"],
-        "supported_metadata": [
-            "shared.model.providerID",
-            "shared.model.modelID",
-        ],
-        "provider_private_metadata": [],
-        "shared_workspace_across_consumers": True,
-        "tenant_isolation": "none",
-        "deployment_context": deployment_context,
-        "fields": {
-            "providerID": f"{SHARED_MODEL_SELECTION_FIELD}.providerID",
-            "modelID": f"{SHARED_MODEL_SELECTION_FIELD}.modelID",
-        },
-        "notes": [
-            (
-                "If both metadata.shared.model.providerID and metadata.shared.model.modelID "
-                "are non-empty strings, the server will override the default upstream model "
-                "for this request only."
-            ),
-            (
-                "If shared model metadata is missing, partial, or invalid, the server falls "
-                "back to the configured default model."
-            ),
-        ],
-    }
-    provider_id = deployment_context.get("provider_id")
-    model_id = deployment_context.get("model_id")
-    if isinstance(provider_id, str) and isinstance(model_id, str):
-        params["default_model"] = {
-            "providerID": provider_id,
-            "modelID": model_id,
-        }
-    return params
 
 
 def build_streaming_extension_params() -> dict[str, Any]:
@@ -554,81 +452,6 @@ def build_interrupt_callback_extension_params(
     }
 
 
-def build_provider_discovery_extension_params(
-    *,
-    deployment_context: dict[str, str | bool],
-) -> dict[str, Any]:
-    method_contracts: dict[str, Any] = {}
-
-    for method_contract in PROVIDER_DISCOVERY_METHOD_CONTRACTS.values():
-        params_contract = _build_method_contract_params(
-            required=method_contract.required_params,
-            optional=method_contract.optional_params,
-            unsupported=(),
-        )
-        result_contract: dict[str, Any] = {"fields": list(method_contract.result_fields)}
-        if method_contract.items_type:
-            result_contract["items_type"] = method_contract.items_type
-
-        contract_doc: dict[str, Any] = {
-            "params": params_contract,
-            "result": result_contract,
-        }
-        if method_contract.notification_response_status is not None:
-            contract_doc["notification_response_status"] = (
-                method_contract.notification_response_status
-            )
-        method_contracts[method_contract.method] = contract_doc
-
-    return {
-        "methods": dict(PROVIDER_DISCOVERY_METHODS),
-        "method_contracts": method_contracts,
-        "supported_metadata": ["opencode.directory"],
-        "provider_private_metadata": ["opencode.directory"],
-        "context_fields": {
-            "directory": OPENCODE_DIRECTORY_METADATA_FIELD,
-        },
-        "provider_item_fields": {
-            "provider_id": "items[].provider_id",
-            "name": "items[].name",
-            "source": "items[].source",
-            "connected": "items[].connected",
-            "default_model_id": "items[].default_model_id",
-            "model_count": "items[].model_count",
-        },
-        "model_item_fields": {
-            "provider_id": "items[].provider_id",
-            "model_id": "items[].model_id",
-            "name": "items[].name",
-            "status": "items[].status",
-            "context_window": "items[].context_window",
-            "supports_reasoning": "items[].supports_reasoning",
-            "supports_tool_call": "items[].supports_tool_call",
-            "supports_attachments": "items[].supports_attachments",
-            "default": "items[].default",
-            "connected": "items[].connected",
-        },
-        "errors": {
-            "business_codes": dict(PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES),
-            "error_data_fields": list(PROVIDER_DISCOVERY_ERROR_DATA_FIELDS),
-            "invalid_params_data_fields": list(PROVIDER_DISCOVERY_INVALID_PARAMS_DATA_FIELDS),
-        },
-        "shared_workspace_across_consumers": True,
-        "tenant_isolation": "none",
-        "deployment_context": deployment_context,
-        "notes": [
-            (
-                "Provider/model discovery is OpenCode-specific and exposed through "
-                "provider-private JSON-RPC methods."
-            ),
-            (
-                "The server normalizes upstream provider catalogs into summary records so "
-                "downstream callers do not need to parse raw OpenCode payloads."
-            ),
-        ],
-    }
-
-
 def build_compatibility_profile_params(
     *,
     protocol_version: str,
@@ -672,17 +495,6 @@ def build_compatibility_profile_params(
                 "surface": "extension",
                 "availability": "always",
                 "retention": "stable",
-                "extension_uri": PROVIDER_DISCOVERY_EXTENSION_URI,
-            }
-            for method in PROVIDER_DISCOVERY_METHODS.values()
-        }
-    )
-    method_retention.update(
-        {
-            method: {
-                "surface": "extension",
-                "availability": "always",
-                "retention": "stable",
                 "extension_uri": INTERRUPT_CALLBACK_EXTENSION_URI,
             }
             for method in INTERRUPT_CALLBACK_METHODS.values()
@@ -701,22 +513,12 @@ def build_compatibility_profile_params(
                 "availability": "always",
                 "retention": "required",
             },
-            MODEL_SELECTION_EXTENSION_URI: {
-                "surface": "core-runtime-metadata",
-                "availability": "always",
-                "retention": "stable",
-            },
             STREAMING_EXTENSION_URI: {
                 "surface": "core-runtime-metadata",
                 "availability": "always",
                 "retention": "required",
             },
             SESSION_QUERY_EXTENSION_URI: {
-                "surface": "jsonrpc-extension",
-                "availability": "always",
-                "retention": "stable",
-            },
-            PROVIDER_DISCOVERY_EXTENSION_URI: {
                 "surface": "jsonrpc-extension",
                 "availability": "always",
                 "retention": "stable",
@@ -735,9 +537,8 @@ def build_compatibility_profile_params(
                 "do not assume per-consumer workspace or tenant isolation."
             ),
             (
-                "Treat opencode.sessions.*, opencode.providers.*, and opencode.models.* as "
-                "provider-private operational surfaces rather than portable A2A baseline "
-                "capabilities."
+                "Treat opencode.sessions.* as provider-private operational surfaces rather "
+                "than portable A2A baseline capabilities."
             ),
             (
                 "Treat a2a.interrupt.* methods as declared shared extensions and opencode.* "
@@ -763,7 +564,6 @@ def build_wire_contract_params(
         SESSION_QUERY_METHODS["get_session_messages"],
         SESSION_CONTROL_METHODS["prompt_async"],
         SESSION_CONTROL_METHODS["command"],
-        *PROVIDER_DISCOVERY_METHODS.values(),
         *INTERRUPT_CALLBACK_METHODS.values(),
     ]
     conditionally_available_methods: dict[str, dict[str, str]] = {}
@@ -788,10 +588,8 @@ def build_wire_contract_params(
             "conditionally_available_methods": conditionally_available_methods,
             "extension_uris": [
                 SESSION_BINDING_EXTENSION_URI,
-                MODEL_SELECTION_EXTENSION_URI,
                 STREAMING_EXTENSION_URI,
                 SESSION_QUERY_EXTENSION_URI,
-                PROVIDER_DISCOVERY_EXTENSION_URI,
                 INTERRUPT_CALLBACK_EXTENSION_URI,
             ],
         },

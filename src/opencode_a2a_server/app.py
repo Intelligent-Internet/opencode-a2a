@@ -44,9 +44,6 @@ from .extension_contracts import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
-    MODEL_SELECTION_EXTENSION_URI,
-    PROVIDER_DISCOVERY_EXTENSION_URI,
-    PROVIDER_DISCOVERY_METHODS,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_CONTROL_METHODS,
     SESSION_QUERY_DEFAULT_LIMIT,
@@ -56,8 +53,6 @@ from .extension_contracts import (
     WIRE_CONTRACT_EXTENSION_URI,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
-    build_model_selection_extension_params,
-    build_provider_discovery_extension_params,
     build_session_binding_extension_params,
     build_session_query_extension_params,
     build_streaming_extension_params,
@@ -69,7 +64,6 @@ from .jsonrpc_ext import (
     OpencodeSessionQueryJSONRPCApplication,
 )
 from .opencode_client import OpencodeClient
-from .opencode_upstream import ManagedOpencodeServer, launch_managed_opencode_server
 
 logger = logging.getLogger(__name__)
 
@@ -279,10 +273,6 @@ def _build_deployment_context(settings: Settings) -> dict[str, str | bool]:
         context["project"] = settings.a2a_project
     if settings.opencode_workspace_root:
         context["workspace_root"] = settings.opencode_workspace_root
-    if settings.opencode_provider_id:
-        context["provider_id"] = settings.opencode_provider_id
-    if settings.opencode_model_id:
-        context["model_id"] = settings.opencode_model_id
     if settings.opencode_agent:
         context["agent"] = settings.opencode_agent
     if settings.opencode_variant:
@@ -298,9 +288,8 @@ def _build_agent_card_description(
         "Supports HTTP+JSON and JSON-RPC transports, streaming-first A2A messaging "
         "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
         "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), shared "
-        "session-binding/model-selection/streaming contracts, provider-private "
-        "OpenCode session/provider/model extensions, and shared interrupt "
-        "callback extensions."
+        "session-binding/streaming contracts, provider-private OpenCode session "
+        "extensions, and shared interrupt callback extensions."
     )
     parts: list[str] = [base, summary]
     parts.append("This server profile is intended for single-tenant, self-hosted coding workflows.")
@@ -315,10 +304,6 @@ def _build_agent_card_description(
     workspace_root = deployment_context.get("workspace_root")
     if isinstance(workspace_root, str) and workspace_root.strip():
         parts.append(f"Workspace root: {workspace_root}.")
-    provider_id = deployment_context.get("provider_id")
-    model_id = deployment_context.get("model_id")
-    if isinstance(provider_id, str) and isinstance(model_id, str):
-        parts.append(f"Default upstream model: {provider_id}/{model_id}.")
     return " ".join(parts)
 
 
@@ -354,14 +339,12 @@ def _build_jsonrpc_extension_openapi_description(*, session_shell_enabled: bool)
     ]
     if session_shell_enabled:
         session_methods.append(SESSION_QUERY_METHODS["shell"])
-    provider_methods = ", ".join(sorted(PROVIDER_DISCOVERY_METHODS.values()))
     interrupt_methods = ", ".join(sorted(INTERRUPT_CALLBACK_METHODS.values()))
     return (
         "A2A JSON-RPC entrypoint. Supports core A2A methods "
         "(message/send, message/stream, tasks/get, tasks/cancel, tasks/resubscribe) "
-        "plus OpenCode session/provider extensions and shared interrupt callback methods.\n\n"
+        "plus OpenCode session extensions and shared interrupt callback methods.\n\n"
         f"OpenCode session query/control methods: {', '.join(session_methods)}.\n"
-        f"OpenCode provider/model discovery methods: {provider_methods}.\n"
         f"Shared interrupt callback methods: {interrupt_methods}.\n\n"
         "Notification semantics: extension requests without JSON-RPC id return HTTP 204."
     )
@@ -401,29 +384,6 @@ def _build_jsonrpc_extension_openapi_examples(*, session_shell_enabled: bool) ->
                             }
                         ],
                     }
-                },
-            },
-        },
-        "message_send_model_override": {
-            "summary": "Send message with shared model override",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 103,
-                "method": "message/send",
-                "params": {
-                    "message": {
-                        "messageId": "msg-model-1",
-                        "role": "user",
-                        "parts": [{"kind": "text", "text": "Answer with the faster model."}],
-                    },
-                    "metadata": {
-                        "shared": {
-                            "model": {
-                                "providerID": "google",
-                                "modelID": "gemini-2.5-flash",
-                            }
-                        }
-                    },
                 },
             },
         },
@@ -500,24 +460,6 @@ def _build_jsonrpc_extension_openapi_examples(*, session_shell_enabled: bool) ->
                         "arguments": "focus on security findings",
                     },
                 },
-            },
-        },
-        "providers_list": {
-            "summary": "List available OpenCode providers",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 24,
-                "method": PROVIDER_DISCOVERY_METHODS["list_providers"],
-                "params": {},
-            },
-        },
-        "models_list": {
-            "summary": "List available models for one provider",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 25,
-                "method": PROVIDER_DISCOVERY_METHODS["list_models"],
-                "params": {"provider_id": "openai"},
             },
         },
         "permission_reply": {
@@ -613,24 +555,6 @@ def _build_rest_message_openapi_examples() -> dict[str, Any]:
                 },
             },
         },
-        "message_with_model_override": {
-            "summary": "Send message with shared model override",
-            "value": {
-                "message": {
-                    "messageId": "msg-rest-model-1",
-                    "role": "ROLE_USER",
-                    "content": [{"text": "Answer with the faster model."}],
-                },
-                "metadata": {
-                    "shared": {
-                        "model": {
-                            "providerID": "google",
-                            "modelID": "gemini-2.5-flash",
-                        }
-                    }
-                },
-            },
-        },
     }
 
 
@@ -644,16 +568,10 @@ def _patch_jsonrpc_openapi_contract(
         deployment_context=deployment_context,
         directory_override_enabled=bool(deployment_context["allow_directory_override"]),
     )
-    model_selection = build_model_selection_extension_params(
-        deployment_context=deployment_context,
-    )
     streaming = build_streaming_extension_params()
     session_query = build_session_query_extension_params(
         deployment_context=deployment_context,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
-    )
-    provider_discovery = build_provider_discovery_extension_params(
-        deployment_context=deployment_context,
     )
     interrupt_callback = build_interrupt_callback_extension_params(
         deployment_context=deployment_context,
@@ -685,10 +603,8 @@ def _patch_jsonrpc_openapi_contract(
                     )
                     post["x-a2a-extension-contracts"] = {
                         "session_binding": session_binding,
-                        "model_selection": model_selection,
                         "streaming": streaming,
                         "session_query": session_query,
-                        "provider_discovery": provider_discovery,
                         "interrupt_callback": interrupt_callback,
                         "compatibility_profile": compatibility_profile,
                         "wire_contract": wire_contract,
@@ -773,16 +689,10 @@ def build_agent_card(settings: Settings) -> AgentCard:
         deployment_context=deployment_context,
         directory_override_enabled=settings.a2a_allow_directory_override,
     )
-    model_selection_extension_params = build_model_selection_extension_params(
-        deployment_context=deployment_context,
-    )
     streaming_extension_params = build_streaming_extension_params()
     session_query_extension_params = build_session_query_extension_params(
         deployment_context=deployment_context,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
-    )
-    provider_discovery_extension_params = build_provider_discovery_extension_params(
-        deployment_context=deployment_context,
     )
     interrupt_callback_extension_params = build_interrupt_callback_extension_params(
         deployment_context=deployment_context,
@@ -822,16 +732,6 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     params=session_binding_extension_params,
                 ),
                 AgentExtension(
-                    uri=MODEL_SELECTION_EXTENSION_URI,
-                    required=False,
-                    description=(
-                        "Shared contract for request-scoped upstream model selection on the "
-                        "main chat path. Clients should pass metadata.shared.model with "
-                        "providerID/modelID."
-                    ),
-                    params=model_selection_extension_params,
-                ),
-                AgentExtension(
                     uri=STREAMING_EXTENSION_URI,
                     required=False,
                     description=(
@@ -848,15 +748,6 @@ def build_agent_card(settings: Settings) -> AgentCard:
                         "via custom JSON-RPC methods on the agent's A2A JSON-RPC interface."
                     ),
                     params=session_query_extension_params,
-                ),
-                AgentExtension(
-                    uri=PROVIDER_DISCOVERY_EXTENSION_URI,
-                    required=False,
-                    description=(
-                        "Expose OpenCode-specific provider/model discovery methods through "
-                        "JSON-RPC extensions."
-                    ),
-                    params=provider_discovery_extension_params,
                 ),
                 AgentExtension(
                     uri=INTERRUPT_CALLBACK_EXTENSION_URI,
@@ -894,7 +785,7 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 description=(
                     "Handle core A2A message/send and message/stream requests by routing "
                     "TextPart and FilePart inputs to OpenCode sessions with shared session "
-                    "binding and shared model selection."
+                    "binding."
                 ),
                 tags=["assistant", "coding", "opencode", "core-a2a", "portable"],
                 examples=_build_chat_examples(settings.a2a_project),
@@ -910,19 +801,6 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 examples=_build_session_query_skill_examples(
                     session_shell_enabled=settings.a2a_enable_session_shell
                 ),
-            ),
-            AgentSkill(
-                id="opencode.providers.query",
-                name="OpenCode Provider Catalog",
-                description=(
-                    "provider-private OpenCode provider/model discovery surface exposed "
-                    "through JSON-RPC extensions."
-                ),
-                tags=["opencode", "providers", "models", "provider-private"],
-                examples=[
-                    "List available providers (method opencode.providers.list).",
-                    "List available models for a provider (method opencode.models.list).",
-                ],
             ),
             AgentSkill(
                 id="opencode.interrupt.callback",
@@ -994,17 +872,8 @@ def create_app(settings: Settings) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        managed_upstream: ManagedOpencodeServer | None = None
-        try:
-            if settings.opencode_managed_server:
-                managed_upstream = await launch_managed_opencode_server(settings)
-                await client.rebind_base_url(managed_upstream.base_url)
-                _app.state.managed_opencode_upstream = managed_upstream
-            yield
-        finally:
-            if managed_upstream is not None:
-                await managed_upstream.close()
-            await client.close()
+        yield
+        await client.close()
 
     agent_card = build_agent_card(settings)
     context_builder = IdentityAwareCallContextBuilder()
@@ -1012,7 +881,6 @@ def create_app(settings: Settings) -> FastAPI:
     jsonrpc_methods = {
         **SESSION_QUERY_METHODS,
         **SESSION_CONTROL_METHODS,
-        **PROVIDER_DISCOVERY_METHODS,
         **INTERRUPT_CALLBACK_METHODS,
     }
     if not settings.a2a_enable_session_shell:
@@ -1063,10 +931,8 @@ def create_app(settings: Settings) -> FastAPI:
         method = payload.get("method")
         if not isinstance(method, str):
             return None
-        sensitive_methods = (
-            set(SESSION_QUERY_METHODS.values())
-            | set(PROVIDER_DISCOVERY_METHODS.values())
-            | set(INTERRUPT_CALLBACK_METHODS.values())
+        sensitive_methods = set(SESSION_QUERY_METHODS.values()) | set(
+            INTERRUPT_CALLBACK_METHODS.values()
         )
         if method in sensitive_methods:
             return method

@@ -119,7 +119,6 @@ class DummyChatOpencodeClient:
     def __init__(self, settings: Settings | None = None) -> None:
         self.created_sessions = 0
         self.sent_session_ids: list[str] = []
-        self.sent_model_overrides: list[dict[str, str] | None] = []
         self.stream_timeout = None
         self.directory = None
         self.settings = settings or make_settings(
@@ -147,12 +146,10 @@ class DummyChatOpencodeClient:
         *,
         parts: list[dict[str, Any]] | None = None,
         directory: str | None = None,
-        model_override: dict[str, str] | None = None,
         timeout_override=None,  # noqa: ANN001
     ) -> OpencodeMessage:
         del directory, timeout_override, parts
         self.sent_session_ids.append(session_id)
-        self.sent_model_overrides.append(model_override)
         return OpencodeMessage(
             text=f"echo:{text or ''}",
             session_id=session_id,
@@ -202,49 +199,6 @@ class DummySessionQueryOpencodeClient:
         self.prompt_async_calls: list[dict[str, Any]] = []
         self.command_calls: list[dict[str, Any]] = []
         self.shell_calls: list[dict[str, Any]] = []
-        self.provider_catalog_payload: dict[str, Any] = {
-            "all": [
-                {
-                    "id": "openai",
-                    "name": "OpenAI",
-                    "source": "api",
-                    "models": {
-                        "gpt-5": {
-                            "name": "GPT-5",
-                            "status": "active",
-                            "limit": {"context": 200000, "output": 8192},
-                            "capabilities": {
-                                "reasoning": True,
-                                "toolcall": True,
-                                "attachment": False,
-                            },
-                        }
-                    },
-                },
-                {
-                    "id": "google",
-                    "name": "Google",
-                    "source": "config",
-                    "models": {
-                        "gemini-2.5-flash": {
-                            "name": "Gemini 2.5 Flash",
-                            "status": "beta",
-                            "limit": {"context": 1000000, "output": 8192},
-                            "capabilities": {
-                                "reasoning": True,
-                                "toolcall": True,
-                                "attachment": True,
-                            },
-                        }
-                    },
-                },
-            ],
-            "default": {
-                "openai": "gpt-5",
-                "google": "gemini-2.5-flash",
-            },
-            "connected": ["openai"],
-        }
         self._interrupt_requests: dict[str, dict[str, str | None]] = {}
 
     async def close(self) -> None:
@@ -312,10 +266,6 @@ class DummySessionQueryOpencodeClient:
             "role": "assistant",
             "parts": [{"type": "text", "text": "Shell command executed."}],
         }
-
-    async def list_provider_catalog(self, *, directory: str | None = None):
-        del directory
-        return self.provider_catalog_payload
 
     def remember_interrupt_request(
         self,

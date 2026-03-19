@@ -19,26 +19,7 @@ class Settings(BaseSettings):
 
     # OpenCode settings
     opencode_base_url: str = Field(default="http://127.0.0.1:4096", alias="OPENCODE_BASE_URL")
-    opencode_managed_server: bool = Field(default=False, alias="OPENCODE_MANAGED_SERVER")
-    opencode_managed_server_host: str = Field(
-        default="127.0.0.1",
-        alias="OPENCODE_MANAGED_SERVER_HOST",
-    )
-    opencode_managed_server_port: int | None = Field(
-        default=None,
-        ge=1,
-        le=65535,
-        alias="OPENCODE_MANAGED_SERVER_PORT",
-    )
-    opencode_command: str = Field(default="opencode", alias="OPENCODE_COMMAND")
-    opencode_startup_timeout: float = Field(
-        default=20.0,
-        gt=0.0,
-        alias="OPENCODE_STARTUP_TIMEOUT",
-    )
     opencode_workspace_root: str | None = Field(default=None, alias="OPENCODE_WORKSPACE_ROOT")
-    opencode_provider_id: str | None = Field(default=None, alias="OPENCODE_PROVIDER_ID")
-    opencode_model_id: str | None = Field(default=None, alias="OPENCODE_MODEL_ID")
     opencode_agent: str | None = Field(default=None, alias="OPENCODE_AGENT")
     opencode_system: str | None = Field(default=None, alias="OPENCODE_SYSTEM")
     opencode_variant: str | None = Field(default=None, alias="OPENCODE_VARIANT")

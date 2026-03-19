@@ -25,21 +25,10 @@ own process manager, container runtime, or host orchestration.
 Key variables to understand protocol behavior:
 
 - `A2A_BEARER_TOKEN`: required for all authenticated runtime requests.
-- `OPENCODE_BASE_URL`: upstream OpenCode HTTP endpoint for externally managed
-  upstream mode. Default: `http://127.0.0.1:4096`.
-- `OPENCODE_MANAGED_SERVER`: when enabled, the service starts a local
-  `opencode serve`, captures its actual listening URL, and uses that as the
-  internal upstream endpoint.
-- `OPENCODE_MANAGED_SERVER_HOST` / `OPENCODE_MANAGED_SERVER_PORT`: bind address
-  for managed upstream mode. If the port is omitted, the service picks a free
-  localhost port before starting the child process.
-- `OPENCODE_COMMAND`: OpenCode CLI executable used for managed upstream mode.
-- `OPENCODE_STARTUP_TIMEOUT`: startup timeout for managed upstream mode.
+- `OPENCODE_BASE_URL`: upstream OpenCode HTTP endpoint. Default:
+  `http://127.0.0.1:4096`. In two-process deployments, set it explicitly.
 - `OPENCODE_WORKSPACE_ROOT`: service-level default workspace root exposed to
   OpenCode when clients do not request a narrower directory override.
-- `OPENCODE_PROVIDER_ID` / `OPENCODE_MODEL_ID`: default upstream model
-  selection. Set them together when you want the service to pin a specific
-  provider/model instead of using OpenCode's local defaults.
 - `A2A_ALLOW_DIRECTORY_OVERRIDE`: controls whether clients may pass
   `metadata.opencode.directory`.
 - `A2A_ENABLE_SESSION_SHELL`: gates high-risk JSON-RPC method
@@ -62,19 +51,16 @@ Key variables to understand protocol behavior:
   optional stream timeout override.
 - Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
 
-Minimal managed-upstream example:
+Recommended two-process example:
 
 ```bash
-A2A_BEARER_TOKEN=dev-token \
-A2A_HOST=127.0.0.1 \
-A2A_PORT=8000 \
-A2A_PUBLIC_URL=http://127.0.0.1:8000 \
-OPENCODE_MANAGED_SERVER=true \
-OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
-opencode-a2a-server serve
+GOOGLE_GENERATIVE_AI_API_KEY=<your-key> \
+OPENCODE_PROVIDER_ID=google \
+OPENCODE_MODEL_ID=gemini-3.1-pro-preview \
+opencode serve --hostname 127.0.0.1 --port 4096
 ```
 
-Advanced externally managed upstream example:
+Then start `opencode-a2a-server` against that explicit upstream URL:
 
 ```bash
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \
@@ -96,8 +82,6 @@ opencode-a2a-server serve
   - `FilePart(FileWithBytes)` is forwarded as a `file` part with a `data:` URL.
   - `FilePart(FileWithUri)` is forwarded as a `file` part with the original URI.
   - `DataPart` is currently rejected explicitly; it is not silently downgraded.
-- Main chat requests may override the default upstream model via
-  `metadata.shared.model` with `{ providerID, modelID }`.
 - Task state defaults to `completed` for successful turns.
 - The deployment profile is single-tenant and shared-workspace: one server
   instance exposes one OpenCode workspace/environment to all consumers bound to
@@ -178,8 +162,8 @@ Current behavior:
 - Extension JSON-RPC methods are declared under `extensions.jsonrpc_methods`.
 - Deployment-conditional methods are declared under
   `extensions.conditionally_available_methods`.
-- Shared metadata extension URIs such as session binding, model selection, and
-  streaming are listed under `extensions.extension_uris`.
+- Shared metadata extension URIs such as session binding and streaming are
+  listed under `extensions.extension_uris`.
 - `all_jsonrpc_methods` is the runtime truth for the current deployment.
 
 When `A2A_ENABLE_SESSION_SHELL=false`, `opencode.sessions.shell` is omitted from
@@ -228,12 +212,9 @@ Retention guidance:
 - Treat core A2A methods as the generic client interoperability baseline.
 - Treat session binding and streaming metadata contracts as required for the
   current deployment model.
-- Treat shared model selection metadata as a stable runtime metadata contract
-  for the main chat path.
 - Treat `a2a.interrupt.*` methods as shared extensions.
-- Treat `opencode.sessions.*`, `opencode.providers.*`, and `opencode.models.*`
-  as provider-private OpenCode extensions rather than portable A2A baseline
-  capabilities.
+- Treat `opencode.sessions.*` as provider-private OpenCode extensions rather
+  than portable A2A baseline capabilities.
 - Treat `opencode.sessions.shell` as deployment-conditional and discover it
   from the declared profile and current wire contract before calling it.
 
@@ -345,50 +326,6 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
   }'
 ```
 
-## Shared Model Selection Contract
-
-Agent Card capability:
-
-- URI: `urn:a2a:model-selection/v1`
-
-To override the default upstream model for one main-chat request, include:
-
-- `metadata.shared.model.providerID`
-- `metadata.shared.model.modelID`
-
-Server behavior:
-
-- If both fields are non-empty strings, the request is sent with that upstream
-  model override.
-- If the object is missing, partial, or invalid, the service falls back to the
-  configured default model (`OPENCODE_PROVIDER_ID` / `OPENCODE_MODEL_ID`).
-- This contract applies to the main chat path only (`message/send`,
-  `message:stream`). OpenCode session-control methods continue to use
-  `params.request.model`.
-
-Minimal example:
-
-```bash
-curl -sS http://127.0.0.1:8000/v1/message:send \
-  -H 'content-type: application/json' \
-  -H 'Authorization: Bearer <your-token>' \
-  -d '{
-    "message": {
-      "messageId": "msg-model-1",
-      "role": "ROLE_USER",
-      "content": [{"text": "Answer with the faster model."}]
-    },
-    "metadata": {
-      "shared": {
-        "model": {
-          "providerID": "google",
-          "modelID": "gemini-2.5-flash"
-        }
-      }
-    }
-  }'
-```
-
 ## Shared Stream Hints Contract
 
 Agent Card capability:
@@ -439,22 +376,20 @@ Minimal stream semantics summary:
 - final task/status metadata may repeat normalized usage and interrupt context
   even after the streaming phase ends
 
-## OpenCode Session Query & Provider Discovery (A2A Extensions)
+## OpenCode Session Query A2A Extension
 
-This service exposes OpenCode session list/message-history queries, session
-control methods, and provider/model discovery via A2A JSON-RPC extension
-methods (default endpoint: `POST /`). No extra custom REST endpoint is
-introduced.
+This service exposes OpenCode session list/message-history queries and session
+control methods via A2A JSON-RPC extension methods (default endpoint: `POST /`).
+No extra custom REST endpoint is introduced.
 
 - Trigger: call extension methods through A2A JSON-RPC
 - Auth: same `Authorization: Bearer <token>`
 - Privacy guard: when `A2A_LOG_PAYLOADS=true`, request/response bodies are still
-  suppressed for `method=opencode.sessions.*`, `opencode.providers.*`, and
-  `opencode.models.*`
+  suppressed for `method=opencode.sessions.*`
 - Endpoint discovery: prefer `additional_interfaces[]` with
   `transport=jsonrpc` from Agent Card
-- Notification behavior: for `opencode.sessions.*`, `opencode.providers.*`, and
-  `opencode.models.*`, requests without `id` return HTTP `204 No Content`
+- Notification behavior: for `opencode.sessions.*`, requests without `id`
+  return HTTP `204 No Content`
 - Result format (query methods):
   - `result.items` is always an array of A2A standard objects
   - session list => `Task` with `status.state=completed`
@@ -510,10 +445,6 @@ curl -sS http://127.0.0.1:8000/ \
       "session_id": "<session_id>",
       "request": {
         "parts": [{"type": "text", "text": "Continue and summarize next steps."}],
-        "model": {
-          "providerID": "google",
-          "modelID": "gemini-2.5-flash"
-        },
         "noReply": true
       },
       "metadata": {
@@ -541,8 +472,6 @@ Validation notes:
 
 - `metadata.opencode.directory` follows the same normalization and boundary rules
   as message send (`realpath` + workspace boundary check).
-- `request.model` uses the same `{ providerID, modelID }` shape as
-  `metadata.shared.model`, but is scoped to OpenCode session-control methods.
 - Control methods enforce session owner guard based on request identity.
 
 ### Session Command (`opencode.sessions.command`)
@@ -559,11 +488,7 @@ curl -sS http://127.0.0.1:8000/ \
       "session_id": "<session_id>",
       "request": {
         "command": "/review",
-        "arguments": "focus on security findings",
-        "model": {
-          "providerID": "openai",
-          "modelID": "gpt-5"
-        }
+        "arguments": "focus on security findings"
       },
       "metadata": {
         "opencode": {
@@ -609,51 +534,6 @@ curl -sS http://127.0.0.1:8000/ \
     }
   }'
 ```
-
-### Provider List (`opencode.providers.list`)
-
-Returns normalized provider summaries from the upstream OpenCode provider
-catalog.
-
-```bash
-curl -sS http://127.0.0.1:8000/ \
-  -H 'content-type: application/json' \
-  -H 'Authorization: Bearer <your-token>' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 24,
-    "method": "opencode.providers.list",
-    "params": {}
-  }'
-```
-
-Response:
-
-- success => `{"items": [...], "default_by_provider": {...}, "connected": [...]}` (JSON-RPC result)
-
-### Model List (`opencode.models.list`)
-
-Returns normalized, flattened model summaries. Supports optional provider filter:
-
-- `params.provider_id`
-
-```bash
-curl -sS http://127.0.0.1:8000/ \
-  -H 'content-type: application/json' \
-  -H 'Authorization: Bearer <your-token>' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 25,
-    "method": "opencode.models.list",
-    "params": {
-      "provider_id": "openai"
-    }
-  }'
-```
-
-Response:
-
-- success => `{"items": [...], "default_by_provider": {...}, "connected": [...]}` (JSON-RPC result)
 
 Response:
 

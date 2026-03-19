@@ -191,79 +191,6 @@ async def test_session_shell_posts_shell_endpoint(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_send_message_prefers_request_model_override(monkeypatch):
-    client = OpencodeClient(
-        make_settings(
-            a2a_bearer_token="t-1",
-            opencode_provider_id="openai",
-            opencode_model_id="gpt-5",
-            opencode_timeout=1.0,
-            a2a_log_level="DEBUG",
-            a2a_log_payloads=False,
-        )
-    )
-
-    seen = {}
-
-    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
-        seen["path"] = path
-        seen["params"] = params
-        seen["json"] = json
-        return _DummyResponse({"info": {"id": "m-1"}, "parts": [{"type": "text", "text": "ok"}]})
-
-    monkeypatch.setattr(client._client, "post", fake_post)
-
-    await client.send_message(
-        "ses-1",
-        "hello",
-        model_override={"providerID": "google", "modelID": "gemini-2.5-flash"},
-    )
-
-    assert seen["path"] == "/session/ses-1/message"
-    assert seen["json"]["model"] == {
-        "providerID": "google",
-        "modelID": "gemini-2.5-flash",
-    }
-
-    await client.close()
-
-
-@pytest.mark.asyncio
-async def test_send_message_falls_back_to_default_model_on_partial_override(monkeypatch):
-    client = OpencodeClient(
-        make_settings(
-            a2a_bearer_token="t-1",
-            opencode_provider_id="openai",
-            opencode_model_id="gpt-5",
-            opencode_timeout=1.0,
-            a2a_log_level="DEBUG",
-            a2a_log_payloads=False,
-        )
-    )
-
-    seen = {}
-
-    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
-        seen["json"] = json
-        return _DummyResponse({"info": {"id": "m-1"}, "parts": [{"type": "text", "text": "ok"}]})
-
-    monkeypatch.setattr(client._client, "post", fake_post)
-
-    await client.send_message(
-        "ses-1",
-        "hello",
-        model_override={"providerID": "google"},
-    )
-
-    assert seen["json"]["model"] == {
-        "providerID": "openai",
-        "modelID": "gpt-5",
-    }
-
-    await client.close()
-
-
-@pytest.mark.asyncio
 async def test_send_message_accepts_structured_parts(monkeypatch):
     client = OpencodeClient(
         make_settings(
@@ -340,36 +267,6 @@ async def test_send_message_raises_upstream_contract_error_for_non_json_response
     assert "status=200" in message
     assert "content-type=text/plain" in message
     assert "ProviderModelNotFoundError" in message
-
-    await client.close()
-
-
-@pytest.mark.asyncio
-async def test_list_provider_catalog_calls_provider_endpoint(monkeypatch):
-    client = OpencodeClient(
-        make_settings(
-            a2a_bearer_token="t-1",
-            opencode_workspace_root="/safe",
-            opencode_timeout=1.0,
-            a2a_log_level="DEBUG",
-            a2a_log_payloads=False,
-        )
-    )
-
-    seen = {}
-
-    async def fake_get(path: str, *, params=None, **_kwargs):
-        seen["path"] = path
-        seen["params"] = params
-        return _DummyResponse({"all": [], "default": {}, "connected": []})
-
-    monkeypatch.setattr(client._client, "get", fake_get)
-
-    data = await client.list_provider_catalog()
-
-    assert seen["path"] == "/provider"
-    assert seen["params"]["directory"] == "/safe"
-    assert data == {"all": [], "default": {}, "connected": []}
 
     await client.close()
 
