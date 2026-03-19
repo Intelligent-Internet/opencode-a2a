@@ -41,8 +41,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=%i
-Group=%i
+User=opencode-a2a-unconfigured-user
+Group=opencode-a2a-unconfigured-group
 WorkingDirectory=${DATA_ROOT}/%i
 Environment=OPENCODE_CORE_DIR=${OPENCODE_CORE_DIR}
 Environment=OPENCODE_A2A_DIR=${OPENCODE_A2A_DIR}
@@ -80,8 +80,8 @@ Requires=opencode@%i.service
 
 [Service]
 Type=simple
-User=%i
-Group=%i
+User=opencode-a2a-unconfigured-user
+Group=opencode-a2a-unconfigured-group
 WorkingDirectory=${DATA_ROOT}/%i
 Environment=OPENCODE_A2A_DIR=${OPENCODE_A2A_DIR}
 Environment=OPENCODE_CORE_DIR=${OPENCODE_CORE_DIR}

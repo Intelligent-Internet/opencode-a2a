@@ -82,7 +82,7 @@ Recommended secure workflow:
 1. Bootstrap project directories and example files:
 
 ```bash
-./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
+./scripts/deploy.sh project=alpha service_user=svc-alpha service_group=opencode a2a_port=8010 a2a_host=127.0.0.1
 ```
 
 2. Populate runtime secret files as `root` using the generated templates:
@@ -97,7 +97,7 @@ sudoedit /data/opencode-a2a/alpha/config/a2a.secret.env
 3. Re-run deploy:
 
 ```bash
-./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
+./scripts/deploy.sh project=alpha service_user=svc-alpha service_group=opencode a2a_port=8010 a2a_host=127.0.0.1
 ```
 
 Explicit persistence opt-in (legacy-style one-step deploy):
@@ -106,14 +106,14 @@ Explicit persistence opt-in (legacy-style one-step deploy):
 read -rsp 'GH_TOKEN: ' GH_TOKEN; echo
 read -rsp 'A2A_BEARER_TOKEN: ' A2A_BEARER_TOKEN; echo
 GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-./scripts/deploy.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
+./scripts/deploy.sh project=alpha service_user=svc-alpha service_group=opencode a2a_port=8010 a2a_host=127.0.0.1
 ```
 
 HTTPS public URL example:
 
 ```bash
 GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-./scripts/deploy.sh project=alpha a2a_port=8010 a2a_public_url=https://a2a.example.com
+./scripts/deploy.sh project=alpha service_user=svc-alpha service_group=opencode a2a_port=8010 a2a_public_url=https://a2a.example.com
 ```
 
 ## Input Model
@@ -145,6 +145,8 @@ For values that support both environment variables and CLI keys:
 | `UV_PYTHON_DIR` | - | Optional | `/opt/uv-python` | uv python pool path. |
 | `UV_PYTHON_DIR_GROUP` | - | Optional | `opencode` | Optional shared-group access control. |
 | `DATA_ROOT` | `data_root` | Optional | `/data/opencode-a2a` | Instance root directory. |
+| `SERVICE_USER` | `service_user` | Required | None | Existing Linux service user. Deploy no longer creates users. |
+| `SERVICE_GROUP` | `service_group` | Optional | primary group of `SERVICE_USER` | Existing Linux service group. |
 | `OPENCODE_BIND_HOST` | - | Optional | `127.0.0.1` | OpenCode bind host. |
 | `OPENCODE_BIND_PORT` | - | Optional | `A2A_PORT + 1` fallback to `4096` | Multi-instance should use unique port. |
 | `OPENCODE_LOG_LEVEL` | `opencode_log_level` | Optional | `WARNING` | OpenCode log level. `WARNING` is normalized to `WARN` before launch. |
@@ -157,8 +159,6 @@ For values that support both environment variables and CLI keys:
 | `GIT_IDENTITY_NAME` | `git_identity_name` | Optional | `OpenCode-<project>` | Git name for instance user. |
 | `GIT_IDENTITY_EMAIL` | `git_identity_email` | Optional | `<project>@example.com` | Git email for instance user. |
 | `ENABLE_SECRET_PERSISTENCE` | `enable_secret_persistence` | Optional | `false` | Explicitly allow deploy to write root-only secret env files. |
-| `REPO_URL` | `repo_url` | Optional | None | Optional repository URL to auto-clone into `workspace/` on first deploy. |
-| `REPO_BRANCH` | `repo_branch` | Optional | None | Optional branch used with `REPO_URL` during first clone. |
 | `A2A_HOST` | `a2a_host` | Optional | `127.0.0.1` | A2A bind host. |
 | `A2A_PORT` | `a2a_port` | Optional | `8000` | A2A bind port. |
 | `A2A_PUBLIC_URL` | `a2a_public_url` | Optional | `http://<A2A_HOST>:<A2A_PORT>` | Public URL in Agent Card. |
@@ -198,6 +198,10 @@ When `ENABLE_SECRET_PERSISTENCE=true`, deploy writes these secret files as
 `600 root:root` and systemd loads them via `EnvironmentFile`. When the flag is
 not enabled, operators are expected to provision the real secret files
 themselves from the generated templates.
+
+The deploy flow no longer creates Linux users/groups or clones repositories
+into the workspace. Prepare the service account and any initial workspace
+content before running deploy.
 
 ## Systemd Hardening Baseline
 

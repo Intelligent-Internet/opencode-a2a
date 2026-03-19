@@ -40,7 +40,7 @@ fi
 
 DATA_ROOT="${DATA_ROOT_INPUT:-${DATA_ROOT:-/data/opencode-a2a}}"
 
-# Guardrails for path safety and account-name compatibility.
+# Guardrails for path safety.
 if [[ "$PROJECT_NAME" == "." || "$PROJECT_NAME" == ".." ]]; then
   echo "Invalid project name: ${PROJECT_NAME}" >&2
   exit 1
@@ -76,64 +76,6 @@ fi
 contains_dot_segment() {
   local p="$1"
   [[ "$p" =~ (^|/)\.\.(/|$) || "$p" =~ (^|/)\.(/|$) ]]
-}
-
-find_exe() {
-  # Avoid caller PATH omissions such as /usr/sbin.
-  local name="$1"
-  local p=""
-  p="$(command -v "$name" 2>/dev/null || true)"
-  if [[ -n "$p" && -x "$p" ]]; then
-    echo "$p"
-    return 0
-  fi
-  for dir in /usr/sbin /sbin /usr/bin /bin /usr/local/sbin /usr/local/bin; do
-    if [[ -x "${dir}/${name}" ]]; then
-      echo "${dir}/${name}"
-      return 0
-    fi
-  done
-  return 1
-}
-
-print_missing_account_tool_hints() {
-  # Args: user|group
-  local kind="${1:-}"
-  local os_id=""
-  local os_like=""
-
-  if [[ -r /etc/os-release ]]; then
-    # shellcheck disable=SC1091
-    . /etc/os-release
-    os_id="${ID:-}"
-    os_like="${ID_LIKE:-}"
-  fi
-
-  echo "Fallback hints:" >&2
-  echo "  - PATH for non-root users may omit /usr/sbin and /sbin." >&2
-  echo "    Try: export PATH=\"\$PATH:/usr/sbin:/sbin\" && command -v userdel groupdel" >&2
-
-  if [[ "$kind" == "user" ]]; then
-    echo "  - If user deletion tools are missing (userdel/deluser):" >&2
-    if [[ "$os_id" == "debian" || "$os_id" == "ubuntu" || "$os_like" == *debian* ]]; then
-      echo "    - Debian/Ubuntu: sudo apt-get update && sudo apt-get install -y passwd" >&2
-    elif [[ "$os_id" == "rhel" || "$os_id" == "fedora" || "$os_like" == *rhel* || "$os_like" == *fedora* ]]; then
-      echo "    - RHEL/Fedora: sudo dnf install -y shadow-utils  (or: sudo yum install -y shadow-utils)" >&2
-    else
-      echo "    - Install the package providing userdel/deluser (distro-specific)." >&2
-    fi
-    echo "  - Then delete manually: sudo userdel \"${PROJECT_NAME}\"" >&2
-  elif [[ "$kind" == "group" ]]; then
-    echo "  - If group deletion tools are missing (groupdel/delgroup):" >&2
-    if [[ "$os_id" == "debian" || "$os_id" == "ubuntu" || "$os_like" == *debian* ]]; then
-      echo "    - Debian/Ubuntu: sudo apt-get update && sudo apt-get install -y passwd" >&2
-    elif [[ "$os_id" == "rhel" || "$os_id" == "fedora" || "$os_like" == *rhel* || "$os_like" == *fedora* ]]; then
-      echo "    - RHEL/Fedora: sudo dnf install -y shadow-utils  (or: sudo yum install -y shadow-utils)" >&2
-    else
-      echo "    - Install the package providing groupdel/delgroup (distro-specific)." >&2
-    fi
-    echo "  - Then delete manually: sudo groupdel \"${PROJECT_NAME}\"" >&2
-  fi
 }
 
 DATA_ROOT_RAW="$DATA_ROOT"
@@ -288,84 +230,7 @@ else
   echo "Project dir not found; skipping: ${PROJECT_DIR}"
 fi
 
-# Remove project user and group.
-if id "${PROJECT_NAME}" &>/dev/null; then
-  user_deleted="false"
-  user_home="$(getent passwd "${PROJECT_NAME}" | cut -d: -f6 || true)"
-  if [[ -n "$user_home" && "$user_home" != "${PROJECT_DIR}" ]]; then
-    warn "User ${PROJECT_NAME} home mismatch (expected ${PROJECT_DIR}, got ${user_home}); refusing to delete user automatically."
-    HAD_NONFATAL_FAILURE="true"
-  else
-    userdel_bin="$(find_exe userdel || true)"
-    deluser_bin="$(find_exe deluser || true)"
-    if [[ -n "$userdel_bin" ]]; then
-      run_ignore sudo "$userdel_bin" "${PROJECT_NAME}"
-    elif [[ -n "$deluser_bin" ]]; then
-      run_ignore sudo "$deluser_bin" "${PROJECT_NAME}"
-    else
-      echo "Neither userdel nor deluser found; cannot remove user ${PROJECT_NAME} automatically." >&2
-      HAD_NONFATAL_FAILURE="true"
-      print_missing_account_tool_hints user
-    fi
-  fi
-
-  # Delete group only after user deletion outcome is known.
-  if ! id "${PROJECT_NAME}" &>/dev/null; then
-    user_deleted="true"
-  fi
-else
-  echo "User not found; skipping: ${PROJECT_NAME}"
-  user_deleted="false"
-fi
-
-if getent group "${PROJECT_NAME}" >/dev/null 2>&1; then
-  # Refuse automatic group deletion when user still exists or group has members.
-  if [[ "$APPLY" == "true" && "$user_deleted" != "true" ]]; then
-    warn "Refusing to delete group ${PROJECT_NAME} automatically because user ${PROJECT_NAME} still exists (or was not deleted)."
-    HAD_NONFATAL_FAILURE="true"
-  else
-    if [[ "$APPLY" == "true" ]]; then
-      members="$(getent group "${PROJECT_NAME}" | cut -d: -f4 || true)"
-      if [[ -n "$members" ]]; then
-        warn "Refusing to delete group ${PROJECT_NAME} automatically because it still has members: ${members}"
-        HAD_NONFATAL_FAILURE="true"
-        # Print command for auditability without execution.
-        groupdel_bin="$(find_exe groupdel || true)"
-        if [[ -n "$groupdel_bin" ]]; then
-          echo "+ sudo ${groupdel_bin} ${PROJECT_NAME}"
-        else
-          echo "+ sudo groupdel ${PROJECT_NAME}"
-        fi
-      else
-        groupdel_bin="$(find_exe groupdel || true)"
-        delgroup_bin="$(find_exe delgroup || true)"
-        if [[ -n "$groupdel_bin" ]]; then
-          run_ignore sudo "$groupdel_bin" "${PROJECT_NAME}"
-        elif [[ -n "$delgroup_bin" ]]; then
-          run_ignore sudo "$delgroup_bin" "${PROJECT_NAME}"
-        else
-          echo "Neither groupdel nor delgroup found; cannot remove group ${PROJECT_NAME} automatically." >&2
-          HAD_NONFATAL_FAILURE="true"
-          print_missing_account_tool_hints group
-        fi
-      fi
-    else
-      # Preview mode: print what would run in apply mode.
-      groupdel_bin="$(find_exe groupdel || true)"
-      delgroup_bin="$(find_exe delgroup || true)"
-      if [[ -n "$groupdel_bin" ]]; then
-        run_ignore sudo "$groupdel_bin" "${PROJECT_NAME}"
-      elif [[ -n "$delgroup_bin" ]]; then
-        run_ignore sudo "$delgroup_bin" "${PROJECT_NAME}"
-      else
-        echo "Neither groupdel nor delgroup found; cannot remove group ${PROJECT_NAME} automatically." >&2
-        print_missing_account_tool_hints group
-      fi
-    fi
-  fi
-else
-  echo "Group not found; skipping: ${PROJECT_NAME}"
-fi
+echo "Service user/group lifecycle is not managed by uninstall-instance." >&2
 
 if [[ "$APPLY" == "true" ]]; then
   if [[ "$HAD_NONFATAL_FAILURE" == "true" ]]; then

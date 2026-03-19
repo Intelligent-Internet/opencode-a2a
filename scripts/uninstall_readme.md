@@ -35,6 +35,7 @@ Optional:
 - uses canonical path checks before delete actions
 - in apply mode, requires `sudo` and strict project-name constraints
 - does best-effort handling for non-critical cleanup failures
+- does not delete Linux service users or groups
 
 ## Related Docs
 

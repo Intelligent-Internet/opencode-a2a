@@ -14,6 +14,9 @@ clone the `opencode-a2a-server` repository or create a source-tree virtualenv.
 opencode-a2a-server init-release-system
 ```
 
+This command is optional admin-only bootstrap. The preferred product boundary is a
+prepared runtime plus lightweight `deploy-release`.
+
 Optional exact package version:
 
 ```bash
@@ -46,7 +49,7 @@ opencode-a2a-server init-release-system \
 
 ## When To Use It
 
-- production-oriented or operator-facing deployments
+- admin-managed host bootstrap for production-oriented deployments
 - reproducible host bootstrap aligned with published package versions
 
 Use [`init_system.sh`](./init_system_readme.md) instead when you intentionally

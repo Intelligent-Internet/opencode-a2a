@@ -3,8 +3,8 @@
 This document explains the release-based systemd deployment path.
 
 `opencode-a2a-server deploy-release` is the preferred deploy entry point for
-operators who want formal deployments to follow published package versions
-instead of a source checkout.
+operators who want a lightweight instance-level deploy flow on top of a
+pre-provisioned release runtime.
 
 `scripts/deploy_release.sh` remains available as a compatibility wrapper.
 
@@ -20,56 +20,48 @@ instead of a source checkout.
 - `systemd` and `sudo`
 - OpenCode core path prepared (default `/opt/.opencode`)
 - uv/python pool prepared (default `/opt/uv-python`)
-- release runtime bootstrap prepared via `opencode-a2a-server init-release-system`
-  or by first deploy
+- release runtime prepared in advance
+- Linux service user/group prepared in advance
 
 ## Recommended Usage
 
-Bootstrap the host:
+Optional admin-managed bootstrap:
 
 ```bash
 opencode-a2a-server init-release-system
 ```
 
-Deploy the latest installed release:
-
-```bash
-opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1
-```
-
-Deploy an exact package version:
+Deploy one instance using a prepared release runtime and prepared service account:
 
 ```bash
 opencode-a2a-server deploy-release \
   --project alpha \
+  --service-user svc-alpha \
+  --service-group opencode \
+  --a2a-port 8010 \
+  --a2a-host 127.0.0.1
+```
+
+Enable explicit secret persistence when you accept root-only secret files:
+
+```bash
+opencode-a2a-server deploy-release \
+  --project alpha \
+  --service-user svc-alpha \
+  --service-group opencode \
   --a2a-port 8010 \
   --a2a-host 127.0.0.1 \
-  --release-version 0.1.0
-```
-
-Update to the latest published release:
-
-```bash
-opencode-a2a-server deploy-release --project alpha --update-a2a --force-restart
-```
-
-Update to an exact published release:
-
-```bash
-opencode-a2a-server deploy-release \
-  --project alpha \
-  --release-version 0.1.0 \
-  --update-a2a \
-  --force-restart
+  --enable-secret-persistence
 ```
 
 ## Notes
 
 - `opencode-a2a-server deploy-release` shares the same secret strategy, config
   layout, and systemd hardening model as `deploy.sh`
-- `--release-version <version>` pins the installed package version
-- if no explicit `--release-version` is provided, first install uses the latest
-  published package; later plain deploy reruns reuse the installed runtime
+- the command no longer installs or updates the shared release runtime
+- the command no longer creates or deletes Linux users/groups
+- `--service-user` is required; `--service-group` defaults to the user's primary
+  group when omitted
 - `scripts/deploy_release.sh` is a compatibility wrapper around the packaged
   CLI entrypoint
 - legacy `key=value` arguments remain accepted for compatibility wrappers, but

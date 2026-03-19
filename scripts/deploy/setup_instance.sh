@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create project user, directories, and env files for systemd services.
+# Create project directories and env files for systemd services.
 # Usage: [GH_TOKEN=<token>] [A2A_BEARER_TOKEN=<token>] [ENABLE_SECRET_PERSISTENCE=true] ./setup_instance.sh <project_name>
 # Requires env: DATA_ROOT, OPENCODE_BIND_HOST, OPENCODE_BIND_PORT, OPENCODE_LOG_LEVEL,
 #               A2A_HOST, A2A_PORT, A2A_PUBLIC_URL.
@@ -37,6 +37,8 @@ fi
 : "${A2A_SYSTEMD_MEMORY_MAX:=}"
 : "${A2A_SYSTEMD_CPU_QUOTA:=}"
 : "${ENABLE_SECRET_PERSISTENCE:=false}"
+: "${SERVICE_USER:?}"
+: "${SERVICE_GROUP:=}"
 
 PROJECT_DIR="${DATA_ROOT}/${PROJECT_NAME}"
 WORKSPACE_DIR="${PROJECT_DIR}/workspace"
@@ -145,82 +147,54 @@ data_root_supports_protect_home() {
   esac
 }
 
-# DATA_ROOT must be traversable by the per-project system user. In hardened
-# deployments, using a non-traversable DATA_ROOT (missing o+x) will break
-# OpenCode writes to $HOME/.cache, $HOME/.local/share, and $HOME/.local/state.
-ensure_data_root_accessible() {
-  local root="$1"
-  if ! sudo test -d "$root"; then
-    sudo install -d -m 711 -o root -g root "$root"
+resolve_service_group() {
+  if [[ -n "$SERVICE_GROUP" ]]; then
+    printf '%s\n' "$SERVICE_GROUP"
     return 0
   fi
-  local mode
-  mode="$(sudo stat -c '%a' "$root" 2>/dev/null || echo "")"
-  if [[ ! "$mode" =~ ^[0-9]{3,4}$ ]]; then
-    echo "Unable to stat DATA_ROOT: ${root}" >&2
+  id -gn "$SERVICE_USER"
+}
+
+ensure_service_account_ready() {
+  if ! id "$SERVICE_USER" &>/dev/null; then
+    echo "Configured service user does not exist: ${SERVICE_USER}" >&2
+    echo "Prepare the Linux service account before running deploy." >&2
     exit 1
   fi
-  local other=$((mode % 10))
-  if (( (other & 1) == 0 )); then
-    echo "DATA_ROOT is not traversable by project users: ${root} (mode=${mode})." >&2
-    echo "Fix: choose a different DATA_ROOT (recommended: /data/opencode-a2a) or chmod o+x on DATA_ROOT." >&2
+
+  SERVICE_GROUP="$(resolve_service_group)"
+  if ! getent group "$SERVICE_GROUP" >/dev/null 2>&1; then
+    echo "Configured service group does not exist: ${SERVICE_GROUP}" >&2
+    echo "Prepare the Linux service account before running deploy." >&2
     exit 1
   fi
 }
 
+ensure_data_root_accessible() {
+  local root="$1"
+  if ! sudo test -d "$root"; then
+    echo "DATA_ROOT does not exist: ${root}" >&2
+    echo "Prepare the base deploy directory before running deploy." >&2
+    exit 1
+  fi
+  if ! sudo -u "$SERVICE_USER" test -x "$root"; then
+    echo "DATA_ROOT is not traversable by SERVICE_USER=${SERVICE_USER}: ${root}" >&2
+    echo "Prepare permissions so the service account can traverse DATA_ROOT." >&2
+    exit 1
+  fi
+}
+
+ensure_service_account_ready
 ensure_data_root_accessible "$DATA_ROOT"
 require_nonnegative_integer "A2A_MAX_REQUEST_BODY_BYTES" "$A2A_MAX_REQUEST_BODY_BYTES"
 require_positive_integer "A2A_SYSTEMD_TASKS_MAX" "$A2A_SYSTEMD_TASKS_MAX"
 require_positive_integer "A2A_SYSTEMD_LIMIT_NOFILE" "$A2A_SYSTEMD_LIMIT_NOFILE"
 
-get_user_home() {
-  getent passwd "$1" | awk -F: '{print $6}'
-}
-
-ensure_user_home_matches_project_dir() {
-  # This deploy workflow expects each instance user to have HOME=${DATA_ROOT}/<project>.
-  # If an operator previously deployed with a different DATA_ROOT, we fail fast to
-  # avoid subtle systemd/unit mismatches and permission issues.
-  local user="$1"
-  local expected_home="$2"
-  if ! id "$user" &>/dev/null; then
-    return 0
-  fi
-  local current_home
-  current_home="$(get_user_home "$user")"
-  if [[ -z "$current_home" ]]; then
-    echo "Unable to determine home directory for user: ${user}" >&2
-    exit 1
-  fi
-  if [[ "$current_home" != "$expected_home" ]]; then
-    echo "Existing user ${user} has a different home directory than expected:" >&2
-    echo "  current:  ${current_home}" >&2
-    echo "  expected: ${expected_home}" >&2
-    echo "" >&2
-    echo "This deploy script does not migrate instances automatically." >&2
-    echo "Fix: uninstall/recreate the instance user, or migrate explicitly, then re-run deploy." >&2
-    exit 1
-  fi
-}
-
-ensure_user_home_matches_project_dir "$PROJECT_NAME" "$PROJECT_DIR"
-
-if ! id "$PROJECT_NAME" &>/dev/null; then
-  sudo adduser --system --group --home "$PROJECT_DIR" "$PROJECT_NAME"
-fi
-if [[ -n "${UV_PYTHON_DIR_GROUP:-}" ]] && getent group "${UV_PYTHON_DIR_GROUP}" >/dev/null 2>&1; then
-  if command -v usermod >/dev/null 2>&1; then
-    sudo usermod -aG "${UV_PYTHON_DIR_GROUP}" "$PROJECT_NAME"
-  else
-    echo "usermod not found; cannot add ${PROJECT_NAME} to UV_PYTHON_DIR_GROUP=${UV_PYTHON_DIR_GROUP}." >&2
-  fi
-fi
-
-sudo install -d -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" "$PROJECT_DIR" "$WORKSPACE_DIR" "$LOG_DIR" "$RUN_DIR"
+sudo install -d -m 700 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$PROJECT_DIR" "$WORKSPACE_DIR" "$LOG_DIR" "$RUN_DIR"
 sudo install -d -m 700 -o root -g root "$CONFIG_DIR"
 # Ensure OpenCode can write its XDG cache/data paths under $HOME even if the
 # instance was previously started with a different user (stale root-owned dirs).
-sudo install -d -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" \
+sudo install -d -m 700 -o "$SERVICE_USER" -g "$SERVICE_GROUP" \
   "$CACHE_DIR" \
   "$LOCAL_DIR" \
   "$STATE_DIR" \
@@ -228,7 +202,7 @@ sudo install -d -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" \
   "$OPENCODE_BIN_DIR"
 # If the directory existed with wrong ownership (e.g., started as root once),
 # fix it to avoid EACCES when opencode tries to mkdir under opencode/.
-sudo chown -R "$PROJECT_NAME:$PROJECT_NAME" "$CACHE_DIR" "$STATE_DIR" "$OPENCODE_LOCAL_SHARE_DIR"
+sudo chown -R "$SERVICE_USER:$SERVICE_GROUP" "$CACHE_DIR" "$STATE_DIR" "$OPENCODE_LOCAL_SHARE_DIR"
 
 opencode_auth_example_tmp="$(mktemp)"
 cat <<'EOF' >"$opencode_auth_example_tmp"
@@ -268,7 +242,7 @@ case "$1" in
   *) echo "" ;;
 esac
 SCRIPT
-sudo install -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" "$askpass_tmp" "$ASKPASS_SCRIPT"
+sudo install -m 700 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$askpass_tmp" "$ASKPASS_SCRIPT"
 rm -f "$askpass_tmp"
 
 git_author_name="OpenCode-${PROJECT_NAME}"
@@ -370,6 +344,8 @@ rm -f "$a2a_env_tmp"
 systemd_override_tmp="$(mktemp)"
 {
   echo "[Service]"
+  echo "User=${SERVICE_USER}"
+  echo "Group=${SERVICE_GROUP}"
   echo "PrivateDevices=true"
   echo "ProtectKernelTunables=true"
   echo "ProtectKernelModules=true"
@@ -428,56 +404,6 @@ require_runtime_secret_file() {
   fi
 }
 
-read_runtime_secret_value() {
-  local file="$1"
-  local key="$2"
-  sudo sed -n "s/^${key}=//p" "$file" | head -n 1
-}
-
 require_runtime_secret_file "$OPENCODE_AUTH_ENV_FILE" "GH_TOKEN" "$CONFIG_DIR/opencode.auth.env.example"
 require_runtime_secret_file "$A2A_SECRET_ENV_FILE" "A2A_BEARER_TOKEN" "$CONFIG_DIR/a2a.secret.env.example"
 validate_provider_secret_contract
-
-GH_TOKEN_FOR_SETUP="${GH_TOKEN:-}"
-if [[ -z "$GH_TOKEN_FOR_SETUP" ]]; then
-  GH_TOKEN_FOR_SETUP="$(read_runtime_secret_value "$OPENCODE_AUTH_ENV_FILE" "GH_TOKEN")"
-fi
-
-if command -v gh >/dev/null 2>&1; then
-  sudo install -d -m 700 -o "$PROJECT_NAME" -g "$PROJECT_NAME" \
-    "${PROJECT_DIR}/.config" "${PROJECT_DIR}/.config/gh"
-  if [[ -n "$GH_TOKEN_FOR_SETUP" ]]; then
-    if ! printf '%s' "$GH_TOKEN_FOR_SETUP" | sudo -u "$PROJECT_NAME" -H \
-      gh auth login --hostname github.com --with-token >/dev/null 2>&1; then
-      echo "gh auth login failed for ${PROJECT_NAME}" >&2
-      exit 1
-    fi
-  else
-    echo "GH_TOKEN not available during deploy; skipping gh auth login for ${PROJECT_NAME}." >&2
-  fi
-else
-  echo "gh not found; skipping gh auth setup." >&2
-fi
-
-if [[ -n "${REPO_URL:-}" ]]; then
-  if sudo -u "$PROJECT_NAME" -H test -d "${WORKSPACE_DIR}/.git"; then
-    echo "Workspace already initialized; skipping clone."
-  elif [[ -n "$(sudo -u "$PROJECT_NAME" -H ls -A "$WORKSPACE_DIR" 2>/dev/null)" ]]; then
-    echo "Workspace is not empty; skipping clone." >&2
-  else
-    clone_args=("$REPO_URL" "$WORKSPACE_DIR")
-    if [[ -n "${REPO_BRANCH:-}" ]]; then
-      clone_args=(--branch "$REPO_BRANCH" --single-branch "${clone_args[@]}")
-    fi
-    if [[ -n "$GH_TOKEN_FOR_SETUP" ]]; then
-      sudo -u "$PROJECT_NAME" -H env \
-        GH_TOKEN="$GH_TOKEN_FOR_SETUP" \
-        GIT_ASKPASS="$ASKPASS_SCRIPT" \
-        GIT_ASKPASS_REQUIRE=force \
-        GIT_TERMINAL_PROMPT=0 \
-        git clone "${clone_args[@]}"
-    else
-      sudo -u "$PROJECT_NAME" -H git clone "${clone_args[@]}"
-    fi
-  fi
-fi

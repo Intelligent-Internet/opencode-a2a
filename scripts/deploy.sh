@@ -13,6 +13,8 @@ source "${SCRIPT_DIR}/deploy/provider_secret_env_keys.sh"
 PROVIDER_SECRET_ENV_LIST="$(join_provider_secret_env_keys " | ")"
 
 PROJECT_NAME=""
+SERVICE_USER_INPUT=""
+SERVICE_GROUP_INPUT=""
 A2A_PORT_INPUT=""
 A2A_HOST_INPUT=""
 A2A_PUBLIC_URL_INPUT=""
@@ -33,8 +35,6 @@ OPENCODE_PROVIDER_ID_INPUT=""
 OPENCODE_MODEL_ID_INPUT=""
 OPENCODE_LSP_INPUT=""
 OPENCODE_LOG_LEVEL_INPUT=""
-REPO_URL_INPUT=""
-REPO_BRANCH_INPUT=""
 A2A_INSTALL_MODE_INPUT=""
 A2A_RELEASE_VERSION_INPUT=""
 OPENCODE_TIMEOUT_INPUT=""
@@ -59,6 +59,12 @@ for arg in "$@"; do
   case "${key,,}" in
     project|project_name)
       PROJECT_NAME="$value"
+      ;;
+    service_user)
+      SERVICE_USER_INPUT="$value"
+      ;;
+    service_group)
+      SERVICE_GROUP_INPUT="$value"
       ;;
     github_token|gh_token)
       echo "Sensitive parameter '${key}' is not allowed via CLI. Use environment variable GH_TOKEN." >&2
@@ -128,12 +134,6 @@ for arg in "$@"; do
     opencode_log_level)
       OPENCODE_LOG_LEVEL_INPUT="$value"
       ;;
-    repo_url)
-      REPO_URL_INPUT="$value"
-      ;;
-    repo_branch)
-      REPO_BRANCH_INPUT="$value"
-      ;;
     a2a_install_mode|install_mode)
       A2A_INSTALL_MODE_INPUT="$value"
       ;;
@@ -178,20 +178,20 @@ for arg in "$@"; do
   esac
 done
 
-if [[ -z "$PROJECT_NAME" ]]; then
+if [[ -z "$PROJECT_NAME" || -z "$SERVICE_USER_INPUT" ]]; then
   cat >&2 <<USAGE
 Usage:
   [GH_TOKEN=<token>] [A2A_BEARER_TOKEN=<token>] [<PROVIDER_SECRET_ENV>=<key>] \
-  ./scripts/deploy.sh project=<name> [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
+  ./scripts/deploy.sh project=<name> service_user=<existing-user> [service_group=<existing-group>] \
+  [data_root=<path>] [a2a_port=<port>] [a2a_host=<host>] [a2a_public_url=<url>] \
   [a2a_log_level=<level>] [a2a_otel_instrumentation_enabled=<bool>] \
   [a2a_log_payloads=<bool>] [a2a_log_body_limit=<int>] [a2a_max_request_body_bytes=<int>] \
   [a2a_cancel_abort_timeout_seconds=<seconds>] [a2a_enable_session_shell=<bool>] \
   [a2a_strict_isolation=<bool>] [a2a_systemd_tasks_max=<int>] [a2a_systemd_limit_nofile=<int>] \
   [a2a_systemd_memory_max=<value>] [a2a_systemd_cpu_quota=<value>] \
   [deploy_healthcheck_timeout_seconds=<seconds>] [deploy_healthcheck_interval_seconds=<seconds>] \
-  [install_mode=<source|release>] [release_version=<version>] \
+  [install_mode=<source|release>] \
   [opencode_provider_id=<id>] [opencode_model_id=<id>] [opencode_lsp=<bool>] [opencode_log_level=<level>] \
-  [repo_url=<url>] [repo_branch=<branch>] \
   [opencode_timeout=<seconds>] [opencode_timeout_stream=<seconds>] [git_identity_name=<name>] [enable_secret_persistence=<bool>] \
   [git_identity_email=<email>] [update_a2a=true] [force_restart=true]
 
@@ -227,8 +227,6 @@ export_if_present() {
 export_if_present "OPENCODE_PROVIDER_ID" "$OPENCODE_PROVIDER_ID_INPUT"
 export_if_present "OPENCODE_MODEL_ID" "$OPENCODE_MODEL_ID_INPUT"
 export_if_present "OPENCODE_LSP" "$OPENCODE_LSP_INPUT"
-export_if_present "REPO_URL" "$REPO_URL_INPUT"
-export_if_present "REPO_BRANCH" "$REPO_BRANCH_INPUT"
 export_if_present "A2A_INSTALL_MODE" "$A2A_INSTALL_MODE_INPUT"
 export_if_present "A2A_RELEASE_VERSION" "$A2A_RELEASE_VERSION_INPUT"
 export_if_present "OPENCODE_TIMEOUT" "$OPENCODE_TIMEOUT_INPUT"
@@ -237,6 +235,8 @@ export_if_present "GIT_IDENTITY_NAME" "$GIT_IDENTITY_NAME_INPUT"
 export_if_present "GIT_IDENTITY_EMAIL" "$GIT_IDENTITY_EMAIL_INPUT"
 export_if_present "DATA_ROOT" "$DATA_ROOT_INPUT"
 export_if_present "OPENCODE_LOG_LEVEL" "$OPENCODE_LOG_LEVEL_INPUT"
+export "SERVICE_USER=${SERVICE_USER_INPUT}"
+export_if_present "SERVICE_GROUP" "$SERVICE_GROUP_INPUT"
 
 export OPENCODE_BIND_HOST="${OPENCODE_BIND_HOST:-127.0.0.1}"
 export OPENCODE_LOG_LEVEL="${OPENCODE_LOG_LEVEL:-WARNING}"
@@ -304,6 +304,28 @@ case "${A2A_INSTALL_MODE,,}" in
     ;;
 esac
 
+require_release_runtime_ready() {
+  local missing=()
+  local helper=""
+
+  if [[ ! -x "${A2A_BIN}" ]]; then
+    missing+=("${A2A_BIN}")
+  fi
+
+  for helper in run_a2a.sh run_opencode.sh provider_secret_env_keys.sh; do
+    if [[ ! -f "${DEPLOY_HELPER_DIR}/${helper}" ]]; then
+      missing+=("${DEPLOY_HELPER_DIR}/${helper}")
+    fi
+  done
+
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    echo "Release runtime is not prepared for lightweight deploy." >&2
+    printf 'Missing runtime path: %s\n' "${missing[@]}" >&2
+    echo "Prepare the shared release runtime first via an admin-managed bootstrap flow." >&2
+    exit 1
+  fi
+}
+
 if [[ "$A2A_INSTALL_MODE" == "release" ]]; then
   export DEPLOY_HELPER_DIR="${DEPLOY_HELPER_DIR:-${A2A_RELEASE_ROOT}/runtime}"
   export A2A_BIN="${A2A_BIN:-${A2A_TOOL_BIN_DIR}/opencode-a2a-server}"
@@ -331,10 +353,12 @@ fi
 ensure_sudo_ready
 
 if [[ "$A2A_INSTALL_MODE" == "release" ]]; then
-  if [[ "$UPDATE_A2A" == "true" ]]; then
-    export FORCE_A2A_RELEASE_INSTALL="true"
+  if [[ -n "$A2A_RELEASE_VERSION_INPUT" || "$UPDATE_A2A" == "true" ]]; then
+    echo "deploy-release no longer manages shared release runtime installs or updates." >&2
+    echo "Use an admin-managed bootstrap flow to prepare or refresh the release runtime." >&2
+    exit 1
   fi
-  "${SCRIPT_DIR}/deploy/install_release_runtime.sh"
+  require_release_runtime_ready
 elif [[ "$UPDATE_A2A" == "true" ]]; then
   "${SCRIPT_DIR}/deploy/update_a2a.sh"
 fi

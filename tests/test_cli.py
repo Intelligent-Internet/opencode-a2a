@@ -29,7 +29,7 @@ def test_cli_init_release_system_help_exposes_release_flags(
     assert "--release-version" in help_text
     assert "--release-root" in help_text
     assert "--tool-dir" in help_text
-    assert "Additional low-level bootstrap toggles remain environment-based" in help_text
+    assert "admin-oriented and optional" in help_text
 
 
 def test_cli_deploy_release_help_exposes_flag_contract(
@@ -41,9 +41,13 @@ def test_cli_deploy_release_help_exposes_flag_contract(
     assert excinfo.value.code == 0
     help_text = capsys.readouterr().out
     assert "--project" in help_text
+    assert "--service-user" in help_text
     assert "--a2a-port" in help_text
-    assert "--release-version" in help_text
+    assert "--release-version" not in help_text
     assert "Secrets such as GH_TOKEN" in help_text
+    assert "service account" in help_text
+    assert "base" in help_text
+    assert "directories must be prepared" in help_text
 
 
 def test_cli_uninstall_help_exposes_flag_contract(
@@ -115,9 +119,12 @@ def test_cli_init_release_system_subcommand_invokes_packaged_script_with_env_ove
 
 def test_cli_deploy_release_subcommand_supports_legacy_key_value_args() -> None:
     with mock.patch("opencode_a2a_server.cli._run_packaged_script", return_value=0) as run_mock:
-        assert cli.main(["deploy-release", "project=alpha"]) == 0
+        assert cli.main(["deploy-release", "project=alpha", "service_user=svc-alpha"]) == 0
 
-    run_mock.assert_called_once_with("deploy_release.sh", ["project=alpha"])
+    run_mock.assert_called_once_with(
+        "deploy_release.sh",
+        ["project=alpha", "service_user=svc-alpha"],
+    )
 
 
 def test_cli_deploy_release_subcommand_maps_flags_to_key_value_args() -> None:
@@ -128,16 +135,17 @@ def test_cli_deploy_release_subcommand_maps_flags_to_key_value_args() -> None:
                     "deploy-release",
                     "--project",
                     "alpha",
+                    "--service-user",
+                    "svc-alpha",
+                    "--service-group",
+                    "opencode",
                     "--a2a-port",
                     "8010",
                     "--a2a-host",
                     "127.0.0.1",
-                    "--release-version",
-                    "0.2.1",
                     "--a2a-enable-session-shell",
                     "--a2a-strict-isolation",
                     "--no-opencode-lsp",
-                    "--update-a2a",
                     "--force-restart",
                 ]
             )
@@ -148,13 +156,13 @@ def test_cli_deploy_release_subcommand_maps_flags_to_key_value_args() -> None:
         "deploy_release.sh",
         [
             "project=alpha",
+            "service_user=svc-alpha",
+            "service_group=opencode",
             "a2a_port=8010",
             "a2a_host=127.0.0.1",
             "a2a_enable_session_shell=true",
             "a2a_strict_isolation=true",
-            "release_version=0.2.1",
             "opencode_lsp=false",
-            "update_a2a=true",
             "force_restart=true",
         ],
     )

@@ -31,7 +31,7 @@ The operator or calling agent should be able to:
 
 | Mode | Command | Best for | Trust boundary | Secret handling |
 | --- | --- | --- | --- | --- |
-| release systemd deploy | `opencode-a2a-server deploy-release` | long-running, production-oriented deployments pinned to published package versions | isolated project directory under `DATA_ROOT`, systemd units, root-managed config | supports secure default two-step provisioning; `ENABLE_SECRET_PERSISTENCE=true` is optional and explicit |
+| release systemd deploy | `opencode-a2a-server deploy-release` | long-running, production-oriented deployments on top of a prepared runtime | isolated project directory under `DATA_ROOT`, systemd units, root-managed config | supports secure default two-step provisioning; `ENABLE_SECRET_PERSISTENCE=true` is optional and explicit |
 
 Use `deploy-release` when you need:
 
@@ -39,7 +39,7 @@ Use `deploy-release` when you need:
 - stable per-project runtime directories
 - root-only secret files
 - multiple named instances on one host
-- published package versions as the deployment boundary
+- a lightweight instance-level deploy boundary on top of a prepared runtime
 
 ## Shared Input Contract
 
@@ -48,6 +48,7 @@ Use `deploy-release` when you need:
 For `opencode-a2a-server deploy-release`:
 
 - `--project <name>`
+- `--service-user <existing-user>`
 - `GH_TOKEN` and `A2A_BEARER_TOKEN`
   - required immediately when `ENABLE_SECRET_PERSISTENCE=true`
   - otherwise required in root-only secret env files before the second deploy
@@ -57,6 +58,7 @@ For `opencode-a2a-server deploy-release`:
 - `--a2a-host <host>`
 - `--a2a-port <port>`
 - `--a2a-public-url <url>`
+- `--service-group <existing-group>`
 - `--opencode-provider-id <id>`
 - `--opencode-model-id <id>`
 
@@ -89,15 +91,15 @@ command -v sudo
 itself. In agent/non-TTY runs, the command fails fast unless `sudo -n` already
 works for the required operations.
 
-One-time host bootstrap:
+Optional admin-managed host bootstrap:
 
 ```bash
 opencode-a2a-server init-release-system
 ```
 
-If you need an exact published package version for bootstrap or rollback,
-provide `--release-version <version>` to `opencode-a2a-server init-release-system`
-and the same `--release-version <version>` to `opencode-a2a-server deploy-release`.
+`deploy-release` itself no longer installs or updates the shared release
+runtime. Prepare the runtime out of band, or use the optional admin-only
+bootstrap command above.
 
 ### Secret Strategy
 
@@ -123,7 +125,7 @@ Optional legacy-style mode:
 Bootstrap directories and example files:
 
 ```bash
-opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1
+opencode-a2a-server deploy-release --project alpha --service-user svc-alpha --service-group opencode --a2a-port 8010 --a2a-host 127.0.0.1
 ```
 
 Populate the generated templates as `root`:
@@ -138,7 +140,7 @@ sudoedit /data/opencode-a2a/alpha/config/a2a.secret.env
 Re-run deploy to start services:
 
 ```bash
-opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1
+opencode-a2a-server deploy-release --project alpha --service-user svc-alpha --service-group opencode --a2a-port 8010 --a2a-host 127.0.0.1
 ```
 
 #### Option A2: explicit secret persistence (`ENABLE_SECRET_PERSISTENCE=true`)
@@ -147,7 +149,7 @@ opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 12
 read -rsp 'GH_TOKEN: ' GH_TOKEN; echo
 read -rsp 'A2A_BEARER_TOKEN: ' A2A_BEARER_TOKEN; echo
 GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1 --enable-secret-persistence
+opencode-a2a-server deploy-release --project alpha --service-user svc-alpha --service-group opencode --a2a-port 8010 --a2a-host 127.0.0.1 --enable-secret-persistence
 ```
 
 #### Option A3: shell-enabled systemd deploy with stricter isolation
@@ -158,6 +160,8 @@ Use this only for trusted operators who explicitly need
 ```bash
 opencode-a2a-server deploy-release \
   --project alpha \
+  --service-user svc-alpha \
+  --service-group opencode \
   --a2a-port 8010 \
   --a2a-host 127.0.0.1 \
   --a2a-enable-session-shell \
@@ -174,13 +178,13 @@ Public URL example:
 
 ```bash
 GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-public-url https://a2a.example.com --enable-secret-persistence
+opencode-a2a-server deploy-release --project alpha --service-user svc-alpha --service-group opencode --a2a-port 8010 --a2a-public-url https://a2a.example.com --enable-secret-persistence
 ```
 
 ### Update or Restart
 
 ```bash
-opencode-a2a-server deploy-release --project alpha --update-a2a --force-restart
+opencode-a2a-server deploy-release --project alpha --service-user svc-alpha --service-group opencode --force-restart
 ```
 
 ### Readiness Checks
@@ -240,6 +244,7 @@ Notes:
 - preview mode is non-destructive
 - uninstall may return exit code `2` when completion includes non-fatal warnings
 - uninstall removes instance-specific systemd drop-ins before `daemon-reload`
+- uninstall does not remove Linux service users or groups
 
 ## Failure Modes and Recovery Guidance
 

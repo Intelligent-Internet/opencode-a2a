@@ -167,19 +167,25 @@ process lifecycle. No host bootstrap script is required.
 
 ### Path 2: Formal systemd Deploy From a Released Version
 
-For long-running systemd deployments, use the packaged release CLI:
+For long-running systemd deployments, use the packaged release CLI against a
+runtime and service account that have already been prepared by the operator:
 
 ```bash
-opencode-a2a-server init-release-system
-opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1
+opencode-a2a-server deploy-release \
+  --project alpha \
+  --service-user svc-alpha \
+  --service-group opencode \
+  --a2a-port 8010 \
+  --a2a-host 127.0.0.1
 ```
 
 This path is for users who want:
 
-- isolated Linux users and per-project directories
+- pre-provisioned Linux service accounts and shared runtime
+- isolated per-project directories under a chosen `DATA_ROOT`
 - systemd-managed restart behavior
 - root-only secret files
-- published package versions as the deployment boundary
+- a lightweight instance-level deploy boundary
 
 Primary operator docs:
 
@@ -188,7 +194,9 @@ Primary operator docs:
 - [scripts/deploy_release_readme.md](scripts/deploy_release_readme.md)
 - [docs/release_deploy_smoke_test.md](docs/release_deploy_smoke_test.md)
 
-Repository `scripts/*.sh` release entrypoints remain available as compatibility wrappers.
+`opencode-a2a-server init-release-system` remains available as an optional
+admin-only bootstrap helper. Repository `scripts/*.sh` release entrypoints
+remain available as compatibility wrappers.
 
 ## Contributor Paths
 

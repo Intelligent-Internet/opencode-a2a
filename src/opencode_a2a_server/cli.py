@@ -17,8 +17,10 @@ def _build_init_release_system_parser(
 ) -> None:
     init_parser = subparsers.add_parser(
         "init-release-system",
-        help="Prepare a host for release-based deployments.",
-        description="Bootstrap a host for release-based deployments without a source checkout.",
+        help="Optional admin-only host bootstrap for release deploys.",
+        description=(
+            "Optional admin-only host bootstrap for release deployments without a source checkout."
+        ),
     )
     init_parser.add_argument(
         "--release-version",
@@ -57,8 +59,9 @@ def _build_init_release_system_parser(
         help="Shared project data root created during bootstrap.",
     )
     init_parser.epilog = (
-        "Additional low-level bootstrap toggles remain environment-based. "
-        "This command intentionally exposes only the release-facing host contract."
+        "This command is intentionally admin-oriented and optional. "
+        "The preferred product boundary is a pre-provisioned runtime plus "
+        "lightweight instance-level deploy commands."
     )
 
 
@@ -68,9 +71,18 @@ def _build_deploy_release_parser(
     deploy_parser = subparsers.add_parser(
         "deploy-release",
         help="Deploy one release-based systemd instance.",
-        description="Deploy one release-based OpenCode + A2A systemd instance.",
+        description="Deploy one lightweight release-based OpenCode + A2A systemd instance.",
     )
     deploy_parser.add_argument("--project", required=True, help="Project instance name.")
+    deploy_parser.add_argument(
+        "--service-user",
+        required=True,
+        help="Existing Linux service user for the instance.",
+    )
+    deploy_parser.add_argument(
+        "--service-group",
+        help="Existing Linux service group for the instance. Defaults to the user's primary group.",
+    )
     deploy_parser.add_argument("--data-root", help="Per-project deployment root.")
     deploy_parser.add_argument("--a2a-port", type=int, help="A2A listen port.")
     deploy_parser.add_argument("--a2a-host", help="A2A bind host.")
@@ -139,9 +151,6 @@ def _build_deploy_release_parser(
         type=int,
         help="Readiness probe polling interval.",
     )
-    deploy_parser.add_argument(
-        "--release-version", help="Exact published release version to install."
-    )
     deploy_parser.add_argument("--opencode-provider-id", help="Default OpenCode provider id.")
     deploy_parser.add_argument("--opencode-model-id", help="Default OpenCode model id.")
     deploy_parser.add_argument(
@@ -151,10 +160,6 @@ def _build_deploy_release_parser(
         help="Enable or disable OpenCode LSP support.",
     )
     deploy_parser.add_argument("--opencode-log-level", help="OpenCode log level.")
-    deploy_parser.add_argument("--repo-url", help="Workspace repository URL for first-time clone.")
-    deploy_parser.add_argument(
-        "--repo-branch", help="Workspace repository branch for first-time clone."
-    )
     deploy_parser.add_argument(
         "--opencode-timeout", type=int, help="OpenCode request timeout in seconds."
     )
@@ -176,12 +181,6 @@ def _build_deploy_release_parser(
         help="Persist GH_TOKEN, A2A_BEARER_TOKEN, and provider keys into root-only secret files.",
     )
     deploy_parser.add_argument(
-        "--update-a2a",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Refresh the installed release runtime before deploy.",
-    )
-    deploy_parser.add_argument(
         "--force-restart",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -189,8 +188,10 @@ def _build_deploy_release_parser(
     )
     deploy_parser.epilog = (
         "Secrets such as GH_TOKEN, A2A_BEARER_TOKEN, and provider API keys remain "
-        "environment-only inputs. Legacy key=value arguments are still accepted for "
-        "compatibility wrappers, but flags are the preferred CLI contract."
+        "environment-only inputs. The host runtime, service account, and base "
+        "directories must be prepared by the operator. Legacy key=value arguments "
+        "are still accepted for compatibility wrappers, but flags are the preferred "
+        "CLI contract."
     )
 
 
@@ -303,6 +304,8 @@ def _build_deploy_release_args(namespace: argparse.Namespace) -> list[str]:
     args: list[str] = []
     mappings: tuple[tuple[str, object | None], ...] = (
         ("project", namespace.project),
+        ("service_user", namespace.service_user),
+        ("service_group", namespace.service_group),
         ("data_root", namespace.data_root),
         ("a2a_port", namespace.a2a_port),
         ("a2a_host", namespace.a2a_host),
@@ -330,19 +333,15 @@ def _build_deploy_release_args(namespace: argparse.Namespace) -> list[str]:
             "deploy_healthcheck_interval_seconds",
             namespace.deploy_healthcheck_interval_seconds,
         ),
-        ("release_version", namespace.release_version),
         ("opencode_provider_id", namespace.opencode_provider_id),
         ("opencode_model_id", namespace.opencode_model_id),
         ("opencode_lsp", namespace.opencode_lsp),
         ("opencode_log_level", namespace.opencode_log_level),
-        ("repo_url", namespace.repo_url),
-        ("repo_branch", namespace.repo_branch),
         ("opencode_timeout", namespace.opencode_timeout),
         ("opencode_timeout_stream", namespace.opencode_timeout_stream),
         ("git_identity_name", namespace.git_identity_name),
         ("git_identity_email", namespace.git_identity_email),
         ("enable_secret_persistence", namespace.enable_secret_persistence),
-        ("update_a2a", namespace.update_a2a),
         ("force_restart", namespace.force_restart),
     )
     for key, value in mappings:

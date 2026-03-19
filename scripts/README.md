@@ -15,9 +15,9 @@ Executable scripts live in this directory. This file is the entry index for scri
 
 ## Script Docs Index
 
-- [`init_release_system_readme.md`](./init_release_system_readme.md): release-based host bootstrap for formal deployments (preferred: `opencode-a2a-server init-release-system`, compatibility wrapper: [`init_release_system.sh`](./init_release_system.sh))
+- [`init_release_system_readme.md`](./init_release_system_readme.md): optional admin-only release runtime bootstrap (preferred product boundary: prepared runtime + `deploy-release`; compatibility wrapper: [`init_release_system.sh`](./init_release_system.sh))
 - [`init_system_readme.md`](./init_system_readme.md): source-based host bootstrap for contributor/internal debugging (script: [`init_system.sh`](./init_system.sh))
-- [`deploy_release_readme.md`](./deploy_release_readme.md): release-based multi-instance systemd deployment (preferred: `opencode-a2a-server deploy-release`, compatibility wrapper: [`deploy_release.sh`](./deploy_release.sh))
+- [`deploy_release_readme.md`](./deploy_release_readme.md): lightweight release-based multi-instance systemd deployment (preferred: `opencode-a2a-server deploy-release`, compatibility wrapper: [`deploy_release.sh`](./deploy_release.sh))
 - [`deploy_readme.md`](./deploy_readme.md): source-based multi-instance systemd deployment for contributor/internal debugging (script: [`deploy.sh`](./deploy.sh))
 - [`uninstall_readme.md`](./uninstall_readme.md): preview-first instance removal (preferred: `opencode-a2a-server uninstall-instance`, compatibility wrapper: [`uninstall.sh`](./uninstall.sh))
 

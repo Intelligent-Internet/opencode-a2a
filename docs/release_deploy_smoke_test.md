@@ -6,18 +6,18 @@ deployment path:
 - `opencode-a2a-server init-release-system`
 - `opencode-a2a-server deploy-release`
 
-The goal is to validate that published package versions can be bootstrapped,
-deployed, restarted, and removed on a real Linux host without relying on a
+The goal is to validate that a prepared release runtime can be used to deploy,
+restart, and remove an instance on a real Linux host without relying on a
 source checkout.
 
 ## Scope
 
 This smoke test covers:
 
-- release bootstrap on a real host
+- prepared release runtime on a real host
 - first-time release-based systemd deploy
 - service readiness checks
-- fixed-version reinstall / update path
+- force-restart path
 - uninstall / cleanup path
 
 This smoke test does not replace protocol-level API tests or CI unit tests.
@@ -27,22 +27,18 @@ This smoke test does not replace protocol-level API tests or CI unit tests.
 - a clean Linux host or temporary VM
 - `systemd`, `sudo`, outbound network access
 - no reused `/opt/opencode-a2a-release` or `/data/opencode-a2a` state from prior experiments
-- a published package version, for example `0.1.0`
+- a prepared Linux service user/group, for example `svc-alpha:opencode`
 
 ## Test Matrix
 
 Run at least these two variants:
 
-1. exact release pin
-   - `opencode-a2a-server init-release-system --release-version 0.1.0`
-   - `opencode-a2a-server deploy-release --release-version 0.1.0`
-2. default latest release
-   - no explicit `--release-version`
-   - no explicit `--release-version`
+1. prepared runtime + secure two-step deploy
+2. prepared runtime + explicit secret persistence
 
-## Step 1: Host Bootstrap
+## Step 1: Optional Host Bootstrap
 
-Bootstrap the host with the release-based path:
+If you want to use the built-in admin bootstrap, run:
 
 ```bash
 opencode-a2a-server init-release-system --release-version 0.1.0
@@ -57,6 +53,7 @@ Checks:
 
 Expected boundary:
 
+- this path is optional and admin-only
 - this path should not require a source checkout as the deployment runtime
 - release helper scripts should live under `/opt/opencode-a2a-release/runtime`
 
@@ -65,7 +62,7 @@ Expected boundary:
 Run the first deploy:
 
 ```bash
-opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1 --release-version 0.1.0
+opencode-a2a-server deploy-release --project alpha --service-user svc-alpha --service-group opencode --a2a-port 8010 --a2a-host 127.0.0.1
 ```
 
 Expected first-run behavior:
@@ -86,7 +83,7 @@ sudoedit /data/opencode-a2a/alpha/config/a2a.secret.env
 Re-run deploy:
 
 ```bash
-opencode-a2a-server deploy-release --project alpha --a2a-port 8010 --a2a-host 127.0.0.1 --release-version 0.1.0
+opencode-a2a-server deploy-release --project alpha --service-user svc-alpha --service-group opencode --a2a-port 8010 --a2a-host 127.0.0.1
 ```
 
 ## Step 3: Service Readiness
@@ -124,18 +121,12 @@ sudo journalctl -u opencode@alpha.service -n 100 --no-pager
 sudo journalctl -u opencode-a2a-server@alpha.service -n 100 --no-pager
 ```
 
-## Step 4: Update / Restart
+## Step 4: Restart
 
-Reinstall and restart the fixed version:
-
-```bash
-opencode-a2a-server deploy-release --project alpha --release-version 0.1.0 --update-a2a --force-restart
-```
-
-Then test the default latest-release path:
+Force a restart against the prepared runtime:
 
 ```bash
-opencode-a2a-server deploy-release --project alpha --update-a2a --force-restart
+opencode-a2a-server deploy-release --project alpha --service-user svc-alpha --service-group opencode --force-restart
 ```
 
 Checks:
@@ -164,17 +155,17 @@ Checks:
 - instance-specific systemd drop-ins are removed
 - shared release runtime under `/opt/opencode-a2a-release` is not removed
 - the same project name can be deployed again
+- Linux service users/groups are untouched
 
 ## Minimum Pass Criteria
 
 The release-based deployment path can be considered smoke-tested when all of
 the following succeed on a real host:
 
-- `opencode-a2a-server init-release-system`
+- optional `opencode-a2a-server init-release-system`
 - first deploy creates templates and stops safely before secrets are provisioned
 - second deploy starts both systemd services
 - `/health` returns HTTP 200
-- `update_a2a=true` works
 - `opencode-a2a-server uninstall-instance` removes the instance without breaking the shared release runtime
 
 ## Failure Notes

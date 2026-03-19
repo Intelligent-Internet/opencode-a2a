@@ -18,6 +18,7 @@ AGENT_DEPLOY_SOP_TEXT = Path("docs/agent_deploy_sop.md").read_text()
 def test_deploy_defaults_to_operator_provisioned_runtime_secrets() -> None:
     expected_default = 'export ENABLE_SECRET_PERSISTENCE="${ENABLE_SECRET_PERSISTENCE:-false}"'
     assert expected_default in DEPLOY_SH_TEXT
+    assert "service_user)" in DEPLOY_SH_TEXT
     assert "enable_secret_persistence)" in DEPLOY_SH_TEXT
     assert "ensure_sudo_ready" in DEPLOY_SH_TEXT
     assert (
@@ -28,11 +29,13 @@ def test_deploy_defaults_to_operator_provisioned_runtime_secrets() -> None:
         'export DEPLOY_HEALTHCHECK_INTERVAL_SECONDS="${DEPLOY_HEALTHCHECK_INTERVAL_SECONDS:-1}"'
         in DEPLOY_SH_TEXT
     )
-    assert 'if [[ -z "$PROJECT_NAME" ]]; then' in DEPLOY_SH_TEXT
+    assert 'if [[ -z "$PROJECT_NAME" || -z "$SERVICE_USER_INPUT" ]]; then' in DEPLOY_SH_TEXT
     assert "GH_TOKEN=<token> A2A_BEARER_TOKEN=<token>" not in DEPLOY_SH_TEXT
 
 
 def test_systemd_units_split_secret_and_non_secret_env_files() -> None:
+    assert "User=opencode-a2a-unconfigured-user" in INSTALL_UNITS_TEXT
+    assert "Group=opencode-a2a-unconfigured-group" in INSTALL_UNITS_TEXT
     assert "EnvironmentFile=${DATA_ROOT}/%i/config/opencode.env" in INSTALL_UNITS_TEXT
     assert "EnvironmentFile=-${DATA_ROOT}/%i/config/opencode.auth.env" in INSTALL_UNITS_TEXT
     assert "EnvironmentFile=-${DATA_ROOT}/%i/config/opencode.secret.env" in INSTALL_UNITS_TEXT
@@ -46,6 +49,9 @@ def test_setup_instance_generates_examples_and_requires_runtime_secret_files() -
         "deploy will not write GH_TOKEN, A2A_BEARER_TOKEN, or provider keys to disk"
     )
     assert ': "${ENABLE_SECRET_PERSISTENCE:=false}"' in SETUP_INSTANCE_TEXT
+    assert ': "${SERVICE_USER:?}"' in SETUP_INSTANCE_TEXT
+    assert 'echo "User=${SERVICE_USER}"' in SETUP_INSTANCE_TEXT
+    assert 'echo "Group=${SERVICE_GROUP}"' in SETUP_INSTANCE_TEXT
     assert "opencode.auth.env.example" in SETUP_INSTANCE_TEXT
     assert "a2a.secret.env.example" in SETUP_INSTANCE_TEXT
     assert "opencode.secret.env.example" in SETUP_INSTANCE_TEXT
@@ -59,6 +65,12 @@ def test_setup_instance_generates_examples_and_requires_runtime_secret_files() -
     assert "/home|/root|/run/user|/home/*|/root/*|/run/user/*" in SETUP_INSTANCE_TEXT
     assert "TemporaryFileSystem=${DATA_ROOT}:ro" in SETUP_INSTANCE_TEXT
     assert "BindPaths=${PROJECT_DIR}:${PROJECT_DIR}" in SETUP_INSTANCE_TEXT
+    assert "Configured service user does not exist" in SETUP_INSTANCE_TEXT
+    assert "Prepare the base deploy directory before running deploy." in SETUP_INSTANCE_TEXT
+    assert "sudo adduser" not in SETUP_INSTANCE_TEXT
+    assert "usermod" not in SETUP_INSTANCE_TEXT
+    assert "gh auth login" not in SETUP_INSTANCE_TEXT
+    assert "git clone" not in SETUP_INSTANCE_TEXT
     request_limit_line = (
         'append_env_line "$a2a_env_tmp" "A2A_MAX_REQUEST_BODY_BYTES" '
         '"${A2A_MAX_REQUEST_BODY_BYTES}"'
@@ -77,8 +89,8 @@ def test_deploy_supports_release_and_source_install_modes() -> None:
     assert 'export A2A_INSTALL_MODE="${A2A_INSTALL_MODE:-source}"' in DEPLOY_SH_TEXT
     assert "A2A_INSTALL_MODE must be source or release" in DEPLOY_SH_TEXT
     assert 'if [[ "$A2A_INSTALL_MODE" == "release" ]]; then' in DEPLOY_SH_TEXT
-    assert '"${SCRIPT_DIR}/deploy/install_release_runtime.sh"' in DEPLOY_SH_TEXT
-    assert 'export FORCE_A2A_RELEASE_INSTALL="true"' in DEPLOY_SH_TEXT
+    assert "require_release_runtime_ready()" in DEPLOY_SH_TEXT
+    assert "no longer manages shared release runtime installs or updates" in DEPLOY_SH_TEXT
     assert "Environment=A2A_BIN=${A2A_BIN}" in INSTALL_UNITS_TEXT
     assert "ExecStart=${DEPLOY_HELPER_DIR}/run_a2a.sh" in INSTALL_UNITS_TEXT
     assert "ExecStart=${DEPLOY_HELPER_DIR}/run_opencode.sh" in INSTALL_UNITS_TEXT
@@ -124,6 +136,7 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
     assert "Path 1: Run a Released CLI in an Existing User Environment" in README_TEXT
     assert "opencode-a2a-server deploy-release" in README_TEXT
     assert "compatibility wrappers" in README_TEXT
+    assert "--service-user" in README_TEXT
     assert "secret persistence is opt-in" in SECURITY_TEXT
     assert "single-tenant trust boundary" in SECURITY_TEXT
     assert "ENABLE_SECRET_PERSISTENCE=false" in DEPLOY_README_TEXT
@@ -136,8 +149,10 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
     assert "opencode.auth.env" in DEPLOY_README_TEXT
     assert "a2a.secret.env" in DEPLOY_README_TEXT
     assert "release-based systemd deployment" in DEPLOY_RELEASE_README_TEXT
+    assert "optional admin-only" in Path("scripts/init_release_system_readme.md").read_text()
     assert "source-based multi-instance systemd deployment" in SCRIPTS_INDEX_TEXT
     assert "opencode-a2a-server deploy-release" in AGENT_DEPLOY_SOP_TEXT
+    assert "--service-user" in AGENT_DEPLOY_SOP_TEXT
     assert "non-interactive sudo preflight" in AGENT_DEPLOY_SOP_TEXT
     assert (
         'curl -fsS -H "Authorization: Bearer <token>" http://127.0.0.1:8010/health'
@@ -164,3 +179,8 @@ def test_uninstall_removes_instance_systemd_overrides() -> None:
     )
     assert remove_override_cmd in ASSET_UNINSTALL_TEXT
     assert "run_ignore sudo systemctl daemon-reload" in ASSET_UNINSTALL_TEXT
+    assert (
+        "Service user/group lifecycle is not managed by uninstall-instance." in ASSET_UNINSTALL_TEXT
+    )
+    assert "userdel" not in ASSET_UNINSTALL_TEXT
+    assert "groupdel" not in ASSET_UNINSTALL_TEXT
