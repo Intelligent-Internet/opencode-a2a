@@ -74,6 +74,8 @@ opencode-a2a-server serve
 - The service forwards A2A `message:send` to OpenCode session/message calls.
 - Main chat requests may override the upstream model for one request through
   `metadata.shared.model`.
+- Provider/model catalog discovery is available through
+  `opencode.providers.list` and `opencode.models.list`.
 - Streaming is always enabled in this server profile; `message:stream` is part
   of the stable runtime baseline.
 - Main chat input supports structured A2A `parts` passthrough:
@@ -212,8 +214,9 @@ Retention guidance:
 - Treat session binding, request-scoped model selection, and streaming metadata
   contracts as required for the current deployment model.
 - Treat `a2a.interrupt.*` methods as shared extensions.
-- Treat `opencode.sessions.*` as provider-private OpenCode extensions rather
-  than portable A2A baseline capabilities.
+- Treat `opencode.sessions.*`, `opencode.providers.*`, and `opencode.models.*`
+  as provider-private OpenCode extensions rather than portable A2A baseline
+  capabilities.
 - Treat `opencode.sessions.shell` as deployment-conditional and discover it
   from the declared profile and current wire contract before calling it.
 
@@ -607,6 +610,51 @@ Response:
 - success => `{"item": <A2A Message>}` (JSON-RPC result)
 - disabled => JSON-RPC error `METHOD_DISABLED`
 - notification (no `id`) => HTTP `204 No Content`
+
+### Provider List (`opencode.providers.list`)
+
+Returns normalized provider summaries from the upstream OpenCode provider
+catalog.
+
+```bash
+curl -sS http://127.0.0.1:8000/ \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 24,
+    "method": "opencode.providers.list",
+    "params": {}
+  }'
+```
+
+Response:
+
+- success => `{"items": [...], "default_by_provider": {...}, "connected": [...]}` (JSON-RPC result)
+
+### Model List (`opencode.models.list`)
+
+Returns normalized, flattened model summaries. Supports optional provider filter:
+
+- `params.provider_id`
+
+```bash
+curl -sS http://127.0.0.1:8000/ \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 25,
+    "method": "opencode.models.list",
+    "params": {
+      "provider_id": "openai"
+    }
+  }'
+```
+
+Response:
+
+- success => `{"items": [...], "default_by_provider": {...}, "connected": [...]}` (JSON-RPC result)
 
 ## Shared Interrupt Callback (A2A Extension)
 

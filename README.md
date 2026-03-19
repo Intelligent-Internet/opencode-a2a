@@ -26,12 +26,12 @@ need a stable service layer around it. This repository provides that layer by:
 - SSE streaming with normalized `text`, `reasoning`, and `tool_call` blocks
 - session continuation via `metadata.shared.session.id`
 - request-scoped model selection via `metadata.shared.model`
-- OpenCode session query/control extensions
+- OpenCode session query/control and provider/model discovery extensions
 - released CLI install/upgrade flow and a foreground runtime entrypoint
 
 ## Extension Capability Overview
 
-The Agent Card declares seven extension URIs. Shared contracts are intended for
+The Agent Card declares eight extension URIs. Shared contracts are intended for
 any compatible consumer; OpenCode-specific contracts stay provider-scoped even
 though they are exposed through A2A JSON-RPC.
 
@@ -41,6 +41,7 @@ though they are exposed through A2A JSON-RPC.
 | `urn:a2a:model-selection/v1` | Shared | Override the upstream model for one main chat request via `metadata.shared.model` |
 | `urn:a2a:stream-hints/v1` | Shared | Advertise canonical stream metadata for blocks, usage, interrupts, and session hints |
 | `urn:opencode-a2a:session-query/v1` | OpenCode-specific | Query external sessions and invoke OpenCode session control methods |
+| `urn:opencode-a2a:provider-discovery/v1` | OpenCode-specific | Discover normalized provider and model summaries from the upstream catalog |
 | `urn:a2a:interactive-interrupt/v1` | Shared | Reply to interrupt callbacks observed from stream metadata |
 | `urn:a2a:compatibility-profile/v1` | Shared | Publish stable capability retention and deployment-conditional method guidance |
 | `urn:a2a:wire-contract/v1` | Shared | Publish the current runtime method and endpoint boundary |
@@ -50,7 +51,8 @@ Detailed consumption guidance:
 - Shared session binding: [`docs/guide.md#shared-session-binding-contract`](docs/guide.md#shared-session-binding-contract)
 - Shared model selection: [`docs/guide.md#shared-model-selection-contract`](docs/guide.md#shared-model-selection-contract)
 - Shared stream hints: [`docs/guide.md#shared-stream-hints-contract`](docs/guide.md#shared-stream-hints-contract)
-- OpenCode session query: [`docs/guide.md#opencode-session-query-a2a-extension`](docs/guide.md#opencode-session-query-a2a-extension)
+- OpenCode session query and provider discovery:
+  [`docs/guide.md#opencode-session-query-a2a-extension`](docs/guide.md#opencode-session-query-a2a-extension)
 - Shared interrupt callback: [`docs/guide.md#shared-interrupt-callback-a2a-extension`](docs/guide.md#shared-interrupt-callback-a2a-extension)
 - Compatibility profile and retention guidance:
   [`docs/guide.md#compatibility-profile`](docs/guide.md#compatibility-profile)
@@ -165,6 +167,8 @@ Runtime boundary:
 - `opencode-a2a-server serve` connects to that upstream through `OPENCODE_BASE_URL`.
 - Request-scoped model selection remains available through `metadata.shared.model`
   on the main chat path and `request.model` on session-control methods.
+- Provider/model catalog discovery remains available through
+  `opencode.providers.list` and `opencode.models.list`.
 
 Common runtime variables:
 

@@ -45,6 +45,8 @@ from .extension_contracts import (
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
     MODEL_SELECTION_EXTENSION_URI,
+    PROVIDER_DISCOVERY_EXTENSION_URI,
+    PROVIDER_DISCOVERY_METHODS,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_CONTROL_METHODS,
     SESSION_QUERY_DEFAULT_LIMIT,
@@ -55,6 +57,7 @@ from .extension_contracts import (
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
+    build_provider_discovery_extension_params,
     build_session_binding_extension_params,
     build_session_query_extension_params,
     build_streaming_extension_params,
@@ -291,7 +294,8 @@ def _build_agent_card_description(
         "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
         "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), shared "
         "session-binding/model-selection/streaming contracts, provider-private "
-        "OpenCode session extensions, and shared interrupt callback extensions."
+        "OpenCode session/provider/model extensions, and shared interrupt "
+        "callback extensions."
     )
     parts: list[str] = [base, summary]
     parts.append("This server profile is intended for single-tenant, self-hosted coding workflows.")
@@ -341,13 +345,15 @@ def _build_jsonrpc_extension_openapi_description(*, session_shell_enabled: bool)
     ]
     if session_shell_enabled:
         session_methods.append(SESSION_QUERY_METHODS["shell"])
+    provider_methods = ", ".join(sorted(PROVIDER_DISCOVERY_METHODS.values()))
     interrupt_methods = ", ".join(sorted(INTERRUPT_CALLBACK_METHODS.values()))
     return (
         "A2A JSON-RPC entrypoint. Supports core A2A methods "
         "(message/send, message/stream, tasks/get, tasks/cancel, tasks/resubscribe) "
-        "plus shared model-selection metadata, OpenCode session extensions, and "
-        "shared interrupt callback methods.\n\n"
+        "plus shared model-selection metadata, OpenCode session/provider extensions, "
+        "and shared interrupt callback methods.\n\n"
         f"OpenCode session query/control methods: {', '.join(session_methods)}.\n"
+        f"OpenCode provider/model discovery methods: {provider_methods}.\n"
         f"Shared interrupt callback methods: {interrupt_methods}.\n\n"
         "Notification semantics: extension requests without JSON-RPC id return HTTP 204."
     )
@@ -488,6 +494,24 @@ def _build_jsonrpc_extension_openapi_examples(*, session_shell_enabled: bool) ->
                 },
             },
         },
+        "providers_list": {
+            "summary": "List available OpenCode providers",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 24,
+                "method": PROVIDER_DISCOVERY_METHODS["list_providers"],
+                "params": {},
+            },
+        },
+        "models_list": {
+            "summary": "List available models for one provider",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 25,
+                "method": PROVIDER_DISCOVERY_METHODS["list_models"],
+                "params": {"provider_id": "openai"},
+            },
+        },
         "permission_reply": {
             "summary": "Reply to permission interrupt request",
             "value": {
@@ -620,6 +644,9 @@ def _patch_jsonrpc_openapi_contract(
         deployment_context=deployment_context,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
     )
+    provider_discovery = build_provider_discovery_extension_params(
+        deployment_context=deployment_context,
+    )
     interrupt_callback = build_interrupt_callback_extension_params(
         deployment_context=deployment_context,
     )
@@ -653,6 +680,7 @@ def _patch_jsonrpc_openapi_contract(
                         "model_selection": model_selection,
                         "streaming": streaming,
                         "session_query": session_query,
+                        "provider_discovery": provider_discovery,
                         "interrupt_callback": interrupt_callback,
                         "compatibility_profile": compatibility_profile,
                         "wire_contract": wire_contract,
@@ -745,6 +773,9 @@ def build_agent_card(settings: Settings) -> AgentCard:
         deployment_context=deployment_context,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
     )
+    provider_discovery_extension_params = build_provider_discovery_extension_params(
+        deployment_context=deployment_context,
+    )
     interrupt_callback_extension_params = build_interrupt_callback_extension_params(
         deployment_context=deployment_context,
     )
@@ -811,6 +842,15 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     params=session_query_extension_params,
                 ),
                 AgentExtension(
+                    uri=PROVIDER_DISCOVERY_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Expose OpenCode-specific provider/model discovery methods through "
+                        "JSON-RPC extensions."
+                    ),
+                    params=provider_discovery_extension_params,
+                ),
+                AgentExtension(
                     uri=INTERRUPT_CALLBACK_EXTENSION_URI,
                     required=False,
                     description=(
@@ -862,6 +902,19 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 examples=_build_session_query_skill_examples(
                     session_shell_enabled=settings.a2a_enable_session_shell
                 ),
+            ),
+            AgentSkill(
+                id="opencode.providers.query",
+                name="OpenCode Provider Catalog",
+                description=(
+                    "provider-private OpenCode provider/model discovery surface exposed "
+                    "through JSON-RPC extensions."
+                ),
+                tags=["opencode", "providers", "models", "provider-private"],
+                examples=[
+                    "List available providers (method opencode.providers.list).",
+                    "List available models for a provider (method opencode.models.list).",
+                ],
             ),
             AgentSkill(
                 id="opencode.interrupt.callback",
@@ -942,6 +995,7 @@ def create_app(settings: Settings) -> FastAPI:
     jsonrpc_methods = {
         **SESSION_QUERY_METHODS,
         **SESSION_CONTROL_METHODS,
+        **PROVIDER_DISCOVERY_METHODS,
         **INTERRUPT_CALLBACK_METHODS,
     }
     if not settings.a2a_enable_session_shell:

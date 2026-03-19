@@ -29,6 +29,7 @@ from .extension_contracts import (
     COMMAND_REQUEST_ALLOWED_FIELDS,
     INTERRUPT_ERROR_BUSINESS_CODES,
     PROMPT_ASYNC_REQUEST_ALLOWED_FIELDS,
+    PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES,
     SESSION_QUERY_ERROR_BUSINESS_CODES,
     SHELL_REQUEST_ALLOWED_FIELDS,
 )
@@ -49,6 +50,11 @@ ERR_UPSTREAM_UNREACHABLE = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_UNREACHA
 ERR_UPSTREAM_HTTP_ERROR = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_HTTP_ERROR"]
 ERR_INTERRUPT_NOT_FOUND = INTERRUPT_ERROR_BUSINESS_CODES["INTERRUPT_REQUEST_NOT_FOUND"]
 ERR_UPSTREAM_PAYLOAD_ERROR = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_PAYLOAD_ERROR"]
+ERR_DISCOVERY_UPSTREAM_UNREACHABLE = PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES["UPSTREAM_UNREACHABLE"]
+ERR_DISCOVERY_UPSTREAM_HTTP_ERROR = PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES["UPSTREAM_HTTP_ERROR"]
+ERR_DISCOVERY_UPSTREAM_PAYLOAD_ERROR = PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES[
+    "UPSTREAM_PAYLOAD_ERROR"
+]
 SESSION_CONTEXT_PREFIX = "ctx:opencode-session:"
 
 
@@ -440,6 +446,143 @@ def _apply_session_query_limit(items: list[dict[str, Any]], *, limit: int) -> li
     return items[:limit]
 
 
+def _extract_provider_catalog(
+    raw_result: Any,
+) -> tuple[list[dict[str, Any]], dict[str, str], list[str]]:
+    if not isinstance(raw_result, dict):
+        raise ValueError(
+            f"OpenCode provider catalog payload must be an object; got {type(raw_result).__name__}"
+        )
+
+    raw_providers = raw_result.get("all")
+    if not isinstance(raw_providers, list):
+        raise ValueError("OpenCode provider catalog payload field 'all' must be an array")
+
+    raw_defaults = raw_result.get("default")
+    if not isinstance(raw_defaults, dict):
+        raise ValueError("OpenCode provider catalog payload field 'default' must be an object")
+
+    raw_connected = raw_result.get("connected")
+    if not isinstance(raw_connected, list):
+        raise ValueError("OpenCode provider catalog payload field 'connected' must be an array")
+
+    providers: list[dict[str, Any]] = []
+    for item in raw_providers:
+        if not isinstance(item, dict):
+            raise ValueError("OpenCode provider catalog items must be objects")
+        providers.append(item)
+
+    default_by_provider: dict[str, str] = {}
+    for key, value in raw_defaults.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError("OpenCode provider catalog default entries must be string:string")
+        provider_id = key.strip()
+        model_id = value.strip()
+        if provider_id and model_id:
+            default_by_provider[provider_id] = model_id
+
+    connected: list[str] = []
+    for item in raw_connected:
+        if not isinstance(item, str):
+            raise ValueError("OpenCode provider catalog connected entries must be strings")
+        provider_id = item.strip()
+        if provider_id:
+            connected.append(provider_id)
+
+    return providers, default_by_provider, connected
+
+
+def _normalize_provider_summaries(
+    raw_providers: list[dict[str, Any]],
+    *,
+    default_by_provider: dict[str, str],
+    connected: list[str],
+) -> list[dict[str, Any]]:
+    connected_set = set(connected)
+    items: list[dict[str, Any]] = []
+    for provider in raw_providers:
+        raw_id = provider.get("id")
+        if not isinstance(raw_id, str) or not raw_id.strip():
+            continue
+        provider_id = raw_id.strip()
+        raw_models = provider.get("models")
+        model_count = len(raw_models) if isinstance(raw_models, dict) else 0
+        item: dict[str, Any] = {
+            "provider_id": provider_id,
+            "name": provider.get("name") if isinstance(provider.get("name"), str) else provider_id,
+            "connected": provider_id in connected_set,
+            "model_count": model_count,
+        }
+        source = provider.get("source")
+        if isinstance(source, str) and source.strip():
+            item["source"] = source.strip()
+        default_model_id = default_by_provider.get(provider_id)
+        if default_model_id:
+            item["default_model_id"] = default_model_id
+        items.append(item)
+    return items
+
+
+def _normalize_model_summaries(
+    raw_providers: list[dict[str, Any]],
+    *,
+    default_by_provider: dict[str, str],
+    connected: list[str],
+    provider_id: str | None = None,
+) -> list[dict[str, Any]]:
+    connected_set = set(connected)
+    items: list[dict[str, Any]] = []
+    for provider in raw_providers:
+        raw_id = provider.get("id")
+        if not isinstance(raw_id, str) or not raw_id.strip():
+            continue
+        current_provider_id = raw_id.strip()
+        if provider_id is not None and current_provider_id != provider_id:
+            continue
+        raw_models = provider.get("models")
+        if not isinstance(raw_models, dict):
+            continue
+        default_model_id = default_by_provider.get(current_provider_id)
+        for raw_model_id, raw_model in raw_models.items():
+            if not isinstance(raw_model_id, str) or not raw_model_id.strip():
+                continue
+            if not isinstance(raw_model, dict):
+                continue
+            model_id = raw_model_id.strip()
+            item: dict[str, Any] = {
+                "provider_id": current_provider_id,
+                "model_id": model_id,
+                "name": raw_model.get("name")
+                if isinstance(raw_model.get("name"), str)
+                else model_id,
+                "default": model_id == default_model_id,
+                "connected": current_provider_id in connected_set,
+            }
+            status = raw_model.get("status")
+            if isinstance(status, str) and status.strip():
+                item["status"] = status.strip()
+            limit = raw_model.get("limit")
+            if isinstance(limit, dict):
+                context_window = limit.get("context")
+                max_output_tokens = limit.get("output")
+                if isinstance(context_window, int):
+                    item["context_window"] = context_window
+                if isinstance(max_output_tokens, int):
+                    item["max_output_tokens"] = max_output_tokens
+            capabilities = raw_model.get("capabilities")
+            if isinstance(capabilities, dict):
+                for source_key, target_key in (
+                    ("reasoning", "supports_reasoning"),
+                    ("toolcall", "supports_tool_call"),
+                    ("attachment", "supports_attachments"),
+                ):
+                    value = capabilities.get(source_key)
+                    if isinstance(value, bool):
+                        item[target_key] = value
+            items.append(item)
+    return items
+
+
 class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
     """Extend A2A JSON-RPC endpoint with OpenCode session methods.
 
@@ -467,6 +610,8 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         self._method_prompt_async = methods["prompt_async"]
         self._method_command = methods["command"]
         self._method_shell = methods.get("shell")
+        self._method_list_providers = methods["list_providers"]
+        self._method_list_models = methods["list_models"]
         self._method_reply_permission = methods["reply_permission"]
         self._method_reply_question = methods["reply_question"]
         self._method_reject_question = methods["reject_question"]
@@ -604,6 +749,10 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             self._method_list_sessions,
             self._method_get_session_messages,
         }
+        provider_discovery_methods = {
+            self._method_list_providers,
+            self._method_list_models,
+        }
         session_control_methods = {
             self._method_prompt_async,
             self._method_command,
@@ -617,7 +766,10 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         }
         if (
             base_request.method
-            not in session_query_methods | session_control_methods | interrupt_callback_methods
+            not in session_query_methods
+            | provider_discovery_methods
+            | session_control_methods
+            | interrupt_callback_methods
         ):
             core_methods = {
                 "message/send",
@@ -655,6 +807,8 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
 
         if base_request.method in session_query_methods:
             return await self._handle_session_query_request(base_request, params)
+        if base_request.method in provider_discovery_methods:
+            return await self._handle_provider_discovery_request(base_request, params)
         if base_request.method in session_control_methods:
             return await self._handle_session_control_request(
                 base_request,
@@ -778,6 +932,136 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             base_request.id,
             result,
         )
+
+    async def _handle_provider_discovery_request(
+        self,
+        base_request: JSONRPCRequest,
+        params: dict[str, Any],
+    ) -> Response:
+        allowed_fields = {"metadata"}
+        if base_request.method == self._method_list_models:
+            allowed_fields.add("provider_id")
+        unknown_fields = sorted(set(params) - allowed_fields)
+        if unknown_fields:
+            prefixed_fields = [f"params.{field}" for field in unknown_fields]
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message=f"Unsupported params fields: {', '.join(prefixed_fields)}",
+                        data={"type": "INVALID_FIELD", "fields": prefixed_fields},
+                    )
+                ),
+            )
+
+        provider_id: str | None = None
+        if base_request.method == self._method_list_models:
+            raw_provider_id = params.get("provider_id")
+            if raw_provider_id is not None:
+                if not isinstance(raw_provider_id, str) or not raw_provider_id.strip():
+                    return self._generate_error_response(
+                        base_request.id,
+                        A2AError(
+                            root=InvalidParamsError(
+                                message="provider_id must be a non-empty string",
+                                data={"type": "INVALID_FIELD", "field": "provider_id"},
+                            )
+                        ),
+                    )
+                provider_id = raw_provider_id.strip()
+
+        directory, metadata_error = self._extract_directory_from_metadata(
+            request_id=base_request.id,
+            params=params,
+        )
+        if metadata_error is not None:
+            return metadata_error
+
+        try:
+            directory = self._directory_resolver(directory)
+        except ValueError as exc:
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(
+                    root=InvalidParamsError(
+                        message=str(exc),
+                        data={"type": "INVALID_FIELD", "field": "metadata.opencode.directory"},
+                    )
+                ),
+            )
+
+        try:
+            raw_result = await self._opencode_client.list_provider_catalog(directory=directory)
+        except httpx.HTTPStatusError as exc:
+            upstream_status = exc.response.status_code
+            return self._generate_error_response(
+                base_request.id,
+                JSONRPCError(
+                    code=ERR_DISCOVERY_UPSTREAM_HTTP_ERROR,
+                    message="Upstream OpenCode error",
+                    data={
+                        "type": "UPSTREAM_HTTP_ERROR",
+                        "method": base_request.method,
+                        "upstream_status": upstream_status,
+                    },
+                ),
+            )
+        except httpx.HTTPError:
+            return self._generate_error_response(
+                base_request.id,
+                JSONRPCError(
+                    code=ERR_DISCOVERY_UPSTREAM_UNREACHABLE,
+                    message="Upstream OpenCode unreachable",
+                    data={"type": "UPSTREAM_UNREACHABLE", "method": base_request.method},
+                ),
+            )
+        except Exception as exc:
+            logger.exception("OpenCode provider discovery JSON-RPC method failed")
+            return self._generate_error_response(
+                base_request.id,
+                A2AError(root=InternalError(message=str(exc))),
+            )
+
+        try:
+            raw_providers, default_by_provider, connected = _extract_provider_catalog(raw_result)
+            if base_request.method == self._method_list_providers:
+                items = _normalize_provider_summaries(
+                    raw_providers,
+                    default_by_provider=default_by_provider,
+                    connected=connected,
+                )
+            else:
+                items = _normalize_model_summaries(
+                    raw_providers,
+                    default_by_provider=default_by_provider,
+                    connected=connected,
+                    provider_id=provider_id,
+                )
+        except ValueError as exc:
+            logger.warning("Upstream OpenCode provider payload mismatch: %s", exc)
+            return self._generate_error_response(
+                base_request.id,
+                JSONRPCError(
+                    code=ERR_DISCOVERY_UPSTREAM_PAYLOAD_ERROR,
+                    message="Upstream OpenCode payload mismatch",
+                    data={
+                        "type": "UPSTREAM_PAYLOAD_ERROR",
+                        "method": base_request.method,
+                        "detail": str(exc),
+                    },
+                ),
+            )
+
+        result = {
+            "items": items,
+            "default_by_provider": default_by_provider,
+            "connected": connected,
+        }
+
+        if base_request.id is None:
+            return Response(status_code=204)
+
+        return self._jsonrpc_success_response(base_request.id, result)
 
     async def _handle_session_control_request(
         self,

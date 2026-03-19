@@ -344,6 +344,13 @@ class OpencodeClient:
         response.raise_for_status()
         return self._decode_json_response(response, endpoint="/session/{sessionID}/shell")
 
+    async def list_provider_catalog(self, *, directory: str | None = None) -> Any:
+        response = await self._client.get(
+            "/provider", params=self._query_params(directory=directory)
+        )
+        response.raise_for_status()
+        return self._decode_json_response(response, endpoint="/provider")
+
     async def send_message(
         self,
         session_id: str,

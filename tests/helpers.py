@@ -202,6 +202,49 @@ class DummySessionQueryOpencodeClient:
         self.prompt_async_calls: list[dict[str, Any]] = []
         self.command_calls: list[dict[str, Any]] = []
         self.shell_calls: list[dict[str, Any]] = []
+        self.provider_catalog_payload: dict[str, Any] = {
+            "all": [
+                {
+                    "id": "openai",
+                    "name": "OpenAI",
+                    "source": "api",
+                    "models": {
+                        "gpt-5": {
+                            "name": "GPT-5",
+                            "status": "active",
+                            "limit": {"context": 200000, "output": 8192},
+                            "capabilities": {
+                                "reasoning": True,
+                                "toolcall": True,
+                                "attachment": False,
+                            },
+                        }
+                    },
+                },
+                {
+                    "id": "google",
+                    "name": "Google",
+                    "source": "config",
+                    "models": {
+                        "gemini-2.5-flash": {
+                            "name": "Gemini 2.5 Flash",
+                            "status": "beta",
+                            "limit": {"context": 1000000, "output": 8192},
+                            "capabilities": {
+                                "reasoning": True,
+                                "toolcall": True,
+                                "attachment": True,
+                            },
+                        }
+                    },
+                },
+            ],
+            "default": {
+                "openai": "gpt-5",
+                "google": "gemini-2.5-flash",
+            },
+            "connected": ["openai"],
+        }
         self._interrupt_requests: dict[str, dict[str, str | None]] = {}
 
     async def close(self) -> None:
@@ -269,6 +312,10 @@ class DummySessionQueryOpencodeClient:
             "role": "assistant",
             "parts": [{"type": "text", "text": "Shell command executed."}],
         }
+
+    async def list_provider_catalog(self, *, directory: str | None = None):
+        del directory
+        return self.provider_catalog_payload
 
     def remember_interrupt_request(
         self,
