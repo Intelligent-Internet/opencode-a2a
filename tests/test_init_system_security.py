@@ -79,11 +79,16 @@ def test_repo_bootstrap_defaults_to_main_ref() -> None:
 
 def test_release_bootstrap_wrapper_disables_source_checkout() -> None:
     release_init_text = Path("scripts/init_release_system.sh").read_text()
+    asset_release_init_text = Path(
+        "src/opencode_a2a_server/assets/scripts/init_release_system.sh"
+    ).read_text()
     release_init_readme_text = Path("scripts/init_release_system_readme.md").read_text()
 
-    assert 'export INSTALL_A2A_SOURCE="false"' in release_init_text
-    assert '"${SCRIPT_DIR}/deploy/install_release_runtime.sh"' in release_init_text
-    assert "does not clone the" in release_init_readme_text
+    assert 'opencode-a2a-server init-release-system "$@"' in release_init_text
+    assert 'export INSTALL_A2A_SOURCE="false"' in asset_release_init_text
+    assert '"${SCRIPT_DIR}/deploy/install_release_runtime.sh"' in asset_release_init_text
+    assert "does not" in release_init_readme_text
+    assert "create a source-tree virtualenv" in release_init_readme_text
     assert "/opt/opencode-a2a-release" in release_init_readme_text
 
 

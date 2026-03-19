@@ -52,6 +52,9 @@ Homepage = "https://github.com/Intelligent-Internet/opencode-a2a-server"
 Repository = "https://github.com/Intelligent-Internet/opencode-a2a-server"
 Issues = "https://github.com/Intelligent-Internet/opencode-a2a-server/issues"
 
+[tool.setuptools.package-data]
+"opencode_a2a_server.assets" = ["scripts/*.sh", "scripts/deploy/*.sh"]
+
 [tool.ruff]
 line-length = 100
 src = ["src"]

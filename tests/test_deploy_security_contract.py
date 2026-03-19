@@ -6,6 +6,7 @@ INSTALL_UNITS_TEXT = Path("scripts/deploy/install_units.sh").read_text()
 ENABLE_INSTANCE_TEXT = Path("scripts/deploy/enable_instance.sh").read_text()
 RUN_OPENCODE_TEXT = Path("scripts/deploy/run_opencode.sh").read_text()
 INSTALL_RELEASE_RUNTIME_TEXT = Path("scripts/deploy/install_release_runtime.sh").read_text()
+ASSET_UNINSTALL_TEXT = Path("src/opencode_a2a_server/assets/scripts/uninstall.sh").read_text()
 README_TEXT = Path("README.md").read_text()
 SECURITY_TEXT = Path("SECURITY.md").read_text()
 DEPLOY_README_TEXT = Path("scripts/deploy_readme.md").read_text()
@@ -121,7 +122,8 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
     assert "[SECURITY.md](SECURITY.md)" in README_TEXT
     assert "uv tool install opencode-a2a-server" in README_TEXT
     assert "Path 1: Run a Released CLI in an Existing User Environment" in README_TEXT
-    assert "scripts/deploy_release.sh" in README_TEXT
+    assert "opencode-a2a-server deploy-release" in README_TEXT
+    assert "compatibility wrappers" in README_TEXT
     assert "secret persistence is opt-in" in SECURITY_TEXT
     assert "single-tenant trust boundary" in SECURITY_TEXT
     assert "ENABLE_SECRET_PERSISTENCE=false" in DEPLOY_README_TEXT
@@ -135,7 +137,7 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
     assert "a2a.secret.env" in DEPLOY_README_TEXT
     assert "release-based systemd deployment" in DEPLOY_RELEASE_README_TEXT
     assert "source-based multi-instance systemd deployment" in SCRIPTS_INDEX_TEXT
-    assert "release-based, systemd-managed, recommended" in AGENT_DEPLOY_SOP_TEXT
+    assert "opencode-a2a-server deploy-release" in AGENT_DEPLOY_SOP_TEXT
     assert "non-interactive sudo preflight" in AGENT_DEPLOY_SOP_TEXT
     assert (
         'curl -fsS -H "Authorization: Bearer <token>" http://127.0.0.1:8010/health'
@@ -148,17 +150,17 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
 
 
 def test_uninstall_removes_instance_systemd_overrides() -> None:
-    uninstall_text = Path("scripts/uninstall.sh").read_text()
     opencode_override_dir = (
         'OPENCODE_OVERRIDE_DIR="/etc/systemd/system/opencode@${PROJECT_NAME}.service.d"'
     )
     remove_override_cmd = (
         'run_ignore sudo rm -rf -- "${A2A_OVERRIDE_DIR}" "${OPENCODE_OVERRIDE_DIR}"'
     )
-    assert opencode_override_dir in uninstall_text
+    assert 'opencode-a2a-server uninstall-instance "$@"' in Path("scripts/uninstall.sh").read_text()
+    assert opencode_override_dir in ASSET_UNINSTALL_TEXT
     assert (
         'A2A_OVERRIDE_DIR="/etc/systemd/system/opencode-a2a-server@${PROJECT_NAME}.service.d"'
-        in uninstall_text
+        in ASSET_UNINSTALL_TEXT
     )
-    assert remove_override_cmd in uninstall_text
-    assert "run_ignore sudo systemctl daemon-reload" in uninstall_text
+    assert remove_override_cmd in ASSET_UNINSTALL_TEXT
+    assert "run_ignore sudo systemctl daemon-reload" in ASSET_UNINSTALL_TEXT

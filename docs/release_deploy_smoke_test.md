@@ -3,8 +3,8 @@
 This document defines a real-host smoke test plan for the release-based systemd
 deployment path:
 
-- [`../scripts/init_release_system.sh`](../scripts/init_release_system.sh)
-- [`../scripts/deploy_release.sh`](../scripts/deploy_release.sh)
+- `opencode-a2a-server init-release-system`
+- `opencode-a2a-server deploy-release`
 
 The goal is to validate that published package versions can be bootstrapped,
 deployed, restarted, and removed on a real Linux host without relying on a
@@ -45,7 +45,7 @@ Run at least these two variants:
 Bootstrap the host with the release-based path:
 
 ```bash
-A2A_RELEASE_VERSION=0.1.0 ./scripts/init_release_system.sh
+A2A_RELEASE_VERSION=0.1.0 opencode-a2a-server init-release-system
 ```
 
 Checks:
@@ -65,7 +65,7 @@ Expected boundary:
 Run the first deploy:
 
 ```bash
-./scripts/deploy_release.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1 release_version=0.1.0
+opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1 release_version=0.1.0
 ```
 
 Expected first-run behavior:
@@ -86,7 +86,7 @@ sudoedit /data/opencode-a2a/alpha/config/a2a.secret.env
 Re-run deploy:
 
 ```bash
-./scripts/deploy_release.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1 release_version=0.1.0
+opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1 release_version=0.1.0
 ```
 
 ## Step 3: Service Readiness
@@ -129,13 +129,13 @@ sudo journalctl -u opencode-a2a-server@alpha.service -n 100 --no-pager
 Reinstall and restart the fixed version:
 
 ```bash
-./scripts/deploy_release.sh project=alpha release_version=0.1.0 update_a2a=true force_restart=true
+opencode-a2a-server deploy-release project=alpha release_version=0.1.0 update_a2a=true force_restart=true
 ```
 
 Then test the default latest-release path:
 
 ```bash
-./scripts/deploy_release.sh project=alpha update_a2a=true force_restart=true
+opencode-a2a-server deploy-release project=alpha update_a2a=true force_restart=true
 ```
 
 Checks:
@@ -149,13 +149,13 @@ Checks:
 Preview:
 
 ```bash
-./scripts/uninstall.sh project=alpha
+opencode-a2a-server uninstall-instance project=alpha
 ```
 
 Apply:
 
 ```bash
-./scripts/uninstall.sh project=alpha confirm=UNINSTALL
+opencode-a2a-server uninstall-instance project=alpha confirm=UNINSTALL
 ```
 
 Checks:
@@ -170,12 +170,12 @@ Checks:
 The release-based deployment path can be considered smoke-tested when all of
 the following succeed on a real host:
 
-- `init_release_system.sh`
+- `opencode-a2a-server init-release-system`
 - first deploy creates templates and stops safely before secrets are provisioned
 - second deploy starts both systemd services
 - `/health` returns HTTP 200
 - `update_a2a=true` works
-- `uninstall.sh` removes the instance without breaking the shared release runtime
+- `opencode-a2a-server uninstall-instance` removes the instance without breaking the shared release runtime
 
 ## Failure Notes
 

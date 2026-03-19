@@ -1,23 +1,21 @@
-# Release Bootstrap Guide (`opencode-a2a-server init-release-system`)
+# Release Bootstrap Guide (`init_release_system.sh`)
 
-This document explains `opencode-a2a-server init-release-system`.
+This document explains `scripts/init_release_system.sh`.
 
-`opencode-a2a-server init-release-system` prepares the host for release-based
-deployments. Unlike [`init_system.sh`](./init_system_readme.md), it does not
-clone the `opencode-a2a-server` repository or create a source-tree virtualenv.
-
-`scripts/init_release_system.sh` remains available as a compatibility wrapper.
+`init_release_system.sh` prepares the host for release-based deployments.
+Unlike [`init_system.sh`](./init_system_readme.md), it does not clone the
+`opencode-a2a-server` repository or create a source-tree virtualenv.
 
 ## Usage
 
 ```bash
-opencode-a2a-server init-release-system
+./scripts/init_release_system.sh
 ```
 
 Optional exact package version:
 
 ```bash
-A2A_RELEASE_VERSION=0.1.0 opencode-a2a-server init-release-system
+A2A_RELEASE_VERSION=0.1.0 ./scripts/init_release_system.sh
 ```
 
 ## What It Does

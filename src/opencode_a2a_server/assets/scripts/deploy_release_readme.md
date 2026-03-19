@@ -1,12 +1,10 @@
-# Release Deploy Guide (`opencode-a2a-server deploy-release`)
+# Release Deploy Guide (`deploy_release.sh`)
 
 This document explains the release-based systemd deployment path.
 
-`opencode-a2a-server deploy-release` is the preferred deploy entry point for
-operators who want formal deployments to follow published package versions
-instead of a source checkout.
-
-`scripts/deploy_release.sh` remains available as a compatibility wrapper.
+`deploy_release.sh` is the preferred deploy entry point for operators who want
+formal deployments to follow published package versions instead of a source
+checkout.
 
 ## What It Uses
 
@@ -20,27 +18,26 @@ instead of a source checkout.
 - `systemd` and `sudo`
 - OpenCode core path prepared (default `/opt/.opencode`)
 - uv/python pool prepared (default `/opt/uv-python`)
-- release runtime bootstrap prepared via `opencode-a2a-server init-release-system`
-  or by first deploy
+- release runtime bootstrap prepared via [`init_release_system.sh`](./init_release_system.sh) or by first deploy
 
 ## Recommended Usage
 
 Bootstrap the host:
 
 ```bash
-opencode-a2a-server init-release-system
+./scripts/init_release_system.sh
 ```
 
 Deploy the latest installed release:
 
 ```bash
-opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1
+./scripts/deploy_release.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
 ```
 
 Deploy an exact package version:
 
 ```bash
-opencode-a2a-server deploy-release \
+./scripts/deploy_release.sh \
   project=alpha \
   a2a_port=8010 \
   a2a_host=127.0.0.1 \
@@ -50,13 +47,13 @@ opencode-a2a-server deploy-release \
 Update to the latest published release:
 
 ```bash
-opencode-a2a-server deploy-release project=alpha update_a2a=true force_restart=true
+./scripts/deploy_release.sh project=alpha update_a2a=true force_restart=true
 ```
 
 Update to an exact published release:
 
 ```bash
-opencode-a2a-server deploy-release \
+./scripts/deploy_release.sh \
   project=alpha \
   release_version=0.1.0 \
   update_a2a=true \
@@ -65,13 +62,11 @@ opencode-a2a-server deploy-release \
 
 ## Notes
 
-- `opencode-a2a-server deploy-release` shares the same secret strategy, config
-  layout, and systemd hardening model as `deploy.sh`
+- `deploy_release.sh` shares the same secret strategy, config layout, and
+  systemd hardening model as `deploy.sh`
 - `release_version=<version>` pins the installed package version
 - if no explicit `release_version` is provided, first install uses the latest
   published package; later plain deploy reruns reuse the installed runtime
-- `scripts/deploy_release.sh` is a compatibility wrapper around the packaged
-  CLI entrypoint
 - use [`deploy.sh`](./deploy_readme.md) only when you intentionally want a
   source-based systemd deploy for development or debugging
 - for real-host acceptance steps, see [`../docs/release_deploy_smoke_test.md`](../docs/release_deploy_smoke_test.md)

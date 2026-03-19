@@ -1,9 +1,6 @@
-# Uninstall Guide (`opencode-a2a-server uninstall-instance`)
+# Uninstall Guide (`uninstall.sh`)
 
-This document describes `opencode-a2a-server uninstall-instance`, which removes
-one deployed project instance.
-
-`scripts/uninstall.sh` remains available as a compatibility wrapper.
+This document describes `scripts/uninstall.sh`, which removes one deployed project instance.
 
 ## Safety Model
 
@@ -16,13 +13,13 @@ one deployed project instance.
 Preview:
 
 ```bash
-opencode-a2a-server uninstall-instance project=<project>
+./scripts/uninstall.sh project=<project>
 ```
 
 Apply:
 
 ```bash
-opencode-a2a-server uninstall-instance project=<project> confirm=UNINSTALL
+./scripts/uninstall.sh project=<project> confirm=UNINSTALL
 ```
 
 Optional:

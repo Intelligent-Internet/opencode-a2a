@@ -17,8 +17,8 @@ The operator or calling agent should be able to:
 ## Scope and Boundaries
 
 - This SOP covers the release-based systemd deployment path:
-  - `scripts/deploy_release.sh`: release-based, systemd-managed, recommended
-    for formal multi-instance deployment
+  - `opencode-a2a-server deploy-release`: release-based, systemd-managed,
+    recommended for formal multi-instance deployment
 - Source-based systemd/bootstrap paths remain available only for
   contributor/internal debugging and are documented under `scripts/`.
 - Existing-user self-start is documented in the repository README as direct CLI
@@ -29,11 +29,11 @@ The operator or calling agent should be able to:
 
 ## Choose the Deployment Mode
 
-| Mode | Script | Best for | Trust boundary | Secret handling |
+| Mode | Command | Best for | Trust boundary | Secret handling |
 | --- | --- | --- | --- | --- |
-| release systemd deploy | `scripts/deploy_release.sh` | long-running, production-oriented deployments pinned to published package versions | isolated project directory under `DATA_ROOT`, systemd units, root-managed config | supports secure default two-step provisioning; `ENABLE_SECRET_PERSISTENCE=true` is optional and explicit |
+| release systemd deploy | `opencode-a2a-server deploy-release` | long-running, production-oriented deployments pinned to published package versions | isolated project directory under `DATA_ROOT`, systemd units, root-managed config | supports secure default two-step provisioning; `ENABLE_SECRET_PERSISTENCE=true` is optional and explicit |
 
-Use `deploy_release.sh` when you need:
+Use `deploy-release` when you need:
 
 - systemd restart behavior
 - stable per-project runtime directories
@@ -45,7 +45,7 @@ Use `deploy_release.sh` when you need:
 
 ### Required Inputs
 
-For `deploy_release.sh`:
+For `opencode-a2a-server deploy-release`:
 
 - `project=<name>`
 - `GH_TOKEN` and `A2A_BEARER_TOKEN`
@@ -72,7 +72,7 @@ Provider secrets are environment-only inputs:
 
 Do not pass these values via CLI `key=value`.
 
-## Path A: Release Systemd Deploy (`deploy_release.sh`)
+## Path A: Release Systemd Deploy (`opencode-a2a-server deploy-release`)
 
 This is the preferred path for durable and production-oriented deployments.
 
@@ -85,23 +85,23 @@ command -v systemctl
 command -v sudo
 ```
 
-`deploy_release.sh` now performs the effective non-interactive sudo preflight
+`deploy-release` now performs the effective non-interactive sudo preflight
 itself. In agent/non-TTY runs, the command fails fast unless `sudo -n` already
 works for the required operations.
 
 One-time host bootstrap:
 
 ```bash
-./scripts/init_release_system.sh
+opencode-a2a-server init-release-system
 ```
 
 If you need an exact published package version for bootstrap or rollback,
-provide `A2A_RELEASE_VERSION=<version>` to `init_release_system.sh` and
-`release_version=<version>` to `deploy_release.sh`.
+provide `A2A_RELEASE_VERSION=<version>` to `opencode-a2a-server init-release-system`
+and `release_version=<version>` to `opencode-a2a-server deploy-release`.
 
 ### Secret Strategy
 
-`deploy_release.sh` supports two secret modes.
+`deploy-release` supports two secret modes.
 
 Default and recommended mode:
 
@@ -123,7 +123,7 @@ Optional legacy-style mode:
 Bootstrap directories and example files:
 
 ```bash
-./scripts/deploy_release.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
+opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1
 ```
 
 Populate the generated templates as `root`:
@@ -138,7 +138,7 @@ sudoedit /data/opencode-a2a/alpha/config/a2a.secret.env
 Re-run deploy to start services:
 
 ```bash
-./scripts/deploy_release.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
+opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1
 ```
 
 #### Option A2: explicit secret persistence (`ENABLE_SECRET_PERSISTENCE=true`)
@@ -147,7 +147,7 @@ Re-run deploy to start services:
 read -rsp 'GH_TOKEN: ' GH_TOKEN; echo
 read -rsp 'A2A_BEARER_TOKEN: ' A2A_BEARER_TOKEN; echo
 GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-./scripts/deploy_release.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
+opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_host=127.0.0.1
 ```
 
 #### Option A3: shell-enabled systemd deploy with stricter isolation
@@ -156,7 +156,7 @@ Use this only for trusted operators who explicitly need
 `opencode.sessions.shell`.
 
 ```bash
-./scripts/deploy_release.sh \
+opencode-a2a-server deploy-release \
   project=alpha \
   a2a_port=8010 \
   a2a_host=127.0.0.1 \
@@ -174,13 +174,13 @@ Public URL example:
 
 ```bash
 GH_TOKEN="${GH_TOKEN}" A2A_BEARER_TOKEN="${A2A_BEARER_TOKEN}" ENABLE_SECRET_PERSISTENCE=true \
-./scripts/deploy_release.sh project=alpha a2a_port=8010 a2a_public_url=https://a2a.example.com
+opencode-a2a-server deploy-release project=alpha a2a_port=8010 a2a_public_url=https://a2a.example.com
 ```
 
 ### Update or Restart
 
 ```bash
-./scripts/deploy_release.sh project=alpha update_a2a=true force_restart=true
+opencode-a2a-server deploy-release project=alpha update_a2a=true force_restart=true
 ```
 
 ### Readiness Checks
@@ -206,7 +206,7 @@ curl -fsS http://127.0.0.1:8010/.well-known/agent-card.json
 
 Success criteria:
 
-- `deploy_release.sh` exits with code `0`
+- `opencode-a2a-server deploy-release` exits with code `0`
 - the command prints one JSON status line with `{"status":"ok","category":"ready",...}`
 - `opencode@<project>.service` and `opencode-a2a-server@<project>.service`
   are active/running
@@ -225,13 +225,13 @@ sudo systemctl cat opencode-a2a-server@alpha.service
 Preview first:
 
 ```bash
-./scripts/uninstall.sh project=alpha
+opencode-a2a-server uninstall-instance project=alpha
 ```
 
 Apply:
 
 ```bash
-./scripts/uninstall.sh project=alpha confirm=UNINSTALL
+opencode-a2a-server uninstall-instance project=alpha confirm=UNINSTALL
 ```
 
 Notes:
@@ -280,11 +280,11 @@ sudo journalctl -u opencode-a2a-server@alpha.service -n 200 --no-pager
 
 ### systemd deploy
 
-1. run `init_release_system.sh` once per host if needed
+1. run `opencode-a2a-server init-release-system` once per host if needed
 2. choose secret mode
-3. execute `deploy_release.sh` for formal systemd deploys
+3. execute `opencode-a2a-server deploy-release` for formal systemd deploys
 4. verify service state and `/health`
-5. later run `uninstall.sh` with preview first
+5. later run `opencode-a2a-server uninstall-instance` with preview first
 
 ### contributor/internal source debug
 
