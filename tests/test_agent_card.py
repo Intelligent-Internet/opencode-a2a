@@ -122,13 +122,8 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert list_contract["notification_response_status"] == 204
     assert messages_contract["notification_response_status"] == 204
     assert prompt_contract["notification_response_status"] == 204
-    result_envelope = session_query.params["result_envelope"]["by_method"]
-    assert result_envelope["opencode.sessions.list"]["fields"] == ["items"]
-    assert result_envelope["opencode.sessions.messages.list"]["fields"] == ["items"]
-    assert result_envelope["opencode.sessions.prompt_async"]["fields"] == ["ok", "session_id"]
-    assert result_envelope["opencode.sessions.command"]["fields"] == ["item"]
+    assert "result_envelope" not in session_query.params
     assert "opencode.sessions.shell" not in session_query.params["method_contracts"]
-    assert "opencode.sessions.shell" not in result_envelope
     assert (
         session_query.params["context_semantics"]["a2a_context_id_prefix"] == SESSION_CONTEXT_PREFIX
     )
@@ -164,8 +159,17 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
         "list_providers": "opencode.providers.list",
         "list_models": "opencode.models.list",
     }
+    assert "result_envelope" not in provider_discovery.params
+    assert provider_discovery.params["method_contracts"]["opencode.providers.list"]["result"] == {
+        "fields": ["items", "default_by_provider", "connected"],
+        "items_type": "ProviderSummary[]",
+    }
     assert provider_discovery.params["method_contracts"]["opencode.models.list"]["params"] == {
         "optional": ["provider_id"]
+    }
+    assert provider_discovery.params["method_contracts"]["opencode.models.list"]["result"] == {
+        "fields": ["items", "default_by_provider", "connected"],
+        "items_type": "ModelSummary[]",
     }
     assert provider_discovery.params["errors"]["business_codes"] == {
         "UPSTREAM_UNREACHABLE": -32002,
