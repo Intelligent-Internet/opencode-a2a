@@ -844,6 +844,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             if base_request.method == self._method_list_sessions:
                 raw_result = await self._opencode_client.list_sessions(params=query)
             else:
+                assert session_id is not None
                 raw_result = await self._opencode_client.list_messages(session_id, params=query)
         except httpx.HTTPStatusError as exc:
             upstream_status = exc.response.status_code
