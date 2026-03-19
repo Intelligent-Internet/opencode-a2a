@@ -195,7 +195,7 @@ sudo systemctl status opencode-a2a-server@alpha.service --no-pager
 Check health:
 
 ```bash
-curl -fsS http://127.0.0.1:8010/health
+curl -fsS -H "Authorization: Bearer <token>" http://127.0.0.1:8010/health
 ```
 
 Optional Agent Card check:
@@ -210,7 +210,7 @@ Success criteria:
 - the command prints one JSON status line with `{"status":"ok","category":"ready",...}`
 - `opencode@<project>.service` and `opencode-a2a-server@<project>.service`
   are active/running
-- `GET /health` returns HTTP 200 with `{"status":"ok"}`
+- authenticated `GET /health` returns HTTP 200 with `{"status":"ok"}`
 - requests above `A2A_MAX_REQUEST_BODY_BYTES` are rejected with HTTP `413`
 
 Inspect hardening overrides:

@@ -16,11 +16,13 @@ if [[ -z "$PROJECT_NAME" ]]; then
 fi
 
 FORCE_RESTART="${FORCE_RESTART:-false}"
+: "${DATA_ROOT:=/data/opencode-a2a}"
 : "${A2A_HOST:=127.0.0.1}"
 : "${A2A_PORT:=8000}"
 : "${DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS:=30}"
 : "${DEPLOY_HEALTHCHECK_INTERVAL_SECONDS:=1}"
 A2A_HEALTHCHECK_URL="${A2A_HEALTHCHECK_URL:-}"
+A2A_HEALTHCHECK_AUTH_HEADER_FILE=""
 
 json_escape() {
   local value="${1//\\/\\\\}"
@@ -49,6 +51,14 @@ fail_with_status() {
   exit "$exit_code"
 }
 
+cleanup_healthcheck_auth() {
+  if [[ -n "$A2A_HEALTHCHECK_AUTH_HEADER_FILE" ]]; then
+    rm -f "$A2A_HEALTHCHECK_AUTH_HEADER_FILE"
+  fi
+}
+
+trap cleanup_healthcheck_auth EXIT
+
 require_positive_integer() {
   local key="$1"
   local value="$2"
@@ -76,6 +86,35 @@ require_unit_active() {
   fi
 }
 
+resolve_healthcheck_bearer_token() {
+  if [[ -n "${A2A_BEARER_TOKEN:-}" ]]; then
+    printf '%s' "${A2A_BEARER_TOKEN}"
+    return 0
+  fi
+
+  local secret_file="${DATA_ROOT}/${PROJECT_NAME}/config/a2a.secret.env"
+  if ! sudo test -f "$secret_file"; then
+    fail_with_status 25 "missing_runtime_secret" "Missing Bearer Token secret file for health probe: ${secret_file}"
+  fi
+
+  local token=""
+  token="$(sudo sed -n 's/^A2A_BEARER_TOKEN=//p' "$secret_file" | head -n 1)"
+  if [[ -z "$token" ]]; then
+    fail_with_status 25 "missing_runtime_secret" "A2A_BEARER_TOKEN is not defined in ${secret_file}"
+  fi
+
+  printf '%s' "$token"
+}
+
+prepare_healthcheck_auth_header() {
+  local token="$1"
+  local header_file
+  header_file="$(mktemp)"
+  chmod 600 "$header_file"
+  printf 'Authorization: Bearer %s\n' "$token" >"$header_file"
+  A2A_HEALTHCHECK_AUTH_HEADER_FILE="$header_file"
+}
+
 wait_for_health() {
   local timeout="$1"
   local interval="$2"
@@ -84,7 +123,7 @@ wait_for_health() {
   while (( elapsed < timeout )); do
     require_unit_active "opencode@${PROJECT_NAME}.service"
     require_unit_active "opencode-a2a-server@${PROJECT_NAME}.service"
-    if response="$(curl -fsS "$A2A_HEALTHCHECK_URL" 2>/dev/null)" && [[ "$response" == *'"status"'*'"ok"'* ]]; then
+    if response="$(curl -fsS -H "@${A2A_HEALTHCHECK_AUTH_HEADER_FILE}" "$A2A_HEALTHCHECK_URL" 2>/dev/null)" && [[ "$response" == *'"status"'*'"ok"'* ]]; then
       return 0
     fi
     sleep "$interval"
@@ -103,6 +142,7 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 
 A2A_HEALTHCHECK_URL="${A2A_HEALTHCHECK_URL:-http://$(resolve_healthcheck_host):${A2A_PORT}/health}"
+prepare_healthcheck_auth_header "$(resolve_healthcheck_bearer_token)"
 
 if ! sudo systemctl daemon-reload; then
   fail_with_status 20 "systemd_reload_failed" "systemctl daemon-reload failed"

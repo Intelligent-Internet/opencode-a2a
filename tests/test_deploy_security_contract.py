@@ -89,7 +89,17 @@ def test_deploy_supports_release_and_source_install_modes() -> None:
 
 def test_enable_instance_enforces_readiness_contract() -> None:
     assert 'A2A_HEALTHCHECK_URL="${A2A_HEALTHCHECK_URL:-http://' in ENABLE_INSTANCE_TEXT
+    assert "resolve_healthcheck_bearer_token()" in ENABLE_INSTANCE_TEXT
+    assert (
+        'prepare_healthcheck_auth_header "$(resolve_healthcheck_bearer_token)"'
+        in ENABLE_INSTANCE_TEXT
+    )
+    assert (
+        'curl -fsS -H "@${A2A_HEALTHCHECK_AUTH_HEADER_FILE}" "$A2A_HEALTHCHECK_URL"'
+        in ENABLE_INSTANCE_TEXT
+    )
     assert "curl not found in PATH; cannot probe /health" in ENABLE_INSTANCE_TEXT
+    assert 'fail_with_status 25 "missing_runtime_secret"' in ENABLE_INSTANCE_TEXT
     assert 'fail_with_status 23 "readiness_timeout"' in ENABLE_INSTANCE_TEXT
     assert (
         'emit_status "ok" "ready" "systemd units active and /health returned ok"'
@@ -118,6 +128,8 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
     assert "refuse non-interactive runs when `sudo -n` is unavailable" in DEPLOY_README_TEXT
     assert "machine-readable JSON status line" in DEPLOY_README_TEXT
     assert "DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS" in DEPLOY_README_TEXT
+    assert "authenticated `GET /health` probe" in DEPLOY_README_TEXT
+    assert "missing_runtime_secret" in DEPLOY_README_TEXT
     assert "systemd_start_failed" in DEPLOY_README_TEXT
     assert "opencode.auth.env" in DEPLOY_README_TEXT
     assert "a2a.secret.env" in DEPLOY_README_TEXT
@@ -125,6 +137,10 @@ def test_security_docs_emphasize_single_tenant_boundary_and_secret_strategy() ->
     assert "source-based multi-instance systemd deployment" in SCRIPTS_INDEX_TEXT
     assert "release-based, systemd-managed, recommended" in AGENT_DEPLOY_SOP_TEXT
     assert "non-interactive sudo preflight" in AGENT_DEPLOY_SOP_TEXT
+    assert (
+        'curl -fsS -H "Authorization: Bearer <token>" http://127.0.0.1:8010/health'
+        in AGENT_DEPLOY_SOP_TEXT
+    )
     assert '{"status":"ok","category":"ready"' in AGENT_DEPLOY_SOP_TEXT
     assert "deploy_light.sh" not in README_TEXT
     assert "deploy_light.sh" not in SCRIPTS_INDEX_TEXT

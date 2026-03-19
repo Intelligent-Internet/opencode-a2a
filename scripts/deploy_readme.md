@@ -42,7 +42,8 @@ Its contract is intentionally simple:
 - refuse non-interactive runs when `sudo -n` is unavailable for required systemd steps
 - provision or update one isolated instance directory per `project`
 - install/start the corresponding systemd units for that instance
-- wait for `GET /health` to return `{"status":"ok"}` within a bounded timeout
+- wait for an authenticated `GET /health` probe to return `{"status":"ok"}`
+  within a bounded timeout
 - print one machine-readable JSON status line on success or failure
 - exit non-zero when validation, setup, or service startup fails
 
@@ -173,7 +174,7 @@ For values that support both environment variables and CLI keys:
 | `A2A_SYSTEMD_LIMIT_NOFILE` | `a2a_systemd_limit_nofile` | Optional | `65536` | Per-instance `LimitNOFILE` systemd override. |
 | `A2A_SYSTEMD_MEMORY_MAX` | `a2a_systemd_memory_max` | Optional | None | Optional per-instance `MemoryMax` override. |
 | `A2A_SYSTEMD_CPU_QUOTA` | `a2a_systemd_cpu_quota` | Optional | None | Optional per-instance `CPUQuota` override. |
-| `DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS` | `deploy_healthcheck_timeout_seconds` | Optional | `30` | Deploy readiness timeout for `GET /health`. |
+| `DEPLOY_HEALTHCHECK_TIMEOUT_SECONDS` | `deploy_healthcheck_timeout_seconds` | Optional | `30` | Deploy readiness timeout for the authenticated `GET /health` probe. |
 | `DEPLOY_HEALTHCHECK_INTERVAL_SECONDS` | `deploy_healthcheck_interval_seconds` | Optional | `1` | Poll interval for deploy readiness checks. |
 
 ### Auto-Generated Runtime Variables
@@ -306,6 +307,7 @@ Deploy status contract:
 - `22`: `systemd_not_active`
 - `23`: `readiness_timeout`
 - `24`: `missing_dependency`
+- `25`: `missing_runtime_secret`
 - `31`: `invalid_argument`
 
 Follow logs:
