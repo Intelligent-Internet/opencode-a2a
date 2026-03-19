@@ -22,7 +22,7 @@ OPENCODE_A2A_REPO="https://github.com/Intelligent-Internet/opencode-a2a-server.g
 OPENCODE_A2A_REF="main"
 OPENCODE_INSTALLER_URL="https://opencode.ai/install"
 OPENCODE_INSTALLER_VERSION="1.2.5"
-OPENCODE_INSTALLER_SHA256="fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e"
+OPENCODE_INSTALLER_SHA256="fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e" # pragma: allowlist secret
 OPENCODE_INSTALL_CMD="--version ${OPENCODE_INSTALLER_VERSION}"
 
 # Feature toggles.
