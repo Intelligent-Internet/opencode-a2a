@@ -148,7 +148,10 @@ OPENCODE_MODEL_ID=gemini-3.1-pro-preview \
 opencode serve
 
 A2A_BEARER_TOKEN=prod-token \
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
+OPENCODE_MANAGED_SERVER=true \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a-server serve
 ```
@@ -158,12 +161,25 @@ exposes to OpenCode.
 
 Default address: `http://127.0.0.1:8000`
 
+OpenCode upstream modes:
+
+- Managed upstream: set `OPENCODE_MANAGED_SERVER=true` and
+  `opencode-a2a-server` will start a local `opencode serve`, capture its actual
+  listening URL, and stop it on shutdown.
+- External upstream: you start and manage `opencode serve` yourself, then point
+  `OPENCODE_BASE_URL` at that HTTP endpoint.
+
 Common runtime variables:
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `A2A_BEARER_TOKEN` | Yes | None | Bearer token required for authenticated runtime requests. |
-| `OPENCODE_BASE_URL` | No | `http://127.0.0.1:4096` | Upstream OpenCode HTTP endpoint. |
+| `OPENCODE_BASE_URL` | No | `http://127.0.0.1:4096` | Upstream OpenCode HTTP endpoint for externally managed upstream mode. |
+| `OPENCODE_MANAGED_SERVER` | No | `false` | Start and manage a local `opencode serve` child process. |
+| `OPENCODE_MANAGED_SERVER_HOST` | No | `127.0.0.1` | Bind host used when managed upstream mode is enabled. |
+| `OPENCODE_MANAGED_SERVER_PORT` | No | auto-pick | Bind port used when managed upstream mode is enabled. |
+| `OPENCODE_COMMAND` | No | `opencode` | OpenCode CLI executable used for managed upstream mode. |
+| `OPENCODE_STARTUP_TIMEOUT` | No | `20` | Seconds to wait for managed upstream startup. |
 | `OPENCODE_WORKSPACE_ROOT` | No | None | Default workspace root exposed to OpenCode. |
 | `OPENCODE_PROVIDER_ID` | No | None | Default provider for the upstream runtime. |
 | `OPENCODE_MODEL_ID` | No | None | Default model for the upstream runtime. Set together with `OPENCODE_PROVIDER_ID`. |
@@ -181,6 +197,9 @@ Common runtime variables:
 
 If you omit `OPENCODE_PROVIDER_ID` / `OPENCODE_MODEL_ID`, `opencode serve`
 uses your local OpenCode defaults (for example `~/.config/opencode/opencode.json`).
+
+When `OPENCODE_MANAGED_SERVER=true`, `OPENCODE_BASE_URL` is ignored and the
+runtime binds itself to the managed child process instead.
 
 For provider-specific auth, model IDs, and config details, use the OpenCode
 official docs and CLI:
@@ -202,7 +221,7 @@ Use any supervisor you prefer for long-running operation:
 The project no longer ships built-in host bootstrap or process-manager
 wrappers. The official product surface is the runtime entrypoint itself.
 
-Minimal `systemd` example:
+Minimal self-managed `systemd` example:
 
 1. Create an env file such as `/etc/opencode-a2a/alpha.env`:
 
@@ -211,7 +230,7 @@ A2A_BEARER_TOKEN=replace-me
 A2A_HOST=127.0.0.1
 A2A_PORT=8000
 A2A_PUBLIC_URL=https://a2a.example.com
-OPENCODE_BASE_URL=http://127.0.0.1:4096
+OPENCODE_MANAGED_SERVER=true
 OPENCODE_WORKSPACE_ROOT=/srv/my-workspace
 ```
 
@@ -237,6 +256,33 @@ WantedBy=multi-user.target
 
 Replace `ExecStart` with the absolute path returned by `command -v opencode-a2a-server`.
 
+Minimal managed-upstream foreground example:
+
+```bash
+A2A_BEARER_TOKEN=dev-token \
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
+A2A_PUBLIC_URL=http://127.0.0.1:8000 \
+OPENCODE_MANAGED_SERVER=true \
+OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
+opencode-a2a-server serve
+```
+
+Advanced: externally managed upstream
+
+Use this mode when you intentionally want `opencode serve` and
+`opencode-a2a-server` to be supervised independently.
+
+```bash
+OPENCODE_BASE_URL=http://127.0.0.1:4096 \
+A2A_BEARER_TOKEN=dev-token \
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
+A2A_PUBLIC_URL=http://127.0.0.1:8000 \
+OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
+opencode-a2a-server serve
+```
+
 Migration notes:
 
 - `OPENCODE_DIRECTORY` has been removed. Use `OPENCODE_WORKSPACE_ROOT`.
@@ -259,6 +305,9 @@ OPENCODE_MODEL_ID=gemini-3.1-pro-preview \
 opencode serve
 
 A2A_BEARER_TOKEN=dev-token \
+OPENCODE_BASE_URL=http://127.0.0.1:4096 \
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 uv run opencode-a2a-server serve
 ```

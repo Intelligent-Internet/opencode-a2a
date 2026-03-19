@@ -69,6 +69,7 @@ from .jsonrpc_ext import (
     OpencodeSessionQueryJSONRPCApplication,
 )
 from .opencode_client import OpencodeClient
+from .opencode_upstream import ManagedOpencodeServer, launch_managed_opencode_server
 
 logger = logging.getLogger(__name__)
 
@@ -993,8 +994,17 @@ def create_app(settings: Settings) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        yield
-        await client.close()
+        managed_upstream: ManagedOpencodeServer | None = None
+        try:
+            if settings.opencode_managed_server:
+                managed_upstream = await launch_managed_opencode_server(settings)
+                await client.rebind_base_url(managed_upstream.base_url)
+                _app.state.managed_opencode_upstream = managed_upstream
+            yield
+        finally:
+            if managed_upstream is not None:
+                await managed_upstream.close()
+            await client.close()
 
     agent_card = build_agent_card(settings)
     context_builder = IdentityAwareCallContextBuilder()

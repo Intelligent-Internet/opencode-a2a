@@ -54,14 +54,26 @@ class OpencodeClient:
         self._interrupt_request_ttl_seconds = 600.0
         self._interrupt_request_clock = time.monotonic
         self._interrupt_requests: dict[str, InterruptRequestBinding] = {}
-        self._client = httpx.AsyncClient(
-            base_url=self._base_url,
-            timeout=settings.opencode_timeout,
+        self._client = self._build_http_client(self._base_url)
+
+    def _build_http_client(self, base_url: str) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            base_url=base_url,
+            timeout=self._settings.opencode_timeout,
             headers={"Accept": "application/json"},
         )
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    async def rebind_base_url(self, base_url: str) -> None:
+        normalized = base_url.rstrip("/")
+        if normalized == self._base_url:
+            return
+        previous_client = self._client
+        self._base_url = normalized
+        self._client = self._build_http_client(self._base_url)
+        await previous_client.aclose()
 
     @staticmethod
     def _response_body_preview(response: httpx.Response, *, limit: int = 200) -> str:
@@ -176,6 +188,10 @@ class OpencodeClient:
     @property
     def settings(self) -> Settings:
         return self._settings
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
 
     def _query_params(self, directory: str | None = None) -> dict[str, str]:
         d = directory or self._directory

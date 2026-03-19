@@ -25,8 +25,16 @@ own process manager, container runtime, or host orchestration.
 Key variables to understand protocol behavior:
 
 - `A2A_BEARER_TOKEN`: required for all authenticated runtime requests.
-- `OPENCODE_BASE_URL`: upstream OpenCode HTTP endpoint. Default:
-  `http://127.0.0.1:4096`.
+- `OPENCODE_BASE_URL`: upstream OpenCode HTTP endpoint for externally managed
+  upstream mode. Default: `http://127.0.0.1:4096`.
+- `OPENCODE_MANAGED_SERVER`: when enabled, the service starts a local
+  `opencode serve`, captures its actual listening URL, and uses that as the
+  internal upstream endpoint.
+- `OPENCODE_MANAGED_SERVER_HOST` / `OPENCODE_MANAGED_SERVER_PORT`: bind address
+  for managed upstream mode. If the port is omitted, the service picks a free
+  localhost port before starting the child process.
+- `OPENCODE_COMMAND`: OpenCode CLI executable used for managed upstream mode.
+- `OPENCODE_STARTUP_TIMEOUT`: startup timeout for managed upstream mode.
 - `OPENCODE_WORKSPACE_ROOT`: service-level default workspace root exposed to
   OpenCode when clients do not request a narrower directory override.
 - `OPENCODE_PROVIDER_ID` / `OPENCODE_MODEL_ID`: default upstream model
@@ -54,14 +62,26 @@ Key variables to understand protocol behavior:
   optional stream timeout override.
 - Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
 
-Minimal runtime example:
+Minimal managed-upstream example:
 
 ```bash
 A2A_BEARER_TOKEN=dev-token \
 A2A_HOST=127.0.0.1 \
 A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
+OPENCODE_MANAGED_SERVER=true \
+OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
+opencode-a2a-server serve
+```
+
+Advanced externally managed upstream example:
+
+```bash
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \
+A2A_BEARER_TOKEN=dev-token \
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
+A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a-server serve
 ```
