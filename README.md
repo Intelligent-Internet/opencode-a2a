@@ -25,20 +25,23 @@ need a stable service layer around it. This repository provides that layer by:
   extensions
 - SSE streaming with normalized `text`, `reasoning`, and `tool_call` blocks
 - session continuation via `metadata.shared.session.id`
-- OpenCode session query/control extensions
+- request-scoped model selection via `metadata.shared.model`
+- OpenCode session query/control and provider/model discovery extensions
 - released CLI install/upgrade flow and a foreground runtime entrypoint
 
 ## Extension Capability Overview
 
-The Agent Card declares six extension URIs. Shared contracts are intended for
+The Agent Card declares eight extension URIs. Shared contracts are intended for
 any compatible consumer; OpenCode-specific contracts stay provider-scoped even
 though they are exposed through A2A JSON-RPC.
 
 | Extension URI | Scope | Primary use |
 | --- | --- | --- |
 | `urn:a2a:session-binding/v1` | Shared | Bind a main chat request to an existing upstream session via `metadata.shared.session.id` |
+| `urn:a2a:model-selection/v1` | Shared | Override the upstream model for one main chat request via `metadata.shared.model` |
 | `urn:a2a:stream-hints/v1` | Shared | Advertise canonical stream metadata for blocks, usage, interrupts, and session hints |
 | `urn:opencode-a2a:session-query/v1` | OpenCode-specific | Query external sessions and invoke OpenCode session control methods |
+| `urn:opencode-a2a:provider-discovery/v1` | OpenCode-specific | Discover normalized provider and model summaries from the upstream catalog |
 | `urn:a2a:interactive-interrupt/v1` | Shared | Reply to interrupt callbacks observed from stream metadata |
 | `urn:a2a:compatibility-profile/v1` | Shared | Publish stable capability retention and deployment-conditional method guidance |
 | `urn:a2a:wire-contract/v1` | Shared | Publish the current runtime method and endpoint boundary |
@@ -46,8 +49,10 @@ though they are exposed through A2A JSON-RPC.
 Detailed consumption guidance:
 
 - Shared session binding: [`docs/guide.md#shared-session-binding-contract`](docs/guide.md#shared-session-binding-contract)
+- Shared model selection: [`docs/guide.md#shared-model-selection-contract`](docs/guide.md#shared-model-selection-contract)
 - Shared stream hints: [`docs/guide.md#shared-stream-hints-contract`](docs/guide.md#shared-stream-hints-contract)
-- OpenCode session query: [`docs/guide.md#opencode-session-query-a2a-extension`](docs/guide.md#opencode-session-query-a2a-extension)
+- OpenCode session query and provider discovery:
+  [`docs/guide.md#opencode-session-query-a2a-extension`](docs/guide.md#opencode-session-query-a2a-extension)
 - Shared interrupt callback: [`docs/guide.md#shared-interrupt-callback-a2a-extension`](docs/guide.md#shared-interrupt-callback-a2a-extension)
 - Compatibility profile and retention guidance:
   [`docs/guide.md#compatibility-profile`](docs/guide.md#compatibility-profile)
@@ -140,9 +145,9 @@ uv tool install "opencode-a2a-server==<version>"
 Run it against an existing project/workspace:
 
 ```bash
-GOOGLE_GENERATIVE_AI_API_KEY=<your-key> \
-OPENCODE_PROVIDER_ID=google \
-OPENCODE_MODEL_ID=gemini-3.1-pro-preview \
+opencode auth login
+opencode models
+
 opencode serve --hostname 127.0.0.1 --port 4096
 
 A2A_BEARER_TOKEN=prod-token \
@@ -154,6 +159,21 @@ OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a-server serve
 ```
 
+Configure provider auth and default model on the OpenCode side first:
+
+- Add credentials with `opencode auth login` or `/connect`.
+- Set the default model in `opencode.json`, for example:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "google/gemini-3-pro"
+}
+```
+
+If your provider relies on environment variables instead of `opencode auth
+login`, export those variables before starting `opencode serve`.
+
 `OPENCODE_WORKSPACE_ROOT` is the default workspace root that this runtime
 exposes to OpenCode.
 
@@ -163,6 +183,10 @@ Runtime boundary:
 
 - `opencode serve` owns provider auth, model defaults, and upstream lifecycle.
 - `opencode-a2a-server serve` connects to that upstream through `OPENCODE_BASE_URL`.
+- Request-scoped model selection remains available through `metadata.shared.model`
+  on the main chat path and `request.model` on session-control methods.
+- Provider/model catalog discovery remains available through
+  `opencode.providers.list` and `opencode.models.list`.
 
 Common runtime variables:
 
@@ -183,12 +207,14 @@ Common runtime variables:
 | `OPENCODE_TIMEOUT` | No | `120` | Upstream OpenCode request timeout in seconds. |
 | `OPENCODE_TIMEOUT_STREAM` | No | None | Upstream OpenCode stream timeout override in seconds. |
 
-For provider-specific auth, model IDs, and config details, use the OpenCode
-official docs and CLI:
+Provider auth and upstream model defaults belong to `opencode serve`, not to
+`opencode-a2a-server`. Use the OpenCode CLI to authenticate providers and look
+up model IDs before starting the upstream server:
 
 - Providers: <https://opencode.ai/docs/providers/>
 - Models: <https://opencode.ai/docs/models/>
-- Local checks: `opencode auth list`, `opencode models`, `opencode models <provider>`
+- Local checks: `opencode auth login`, `opencode auth list`, `opencode models`,
+  `opencode models <provider>`
 
 This path is for users who already manage their own shell, workspace, and
 process lifecycle.
@@ -238,12 +264,6 @@ WantedBy=multi-user.target
 
 Replace `ExecStart` with the absolute path returned by `command -v opencode-a2a-server`.
 
-Migration notes:
-
-- `OPENCODE_DIRECTORY` has been removed. Use `OPENCODE_WORKSPACE_ROOT`.
-- Built-in `init-release-system`, `deploy-release`, and `uninstall-instance` have been removed.
-- Secret storage, service users, restart policy, and supervisor configuration are now operator-managed.
-
 ## Contributor Paths
 
 Use the repository checkout directly only for development, local debugging, or
@@ -254,9 +274,6 @@ Quick source run:
 ```bash
 uv sync --all-extras
 
-GOOGLE_GENERATIVE_AI_API_KEY=<your-key> \
-OPENCODE_PROVIDER_ID=google \
-OPENCODE_MODEL_ID=gemini-3.1-pro-preview \
 opencode serve --hostname 127.0.0.1 --port 4096
 
 A2A_BEARER_TOKEN=dev-token \

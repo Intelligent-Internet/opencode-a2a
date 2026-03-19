@@ -4,6 +4,8 @@ import pytest
 from opencode_a2a_server.app import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
+    MODEL_SELECTION_EXTENSION_URI,
+    PROVIDER_DISCOVERY_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_QUERY_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
@@ -17,6 +19,8 @@ from opencode_a2a_server.extension_contracts import (
     SESSION_QUERY_MAX_LIMIT,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
+    build_model_selection_extension_params,
+    build_provider_discovery_extension_params,
     build_session_binding_extension_params,
     build_session_query_extension_params,
     build_streaming_extension_params,
@@ -32,8 +36,10 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
     session_binding = ext_by_uri[SESSION_BINDING_EXTENSION_URI]
+    model_selection = ext_by_uri[MODEL_SELECTION_EXTENSION_URI]
     streaming = ext_by_uri[STREAMING_EXTENSION_URI]
     session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
+    provider_discovery = ext_by_uri[PROVIDER_DISCOVERY_EXTENSION_URI]
     interrupt_callback = ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI]
     compatibility_profile = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
     wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
@@ -44,10 +50,16 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
         deployment_context=deployment_context,
         directory_override_enabled=True,
     )
+    expected_model_selection = build_model_selection_extension_params(
+        deployment_context=deployment_context,
+    )
     expected_streaming = build_streaming_extension_params()
     expected_session_query = build_session_query_extension_params(
         deployment_context=deployment_context,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
+    )
+    expected_provider_discovery = build_provider_discovery_extension_params(
+        deployment_context=deployment_context,
     )
     assert expected_session_query["pagination"]["default_limit"] == SESSION_QUERY_DEFAULT_LIMIT
     assert expected_session_query["pagination"]["max_limit"] == SESSION_QUERY_MAX_LIMIT
@@ -66,11 +78,17 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
     assert session_binding.params == expected_session_binding, (
         "Session binding extension drifted from extension_contracts SSOT."
     )
+    assert model_selection.params == expected_model_selection, (
+        "Model selection extension drifted from extension_contracts SSOT."
+    )
     assert streaming.params == expected_streaming, (
         "Streaming extension drifted from extension_contracts SSOT."
     )
     assert session_query.params == expected_session_query, (
         "Session query extension drifted from extension_contracts SSOT."
+    )
+    assert provider_discovery.params == expected_provider_discovery, (
+        "Provider discovery extension drifted from extension_contracts SSOT."
     )
     assert interrupt_callback.params == expected_interrupt_callback, (
         "Interrupt callback extension drifted from extension_contracts SSOT."
@@ -94,8 +112,10 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     )
 
     session_binding = contract["session_binding"]
+    model_selection = contract["model_selection"]
     streaming = contract["streaming"]
     session_query = contract["session_query"]
+    provider_discovery = contract["provider_discovery"]
     interrupt_callback = contract["interrupt_callback"]
     compatibility_profile = contract["compatibility_profile"]
     wire_contract = contract["wire_contract"]
@@ -105,10 +125,16 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
         deployment_context=deployment_context,
         directory_override_enabled=True,
     )
+    expected_model_selection = build_model_selection_extension_params(
+        deployment_context=deployment_context,
+    )
     expected_streaming = build_streaming_extension_params()
     expected_session_query = build_session_query_extension_params(
         deployment_context=deployment_context,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
+    )
+    expected_provider_discovery = build_provider_discovery_extension_params(
+        deployment_context=deployment_context,
     )
     expected_interrupt_callback = build_interrupt_callback_extension_params(
         deployment_context=deployment_context,
@@ -125,11 +151,17 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     assert session_binding == expected_session_binding, (
         "OpenAPI session binding contract drifted from extension_contracts SSOT."
     )
+    assert model_selection == expected_model_selection, (
+        "OpenAPI model selection contract drifted from extension_contracts SSOT."
+    )
     assert streaming == expected_streaming, (
         "OpenAPI streaming contract drifted from extension_contracts SSOT."
     )
     assert session_query == expected_session_query, (
         "OpenAPI session query contract drifted from extension_contracts SSOT."
+    )
+    assert provider_discovery == expected_provider_discovery, (
+        "OpenAPI provider discovery contract drifted from extension_contracts SSOT."
     )
     assert interrupt_callback == expected_interrupt_callback, (
         "OpenAPI interrupt callback contract drifted from extension_contracts SSOT."
@@ -161,6 +193,7 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     expected_methods = set(session_query["methods"].values()) | set(
         INTERRUPT_CALLBACK_METHODS.values()
     )
+    expected_methods |= {"opencode.providers.list", "opencode.models.list"}
     missing_methods = sorted(method for method in expected_methods if method not in example_methods)
     assert not missing_methods, (
         "OpenAPI JSON-RPC examples are missing extension methods: " + ", ".join(missing_methods)
@@ -207,6 +240,8 @@ def test_openapi_jsonrpc_examples_use_declared_default_session_limit() -> None:
             },
             None,
         ),
+        ("opencode.providers.list", {}, None),
+        ("opencode.models.list", {"provider_id": "openai"}, None),
         (
             "a2a.interrupt.permission.reply",
             {"request_id": "req-perm", "reply": "once"},

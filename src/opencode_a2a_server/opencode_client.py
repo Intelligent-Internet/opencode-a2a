@@ -178,6 +178,23 @@ class OpencodeClient:
     def settings(self) -> Settings:
         return self._settings
 
+    @staticmethod
+    def _normalize_model_ref(value: Mapping[str, Any] | None) -> dict[str, str] | None:
+        if value is None:
+            return None
+        provider = value.get("providerID")
+        model = value.get("modelID")
+        if not isinstance(provider, str) or not isinstance(model, str):
+            return None
+        provider_id = provider.strip()
+        model_id = model.strip()
+        if not provider_id or not model_id:
+            return None
+        return {
+            "providerID": provider_id,
+            "modelID": model_id,
+        }
+
     def _query_params(self, directory: str | None = None) -> dict[str, str]:
         d = directory or self._directory
         if not d:
@@ -327,6 +344,13 @@ class OpencodeClient:
         response.raise_for_status()
         return self._decode_json_response(response, endpoint="/session/{sessionID}/shell")
 
+    async def list_provider_catalog(self, *, directory: str | None = None) -> Any:
+        response = await self._client.get(
+            "/provider", params=self._query_params(directory=directory)
+        )
+        response.raise_for_status()
+        return self._decode_json_response(response, endpoint="/provider")
+
     async def send_message(
         self,
         session_id: str,
@@ -334,6 +358,7 @@ class OpencodeClient:
         *,
         parts: Sequence[Mapping[str, Any]] | None = None,
         directory: str | None = None,
+        model_override: Mapping[str, Any] | None = None,
         timeout_override: float | None | object = _UNSET,
     ) -> OpencodeMessage:
         payload_parts: list[dict[str, Any]]
@@ -359,6 +384,9 @@ class OpencodeClient:
             payload["system"] = self._system
         if self._variant:
             payload["variant"] = self._variant
+        normalized_model = self._normalize_model_ref(model_override)
+        if normalized_model is not None:
+            payload["model"] = normalized_model
 
         if self._log_payloads:
             logger = logging.getLogger(__name__)
