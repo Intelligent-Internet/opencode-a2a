@@ -12,8 +12,6 @@ deployment boundary.
 - Use it when you need a stable A2A endpoint for apps, gateways, or A2A
   clients.
 
-## Logical Components
-
 ```mermaid
 flowchart TD
     Client["a2a-client-hub / any A2A client"]
