@@ -84,8 +84,17 @@ if [[ "${EUID}" -ne 0 ]]; then
   fi
   SUDO="sudo"
   log_start "Checking sudo access..."
-  sudo -v
-  log_done "Sudo access ready."
+  if sudo -n true 2>/dev/null; then
+    log_done "Sudo access ready."
+  elif [[ -t 0 ]]; then
+    if sudo -v; then
+      log_done "Sudo access ready."
+    else
+      die "sudo authentication failed."
+    fi
+  else
+    die "sudo requires a password or is not permitted (non-interactive). Run in an interactive shell, or configure NOPASSWD for required commands."
+  fi
 fi
 
 log_start "Detecting package manager..."

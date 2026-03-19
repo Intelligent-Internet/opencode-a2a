@@ -51,9 +51,7 @@ def test_parse_get_session_messages_params_applies_default_limit() -> None:
 
 def test_parse_get_session_messages_params_rejects_ambiguous_limit() -> None:
     with pytest.raises(JsonRpcParamsValidationError) as exc_info:
-        parse_get_session_messages_params(
-            {"session_id": "s-1", "limit": 5, "query": {"limit": 6}}
-        )
+        parse_get_session_messages_params({"session_id": "s-1", "limit": 5, "query": {"limit": 6}})
 
     assert str(exc_info.value) == "limit is ambiguous between params.limit and params.query.limit"
     assert exc_info.value.data == {"type": "INVALID_FIELD", "field": "limit"}
