@@ -1528,15 +1528,17 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     message_id=message_id,
                                 )
                             )
-                        elif isinstance(part.get("text"), str):
-                            chunks.extend(
-                                _snapshot_chunks(
-                                    state=state,
-                                    snapshot=part["text"],
-                                    message_id=message_id,
-                                    part_id=part_id,
+                        else:
+                            snapshot_text = _extract_stream_snapshot_text(part)
+                            if snapshot_text is not None:
+                                chunks.extend(
+                                    _snapshot_chunks(
+                                        state=state,
+                                        snapshot=snapshot_text,
+                                        message_id=message_id,
+                                        part_id=part_id,
+                                    )
                                 )
-                            )
 
                         if chunks:
                             await _emit_chunks(chunks)
@@ -1982,6 +1984,15 @@ def _extract_stream_part_type(part: Mapping[str, Any], props: Mapping[str, Any])
     return None
 
 
+def _extract_stream_snapshot_text(part: Mapping[str, Any]) -> str | None:
+    part_type = _extract_stream_part_type(part, {})
+    if part_type in {"step-start", "step-finish", "snapshot"}:
+        return _extract_first_nonempty_string(part, ("snapshot",))
+    if part_type in {"text", "reasoning"}:
+        return _extract_first_nonempty_string(part, ("text",))
+    return None
+
+
 def _preview_log_value(value: Any, *, limit: int) -> str:
     try:
         rendered = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -2041,7 +2052,7 @@ def _log_stream_event_debug(event: Mapping[str, Any], *, limit: int) -> None:
 def _map_part_type_to_block_type(part_type: str | None) -> BlockType | None:
     if not part_type:
         return None
-    if part_type == "text":
+    if part_type in {"text", "snapshot", "step-start", "step-finish"}:
         return BlockType.TEXT
     if part_type == "reasoning":
         return BlockType.REASONING

@@ -724,6 +724,60 @@ async def test_streaming_final_status_state_is_completed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_streaming_emits_text_from_step_finish_snapshot_part() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            {
+                "type": "message.part.updated",
+                "properties": {
+                    "part": {
+                        "id": "prt-step-finish-snapshot",
+                        "sessionID": "ses-1",
+                        "messageID": "msg-1",
+                        "type": "step-finish",
+                        "reason": "stop",
+                        "snapshot": "final answer from snapshot",
+                        "cost": 0.0,
+                        "tokens": {
+                            "input": 1,
+                            "output": 4,
+                            "reasoning": 0,
+                            "cache": {"read": 0, "write": 0},
+                        },
+                    }
+                },
+            }
+        ],
+        response_text="",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-step-finish", context_id="ctx-step-finish", text="hello"
+        ),
+        queue,
+    )
+
+    updates = _artifact_updates(queue)
+    assert updates
+    text_updates = [
+        event for event in updates if _artifact_stream_meta(event)["block_type"] == "text"
+    ]
+    assert text_updates
+    assert _part_text(text_updates[-1]) == "final answer from snapshot"
+
+    final_status = [
+        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+    ][-1]
+    usage = _status_shared_meta(final_status)["usage"]
+    assert usage["input_tokens"] == 1
+    assert usage["output_tokens"] == 4
+
+
+@pytest.mark.asyncio
 async def test_non_streaming_response_task_state_is_completed() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[],
