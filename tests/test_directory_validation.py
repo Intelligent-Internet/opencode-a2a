@@ -14,7 +14,7 @@ def mock_client():
     settings = make_settings(
         a2a_bearer_token="test",
         opencode_base_url="http://localhost",
-        opencode_directory="/tmp/workspace",
+        opencode_workspace_root="/tmp/workspace",
         a2a_allow_directory_override=True,
     )
 

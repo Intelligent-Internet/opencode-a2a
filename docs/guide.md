@@ -19,16 +19,28 @@ and JSON-RPC extension details (README stays at overview level).
 This section keeps only the protocol-relevant variables.
 For the full runtime variable catalog and defaults, see
 [`../src/opencode_a2a_server/config.py`](../src/opencode_a2a_server/config.py).
-For deploy-time inputs and systemd-oriented parameters, see
-[`../scripts/deploy_readme.md`](../scripts/deploy_readme.md).
+Deployment supervision is intentionally out of scope for this project; use your
+own process manager, container runtime, or host orchestration.
 
 Key variables to understand protocol behavior:
 
 - `A2A_BEARER_TOKEN`: required for all authenticated runtime requests.
+- `OPENCODE_BASE_URL`: upstream OpenCode HTTP endpoint. Default:
+  `http://127.0.0.1:4096`.
+- `OPENCODE_WORKSPACE_ROOT`: service-level default workspace root exposed to
+  OpenCode when clients do not request a narrower directory override.
+- `OPENCODE_PROVIDER_ID` / `OPENCODE_MODEL_ID`: default upstream model
+  selection. Set them together when you want the service to pin a specific
+  provider/model instead of using OpenCode's local defaults.
 - `A2A_ALLOW_DIRECTORY_OVERRIDE`: controls whether clients may pass
   `metadata.opencode.directory`.
 - `A2A_ENABLE_SESSION_SHELL`: gates high-risk JSON-RPC method
   `opencode.sessions.shell`.
+- `A2A_HOST` / `A2A_PORT`: runtime bind address. Defaults:
+  `127.0.0.1:8000`.
+- `A2A_PUBLIC_URL`: public base URL advertised by the Agent Card. Default:
+  `http://127.0.0.1:8000`.
+- `A2A_LOG_LEVEL`: runtime log level. Default: `WARNING`.
 - `A2A_LOG_PAYLOADS` / `A2A_LOG_BODY_LIMIT`: payload logging behavior and
   truncation. When `A2A_LOG_LEVEL=DEBUG`, upstream OpenCode stream events are
   also logged with preview truncation controlled by `A2A_LOG_BODY_LIMIT`.
@@ -38,7 +50,21 @@ Key variables to understand protocol behavior:
   behavior for `(identity, contextId) -> session_id`.
 - `A2A_CANCEL_ABORT_TIMEOUT_SECONDS`: best-effort timeout for upstream
   `session.abort` in cancel flow.
+- `OPENCODE_TIMEOUT` / `OPENCODE_TIMEOUT_STREAM`: upstream request timeout and
+  optional stream timeout override.
 - Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
+
+Minimal runtime example:
+
+```bash
+A2A_BEARER_TOKEN=dev-token \
+A2A_HOST=127.0.0.1 \
+A2A_PORT=8000 \
+A2A_PUBLIC_URL=http://127.0.0.1:8000 \
+OPENCODE_BASE_URL=http://127.0.0.1:4096 \
+OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
+opencode-a2a-server serve
+```
 
 ## Service Behavior
 
@@ -106,7 +132,9 @@ Key variables to understand protocol behavior:
   - Failure events include concrete error details with `failed` state.
 - Directory validation and normalization:
   - Clients can pass `metadata.opencode.directory`, but it must stay inside
-    `${OPENCODE_DIRECTORY}` (or service runtime root if not configured).
+    `${OPENCODE_WORKSPACE_ROOT}` (or service runtime root if not configured).
+  - `OPENCODE_WORKSPACE_ROOT` is the service-level default workspace root used
+    when clients do not request a narrower directory override.
   - All paths are normalized with `realpath` to prevent `..` or symlink
     boundary bypass.
   - If `A2A_ALLOW_DIRECTORY_OVERRIDE=false`, only the default directory is

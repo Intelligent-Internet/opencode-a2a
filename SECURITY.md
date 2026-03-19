@@ -4,7 +4,7 @@
 
 This repository is an adapter layer that exposes OpenCode through A2A
 HTTP+JSON and JSON-RPC interfaces. It adds authentication, task/session
-contracts, streaming, interrupt handling, and deployment tooling, but it does
+contracts, streaming, interrupt handling, and runtime guidance, but it does
 not fully isolate upstream model credentials from OpenCode runtime behavior.
 
 ## Security Boundary
@@ -20,9 +20,9 @@ not fully isolate upstream model credentials from OpenCode runtime behavior.
   indirect exfiltration attempts may still expose sensitive values.
 - Payload logging is opt-in. When `A2A_LOG_PAYLOADS=true`, operators should
   treat logs as potentially sensitive operational data.
-- In systemd deployment mode, secret persistence is opt-in. The deploy scripts
-  should not write `GH_TOKEN`, `A2A_BEARER_TOKEN`, or provider keys to disk
-  unless `ENABLE_SECRET_PERSISTENCE=true` is explicitly set.
+- This project does not ship host bootstrap or process-manager wrappers as an
+  official product capability. Operators remain responsible for file
+  permissions, secret storage, service users, and supervisor-specific hardening.
 
 ## Threat Model
 

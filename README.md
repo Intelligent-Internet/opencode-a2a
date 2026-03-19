@@ -1,11 +1,11 @@
 # opencode-a2a-server
 
-> Turn OpenCode into a stateful A2A service with a clear runtime boundary and production-friendly deployment workflow.
+> Turn OpenCode into a stateful A2A service with a clear runtime boundary.
 
 `opencode-a2a-server` exposes OpenCode through standard A2A interfaces and adds
-the operational pieces that raw agent runtimes usually do not provide by
-default: authentication, session continuity, streaming contracts, interrupt
-handling, deployment tooling, and explicit security guidance.
+the runtime pieces that raw agent runtimes usually do not provide by default:
+authentication, session continuity, streaming contracts, interrupt handling,
+and explicit security guidance.
 
 ## Why This Project Exists
 
@@ -14,7 +14,8 @@ need a stable service layer around it. This repository provides that layer by:
 
 - bridging A2A transport contracts to OpenCode session/message/event APIs
 - making session and interrupt behavior explicit and auditable
-- packaging release-first deployment scripts and operational guidance for long-running use
+- keeping the server/runtime contract explicit while leaving deployment
+  supervision to the operator
 
 ## What It Already Provides
 
@@ -26,7 +27,7 @@ need a stable service layer around it. This repository provides that layer by:
 - session continuation via `metadata.shared.session.id`
 - request-scoped model selection via `metadata.shared.model`
 - OpenCode session query/control extensions and provider/model discovery
-- released CLI install/upgrade flow and release-based systemd deployment
+- released CLI install/upgrade flow and a foreground runtime entrypoint
 
 ## Extension Capability Overview
 
@@ -58,7 +59,9 @@ Detailed consumption guidance:
 One `OpenCode + opencode-a2a-server` instance pair is treated as a
 single-tenant trust boundary.
 
-This repository's intended scaling model is parameterized self-deployment: consumers should launch their own isolated instance pairs through the provided deployment scripts instead of sharing one runtime across mutually untrusted tenants.
+This repository's intended scaling model is parameterized self-deployment:
+consumers should launch their own isolated instance pairs instead of sharing
+one runtime across mutually untrusted tenants.
 
 - OpenCode may manage multiple projects/directories, but one deployed instance
   is not a secure multi-tenant runtime.
@@ -77,7 +80,6 @@ flowchart TD
     Mapping --> Runtime["OpenCode HTTP runtime"]
 
     Api --> Auth["Bearer auth + request logging controls"]
-    Api --> Deploy["release-based deployment tooling"]
     Runtime --> Workspace["Shared workspace / environment boundary"]
 ```
 
@@ -103,13 +105,14 @@ hard multi-tenant isolation layer.
   isolation boundary inside one deployed instance.
 - LLM provider keys are consumed by the OpenCode process. Prompt injection or
   indirect exfiltration attempts may still expose sensitive values.
-- systemd deploy defaults use operator-provisioned root-only secret files
-  unless `ENABLE_SECRET_PERSISTENCE=true` is explicitly enabled.
+- Deployment supervision is intentionally BYO. If you wrap this runtime with
+  `systemd`, Docker, Kubernetes, or another supervisor, you own the service
+  user, secret storage, restart policy, and hardening choices.
 
 Read before deployment:
 
 - [SECURITY.md](SECURITY.md)
-- [scripts/deploy_release_readme.md](scripts/deploy_release_readme.md)
+- [docs/guide.md](docs/guide.md)
 
 ## User Paths
 
@@ -146,11 +149,35 @@ opencode serve
 
 A2A_BEARER_TOKEN=prod-token \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
-OPENCODE_DIRECTORY=/abs/path/to/workspace \
-opencode-a2a-server
+OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
+opencode-a2a-server serve
 ```
 
+`OPENCODE_WORKSPACE_ROOT` is the default workspace root that this runtime
+exposes to OpenCode.
+
 Default address: `http://127.0.0.1:8000`
+
+Common runtime variables:
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `A2A_BEARER_TOKEN` | Yes | None | Bearer token required for authenticated runtime requests. |
+| `OPENCODE_BASE_URL` | No | `http://127.0.0.1:4096` | Upstream OpenCode HTTP endpoint. |
+| `OPENCODE_WORKSPACE_ROOT` | No | None | Default workspace root exposed to OpenCode. |
+| `OPENCODE_PROVIDER_ID` | No | None | Default provider for the upstream runtime. |
+| `OPENCODE_MODEL_ID` | No | None | Default model for the upstream runtime. Set together with `OPENCODE_PROVIDER_ID`. |
+| `A2A_HOST` | No | `127.0.0.1` | Bind host for the A2A server. |
+| `A2A_PORT` | No | `8000` | Bind port for the A2A server. |
+| `A2A_PUBLIC_URL` | No | `http://127.0.0.1:8000` | Public base URL advertised by the Agent Card. |
+| `A2A_LOG_LEVEL` | No | `WARNING` | Server log level. |
+| `A2A_LOG_PAYLOADS` | No | `false` | Enable request/response payload logging. |
+| `A2A_LOG_BODY_LIMIT` | No | `0` | Payload preview size used when payload logging is enabled. |
+| `A2A_MAX_REQUEST_BODY_BYTES` | No | `1048576` | Maximum accepted request size. |
+| `A2A_ALLOW_DIRECTORY_OVERRIDE` | No | `true` | Allow request-level `metadata.opencode.directory` overrides. |
+| `A2A_ENABLE_SESSION_SHELL` | No | `false` | Enable high-risk `opencode.sessions.shell`. |
+| `OPENCODE_TIMEOUT` | No | `120` | Upstream OpenCode request timeout in seconds. |
+| `OPENCODE_TIMEOUT_STREAM` | No | None | Upstream OpenCode stream timeout override in seconds. |
 
 If you omit `OPENCODE_PROVIDER_ID` / `OPENCODE_MODEL_ID`, `opencode serve`
 uses your local OpenCode defaults (for example `~/.config/opencode/opencode.json`).
@@ -163,36 +190,63 @@ official docs and CLI:
 - Local checks: `opencode auth list`, `opencode models`, `opencode models <provider>`
 
 This path is for users who already manage their own shell, workspace, and
-process lifecycle. No host bootstrap script is required.
+process lifecycle.
 
-### Path 2: Formal systemd Deploy From a Released Version
+Use any supervisor you prefer for long-running operation:
 
-For long-running systemd deployments, use the release-based scripts:
+- `systemd`
+- Docker / container runtimes
+- Kubernetes
+- `supervisord`, `pm2`, or similar process managers
+
+The project no longer ships built-in host bootstrap or process-manager
+wrappers. The official product surface is the runtime entrypoint itself.
+
+Minimal `systemd` example:
+
+1. Create an env file such as `/etc/opencode-a2a/alpha.env`:
 
 ```bash
-./scripts/init_release_system.sh
-./scripts/deploy_release.sh project=alpha a2a_port=8010 a2a_host=127.0.0.1
+A2A_BEARER_TOKEN=replace-me
+A2A_HOST=127.0.0.1
+A2A_PORT=8000
+A2A_PUBLIC_URL=https://a2a.example.com
+OPENCODE_BASE_URL=http://127.0.0.1:4096
+OPENCODE_WORKSPACE_ROOT=/srv/my-workspace
 ```
 
-This path is for users who want:
+2. Create a unit file such as `/etc/systemd/system/opencode-a2a-server.service`:
 
-- isolated Linux users and per-project directories
-- systemd-managed restart behavior
-- root-only secret files
-- published package versions as the deployment boundary
+```ini
+[Unit]
+Description=OpenCode A2A Server
+After=network-online.target
+Wants=network-online.target
 
-Primary operator docs:
+[Service]
+Type=simple
+WorkingDirectory=/srv/my-workspace
+EnvironmentFile=/etc/opencode-a2a/alpha.env
+ExecStart=/home/dev/.local/bin/opencode-a2a-server serve
+Restart=on-failure
+RestartSec=2
 
-- [scripts/init_release_system.sh](scripts/init_release_system.sh)
-- [scripts/deploy_release.sh](scripts/deploy_release.sh)
-- [scripts/deploy_release_readme.md](scripts/deploy_release_readme.md)
-- [docs/release_deploy_smoke_test.md](docs/release_deploy_smoke_test.md)
+[Install]
+WantedBy=multi-user.target
+```
+
+Replace `ExecStart` with the absolute path returned by `command -v opencode-a2a-server`.
+
+Migration notes:
+
+- `OPENCODE_DIRECTORY` has been removed. Use `OPENCODE_WORKSPACE_ROOT`.
+- Built-in `init-release-system`, `deploy-release`, and `uninstall-instance` have been removed.
+- Secret storage, service users, restart policy, and supervisor configuration are now operator-managed.
 
 ## Contributor Paths
 
 Use the repository checkout directly only for development, local debugging, or
-validation against unreleased changes. Source-based deploy/bootstrap docs are
-kept for contributors and internal debugging, not as the recommended user path.
+validation against unreleased changes.
 
 Quick source run:
 
@@ -205,8 +259,8 @@ OPENCODE_MODEL_ID=gemini-3.1-pro-preview \
 opencode serve
 
 A2A_BEARER_TOKEN=dev-token \
-OPENCODE_DIRECTORY=/abs/path/to/workspace \
-uv run opencode-a2a-server
+OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
+uv run opencode-a2a-server serve
 ```
 
 Baseline validation:
@@ -218,34 +272,17 @@ uv run pytest
 
 ## Documentation Map
 
-### User / Operator Docs
+### User Docs
 
 - [docs/guide.md](docs/guide.md)
   Product behavior, API contracts, and detailed streaming/session/interrupt
   consumption guidance.
+- [SECURITY.md](SECURITY.md)
+  Threat model, deployment caveats, and vulnerability disclosure guidance.
 - [CONTRIBUTING.md](CONTRIBUTING.md)
   Contributor workflow, validation baseline, and documentation expectations.
-- [docs/agent_deploy_sop.md](docs/agent_deploy_sop.md)
-  Operator-facing SOP for release-based deployment, verification, and uninstall.
-- [docs/release_deploy_smoke_test.md](docs/release_deploy_smoke_test.md)
-  Real-host smoke test checklist for release-based systemd deployment.
-- [scripts/deploy_release_readme.md](scripts/deploy_release_readme.md)
-  Release-based systemd deployment guide for published package versions.
-- [scripts/init_release_system_readme.md](scripts/init_release_system_readme.md)
-  Release-based host bootstrap guide that avoids source checkout.
-- [scripts/uninstall_readme.md](scripts/uninstall_readme.md)
-  Preview-first uninstall flow for deployed instances.
 - [scripts/README.md](scripts/README.md)
-  Full script index, including contributor/internal paths.
-
-### Contributor / Internal Docs
-
-- [scripts/deploy_readme.md](scripts/deploy_readme.md)
-  Source-based systemd deployment for development/debugging only.
-- [scripts/init_system_readme.md](scripts/init_system_readme.md)
-  Source-based host bootstrap for contributor/internal workflows.
-- [SECURITY.md](SECURITY.md)
-  threat model, deployment caveats, and vulnerability disclosure guidance.
+  Contributor helper script index.
 
 ## License
 

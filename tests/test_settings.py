@@ -22,6 +22,7 @@ def test_settings_valid():
     env = {
         "A2A_BEARER_TOKEN": "test-token",
         "OPENCODE_TIMEOUT": "300",
+        "OPENCODE_WORKSPACE_ROOT": "/srv/workspaces/alpha",
         "A2A_MAX_REQUEST_BODY_BYTES": "2048",
         "A2A_CANCEL_ABORT_TIMEOUT_SECONDS": "0.75",
         "A2A_ENABLE_SESSION_SHELL": "true",
@@ -30,10 +31,22 @@ def test_settings_valid():
         settings = Settings.from_env()
         assert settings.a2a_bearer_token == "test-token"
         assert settings.opencode_timeout == 300.0
+        assert settings.opencode_workspace_root == "/srv/workspaces/alpha"
         assert settings.a2a_max_request_body_bytes == 2048
         assert settings.a2a_cancel_abort_timeout_seconds == 0.75
         assert settings.a2a_enable_session_shell is True
         assert settings.a2a_version == __version__
+
+
+def test_settings_ignore_legacy_opencode_directory_env() -> None:
+    env = {
+        "A2A_BEARER_TOKEN": "test-token",
+        "OPENCODE_DIRECTORY": "/legacy/workspace",
+    }
+    with mock.patch.dict(os.environ, env, clear=True):
+        settings = Settings.from_env()
+
+    assert settings.opencode_workspace_root is None
 
 
 def test_settings_reject_negative_max_request_body_bytes():

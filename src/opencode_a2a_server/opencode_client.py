@@ -43,7 +43,7 @@ class OpencodeClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._base_url = settings.opencode_base_url.rstrip("/")
-        self._directory = settings.opencode_directory
+        self._directory = settings.opencode_workspace_root
         self._provider_id = settings.opencode_provider_id
         self._model_id = settings.opencode_model_id
         self._agent = settings.opencode_agent

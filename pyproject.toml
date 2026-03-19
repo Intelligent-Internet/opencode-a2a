@@ -45,7 +45,7 @@ dev = [
 ]
 
 [project.scripts]
-opencode-a2a-server = "opencode_a2a_server.app:main"
+opencode-a2a-server = "opencode_a2a_server.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Intelligent-Internet/opencode-a2a-server"
