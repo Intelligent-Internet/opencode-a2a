@@ -1,18 +1,17 @@
 # opencode-a2a-server
 
-> Turn OpenCode into an A2A adapter service with a clear runtime boundary.
+> Expose OpenCode as an A2A adapter service.
 
-`opencode-a2a-server` wraps OpenCode as an A2A adapter service:
-A2A transports, bearer auth, streaming, session continuity, interrupt
-handling, and an explicit deployment boundary.
+`opencode-a2a-server` turns `opencode serve` into an A2A adapter service with
+auth, streaming, session continuity, interrupt handling, and a clear
+deployment boundary.
 
 ## What This Is
 
-- An A2A adapter service in front of OpenCode.
-- A good fit when you already use OpenCode and need a stable network service
-  for apps, gateways, or A2A clients.
-- Not a multi-tenant isolation layer. One `OpenCode + opencode-a2a-server`
-  pair should be treated as one trust boundary.
+- An A2A adapter service for OpenCode.
+- Use it when you need an A2A endpoint in front of `opencode serve`.
+- Not a multi-tenant isolation layer. Treat one
+  `OpenCode + opencode-a2a-server` pair as one trust boundary.
 
 ## Logical Components
 
