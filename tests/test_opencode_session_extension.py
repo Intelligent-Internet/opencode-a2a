@@ -59,7 +59,7 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -68,7 +68,7 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -132,7 +132,7 @@ async def test_session_query_extension_applies_default_limit(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -145,7 +145,7 @@ async def test_session_query_extension_applies_default_limit(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -187,7 +187,7 @@ async def test_session_query_extension_enforces_session_limit_locally(monkeypatc
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -201,7 +201,7 @@ async def test_session_query_extension_enforces_session_limit_locally(monkeypatc
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -233,7 +233,7 @@ async def test_provider_discovery_extension_returns_normalized_catalog(monkeypat
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -242,7 +242,7 @@ async def test_provider_discovery_extension_returns_normalized_catalog(monkeypat
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -573,7 +573,7 @@ async def test_session_query_extension_rejects_cursor_limit(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -582,7 +582,7 @@ async def test_session_query_extension_rejects_cursor_limit(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -615,7 +615,7 @@ async def test_session_query_extension_rejects_page_size_pagination(monkeypatch)
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -624,7 +624,7 @@ async def test_session_query_extension_rejects_page_size_pagination(monkeypatch)
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -656,7 +656,7 @@ async def test_session_query_extension_rejects_limit_above_max(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -665,7 +665,7 @@ async def test_session_query_extension_rejects_limit_above_max(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -702,7 +702,7 @@ async def test_session_query_extension_accepts_equivalent_string_and_integer_lim
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -711,7 +711,7 @@ async def test_session_query_extension_accepts_equivalent_string_and_integer_lim
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -811,7 +811,7 @@ async def test_session_prompt_async_extension_success(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -820,7 +820,7 @@ async def test_session_prompt_async_extension_success(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -997,7 +997,7 @@ async def test_session_prompt_async_extension_reuses_directory_boundary_validati
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/safe/workspace",
+            opencode_workspace_root="/safe/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -1006,7 +1006,7 @@ async def test_session_prompt_async_extension_reuses_directory_boundary_validati
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/safe/workspace",
+            opencode_workspace_root="/safe/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -1042,7 +1042,7 @@ async def test_session_prompt_async_extension_honors_directory_override_switch(m
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/safe/workspace",
+            opencode_workspace_root="/safe/workspace",
             a2a_allow_directory_override=False,
             **_BASE_SETTINGS,
         )
@@ -1052,7 +1052,7 @@ async def test_session_prompt_async_extension_honors_directory_override_switch(m
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/safe/workspace",
+            opencode_workspace_root="/safe/workspace",
             a2a_allow_directory_override=False,
             **_BASE_SETTINGS,
         )
@@ -1317,7 +1317,7 @@ async def test_session_command_extension_success(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -1326,7 +1326,7 @@ async def test_session_command_extension_success(monkeypatch):
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -1533,7 +1533,7 @@ async def test_session_shell_extension_success_when_enabled(monkeypatch):
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
             a2a_enable_session_shell=True,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )
@@ -1543,7 +1543,7 @@ async def test_session_shell_extension_success_when_enabled(monkeypatch):
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
             a2a_enable_session_shell=True,
-            opencode_directory="/workspace",
+            opencode_workspace_root="/workspace",
             **_BASE_SETTINGS,
         )
     )

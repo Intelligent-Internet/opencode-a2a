@@ -149,9 +149,12 @@ opencode serve
 
 A2A_BEARER_TOKEN=prod-token \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
-OPENCODE_DIRECTORY=/abs/path/to/workspace \
+OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a-server serve
 ```
+
+`OPENCODE_WORKSPACE_ROOT` is the default workspace root that this runtime
+exposes to OpenCode.
 
 Default address: `http://127.0.0.1:8000`
 
@@ -194,7 +197,7 @@ OPENCODE_MODEL_ID=gemini-3.1-pro-preview \
 opencode serve
 
 A2A_BEARER_TOKEN=dev-token \
-OPENCODE_DIRECTORY=/abs/path/to/workspace \
+OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 uv run opencode-a2a-server serve
 ```
 

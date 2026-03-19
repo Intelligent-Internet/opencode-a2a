@@ -38,7 +38,7 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
         make_settings(
             a2a_bearer_token="test-token",
             a2a_project="alpha",
-            opencode_directory="/srv/workspaces/alpha",
+            opencode_workspace_root="/srv/workspaces/alpha",
             opencode_provider_id="google",
             opencode_model_id="gemini-2.5-flash",
             opencode_agent="code-reviewer",

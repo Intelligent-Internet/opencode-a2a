@@ -276,8 +276,8 @@ def _build_deployment_context(settings: Settings) -> dict[str, str | bool]:
     }
     if settings.a2a_project:
         context["project"] = settings.a2a_project
-    if settings.opencode_directory:
-        context["workspace_root"] = settings.opencode_directory
+    if settings.opencode_workspace_root:
+        context["workspace_root"] = settings.opencode_workspace_root
     if settings.opencode_provider_id:
         context["provider_id"] = settings.opencode_provider_id
     if settings.opencode_model_id:

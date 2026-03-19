@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # OpenCode settings
     opencode_base_url: str = Field(default="http://127.0.0.1:4096", alias="OPENCODE_BASE_URL")
-    opencode_directory: str | None = Field(default=None, alias="OPENCODE_DIRECTORY")
+    opencode_workspace_root: str | None = Field(default=None, alias="OPENCODE_WORKSPACE_ROOT")
     opencode_provider_id: str | None = Field(default=None, alias="OPENCODE_PROVIDER_ID")
     opencode_model_id: str | None = Field(default=None, alias="OPENCODE_MODEL_ID")
     opencode_agent: str | None = Field(default=None, alias="OPENCODE_AGENT")

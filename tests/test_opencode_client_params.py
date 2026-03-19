@@ -37,7 +37,7 @@ async def test_merge_params_does_not_allow_directory_override(monkeypatch):
     client = OpencodeClient(
         make_settings(
             a2a_bearer_token="t-1",
-            opencode_directory="/safe",
+            opencode_workspace_root="/safe",
             opencode_timeout=1.0,
             a2a_log_level="DEBUG",
             a2a_log_payloads=False,
@@ -72,7 +72,7 @@ async def test_session_prompt_async_posts_prompt_async_endpoint(monkeypatch):
     client = OpencodeClient(
         make_settings(
             a2a_bearer_token="t-1",
-            opencode_directory="/safe",
+            opencode_workspace_root="/safe",
             opencode_timeout=1.0,
             a2a_log_level="DEBUG",
             a2a_log_payloads=False,
@@ -131,7 +131,7 @@ async def test_session_command_posts_command_endpoint(monkeypatch):
     client = OpencodeClient(
         make_settings(
             a2a_bearer_token="t-1",
-            opencode_directory="/safe",
+            opencode_workspace_root="/safe",
             opencode_timeout=1.0,
             a2a_log_level="DEBUG",
             a2a_log_payloads=False,
@@ -163,7 +163,7 @@ async def test_session_shell_posts_shell_endpoint(monkeypatch):
     client = OpencodeClient(
         make_settings(
             a2a_bearer_token="t-1",
-            opencode_directory="/safe",
+            opencode_workspace_root="/safe",
             opencode_timeout=1.0,
             a2a_log_level="DEBUG",
             a2a_log_payloads=False,
@@ -349,7 +349,7 @@ async def test_list_provider_catalog_calls_provider_endpoint(monkeypatch):
     client = OpencodeClient(
         make_settings(
             a2a_bearer_token="t-1",
-            opencode_directory="/safe",
+            opencode_workspace_root="/safe",
             opencode_timeout=1.0,
             a2a_log_level="DEBUG",
             a2a_log_payloads=False,
@@ -379,7 +379,7 @@ async def test_permission_reply_raises_on_404_without_legacy_fallback(monkeypatc
     client = OpencodeClient(
         make_settings(
             a2a_bearer_token="t-1",
-            opencode_directory="/safe",
+            opencode_workspace_root="/safe",
             opencode_timeout=1.0,
             a2a_log_level="DEBUG",
             a2a_log_payloads=False,
@@ -488,7 +488,7 @@ async def test_abort_session_posts_abort_endpoint(monkeypatch):
     client = OpencodeClient(
         make_settings(
             a2a_bearer_token="t-1",
-            opencode_directory="/safe",
+            opencode_workspace_root="/safe",
             opencode_timeout=1.0,
             a2a_log_level="DEBUG",
             a2a_log_payloads=False,

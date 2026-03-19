@@ -106,7 +106,9 @@ Key variables to understand protocol behavior:
   - Failure events include concrete error details with `failed` state.
 - Directory validation and normalization:
   - Clients can pass `metadata.opencode.directory`, but it must stay inside
-    `${OPENCODE_DIRECTORY}` (or service runtime root if not configured).
+    `${OPENCODE_WORKSPACE_ROOT}` (or service runtime root if not configured).
+  - `OPENCODE_WORKSPACE_ROOT` is the service-level default workspace root used
+    when clients do not request a narrower directory override.
   - All paths are normalized with `realpath` to prevent `..` or symlink
     boundary bypass.
   - If `A2A_ALLOW_DIRECTORY_OVERRIDE=false`, only the default directory is
