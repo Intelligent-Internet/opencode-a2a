@@ -502,8 +502,6 @@ class OpencodeAgentExecutor(AgentExecutor):
         )
         use_structured_parts = bool(request_parts) and not text_only_request
         bound_session_id = _extract_shared_session_id(context)
-        model_override = _extract_shared_model(context)
-
         # Directory validation
         metadata = context.metadata
         if metadata is not None and not isinstance(metadata, Mapping):
@@ -614,7 +612,6 @@ class OpencodeAgentExecutor(AgentExecutor):
             )
             send_kwargs: dict[str, Any] = {
                 "directory": directory,
-                "model_override": model_override,
             }
             if streaming_request:
                 send_kwargs["timeout_override"] = self._client.stream_timeout
@@ -2114,25 +2111,6 @@ def _extract_shared_session_id(context: RequestContext) -> str | None:
         namespace="shared",
         path=("session", "id"),
     )
-
-
-def _extract_shared_model(context: RequestContext) -> dict[str, str] | None:
-    provider_id = _extract_namespaced_string_metadata(
-        context,
-        namespace="shared",
-        path=("model", "providerID"),
-    )
-    model_id = _extract_namespaced_string_metadata(
-        context,
-        namespace="shared",
-        path=("model", "modelID"),
-    )
-    if provider_id is None or model_id is None:
-        return None
-    return {
-        "providerID": provider_id,
-        "modelID": model_id,
-    }
 
 
 def _extract_opencode_directory(context: RequestContext) -> str | None:

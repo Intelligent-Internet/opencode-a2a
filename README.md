@@ -25,8 +25,7 @@ need a stable service layer around it. This repository provides that layer by:
   extensions
 - SSE streaming with normalized `text`, `reasoning`, and `tool_call` blocks
 - session continuation via `metadata.shared.session.id`
-- request-scoped model selection via `metadata.shared.model`
-- OpenCode session query/control extensions and provider/model discovery
+- OpenCode session query/control extensions
 - released CLI install/upgrade flow and a foreground runtime entrypoint
 
 ## Extension Capability Overview
@@ -38,18 +37,17 @@ though they are exposed through A2A JSON-RPC.
 | Extension URI | Scope | Primary use |
 | --- | --- | --- |
 | `urn:a2a:session-binding/v1` | Shared | Bind a main chat request to an existing upstream session via `metadata.shared.session.id` |
-| `urn:a2a:model-selection/v1` | Shared | Override the default upstream model for one main chat request |
 | `urn:a2a:stream-hints/v1` | Shared | Advertise canonical stream metadata for blocks, usage, interrupts, and session hints |
 | `urn:opencode-a2a:session-query/v1` | OpenCode-specific | Query external sessions and invoke OpenCode session control methods |
-| `urn:opencode-a2a:provider-discovery/v1` | OpenCode-specific | Discover normalized OpenCode provider/model summaries |
 | `urn:a2a:interactive-interrupt/v1` | Shared | Reply to interrupt callbacks observed from stream metadata |
+| `urn:a2a:compatibility-profile/v1` | Shared | Publish stable capability retention and deployment-conditional method guidance |
+| `urn:a2a:wire-contract/v1` | Shared | Publish the current runtime method and endpoint boundary |
 
 Detailed consumption guidance:
 
 - Shared session binding: [`docs/guide.md#shared-session-binding-contract`](docs/guide.md#shared-session-binding-contract)
-- Shared model selection: [`docs/guide.md#shared-model-selection-contract`](docs/guide.md#shared-model-selection-contract)
 - Shared stream hints: [`docs/guide.md#shared-stream-hints-contract`](docs/guide.md#shared-stream-hints-contract)
-- OpenCode session query and provider discovery: [`docs/guide.md#opencode-session-query--provider-discovery-a2a-extensions`](docs/guide.md#opencode-session-query--provider-discovery-a2a-extensions)
+- OpenCode session query: [`docs/guide.md#opencode-session-query-a2a-extension`](docs/guide.md#opencode-session-query-a2a-extension)
 - Shared interrupt callback: [`docs/guide.md#shared-interrupt-callback-a2a-extension`](docs/guide.md#shared-interrupt-callback-a2a-extension)
 - Compatibility profile and retention guidance:
   [`docs/guide.md#compatibility-profile`](docs/guide.md#compatibility-profile)
@@ -145,13 +143,13 @@ Run it against an existing project/workspace:
 GOOGLE_GENERATIVE_AI_API_KEY=<your-key> \
 OPENCODE_PROVIDER_ID=google \
 OPENCODE_MODEL_ID=gemini-3.1-pro-preview \
-opencode serve
+opencode serve --hostname 127.0.0.1 --port 4096
 
 A2A_BEARER_TOKEN=prod-token \
+OPENCODE_BASE_URL=http://127.0.0.1:4096 \
 A2A_HOST=127.0.0.1 \
 A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
-OPENCODE_MANAGED_SERVER=true \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a-server serve
 ```
@@ -161,30 +159,20 @@ exposes to OpenCode.
 
 Default address: `http://127.0.0.1:8000`
 
-OpenCode upstream modes:
+Runtime boundary:
 
-- Managed upstream: set `OPENCODE_MANAGED_SERVER=true` and
-  `opencode-a2a-server` will start a local `opencode serve`, capture its actual
-  listening URL, and stop it on shutdown.
-- External upstream: you start and manage `opencode serve` yourself, then point
-  `OPENCODE_BASE_URL` at that HTTP endpoint.
+- `opencode serve` owns provider auth, model defaults, and upstream lifecycle.
+- `opencode-a2a-server serve` connects to that upstream through `OPENCODE_BASE_URL`.
 
 Common runtime variables:
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `A2A_BEARER_TOKEN` | Yes | None | Bearer token required for authenticated runtime requests. |
-| `OPENCODE_BASE_URL` | No | `http://127.0.0.1:4096` | Upstream OpenCode HTTP endpoint for externally managed upstream mode. |
-| `OPENCODE_MANAGED_SERVER` | No | `false` | Start and manage a local `opencode serve` child process. |
-| `OPENCODE_MANAGED_SERVER_HOST` | No | `127.0.0.1` | Bind host used when managed upstream mode is enabled. |
-| `OPENCODE_MANAGED_SERVER_PORT` | No | auto-pick | Bind port used when managed upstream mode is enabled. |
-| `OPENCODE_COMMAND` | No | `opencode` | OpenCode CLI executable used for managed upstream mode. |
-| `OPENCODE_STARTUP_TIMEOUT` | No | `20` | Seconds to wait for managed upstream startup. |
+| `OPENCODE_BASE_URL` | Yes in two-process deployments | `http://127.0.0.1:4096` | Upstream OpenCode HTTP endpoint. Set it explicitly when `opencode serve` runs separately. |
 | `OPENCODE_WORKSPACE_ROOT` | No | None | Default workspace root exposed to OpenCode. |
-| `OPENCODE_PROVIDER_ID` | No | None | Default provider for the upstream runtime. |
-| `OPENCODE_MODEL_ID` | No | None | Default model for the upstream runtime. Set together with `OPENCODE_PROVIDER_ID`. |
-| `A2A_HOST` | No | `127.0.0.1` | Bind host for the A2A server. |
-| `A2A_PORT` | No | `8000` | Bind port for the A2A server. |
+| `A2A_HOST` | Yes in explicit deployments | `127.0.0.1` | Bind host for the A2A server. |
+| `A2A_PORT` | Yes in explicit deployments | `8000` | Bind port for the A2A server. |
 | `A2A_PUBLIC_URL` | No | `http://127.0.0.1:8000` | Public base URL advertised by the Agent Card. |
 | `A2A_LOG_LEVEL` | No | `WARNING` | Server log level. |
 | `A2A_LOG_PAYLOADS` | No | `false` | Enable request/response payload logging. |
@@ -194,12 +182,6 @@ Common runtime variables:
 | `A2A_ENABLE_SESSION_SHELL` | No | `false` | Enable high-risk `opencode.sessions.shell`. |
 | `OPENCODE_TIMEOUT` | No | `120` | Upstream OpenCode request timeout in seconds. |
 | `OPENCODE_TIMEOUT_STREAM` | No | None | Upstream OpenCode stream timeout override in seconds. |
-
-If you omit `OPENCODE_PROVIDER_ID` / `OPENCODE_MODEL_ID`, `opencode serve`
-uses your local OpenCode defaults (for example `~/.config/opencode/opencode.json`).
-
-When `OPENCODE_MANAGED_SERVER=true`, `OPENCODE_BASE_URL` is ignored and the
-runtime binds itself to the managed child process instead.
 
 For provider-specific auth, model IDs, and config details, use the OpenCode
 official docs and CLI:
@@ -227,10 +209,10 @@ Minimal self-managed `systemd` example:
 
 ```bash
 A2A_BEARER_TOKEN=replace-me
+OPENCODE_BASE_URL=http://127.0.0.1:4096
 A2A_HOST=127.0.0.1
 A2A_PORT=8000
 A2A_PUBLIC_URL=https://a2a.example.com
-OPENCODE_MANAGED_SERVER=true
 OPENCODE_WORKSPACE_ROOT=/srv/my-workspace
 ```
 
@@ -256,33 +238,6 @@ WantedBy=multi-user.target
 
 Replace `ExecStart` with the absolute path returned by `command -v opencode-a2a-server`.
 
-Minimal managed-upstream foreground example:
-
-```bash
-A2A_BEARER_TOKEN=dev-token \
-A2A_HOST=127.0.0.1 \
-A2A_PORT=8000 \
-A2A_PUBLIC_URL=http://127.0.0.1:8000 \
-OPENCODE_MANAGED_SERVER=true \
-OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
-opencode-a2a-server serve
-```
-
-Advanced: externally managed upstream
-
-Use this mode when you intentionally want `opencode serve` and
-`opencode-a2a-server` to be supervised independently.
-
-```bash
-OPENCODE_BASE_URL=http://127.0.0.1:4096 \
-A2A_BEARER_TOKEN=dev-token \
-A2A_HOST=127.0.0.1 \
-A2A_PORT=8000 \
-A2A_PUBLIC_URL=http://127.0.0.1:8000 \
-OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
-opencode-a2a-server serve
-```
-
 Migration notes:
 
 - `OPENCODE_DIRECTORY` has been removed. Use `OPENCODE_WORKSPACE_ROOT`.
@@ -302,7 +257,7 @@ uv sync --all-extras
 GOOGLE_GENERATIVE_AI_API_KEY=<your-key> \
 OPENCODE_PROVIDER_ID=google \
 OPENCODE_MODEL_ID=gemini-3.1-pro-preview \
-opencode serve
+opencode serve --hostname 127.0.0.1 --port 4096
 
 A2A_BEARER_TOKEN=dev-token \
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \

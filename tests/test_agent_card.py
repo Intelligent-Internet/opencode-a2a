@@ -1,8 +1,6 @@
 from opencode_a2a_server.app import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
-    MODEL_SELECTION_EXTENSION_URI,
-    PROVIDER_DISCOVERY_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_QUERY_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
@@ -39,8 +37,6 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
             a2a_bearer_token="test-token",
             a2a_project="alpha",
             opencode_workspace_root="/srv/workspaces/alpha",
-            opencode_provider_id="google",
-            opencode_model_id="gemini-2.5-flash",
             opencode_agent="code-reviewer",
             opencode_variant="safe",
             a2a_allow_directory_override=False,
@@ -52,8 +48,6 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     context = binding.params["deployment_context"]
     assert context["project"] == "alpha"
     assert context["workspace_root"] == "/srv/workspaces/alpha"
-    assert context["provider_id"] == "google"
-    assert context["model_id"] == "gemini-2.5-flash"
     assert context["agent"] == "code-reviewer"
     assert context["variant"] == "safe"
     assert context["deployment_profile"] == "single_tenant_shared_workspace"
@@ -69,16 +63,6 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert binding.params["directory_override_enabled"] is False
     assert binding.params["shared_workspace_across_consumers"] is True
     assert binding.params["tenant_isolation"] == "none"
-
-    model_selection = ext_by_uri[MODEL_SELECTION_EXTENSION_URI]
-    assert model_selection.params["metadata_field"] == "metadata.shared.model"
-    assert model_selection.params["fields"]["providerID"] == "metadata.shared.model.providerID"
-    assert model_selection.params["fields"]["modelID"] == "metadata.shared.model.modelID"
-    assert model_selection.params["default_model"] == {
-        "providerID": "google",
-        "modelID": "gemini-2.5-flash",
-    }
-    assert model_selection.params["applies_to_methods"] == ["message/send", "message/stream"]
 
     streaming = ext_by_uri[STREAMING_EXTENSION_URI]
     assert streaming.params["artifact_metadata_field"] == "metadata.shared.stream"
@@ -153,30 +137,6 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
         "unsupported",
     ]
 
-    provider_discovery = ext_by_uri[PROVIDER_DISCOVERY_EXTENSION_URI]
-    assert provider_discovery.params["deployment_context"]["project"] == "alpha"
-    assert provider_discovery.params["methods"] == {
-        "list_providers": "opencode.providers.list",
-        "list_models": "opencode.models.list",
-    }
-    assert "result_envelope" not in provider_discovery.params
-    assert provider_discovery.params["method_contracts"]["opencode.providers.list"]["result"] == {
-        "fields": ["items", "default_by_provider", "connected"],
-        "items_type": "ProviderSummary[]",
-    }
-    assert provider_discovery.params["method_contracts"]["opencode.models.list"]["params"] == {
-        "optional": ["provider_id"]
-    }
-    assert provider_discovery.params["method_contracts"]["opencode.models.list"]["result"] == {
-        "fields": ["items", "default_by_provider", "connected"],
-        "items_type": "ModelSummary[]",
-    }
-    assert provider_discovery.params["errors"]["business_codes"] == {
-        "UPSTREAM_UNREACHABLE": -32002,
-        "UPSTREAM_HTTP_ERROR": -32003,
-        "UPSTREAM_PAYLOAD_ERROR": -32005,
-    }
-
     interrupt = ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI]
     assert interrupt.params["deployment_context"]["project"] == "alpha"
     assert interrupt.params["shared_workspace_across_consumers"] is True
@@ -215,18 +175,12 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
         )
 
     compatibility = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
-    assert compatibility.params["extension_retention"][MODEL_SELECTION_EXTENSION_URI] == {
-        "surface": "core-runtime-metadata",
-        "availability": "always",
-        "retention": "stable",
-    }
     shell_policy = compatibility.params["method_retention"]["opencode.sessions.shell"]
     assert shell_policy["availability"] == "disabled"
     assert shell_policy["retention"] == "deployment-conditional"
     assert shell_policy["toggle"] == "A2A_ENABLE_SESSION_SHELL"
 
     wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
-    assert MODEL_SELECTION_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert "opencode.sessions.shell" not in wire_contract.params["all_jsonrpc_methods"]
     assert wire_contract.params["extensions"]["conditionally_available_methods"] == {
         "opencode.sessions.shell": {
@@ -273,10 +227,7 @@ def test_agent_card_skills_hide_shell_when_disabled_by_default() -> None:
     card = build_agent_card(make_settings(a2a_bearer_token="test-token"))
 
     session_skill = next(skill for skill in card.skills if skill.id == "opencode.sessions.query")
-    provider_skill = next(skill for skill in card.skills if skill.id == "opencode.providers.query")
 
     assert "provider-private" in session_skill.tags
-    assert "provider-private" in provider_skill.tags
     assert "provider-private" in session_skill.description
-    assert "provider-private" in provider_skill.description
     assert all("opencode.sessions.shell" not in example for example in session_skill.examples)
