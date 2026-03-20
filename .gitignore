@@ -17,6 +17,8 @@ eggs/
 lib/
 lib64/
 parts/
+!src/opencode_a2a_server/parts/
+!src/opencode_a2a_server/parts/**
 sdist/
 var/
 wheels/
