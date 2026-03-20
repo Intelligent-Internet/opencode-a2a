@@ -35,7 +35,7 @@ from opencode_a2a_server.execution.executor import (
     _StreamOutputState,
     _TTLCache,
 )
-from opencode_a2a_server.opencode_client import UpstreamContractError
+from opencode_a2a_server.opencode_upstream_client import UpstreamContractError
 
 
 def test_stream_output_state_covers_echo_progress_and_interrupt_edges() -> None:

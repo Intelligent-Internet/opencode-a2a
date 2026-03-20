@@ -18,12 +18,12 @@ from fastapi.responses import JSONResponse
 from starlette.requests import Request
 from starlette.responses import Response
 
-from ..extension_contracts import (
+from ..contracts.extensions import (
     INTERRUPT_ERROR_BUSINESS_CODES,
     PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES,
     SESSION_QUERY_ERROR_BUSINESS_CODES,
 )
-from ..opencode_client import OpencodeClient, UpstreamContractError
+from ..opencode_upstream_client import OpencodeUpstreamClient, UpstreamContractError
 from .methods import (
     SESSION_CONTEXT_PREFIX,
     _apply_session_query_limit,
@@ -88,7 +88,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
     def __init__(
         self,
         *args: Any,
-        opencode_client: OpencodeClient,
+        upstream_client: OpencodeUpstreamClient,
         methods: dict[str, str],
         protocol_version: str,
         supported_methods: list[str],
@@ -99,7 +99,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         **kwargs: Any,
     ):
         super().__init__(*args, **kwargs)
-        self._opencode_client = opencode_client
+        self._upstream_client = upstream_client
         self._method_list_sessions = methods["list_sessions"]
         self._method_get_session_messages = methods["get_session_messages"]
         self._method_prompt_async = methods["prompt_async"]
@@ -337,10 +337,10 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         limit = int(query["limit"])
         try:
             if base_request.method == self._method_list_sessions:
-                raw_result = await self._opencode_client.list_sessions(params=query)
+                raw_result = await self._upstream_client.list_sessions(params=query)
             else:
                 assert session_id is not None
-                raw_result = await self._opencode_client.list_messages(session_id, params=query)
+                raw_result = await self._upstream_client.list_messages(session_id, params=query)
         except httpx.HTTPStatusError as exc:
             upstream_status = exc.response.status_code
             if upstream_status == 404 and base_request.method == self._method_get_session_messages:
@@ -486,7 +486,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             )
 
         try:
-            raw_result = await self._opencode_client.list_provider_catalog(directory=directory)
+            raw_result = await self._upstream_client.list_provider_catalog(directory=directory)
         except httpx.HTTPStatusError as exc:
             upstream_status = exc.response.status_code
             return self._generate_error_response(
@@ -693,14 +693,14 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         try:
             result: dict[str, Any]
             if base_request.method == self._method_prompt_async:
-                await self._opencode_client.session_prompt_async(
+                await self._upstream_client.session_prompt_async(
                     session_id,
                     request=dict(raw_request),
                     directory=directory,
                 )
                 result = {"ok": True, "session_id": session_id}
             elif base_request.method == self._method_command:
-                raw_result = await self._opencode_client.session_command(
+                raw_result = await self._upstream_client.session_command(
                     session_id,
                     request=dict(raw_request),
                     directory=directory,
@@ -713,7 +713,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                     )
                 result = {"item": item}
             else:
-                raw_result = await self._opencode_client.session_shell(
+                raw_result = await self._upstream_client.session_shell(
                     session_id,
                     request=dict(raw_request),
                     directory=directory,
@@ -850,7 +850,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         expected_interrupt_type = (
             "permission" if base_request.method == self._method_reply_permission else "question"
         )
-        resolve_request = getattr(self._opencode_client, "resolve_interrupt_request", None)
+        resolve_request = getattr(self._upstream_client, "resolve_interrupt_request", None)
         if callable(resolve_request):
             status, binding = resolve_request(request_id)
             if status != "active" or binding is None:
@@ -907,7 +907,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                     ),
                 )
         else:
-            resolve_session = getattr(self._opencode_client, "resolve_interrupt_session", None)
+            resolve_session = getattr(self._upstream_client, "resolve_interrupt_session", None)
             if callable(resolve_session):
                 if not resolve_session(request_id):
                     return self._generate_error_response(
@@ -949,7 +949,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 message = params.get("message")
                 if message is not None and not isinstance(message, str):
                     raise ValueError("message must be a string")
-                await self._opencode_client.permission_reply(
+                await self._upstream_client.permission_reply(
                     request_id,
                     reply=reply,
                     message=message,
@@ -957,14 +957,14 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 )
             elif base_request.method == self._method_reply_question:
                 answers = _parse_question_answers(params.get("answers"))
-                await self._opencode_client.question_reply(
+                await self._upstream_client.question_reply(
                     request_id,
                     answers=answers,
                     directory=directory,
                 )
             else:
-                await self._opencode_client.question_reject(request_id, directory=directory)
-            discard_request = getattr(self._opencode_client, "discard_interrupt_request", None)
+                await self._upstream_client.question_reject(request_id, directory=directory)
+            discard_request = getattr(self._upstream_client, "discard_interrupt_request", None)
             if callable(discard_request):
                 discard_request(request_id)
         except ValueError as exc:
@@ -980,7 +980,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         except httpx.HTTPStatusError as exc:
             upstream_status = exc.response.status_code
             if upstream_status == 404:
-                discard_request = getattr(self._opencode_client, "discard_interrupt_request", None)
+                discard_request = getattr(self._upstream_client, "discard_interrupt_request", None)
                 if callable(discard_request):
                     discard_request(request_id)
                 return self._generate_error_response(

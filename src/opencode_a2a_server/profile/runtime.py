@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .config import Settings
+from ..config import Settings
 
 PROFILE_ID = "opencode-a2a-single-tenant-coding-v1"
 DEPLOYMENT_ID = "single_tenant_shared_workspace"

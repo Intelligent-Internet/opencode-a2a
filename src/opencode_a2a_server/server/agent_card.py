@@ -12,7 +12,7 @@ from a2a.types import (
 )
 
 from ..config import Settings
-from ..extension_contracts import (
+from ..contracts.extensions import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
@@ -34,7 +34,7 @@ from ..extension_contracts import (
     build_wire_contract_params,
 )
 from ..jsonrpc.application import SESSION_CONTEXT_PREFIX
-from ..runtime_profile import RuntimeProfile, build_runtime_profile
+from ..profile.runtime import RuntimeProfile, build_runtime_profile
 
 
 def _build_agent_card_description(settings: Settings, runtime_profile: RuntimeProfile) -> str:

@@ -10,7 +10,7 @@ PER_FILE_MINIMUMS = {
     "src/opencode_a2a_server/execution/executor.py": 90.0,
     "src/opencode_a2a_server/server/application.py": 90.0,
     "src/opencode_a2a_server/jsonrpc/application.py": 85.0,
-    "src/opencode_a2a_server/opencode_client.py": 85.0,
+    "src/opencode_a2a_server/opencode_upstream_client.py": 85.0,
 }
 
 

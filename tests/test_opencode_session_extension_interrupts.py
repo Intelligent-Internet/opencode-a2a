@@ -2,7 +2,7 @@ import httpx
 import pytest
 
 from opencode_a2a_server.config import Settings
-from tests.helpers import DummySessionQueryOpencodeClient as DummyOpencodeClient
+from tests.helpers import DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient
 from tests.helpers import make_settings
 from tests.session_extension_fixtures import _BASE_SETTINGS
 
@@ -11,7 +11,7 @@ from tests.session_extension_fixtures import _BASE_SETTINGS
 async def test_interrupt_callback_extension_permission_reply(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    class InterruptClient(DummyOpencodeClient):
+    class InterruptClient(DummyOpencodeUpstreamClient):
         def __init__(self, _settings: Settings) -> None:
             super().__init__(_settings)
             self.permission_reply_calls: list[dict] = []
@@ -44,7 +44,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
         task_id="task-perm",
         context_id="ctx-perm",
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -86,10 +86,10 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
 async def test_interrupt_callback_extension_rejects_legacy_permission_fields(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyOpencodeUpstreamClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -115,10 +115,10 @@ async def test_interrupt_callback_extension_rejects_legacy_permission_fields(mon
 async def test_interrupt_callback_extension_rejects_legacy_metadata_directory(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyOpencodeUpstreamClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -151,7 +151,7 @@ async def test_interrupt_callback_extension_rejects_legacy_metadata_directory(mo
 async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    class InterruptClient(DummyOpencodeClient):
+    class InterruptClient(DummyOpencodeUpstreamClient):
         def __init__(self, _settings: Settings) -> None:
             super().__init__(_settings)
             self.question_reply_calls: list[dict] = []
@@ -191,7 +191,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
         session_id="ses-1",
         interrupt_type="question",
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -251,7 +251,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
 async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    class NotFoundInterruptClient(DummyOpencodeClient):
+    class NotFoundInterruptClient(DummyOpencodeUpstreamClient):
         async def permission_reply(
             self,
             request_id: str,
@@ -272,7 +272,7 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
         session_id="ses-1",
         interrupt_type="permission",
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -299,12 +299,12 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
 async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    class ExpiredInterruptClient(DummyOpencodeClient):
+    class ExpiredInterruptClient(DummyOpencodeUpstreamClient):
         def resolve_interrupt_request(self, request_id: str):
             del request_id
             return "expired", None
 
-    monkeypatch.setattr(app_module, "OpencodeClient", ExpiredInterruptClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", ExpiredInterruptClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -331,7 +331,7 @@ async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch)
 async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    class InterruptClient(DummyOpencodeClient):
+    class InterruptClient(DummyOpencodeUpstreamClient):
         def __init__(self, _settings: Settings) -> None:
             super().__init__(_settings)
             self.permission_reply_calls: list[str] = []
@@ -351,7 +351,7 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
     dummy = InterruptClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -379,7 +379,7 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
 async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    class InterruptClient(DummyOpencodeClient):
+    class InterruptClient(DummyOpencodeUpstreamClient):
         pass
 
     dummy = InterruptClient(
@@ -390,7 +390,7 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
         session_id="ses-1",
         interrupt_type="question",
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -417,7 +417,7 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
 async def test_interrupt_callback_extension_rejects_identity_mismatch(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    class InterruptClient(DummyOpencodeClient):
+    class InterruptClient(DummyOpencodeUpstreamClient):
         pass
 
     dummy = InterruptClient(
@@ -429,7 +429,7 @@ async def test_interrupt_callback_extension_rejects_identity_mismatch(monkeypatc
         interrupt_type="permission",
         identity="bearer:other-identity",
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )

@@ -4,7 +4,7 @@ from typing import Any, cast
 
 from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus, TextPart
 
-from ..extension_contracts import (
+from ..contracts.extensions import (
     COMMAND_REQUEST_ALLOWED_FIELDS,
     PROMPT_ASYNC_REQUEST_ALLOWED_FIELDS,
     SHELL_REQUEST_ALLOWED_FIELDS,

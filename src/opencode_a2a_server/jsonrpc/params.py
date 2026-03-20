@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..extension_contracts import (
+from ..contracts.extensions import (
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
     SESSION_QUERY_PAGINATION_UNSUPPORTED,

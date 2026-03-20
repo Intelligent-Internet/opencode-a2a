@@ -8,13 +8,13 @@ from a2a.server.events.event_queue import EventQueue
 from a2a.types import TaskState, TaskStatusUpdateEvent
 
 from opencode_a2a_server.execution.executor import OpencodeAgentExecutor
-from opencode_a2a_server.opencode_client import OpencodeClient
+from opencode_a2a_server.opencode_upstream_client import OpencodeUpstreamClient
 from tests.helpers import configure_mock_client_runtime, make_request_context_mock
 
 
 @pytest.mark.asyncio
 async def test_cancel_interrupts_running_execute_and_keeps_queue_open(caplog):
-    client = AsyncMock(spec=OpencodeClient)
+    client = AsyncMock(spec=OpencodeUpstreamClient)
     send_started = asyncio.Event()
     send_cancelled = asyncio.Event()
 
@@ -107,7 +107,7 @@ async def test_cancel_does_not_block_with_real_event_queue() -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_keeps_canceled_status_when_abort_session_fails() -> None:
-    client = AsyncMock(spec=OpencodeClient)
+    client = AsyncMock(spec=OpencodeUpstreamClient)
     send_started = asyncio.Event()
     send_cancelled = asyncio.Event()
 
@@ -175,7 +175,7 @@ async def test_cancel_keeps_canceled_status_when_abort_session_fails() -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_remains_responsive_when_abort_session_hangs(caplog) -> None:
-    client = AsyncMock(spec=OpencodeClient)
+    client = AsyncMock(spec=OpencodeUpstreamClient)
     send_started = asyncio.Event()
     send_cancelled = asyncio.Event()
 
@@ -252,7 +252,7 @@ async def test_cancel_remains_responsive_when_abort_session_hangs(caplog) -> Non
 
 @pytest.mark.asyncio
 async def test_cancel_waiting_for_session_lock_does_not_abort_other_generation() -> None:
-    client = AsyncMock(spec=OpencodeClient)
+    client = AsyncMock(spec=OpencodeUpstreamClient)
     client.create_session.return_value = "session-4"
     client.send_message = AsyncMock()
     client.abort_session.return_value = True

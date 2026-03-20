@@ -5,7 +5,7 @@ import logging
 
 from fastapi.responses import JSONResponse
 
-from ..extension_contracts import INTERRUPT_CALLBACK_METHODS, SESSION_QUERY_METHODS
+from ..contracts.extensions import INTERRUPT_CALLBACK_METHODS, SESSION_QUERY_METHODS
 
 logger = logging.getLogger(__name__)
 

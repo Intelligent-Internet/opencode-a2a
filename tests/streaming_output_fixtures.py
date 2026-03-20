@@ -5,7 +5,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from opencode_a2a_server.opencode_client import OpencodeMessage
+from opencode_a2a_server.opencode_upstream_client import OpencodeMessage
 from tests.helpers import (
     DummyEventQueue,
     make_settings,

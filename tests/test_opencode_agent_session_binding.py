@@ -4,13 +4,13 @@ import pytest
 from a2a.types import Task
 
 from opencode_a2a_server.execution.executor import OpencodeAgentExecutor
-from opencode_a2a_server.opencode_client import OpencodeMessage
-from tests.helpers import DummyChatOpencodeClient, DummyEventQueue, make_request_context
+from opencode_a2a_server.opencode_upstream_client import OpencodeMessage
+from tests.helpers import DummyChatOpencodeUpstreamClient, DummyEventQueue, make_request_context
 
 
 @pytest.mark.asyncio
 async def test_agent_prefers_metadata_shared_session_id() -> None:
-    client = DummyChatOpencodeClient()
+    client = DummyChatOpencodeUpstreamClient()
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
     q = DummyEventQueue()
 
@@ -28,7 +28,7 @@ async def test_agent_prefers_metadata_shared_session_id() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_passes_shared_model_override_to_upstream() -> None:
-    client = DummyChatOpencodeClient()
+    client = DummyChatOpencodeUpstreamClient()
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
     q = DummyEventQueue()
 
@@ -45,7 +45,7 @@ async def test_agent_passes_shared_model_override_to_upstream() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_ignores_partial_shared_model_override() -> None:
-    client = DummyChatOpencodeClient()
+    client = DummyChatOpencodeUpstreamClient()
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
     q = DummyEventQueue()
 
@@ -62,7 +62,7 @@ async def test_agent_ignores_partial_shared_model_override() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_caches_bound_session_id_for_followup_requests() -> None:
-    client = DummyChatOpencodeClient()
+    client = DummyChatOpencodeUpstreamClient()
     executor = OpencodeAgentExecutor(
         client,
         streaming_enabled=False,
@@ -93,7 +93,7 @@ async def test_agent_caches_bound_session_id_for_followup_requests() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_dedupes_concurrent_session_creates_per_context() -> None:
-    class SlowCreateClient(DummyChatOpencodeClient):
+    class SlowCreateClient(DummyChatOpencodeUpstreamClient):
         async def create_session(
             self,
             title: str | None = None,
@@ -123,7 +123,7 @@ async def test_agent_dedupes_concurrent_session_creates_per_context() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_uses_stable_fallback_message_id_when_upstream_missing_message_id() -> None:
-    class MissingMessageIdClient(DummyChatOpencodeClient):
+    class MissingMessageIdClient(DummyChatOpencodeUpstreamClient):
         async def send_message(
             self,
             session_id: str,
@@ -158,7 +158,7 @@ async def test_agent_uses_stable_fallback_message_id_when_upstream_missing_messa
 
 @pytest.mark.asyncio
 async def test_agent_includes_usage_in_non_stream_task_metadata() -> None:
-    class UsageClient(DummyChatOpencodeClient):
+    class UsageClient(DummyChatOpencodeUpstreamClient):
         async def send_message(
             self,
             session_id: str,

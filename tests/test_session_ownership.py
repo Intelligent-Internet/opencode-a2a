@@ -5,13 +5,13 @@ import pytest
 from a2a.server.events.event_queue import EventQueue
 
 from opencode_a2a_server.execution.executor import OpencodeAgentExecutor, _TTLCache
-from opencode_a2a_server.opencode_client import OpencodeClient
+from opencode_a2a_server.opencode_upstream_client import OpencodeUpstreamClient
 from tests.helpers import configure_mock_client_runtime, make_request_context_mock
 
 
 @pytest.fixture
 def mock_client():
-    client = AsyncMock(spec=OpencodeClient)
+    client = AsyncMock(spec=OpencodeUpstreamClient)
     # Define sessions to return
     sessions = ["session-1", "session-2", "session-3"]
     current_idx = 0
@@ -114,7 +114,7 @@ async def test_session_hijack_prevention(mock_client):
 
 @pytest.mark.asyncio
 async def test_concurrent_session_create_isolated_by_identity():
-    client = AsyncMock(spec=OpencodeClient)
+    client = AsyncMock(spec=OpencodeUpstreamClient)
     created = 0
 
     async def create_session(title=None, directory=None):
@@ -174,7 +174,7 @@ async def test_concurrent_session_create_isolated_by_identity():
 
 def test_session_owner_cache_is_bounded():
     executor = OpencodeAgentExecutor(
-        AsyncMock(spec=OpencodeClient),
+        AsyncMock(spec=OpencodeUpstreamClient),
         streaming_enabled=False,
         session_cache_ttl_seconds=3600,
         session_cache_maxsize=2,
@@ -229,7 +229,7 @@ def test_owner_cache_evicts_earliest_expiring_entry_on_overflow():
 
 @pytest.mark.asyncio
 async def test_preferred_session_claim_is_released_on_upstream_failure():
-    client = AsyncMock(spec=OpencodeClient)
+    client = AsyncMock(spec=OpencodeUpstreamClient)
 
     async def send_message(
         session_id,
@@ -263,7 +263,7 @@ async def test_preferred_session_claim_is_released_on_upstream_failure():
 
 @pytest.mark.asyncio
 async def test_preferred_session_claim_is_released_on_upstream_cancellation():
-    client = AsyncMock(spec=OpencodeClient)
+    client = AsyncMock(spec=OpencodeUpstreamClient)
 
     async def send_message(
         _session_id,
@@ -298,7 +298,9 @@ async def test_preferred_session_claim_is_released_on_upstream_cancellation():
 
 @pytest.mark.asyncio
 async def test_pending_preferred_session_claim_blocks_other_identity():
-    executor = OpencodeAgentExecutor(AsyncMock(spec=OpencodeClient), streaming_enabled=False)
+    executor = OpencodeAgentExecutor(
+        AsyncMock(spec=OpencodeUpstreamClient), streaming_enabled=False
+    )
 
     session_id, pending = await executor._get_or_create_session(
         "user-1",

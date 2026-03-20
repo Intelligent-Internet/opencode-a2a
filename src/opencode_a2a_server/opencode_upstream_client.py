@@ -40,7 +40,7 @@ class InterruptRequestBinding:
     expires_at: float
 
 
-class OpencodeClient:
+class OpencodeUpstreamClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._base_url = settings.opencode_base_url.rstrip("/")

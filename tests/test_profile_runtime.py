@@ -1,8 +1,8 @@
-from opencode_a2a_server.runtime_profile import build_runtime_profile
+from opencode_a2a_server.profile.runtime import build_runtime_profile
 from tests.helpers import make_settings
 
 
-def test_runtime_profile_splits_deployment_runtime_features_and_health_payload() -> None:
+def test_profile_runtime_splits_deployment_runtime_features_and_health_payload() -> None:
     settings = make_settings(
         a2a_bearer_token="test-token",
         a2a_allow_directory_override=False,
@@ -93,7 +93,7 @@ def test_runtime_profile_splits_deployment_runtime_features_and_health_payload()
     }
 
 
-def test_runtime_profile_uses_conservative_execution_environment_defaults() -> None:
+def test_profile_runtime_uses_conservative_execution_environment_defaults() -> None:
     settings = make_settings(a2a_bearer_token="test-token")
 
     profile = build_runtime_profile(settings)

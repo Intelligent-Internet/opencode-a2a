@@ -1,4 +1,4 @@
-from opencode_a2a_server.extension_contracts import (
+from opencode_a2a_server.contracts.extensions import (
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
 )

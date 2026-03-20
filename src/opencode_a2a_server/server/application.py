@@ -36,8 +36,7 @@ from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
 from ..config import Settings
-from ..execution.executor import OpencodeAgentExecutor, _emit_metric
-from ..extension_contracts import (
+from ..contracts.extensions import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
@@ -52,11 +51,12 @@ from ..extension_contracts import (
     WIRE_CONTRACT_EXTENSION_URI,
     build_capability_snapshot,
 )
+from ..execution.executor import OpencodeAgentExecutor, _emit_metric
 from ..jsonrpc.application import (
     OpencodeSessionQueryJSONRPCApplication,
 )
-from ..opencode_client import OpencodeClient
-from ..runtime_profile import build_runtime_profile
+from ..opencode_upstream_client import OpencodeUpstreamClient
+from ..profile.runtime import build_runtime_profile
 from .agent_card import (
     _build_agent_card_description,
     _build_chat_examples,
@@ -397,9 +397,9 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
 
 
 def create_app(settings: Settings) -> FastAPI:
-    client = OpencodeClient(settings)
+    upstream_client = OpencodeUpstreamClient(settings)
     executor = OpencodeAgentExecutor(
-        client,
+        upstream_client,
         streaming_enabled=True,
         cancel_abort_timeout_seconds=settings.a2a_cancel_abort_timeout_seconds,
         session_cache_ttl_seconds=settings.a2a_session_cache_ttl_seconds,
@@ -414,7 +414,7 @@ def create_app(settings: Settings) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         yield
-        await client.close()
+        await upstream_client.close()
 
     agent_card = build_agent_card(settings)
     context_builder = IdentityAwareCallContextBuilder()
@@ -432,7 +432,7 @@ def create_app(settings: Settings) -> FastAPI:
         agent_card=agent_card,
         http_handler=handler,
         context_builder=context_builder,
-        opencode_client=client,
+        upstream_client=upstream_client,
         protocol_version=settings.a2a_protocol_version,
         supported_methods=capability_snapshot.supported_jsonrpc_methods(),
         directory_resolver=executor.resolve_directory_for_control,

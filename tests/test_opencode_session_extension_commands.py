@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from tests.helpers import DummySessionQueryOpencodeClient as DummyOpencodeClient
+from tests.helpers import DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient
 from tests.helpers import make_settings
 from tests.session_extension_fixtures import _BASE_SETTINGS, _session_meta
 
@@ -10,7 +10,7 @@ from tests.session_extension_fixtures import _BASE_SETTINGS, _session_meta
 async def test_session_command_extension_success(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyOpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
@@ -18,7 +18,7 @@ async def test_session_command_extension_success(monkeypatch):
             **_BASE_SETTINGS,
         )
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(
             a2a_bearer_token="t-1",
@@ -60,10 +60,10 @@ async def test_session_command_extension_success(monkeypatch):
 async def test_session_command_extension_accepts_request_model(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyOpencodeUpstreamClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -103,10 +103,10 @@ async def test_session_command_extension_accepts_request_model(monkeypatch):
 async def test_session_command_extension_rejects_invalid_params(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyOpencodeUpstreamClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -174,14 +174,14 @@ async def test_session_command_extension_rejects_invalid_params(monkeypatch):
 async def test_session_command_extension_maps_404_to_session_not_found(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    class NotFoundCommandClient(DummyOpencodeClient):
+    class NotFoundCommandClient(DummyOpencodeUpstreamClient):
         async def session_command(self, session_id: str, request: dict, *, directory=None):
             del session_id, request, directory
             req = httpx.Request("POST", "http://opencode/session/s-404/command")
             resp = httpx.Response(404, request=req)
             raise httpx.HTTPStatusError("Not Found", request=req, response=resp)
 
-    monkeypatch.setattr(app_module, "OpencodeClient", NotFoundCommandClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", NotFoundCommandClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -211,10 +211,10 @@ async def test_session_command_extension_maps_404_to_session_not_found(monkeypat
 async def test_session_shell_extension_disabled_by_default(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyOpencodeUpstreamClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -246,7 +246,7 @@ async def test_session_shell_extension_disabled_by_default(monkeypatch):
 async def test_session_shell_extension_success_when_enabled(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyOpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
@@ -255,7 +255,7 @@ async def test_session_shell_extension_success_when_enabled(monkeypatch):
             **_BASE_SETTINGS,
         )
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(
             a2a_bearer_token="t-1",
@@ -297,7 +297,7 @@ async def test_session_shell_extension_success_when_enabled(monkeypatch):
 async def test_session_shell_extension_rejects_invalid_params(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyOpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
@@ -305,7 +305,7 @@ async def test_session_shell_extension_rejects_invalid_params(monkeypatch):
             **_BASE_SETTINGS,
         )
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(
             a2a_bearer_token="t-1",
@@ -361,7 +361,7 @@ async def test_session_shell_extension_rejects_invalid_params(monkeypatch):
 async def test_session_shell_extension_rejects_owner_mismatch(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    dummy = DummyOpencodeClient(
+    dummy = DummyOpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             a2a_log_payloads=False,
@@ -369,7 +369,7 @@ async def test_session_shell_extension_rejects_owner_mismatch(monkeypatch):
             **_BASE_SETTINGS,
         )
     )
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(
         make_settings(
             a2a_bearer_token="t-1",
@@ -406,14 +406,14 @@ async def test_session_shell_extension_rejects_owner_mismatch(monkeypatch):
 async def test_session_command_extension_maps_500_to_upstream_http_error(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    class UpstreamErrorCommandClient(DummyOpencodeClient):
+    class UpstreamErrorCommandClient(DummyOpencodeUpstreamClient):
         async def session_command(self, session_id: str, request: dict, *, directory=None):
             del session_id, request, directory
             req = httpx.Request("POST", "http://opencode/session/s-1/command")
             resp = httpx.Response(500, request=req)
             raise httpx.HTTPStatusError("Internal Server Error", request=req, response=resp)
 
-    monkeypatch.setattr(app_module, "OpencodeClient", UpstreamErrorCommandClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", UpstreamErrorCommandClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -444,13 +444,13 @@ async def test_session_command_extension_maps_500_to_upstream_http_error(monkeyp
 async def test_session_shell_extension_maps_network_error_to_unreachable(monkeypatch):
     import opencode_a2a_server.server.application as app_module
 
-    class NetworkErrorShellClient(DummyOpencodeClient):
+    class NetworkErrorShellClient(DummyOpencodeUpstreamClient):
         async def session_shell(self, session_id: str, request: dict, *, directory=None):
             del session_id, request, directory
             req = httpx.Request("POST", "http://opencode/session/s-1/shell")
             raise httpx.ConnectError("network down", request=req)
 
-    monkeypatch.setattr(app_module, "OpencodeClient", NetworkErrorShellClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", NetworkErrorShellClient)
     app = app_module.create_app(
         make_settings(
             a2a_bearer_token="t-1",

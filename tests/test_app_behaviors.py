@@ -12,8 +12,8 @@ from a2a.utils.errors import ServerError
 from fastapi import Request
 
 import opencode_a2a_server.server.application as app_module
-from opencode_a2a_server.extension_contracts import build_capability_snapshot
-from opencode_a2a_server.runtime_profile import build_runtime_profile
+from opencode_a2a_server.contracts.extensions import build_capability_snapshot
+from opencode_a2a_server.profile.runtime import build_runtime_profile
 from opencode_a2a_server.server.application import (
     KeepaliveRESTAdapter,
     OpencodeRequestHandler,
@@ -38,7 +38,7 @@ from opencode_a2a_server.server.application import (
     build_agent_card,
     create_app,
 )
-from tests.helpers import DummyChatOpencodeClient, make_settings
+from tests.helpers import DummyChatOpencodeUpstreamClient, make_settings
 
 
 def _request(path: str, body: bytes = b"{}") -> Request:
@@ -211,7 +211,7 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
 
 @pytest.mark.asyncio
 async def test_auth_health_lifespan_and_openapi_cache(monkeypatch) -> None:
-    class _ClosableClient(DummyChatOpencodeClient):
+    class _ClosableClient(DummyChatOpencodeUpstreamClient):
         def __init__(self, settings=None) -> None:
             super().__init__(settings)
             self.closed = False
@@ -220,7 +220,7 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch) -> None:
             self.closed = True
 
     closable = _ClosableClient(make_settings(a2a_bearer_token="test-token"))
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: closable)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: closable)
 
     settings = make_settings(a2a_bearer_token="test-token", a2a_enable_session_shell=True)
     app = create_app(settings)

@@ -5,7 +5,7 @@ import pytest
 from a2a.server.events.event_queue import EventQueue
 
 from opencode_a2a_server.execution.executor import OpencodeAgentExecutor
-from opencode_a2a_server.opencode_client import OpencodeClient
+from opencode_a2a_server.opencode_upstream_client import OpencodeUpstreamClient
 from tests.helpers import make_request_context_mock, make_settings
 
 
@@ -18,7 +18,7 @@ def mock_client():
         a2a_allow_directory_override=True,
     )
 
-    client = OpencodeClient(settings)
+    client = OpencodeUpstreamClient(settings)
     return client
 
 

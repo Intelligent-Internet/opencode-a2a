@@ -8,7 +8,7 @@ from a2a.server.context import ServerCallContext
 from a2a.types import Message, MessageSendParams, Part, Role, TextPart
 
 from opencode_a2a_server.config import Settings
-from opencode_a2a_server.opencode_client import OpencodeMessage
+from opencode_a2a_server.opencode_upstream_client import OpencodeMessage
 
 
 def make_settings(**overrides: Any) -> Settings:
@@ -115,7 +115,7 @@ def make_request_context_with_parts(
     )
 
 
-class DummyChatOpencodeClient:
+class DummyChatOpencodeUpstreamClient:
     def __init__(self, settings: Settings | None = None) -> None:
         self.created_sessions = 0
         self.sent_session_ids: list[str] = []
@@ -186,7 +186,7 @@ class DummyChatOpencodeClient:
         del request_id
 
 
-class DummySessionQueryOpencodeClient:
+class DummySessionQueryOpencodeUpstreamClient:
     def __init__(self, _settings: Settings) -> None:
         self.settings = _settings
         self.directory = _settings.opencode_workspace_root

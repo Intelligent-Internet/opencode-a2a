@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from opencode_a2a_server.extension_contracts import (
+from opencode_a2a_server.contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
@@ -16,7 +16,7 @@ from opencode_a2a_server.extension_contracts import (
     build_wire_contract_params,
 )
 from opencode_a2a_server.jsonrpc.application import SESSION_CONTEXT_PREFIX
-from opencode_a2a_server.runtime_profile import build_runtime_profile
+from opencode_a2a_server.profile.runtime import build_runtime_profile
 from opencode_a2a_server.server.application import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
@@ -29,7 +29,7 @@ from opencode_a2a_server.server.application import (
     build_agent_card,
     create_app,
 )
-from tests.helpers import DummySessionQueryOpencodeClient as DummyOpencodeClient
+from tests.helpers import DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient
 from tests.helpers import make_settings
 
 
@@ -76,28 +76,28 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
     )
 
     assert session_binding.params == expected_session_binding, (
-        "Session binding extension drifted from extension_contracts SSOT."
+        "Session binding extension drifted from contracts.extensions SSOT."
     )
     assert model_selection.params == expected_model_selection, (
-        "Model selection extension drifted from extension_contracts SSOT."
+        "Model selection extension drifted from contracts.extensions SSOT."
     )
     assert streaming.params == expected_streaming, (
-        "Streaming extension drifted from extension_contracts SSOT."
+        "Streaming extension drifted from contracts.extensions SSOT."
     )
     assert session_query.params == expected_session_query, (
-        "Session query extension drifted from extension_contracts SSOT."
+        "Session query extension drifted from contracts.extensions SSOT."
     )
     assert provider_discovery.params == expected_provider_discovery, (
-        "Provider discovery extension drifted from extension_contracts SSOT."
+        "Provider discovery extension drifted from contracts.extensions SSOT."
     )
     assert interrupt_callback.params == expected_interrupt_callback, (
-        "Interrupt callback extension drifted from extension_contracts SSOT."
+        "Interrupt callback extension drifted from contracts.extensions SSOT."
     )
     assert compatibility_profile.params == expected_compatibility_profile, (
-        "Compatibility profile extension drifted from extension_contracts SSOT."
+        "Compatibility profile extension drifted from contracts.extensions SSOT."
     )
     assert wire_contract.params == expected_wire_contract, (
-        "Wire contract extension drifted from extension_contracts SSOT."
+        "Wire contract extension drifted from contracts.extensions SSOT."
     )
 
 
@@ -148,28 +148,28 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     )
 
     assert session_binding == expected_session_binding, (
-        "OpenAPI session binding contract drifted from extension_contracts SSOT."
+        "OpenAPI session binding contract drifted from contracts.extensions SSOT."
     )
     assert model_selection == expected_model_selection, (
-        "OpenAPI model selection contract drifted from extension_contracts SSOT."
+        "OpenAPI model selection contract drifted from contracts.extensions SSOT."
     )
     assert streaming == expected_streaming, (
-        "OpenAPI streaming contract drifted from extension_contracts SSOT."
+        "OpenAPI streaming contract drifted from contracts.extensions SSOT."
     )
     assert session_query == expected_session_query, (
-        "OpenAPI session query contract drifted from extension_contracts SSOT."
+        "OpenAPI session query contract drifted from contracts.extensions SSOT."
     )
     assert provider_discovery == expected_provider_discovery, (
-        "OpenAPI provider discovery contract drifted from extension_contracts SSOT."
+        "OpenAPI provider discovery contract drifted from contracts.extensions SSOT."
     )
     assert interrupt_callback == expected_interrupt_callback, (
-        "OpenAPI interrupt callback contract drifted from extension_contracts SSOT."
+        "OpenAPI interrupt callback contract drifted from contracts.extensions SSOT."
     )
     assert compatibility_profile == expected_compatibility_profile, (
-        "OpenAPI compatibility profile contract drifted from extension_contracts SSOT."
+        "OpenAPI compatibility profile contract drifted from contracts.extensions SSOT."
     )
     assert wire_contract == expected_wire_contract, (
-        "OpenAPI wire contract drifted from extension_contracts SSOT."
+        "OpenAPI wire contract drifted from contracts.extensions SSOT."
     )
 
     json_request_schema = (
@@ -293,7 +293,9 @@ async def test_extension_notification_contracts_return_204(
 ) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    dummy = DummyOpencodeClient(make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False))
+    dummy = DummyOpencodeUpstreamClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False)
+    )
     if interrupt_type is not None:
         request_id = params["request_id"]
         assert isinstance(request_id, str)
@@ -303,7 +305,7 @@ async def test_extension_notification_contracts_return_204(
             interrupt_type=interrupt_type,
         )
 
-    monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
     app = app_module.create_app(make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False))
     transport = httpx.ASGITransport(app=app)
 

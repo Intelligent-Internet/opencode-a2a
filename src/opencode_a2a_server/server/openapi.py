@@ -5,7 +5,7 @@ from typing import Any, cast
 from fastapi import FastAPI
 
 from ..config import Settings
-from ..extension_contracts import (
+from ..contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
     PROVIDER_DISCOVERY_METHODS,
     SESSION_QUERY_DEFAULT_LIMIT,
@@ -21,8 +21,8 @@ from ..extension_contracts import (
     build_streaming_extension_params,
     build_wire_contract_params,
 )
-from ..runtime_profile import RuntimeProfile
 from ..jsonrpc.application import SESSION_CONTEXT_PREFIX
+from ..profile.runtime import RuntimeProfile
 
 
 def _build_jsonrpc_extension_openapi_description(

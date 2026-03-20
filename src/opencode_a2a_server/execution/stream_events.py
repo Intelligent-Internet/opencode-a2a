@@ -9,10 +9,10 @@ from a2a.types import TaskState
 
 from .stream_state import BlockType
 from .upstream_errors import (
-    _StreamTerminalSignal,
-    _UpstreamInBandError,
     _format_inband_upstream_error,
     _format_stream_terminal_error,
+    _StreamTerminalSignal,
+    _UpstreamInBandError,
 )
 
 logger = logging.getLogger(__name__)

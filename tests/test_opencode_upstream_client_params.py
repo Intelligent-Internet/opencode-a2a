@@ -3,9 +3,9 @@ import json as json_module
 import httpx
 import pytest
 
-from opencode_a2a_server.opencode_client import (
+from opencode_a2a_server.opencode_upstream_client import (
     _UNSET,
-    OpencodeClient,
+    OpencodeUpstreamClient,
     UpstreamContractError,
 )
 from tests.helpers import make_settings
@@ -38,7 +38,7 @@ class _DummyResponse:
 
 @pytest.mark.asyncio
 async def test_merge_params_does_not_allow_directory_override(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_workspace_root="/safe",
@@ -73,7 +73,7 @@ async def test_merge_params_does_not_allow_directory_override(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_posts_prompt_async_endpoint(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_workspace_root="/safe",
@@ -109,7 +109,7 @@ async def test_session_prompt_async_posts_prompt_async_endpoint(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_rejects_non_204_response(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -132,7 +132,7 @@ async def test_session_prompt_async_rejects_non_204_response(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_command_posts_command_endpoint(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_workspace_root="/safe",
@@ -164,7 +164,7 @@ async def test_session_command_posts_command_endpoint(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_shell_posts_shell_endpoint(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_workspace_root="/safe",
@@ -196,7 +196,7 @@ async def test_session_shell_posts_shell_endpoint(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_message_prefers_request_model_override(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -232,7 +232,7 @@ async def test_send_message_prefers_request_model_override(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_message_ignores_partial_request_model_override(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -262,7 +262,7 @@ async def test_send_message_ignores_partial_request_model_override(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_message_accepts_structured_parts(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -310,7 +310,7 @@ async def test_send_message_accepts_structured_parts(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_message_raises_upstream_contract_error_for_non_json_response(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -343,7 +343,7 @@ async def test_send_message_raises_upstream_contract_error_for_non_json_response
 
 @pytest.mark.asyncio
 async def test_permission_reply_raises_on_404_without_legacy_fallback(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_workspace_root="/safe",
@@ -377,7 +377,7 @@ async def test_permission_reply_raises_on_404_without_legacy_fallback(monkeypatc
 
 @pytest.mark.asyncio
 async def test_question_reply_posts_answers(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -406,7 +406,7 @@ async def test_question_reply_posts_answers(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_permission_reply_rejects_non_boolean_payload(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -429,7 +429,7 @@ async def test_permission_reply_rejects_non_boolean_payload(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_question_reject_rejects_non_boolean_payload(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -452,7 +452,7 @@ async def test_question_reject_rejects_non_boolean_payload(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_abort_session_posts_abort_endpoint(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_workspace_root="/safe",
@@ -483,7 +483,7 @@ async def test_abort_session_posts_abort_endpoint(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_abort_session_rejects_non_boolean_payload(monkeypatch):
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -506,7 +506,7 @@ async def test_abort_session_rejects_non_boolean_payload(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_interrupt_request_binding_expires_after_ttl() -> None:
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -544,10 +544,10 @@ async def test_interrupt_request_binding_expires_after_ttl() -> None:
 
 def test_response_body_preview_handles_empty_and_long_payloads() -> None:
     empty = _DummyResponse(text="   ")
-    assert OpencodeClient._response_body_preview(empty) == "<empty>"
+    assert OpencodeUpstreamClient._response_body_preview(empty) == "<empty>"
 
     long_response = _DummyResponse(text="  " + ("word " * 60))
-    preview = OpencodeClient._response_body_preview(long_response, limit=40)
+    preview = OpencodeUpstreamClient._response_body_preview(long_response, limit=40)
     assert preview.endswith("...")
     assert len(preview) == 40
 
@@ -559,7 +559,7 @@ def test_decode_json_response_reports_unknown_content_type_for_empty_body() -> N
     )
 
     with pytest.raises(UpstreamContractError) as exc_info:
-        OpencodeClient(make_settings(a2a_bearer_token="t-1"))._decode_json_response(
+        OpencodeUpstreamClient(make_settings(a2a_bearer_token="t-1"))._decode_json_response(
             response,
             endpoint="/session",
         )
@@ -570,20 +570,20 @@ def test_decode_json_response_reports_unknown_content_type_for_empty_body() -> N
 
 
 def test_normalize_model_ref_rejects_blank_or_partial_values() -> None:
-    assert OpencodeClient._normalize_model_ref(None) is None
-    assert OpencodeClient._normalize_model_ref(
+    assert OpencodeUpstreamClient._normalize_model_ref(None) is None
+    assert OpencodeUpstreamClient._normalize_model_ref(
         {"providerID": " google ", "modelID": " gemini "}
     ) == {
         "providerID": "google",
         "modelID": "gemini",
     }
-    assert OpencodeClient._normalize_model_ref({"providerID": "google"}) is None
-    assert OpencodeClient._normalize_model_ref({"providerID": "", "modelID": "gemini"}) is None
-    assert OpencodeClient._normalize_model_ref({"providerID": "google", "modelID": 1}) is None
+    assert OpencodeUpstreamClient._normalize_model_ref({"providerID": "google"}) is None
+    assert OpencodeUpstreamClient._normalize_model_ref({"providerID": "", "modelID": "gemini"}) is None
+    assert OpencodeUpstreamClient._normalize_model_ref({"providerID": "google", "modelID": 1}) is None
 
 
 def test_merge_params_keeps_empty_directory_out_of_query() -> None:
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_workspace_root=None,
@@ -599,7 +599,7 @@ def test_merge_params_keeps_empty_directory_out_of_query() -> None:
 
 @pytest.mark.asyncio
 async def test_create_session_raises_when_upstream_omits_id(monkeypatch) -> None:
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -622,7 +622,7 @@ async def test_create_session_raises_when_upstream_omits_id(monkeypatch) -> None
 
 @pytest.mark.asyncio
 async def test_create_session_raises_when_upstream_id_is_not_string(monkeypatch) -> None:
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -645,7 +645,7 @@ async def test_create_session_raises_when_upstream_id_is_not_string(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_list_provider_catalog_uses_directory_query(monkeypatch) -> None:
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_workspace_root="/safe",
@@ -674,7 +674,7 @@ async def test_list_provider_catalog_uses_directory_query(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_send_message_requires_text_or_parts() -> None:
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,
@@ -694,7 +694,7 @@ async def test_send_message_requires_text_or_parts() -> None:
 
 @pytest.mark.asyncio
 async def test_send_message_includes_client_level_agent_system_variant(monkeypatch) -> None:
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_agent="planner",
@@ -731,7 +731,7 @@ async def test_send_message_includes_client_level_agent_system_variant(monkeypat
 
 @pytest.mark.asyncio
 async def test_interrupt_request_helpers_ignore_invalid_and_trim_values() -> None:
-    client = OpencodeClient(
+    client = OpencodeUpstreamClient(
         make_settings(
             a2a_bearer_token="t-1",
             opencode_timeout=1.0,

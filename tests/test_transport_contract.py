@@ -12,7 +12,7 @@ from opencode_a2a_server.server.application import (
     build_agent_card,
     create_app,
 )
-from tests.helpers import DummyChatOpencodeClient, make_settings
+from tests.helpers import DummyChatOpencodeUpstreamClient, make_settings
 
 
 def test_agent_card_declares_dual_stack_with_http_json_preferred() -> None:
@@ -149,7 +149,7 @@ def test_openapi_jsonrpc_examples_include_core_message_methods() -> None:
 async def test_dual_stack_send_accepts_transport_native_payloads(monkeypatch) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     app = app_module.create_app(make_settings(a2a_bearer_token="test-token"))
     transport = httpx.ASGITransport(app=app)
     headers = {"Authorization": "Bearer test-token"}
@@ -187,7 +187,7 @@ async def test_dual_stack_send_accepts_transport_native_payloads(monkeypatch) ->
 async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatch) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     app = app_module.create_app(make_settings(a2a_bearer_token="test-token"))
     transport = httpx.ASGITransport(app=app)
     headers = {"Authorization": "Bearer test-token"}
@@ -276,7 +276,7 @@ def _jsonrpc_message_send_payload(text: str) -> dict:
 async def test_log_payloads_keeps_body_for_rest_handler(monkeypatch, caplog) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     app = app_module.create_app(make_settings(a2a_bearer_token="test-token", a2a_log_payloads=True))
     transport = httpx.ASGITransport(app=app)
     headers = {"Authorization": "Bearer test-token"}
@@ -300,7 +300,7 @@ async def test_log_payloads_keeps_body_for_rest_handler(monkeypatch, caplog) -> 
 async def test_log_payloads_streaming_response_path(monkeypatch, caplog) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     app = app_module.create_app(make_settings(a2a_bearer_token="test-token", a2a_log_payloads=True))
     transport = httpx.ASGITransport(app=app)
     headers = {"Authorization": "Bearer test-token"}
@@ -327,7 +327,7 @@ async def test_log_payloads_streaming_response_path(monkeypatch, caplog) -> None
 async def test_log_payloads_omits_non_json_request_body(monkeypatch, caplog) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     app = app_module.create_app(make_settings(a2a_bearer_token="test-token", a2a_log_payloads=True))
     transport = httpx.ASGITransport(app=app)
     headers = {
@@ -351,7 +351,7 @@ async def test_log_payloads_omits_non_json_request_body(monkeypatch, caplog) -> 
 async def test_log_payloads_omits_text_plain_request_body(monkeypatch, caplog) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     app = app_module.create_app(make_settings(a2a_bearer_token="test-token", a2a_log_payloads=True))
     transport = httpx.ASGITransport(app=app)
     headers = {
@@ -379,7 +379,7 @@ async def test_log_payloads_omits_text_plain_request_body(monkeypatch, caplog) -
 async def test_log_payloads_omits_when_content_length_missing(monkeypatch, caplog) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     app = app_module.create_app(
         make_settings(
             a2a_bearer_token="test-token",
@@ -424,7 +424,7 @@ async def test_log_payloads_omits_when_content_length_missing(monkeypatch, caplo
 async def test_log_payloads_omits_oversized_request_body(monkeypatch, caplog) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     app = app_module.create_app(
         make_settings(
             a2a_bearer_token="test-token",
@@ -456,7 +456,7 @@ async def test_log_payloads_omits_oversized_request_body(monkeypatch, caplog) ->
 async def test_request_body_limit_rejects_oversized_content_length(monkeypatch) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="test-token", a2a_max_request_body_bytes=64)
     )
@@ -480,7 +480,7 @@ async def test_request_body_limit_rejects_oversized_stream_without_content_lengt
 ) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="test-token", a2a_max_request_body_bytes=64)
     )
@@ -510,7 +510,7 @@ async def test_request_body_limit_rejects_oversized_stream_without_content_lengt
 async def test_request_body_limit_preserves_body_for_downstream_handlers(monkeypatch) -> None:
     import opencode_a2a_server.server.application as app_module
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="test-token", a2a_max_request_body_bytes=4096)
     )
@@ -567,7 +567,7 @@ def test_create_app_propagates_cancel_abort_timeout(monkeypatch) -> None:
         async def release_session_for_control(self, *, identity: str, session_id: str) -> None:
             del identity, session_id
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     monkeypatch.setattr(app_module, "OpencodeAgentExecutor", _CapturingExecutor)
 
     app_module.create_app(
@@ -620,7 +620,7 @@ def test_create_app_requires_control_guard_hooks(monkeypatch) -> None:
         async def release_session_for_control(self, *, identity: str, session_id: str) -> None:
             del identity, session_id
 
-    monkeypatch.setattr(app_module, "OpencodeClient", DummyChatOpencodeClient)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
     monkeypatch.setattr(app_module, "OpencodeAgentExecutor", _BrokenExecutor)
 
     with pytest.raises(ValueError, match="Control methods require guard hooks"):

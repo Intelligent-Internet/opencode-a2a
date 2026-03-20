@@ -30,7 +30,7 @@ from a2a.types import (
     TextPart,
 )
 
-from ..opencode_client import OpencodeClient, UpstreamContractError
+from ..opencode_upstream_client import OpencodeUpstreamClient, UpstreamContractError
 from ..parts.mapping import (
     UnsupportedA2AInputError,
     extract_text_from_a2a_parts,
@@ -502,7 +502,7 @@ class _ExecutionCoordinator:
 class OpencodeAgentExecutor(AgentExecutor):
     def __init__(
         self,
-        client: OpencodeClient,
+        client: OpencodeUpstreamClient,
         *,
         streaming_enabled: bool,
         cancel_abort_timeout_seconds: float = 2.0,

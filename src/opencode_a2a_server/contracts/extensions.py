@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .runtime_profile import SESSION_SHELL_TOGGLE, RuntimeProfile
+from ..profile.runtime import SESSION_SHELL_TOGGLE, RuntimeProfile
 
 SHARED_SESSION_BINDING_FIELD = "metadata.shared.session.id"
 SHARED_SESSION_METADATA_FIELD = "metadata.shared.session"

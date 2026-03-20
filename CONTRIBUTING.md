@@ -95,7 +95,7 @@ Keep compatibility guidance centralized in [docs/guide.md](docs/guide.md) unless
 new standalone document is clearly necessary.
 
 When changing extension contracts, update
-[`src/opencode_a2a_server/extension_contracts.py`](src/opencode_a2a_server/extension_contracts.py)
+[`src/opencode_a2a_server/contracts/extensions.py`](src/opencode_a2a_server/contracts/extensions.py)
 first and keep these generated/documented surfaces aligned:
 
 - Agent Card extension params

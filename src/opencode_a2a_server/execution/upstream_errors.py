@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import httpx
 from a2a.types import TaskState
 
-from ..opencode_client import UpstreamContractError
+from ..opencode_upstream_client import UpstreamContractError
 
 
 @dataclass(frozen=True)
