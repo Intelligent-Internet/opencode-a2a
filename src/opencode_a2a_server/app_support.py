@@ -145,10 +145,6 @@ def _request_body_too_large_response(
     )
 
 
-def _build_deployment_context(settings: Settings) -> dict[str, str | bool]:
-    return build_runtime_profile(settings).to_deployment_context()
-
-
 def _build_agent_card_description(settings: Settings, runtime_profile: RuntimeProfile) -> str:
     base = (settings.a2a_description or "").strip() or "A2A wrapper service for OpenCode."
     summary = (
@@ -166,7 +162,7 @@ def _build_agent_card_description(settings: Settings, runtime_profile: RuntimePr
         "underlying OpenCode workspace/environment; per-consumer workspace "
         "isolation is not provided."
     )
-    runtime_context = runtime_profile.runtime_context.to_dict()
+    runtime_context = runtime_profile.runtime_context.as_dict()
     project = runtime_context.get("project")
     if isinstance(project, str) and project.strip():
         parts.append(f"Deployment project: {project}.")
@@ -535,7 +531,7 @@ def _patch_jsonrpc_openapi_contract(
                 if isinstance(post, dict):
                     post["summary"] = "Handle A2A JSON-RPC Requests"
                     post["description"] = _build_jsonrpc_extension_openapi_description(
-                        session_shell_enabled=runtime_profile.runtime_features.session_shell_enabled,
+                        session_shell_enabled=runtime_profile.session_shell_enabled,
                     )
                     post["x-a2a-extension-contracts"] = {
                         "session_binding": session_binding,
@@ -555,9 +551,7 @@ def _patch_jsonrpc_openapi_contract(
                             app_json = content.setdefault("application/json", {})
                             if isinstance(app_json, dict):
                                 app_json["examples"] = _build_jsonrpc_extension_openapi_examples(
-                                    session_shell_enabled=(
-                                        runtime_profile.runtime_features.session_shell_enabled
-                                    ),
+                                    session_shell_enabled=runtime_profile.session_shell_enabled,
                                 )
 
             rest_post_contracts: dict[str, dict[str, Any]] = {

@@ -237,12 +237,23 @@ Its purpose is to declare:
 Current profile shape:
 
 - `profile_id=opencode-a2a-single-tenant-coding-v1`
-- Stable deployment semantics are declared under `deployment`.
-- Runtime-conditional features are declared under `runtime_features`.
+- Deployment semantics are declared under `deployment`:
+  - `id=single_tenant_shared_workspace`
+  - `single_tenant=true`
+  - `shared_workspace_across_consumers=true`
+  - `tenant_isolation=none`
+- Runtime features are declared under `runtime_features`:
+  - `directory_binding.allow_override=true|false`
+  - `directory_binding.scope=workspace_root_or_descendant|workspace_root_only`
+  - `session_shell.enabled=true|false`
+  - `session_shell.availability=enabled|disabled`
+  - `service_features.streaming.enabled=true`
+  - `service_features.health_endpoint.enabled=true`
 - Core methods and endpoints are declared under `core`.
 - Extension retention policy is declared under `extension_retention`.
 - Per-method retention and availability are declared under `method_retention`.
-- `/health` returns the same structured profile summary under `profile`.
+- Extension params and `/health` expose the same structured `profile` object; there is no
+  separate legacy deployment-context shape.
 
 Retention guidance:
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .runtime_profile import RuntimeProfile, build_contract_profile_metadata
+from .runtime_profile import RuntimeProfile
 
 SHARED_SESSION_BINDING_FIELD = "metadata.shared.session.id"
 SHARED_SESSION_METADATA_FIELD = "metadata.shared.session"
@@ -332,7 +332,6 @@ def build_session_binding_extension_params(
     *,
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
-    profile_metadata = build_contract_profile_metadata(runtime_profile)
     return {
         "metadata_field": SHARED_SESSION_BINDING_FIELD,
         "behavior": "prefer_metadata_binding_else_create_session",
@@ -341,8 +340,7 @@ def build_session_binding_extension_params(
             "opencode.directory",
         ],
         "provider_private_metadata": ["opencode.directory"],
-        "directory_override_enabled": runtime_profile.runtime_features.directory_override_enabled,
-        **profile_metadata,
+        "profile": runtime_profile.summary_dict(),
         "notes": [
             (
                 "If metadata.shared.session.id is provided, the server will send the "
@@ -360,7 +358,6 @@ def build_model_selection_extension_params(
     *,
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
-    profile_metadata = build_contract_profile_metadata(runtime_profile)
     return {
         "metadata_field": SHARED_MODEL_SELECTION_FIELD,
         "behavior": "prefer_metadata_model_else_upstream_default",
@@ -370,7 +367,7 @@ def build_model_selection_extension_params(
             "shared.model.modelID",
         ],
         "provider_private_metadata": [],
-        **profile_metadata,
+        "profile": runtime_profile.summary_dict(),
         "fields": {
             "providerID": f"{SHARED_MODEL_SELECTION_FIELD}.providerID",
             "modelID": f"{SHARED_MODEL_SELECTION_FIELD}.modelID",
@@ -433,8 +430,7 @@ def build_session_query_extension_params(
     runtime_profile: RuntimeProfile,
     context_id_prefix: str,
 ) -> dict[str, Any]:
-    profile_metadata = build_contract_profile_metadata(runtime_profile)
-    session_shell_enabled = runtime_profile.runtime_features.session_shell_enabled
+    session_shell_enabled = runtime_profile.session_shell_enabled
     methods = dict(SESSION_QUERY_METHODS)
     control_methods = dict(SESSION_CONTROL_METHODS)
     if not session_shell_enabled:
@@ -478,7 +474,7 @@ def build_session_query_extension_params(
                 "config_key": "A2A_ENABLE_SESSION_SHELL",
             }
         },
-        **profile_metadata,
+        "profile": runtime_profile.summary_dict(),
         "pagination": {
             "mode": SESSION_QUERY_PAGINATION_MODE,
             "default_limit": SESSION_QUERY_DEFAULT_LIMIT,
@@ -505,7 +501,6 @@ def build_interrupt_callback_extension_params(
     *,
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
-    profile_metadata = build_contract_profile_metadata(runtime_profile)
     method_contracts: dict[str, Any] = {}
     for contract in INTERRUPT_CALLBACK_METHOD_CONTRACTS.values():
         method_contract_doc: dict[str, Any] = {
@@ -546,7 +541,7 @@ def build_interrupt_callback_extension_params(
             "error_data_fields": list(INTERRUPT_ERROR_DATA_FIELDS),
             "invalid_params_data_fields": list(INTERRUPT_INVALID_PARAMS_DATA_FIELDS),
         },
-        **profile_metadata,
+        "profile": runtime_profile.summary_dict(),
     }
 
 
@@ -554,7 +549,6 @@ def build_provider_discovery_extension_params(
     *,
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
-    profile_metadata = build_contract_profile_metadata(runtime_profile)
     method_contracts: dict[str, Any] = {}
 
     for method_contract in PROVIDER_DISCOVERY_METHOD_CONTRACTS.values():
@@ -610,7 +604,7 @@ def build_provider_discovery_extension_params(
             "error_data_fields": list(PROVIDER_DISCOVERY_ERROR_DATA_FIELDS),
             "invalid_params_data_fields": list(PROVIDER_DISCOVERY_INVALID_PARAMS_DATA_FIELDS),
         },
-        **profile_metadata,
+        "profile": runtime_profile.summary_dict(),
         "notes": [
             (
                 "Provider/model discovery is OpenCode-specific and exposed through "
@@ -629,7 +623,7 @@ def build_compatibility_profile_params(
     protocol_version: str,
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
-    session_shell_enabled = runtime_profile.runtime_features.session_shell_enabled
+    session_shell_enabled = runtime_profile.session_shell_enabled
     method_retention: dict[str, dict[str, Any]] = {
         method: {
             "surface": "core",
@@ -684,7 +678,7 @@ def build_compatibility_profile_params(
         }
     )
     return {
-        **runtime_profile.to_public_dict(protocol_version=protocol_version),
+        **runtime_profile.summary_dict(protocol_version=protocol_version),
         "core": {
             "jsonrpc_methods": list(CORE_JSONRPC_METHODS),
             "http_endpoints": list(CORE_HTTP_ENDPOINTS),
@@ -755,7 +749,7 @@ def build_wire_contract_params(
     protocol_version: str,
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
-    session_shell_enabled = runtime_profile.runtime_features.session_shell_enabled
+    session_shell_enabled = runtime_profile.session_shell_enabled
     extension_jsonrpc_methods = [
         SESSION_QUERY_METHODS["list_sessions"],
         SESSION_QUERY_METHODS["get_session_messages"],
@@ -775,7 +769,7 @@ def build_wire_contract_params(
 
     return {
         "protocol_version": protocol_version,
-        "profile": runtime_profile.to_public_dict(protocol_version=protocol_version),
+        "profile": runtime_profile.summary_dict(protocol_version=protocol_version),
         "preferred_transport": "HTTP+JSON",
         "additional_transports": ["JSON-RPC"],
         "core": {

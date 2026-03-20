@@ -17,7 +17,6 @@ from opencode_a2a_server.app import (
     OpencodeRequestHandler,
     _build_agent_card_description,
     _build_chat_examples,
-    _build_deployment_context,
     _build_jsonrpc_extension_openapi_description,
     _build_jsonrpc_extension_openapi_examples,
     _build_rest_message_openapi_examples,
@@ -124,18 +123,43 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
         opencode_variant="fast",
     )
 
-    deployment_context = _build_deployment_context(settings)
     runtime_profile = build_runtime_profile(settings)
-    assert deployment_context == {
-        "allow_directory_override": False,
-        "deployment_profile": "single_tenant_shared_workspace",
-        "shared_workspace_across_consumers": True,
-        "tenant_isolation": "none",
-        "session_shell_enabled": True,
-        "project": "alpha",
-        "workspace_root": "/workspace",
-        "agent": "planner",
-        "variant": "fast",
+    assert runtime_profile.summary_dict() == {
+        "profile_id": "opencode-a2a-single-tenant-coding-v1",
+        "deployment": {
+            "id": "single_tenant_shared_workspace",
+            "single_tenant": True,
+            "shared_workspace_across_consumers": True,
+            "tenant_isolation": "none",
+        },
+        "runtime_features": {
+            "directory_binding": {
+                "allow_override": False,
+                "scope": "workspace_root_only",
+                "metadata_field": "metadata.opencode.directory",
+            },
+            "session_shell": {
+                "enabled": True,
+                "availability": "enabled",
+                "toggle": "A2A_ENABLE_SESSION_SHELL",
+            },
+            "service_features": {
+                "streaming": {
+                    "enabled": True,
+                    "availability": "always",
+                },
+                "health_endpoint": {
+                    "enabled": True,
+                    "availability": "always",
+                },
+            },
+        },
+        "runtime_context": {
+            "project": "alpha",
+            "workspace_root": "/workspace",
+            "agent": "planner",
+            "variant": "fast",
+        },
     }
 
     description = _build_agent_card_description(settings, runtime_profile)
@@ -169,7 +193,8 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch) -> None:
     closable = _ClosableClient(make_settings(a2a_bearer_token="test-token"))
     monkeypatch.setattr(app_module, "OpencodeClient", lambda _settings: closable)
 
-    app = create_app(make_settings(a2a_bearer_token="test-token", a2a_enable_session_shell=True))
+    settings = make_settings(a2a_bearer_token="test-token", a2a_enable_session_shell=True)
+    app = create_app(settings)
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -186,27 +211,37 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch) -> None:
         assert health.status_code == 200
         assert health.json() == {
             "status": "ok",
+            "service": "opencode-a2a-server",
+            "version": settings.a2a_version,
             "profile": {
                 "profile_id": "opencode-a2a-single-tenant-coding-v1",
                 "protocol_version": "0.3.0",
                 "deployment": {
-                    "profile_id": "opencode-a2a-single-tenant-coding-v1",
-                    "deployment_profile": "single_tenant_shared_workspace",
+                    "id": "single_tenant_shared_workspace",
+                    "single_tenant": True,
                     "shared_workspace_across_consumers": True,
                     "tenant_isolation": "none",
                 },
                 "runtime_features": {
-                    "directory_override": {
-                        "enabled": True,
+                    "directory_binding": {
+                        "allow_override": True,
+                        "scope": "workspace_root_or_descendant",
                         "metadata_field": "metadata.opencode.directory",
-                        "policy": (
-                            "server-validated metadata override within the configured boundary"
-                        ),
                     },
                     "session_shell": {
                         "enabled": True,
                         "availability": "enabled",
                         "toggle": "A2A_ENABLE_SESSION_SHELL",
+                    },
+                    "service_features": {
+                        "streaming": {
+                            "enabled": True,
+                            "availability": "always",
+                        },
+                        "health_endpoint": {
+                            "enabled": True,
+                            "availability": "always",
+                        },
                     },
                 },
             },
