@@ -65,6 +65,17 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
     assert binding.params["directory_override_enabled"] is False
     assert binding.params["shared_workspace_across_consumers"] is True
     assert binding.params["tenant_isolation"] == "none"
+    assert binding.params["profile"]["profile_id"] == "opencode-a2a-single-tenant-coding-v1"
+    assert binding.params["profile"]["deployment"]["deployment_profile"] == (
+        "single_tenant_shared_workspace"
+    )
+    assert binding.params["profile"]["runtime_context"] == {
+        "project": "alpha",
+        "workspace_root": "/srv/workspaces/alpha",
+        "agent": "code-reviewer",
+        "variant": "safe",
+    }
+    assert binding.params["profile"]["runtime_features"]["directory_override"]["enabled"] is False
 
     model_selection = ext_by_uri[MODEL_SELECTION_EXTENSION_URI]
     assert model_selection.params["metadata_field"] == "metadata.shared.model"
@@ -221,11 +232,16 @@ def test_agent_card_injects_deployment_context_into_extensions() -> None:
         "retention": "stable",
     }
     shell_policy = compatibility.params["method_retention"]["opencode.sessions.shell"]
+    assert compatibility.params["deployment"]["deployment_profile"] == (
+        "single_tenant_shared_workspace"
+    )
+    assert compatibility.params["runtime_features"]["session_shell"]["availability"] == "disabled"
     assert shell_policy["availability"] == "disabled"
     assert shell_policy["retention"] == "deployment-conditional"
     assert shell_policy["toggle"] == "A2A_ENABLE_SESSION_SHELL"
 
     wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
+    assert wire_contract.params["profile"]["profile_id"] == "opencode-a2a-single-tenant-coding-v1"
     assert MODEL_SELECTION_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert PROVIDER_DISCOVERY_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert "opencode.sessions.shell" not in wire_contract.params["all_jsonrpc_methods"]
@@ -260,9 +276,13 @@ def test_agent_card_contracts_include_shell_when_enabled() -> None:
 
     compatibility = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
     shell_policy = compatibility.params["method_retention"]["opencode.sessions.shell"]
+    assert compatibility.params["runtime_features"]["session_shell"]["availability"] == "enabled"
     assert shell_policy["availability"] == "enabled"
 
     wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
+    assert wire_contract.params["profile"]["runtime_features"]["session_shell"]["availability"] == (
+        "enabled"
+    )
     assert "opencode.sessions.shell" in wire_contract.params["all_jsonrpc_methods"]
     assert wire_contract.params["extensions"]["conditionally_available_methods"] == {}
 

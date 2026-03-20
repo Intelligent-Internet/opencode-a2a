@@ -37,6 +37,7 @@ from opencode_a2a_server.app import (
     build_agent_card,
     create_app,
 )
+from opencode_a2a_server.runtime_profile import build_runtime_profile
 from tests.helpers import DummyChatOpencodeClient, make_settings
 
 
@@ -124,6 +125,7 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
     )
 
     deployment_context = _build_deployment_context(settings)
+    runtime_profile = build_runtime_profile(settings)
     assert deployment_context == {
         "allow_directory_override": False,
         "deployment_profile": "single_tenant_shared_workspace",
@@ -136,7 +138,7 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
         "variant": "fast",
     }
 
-    description = _build_agent_card_description(settings, deployment_context)
+    description = _build_agent_card_description(settings, runtime_profile)
     assert "Deployment project: alpha." in description
     assert "Workspace root: /workspace." in description
     assert any("project alpha" in item for item in _build_chat_examples("alpha"))
@@ -182,7 +184,33 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch) -> None:
 
         health = await client.get("/health", headers={"Authorization": "Bearer test-token"})
         assert health.status_code == 200
-        assert health.json() == {"status": "ok"}
+        assert health.json() == {
+            "status": "ok",
+            "profile": {
+                "profile_id": "opencode-a2a-single-tenant-coding-v1",
+                "protocol_version": "0.3.0",
+                "deployment": {
+                    "profile_id": "opencode-a2a-single-tenant-coding-v1",
+                    "deployment_profile": "single_tenant_shared_workspace",
+                    "shared_workspace_across_consumers": True,
+                    "tenant_isolation": "none",
+                },
+                "runtime_features": {
+                    "directory_override": {
+                        "enabled": True,
+                        "metadata_field": "metadata.opencode.directory",
+                        "policy": (
+                            "server-validated metadata override within the configured boundary"
+                        ),
+                    },
+                    "session_shell": {
+                        "enabled": True,
+                        "availability": "enabled",
+                        "toggle": "A2A_ENABLE_SESSION_SHELL",
+                    },
+                },
+            },
+        }
 
     async with app.router.lifespan_context(app):
         pass

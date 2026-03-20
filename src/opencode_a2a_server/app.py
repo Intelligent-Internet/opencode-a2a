@@ -77,6 +77,7 @@ from .jsonrpc_ext import (
     OpencodeSessionQueryJSONRPCApplication,
 )
 from .opencode_client import OpencodeClient
+from .runtime_profile import build_runtime_profile
 
 logger = logging.getLogger(__name__)
 
@@ -438,8 +439,8 @@ def create_app(settings: Settings) -> FastAPI:
         methods=jsonrpc_methods,
     ).build(title=settings.a2a_title, version=settings.a2a_version, lifespan=lifespan)
     app.state.opencode_agent_executor = executor
-    deployment_context = _build_deployment_context(settings)
-    _patch_jsonrpc_openapi_contract(app, settings, deployment_context=deployment_context)
+    runtime_profile = build_runtime_profile(settings)
+    _patch_jsonrpc_openapi_contract(app, settings, runtime_profile=runtime_profile)
 
     rest_adapter = KeepaliveRESTAdapter(
         agent_card=agent_card,
@@ -452,7 +453,12 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/health")
     async def health_check():
-        return {"status": "ok"}
+        return {
+            "status": "ok",
+            "profile": runtime_profile.to_public_dict(
+                protocol_version=settings.a2a_protocol_version
+            ),
+        }
 
     async def _get_request_body(request: Request) -> tuple[bytes, Token | None]:
         cached = _REQUEST_BODY_BYTES.get()

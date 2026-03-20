@@ -27,6 +27,7 @@ from opencode_a2a_server.extension_contracts import (
     build_wire_contract_params,
 )
 from opencode_a2a_server.jsonrpc_ext import SESSION_CONTEXT_PREFIX
+from opencode_a2a_server.runtime_profile import build_runtime_profile
 from tests.helpers import DummySessionQueryOpencodeClient as DummyOpencodeClient
 from tests.helpers import make_settings
 
@@ -43,36 +44,34 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
     interrupt_callback = ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI]
     compatibility_profile = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
     wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
-    deployment_context = session_query.params["deployment_context"]
-
     settings = make_settings(a2a_bearer_token="test-token")
+    runtime_profile = build_runtime_profile(settings)
     expected_session_binding = build_session_binding_extension_params(
-        deployment_context=deployment_context,
-        directory_override_enabled=True,
+        runtime_profile=runtime_profile,
     )
     expected_model_selection = build_model_selection_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     expected_streaming = build_streaming_extension_params()
     expected_session_query = build_session_query_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
     )
     expected_provider_discovery = build_provider_discovery_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     assert expected_session_query["pagination"]["default_limit"] == SESSION_QUERY_DEFAULT_LIMIT
     assert expected_session_query["pagination"]["max_limit"] == SESSION_QUERY_MAX_LIMIT
     expected_interrupt_callback = build_interrupt_callback_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     expected_compatibility_profile = build_compatibility_profile_params(
         protocol_version=settings.a2a_protocol_version,
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     expected_wire_contract = build_wire_contract_params(
         protocol_version=settings.a2a_protocol_version,
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
 
     assert session_binding.params == expected_session_binding, (
@@ -119,33 +118,32 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     interrupt_callback = contract["interrupt_callback"]
     compatibility_profile = contract["compatibility_profile"]
     wire_contract = contract["wire_contract"]
-    deployment_context = session_query["deployment_context"]
     settings = make_settings(a2a_bearer_token="test-token")
+    runtime_profile = build_runtime_profile(settings)
     expected_session_binding = build_session_binding_extension_params(
-        deployment_context=deployment_context,
-        directory_override_enabled=True,
+        runtime_profile=runtime_profile,
     )
     expected_model_selection = build_model_selection_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     expected_streaming = build_streaming_extension_params()
     expected_session_query = build_session_query_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
     )
     expected_provider_discovery = build_provider_discovery_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     expected_interrupt_callback = build_interrupt_callback_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     expected_compatibility_profile = build_compatibility_profile_params(
         protocol_version=settings.a2a_protocol_version,
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     expected_wire_contract = build_wire_contract_params(
         protocol_version=settings.a2a_protocol_version,
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
 
     assert session_binding == expected_session_binding, (

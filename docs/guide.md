@@ -236,10 +236,13 @@ Its purpose is to declare:
 
 Current profile shape:
 
-- `profile_id=opencode-a2a-baseline-v1`
+- `profile_id=opencode-a2a-single-tenant-coding-v1`
+- Stable deployment semantics are declared under `deployment`.
+- Runtime-conditional features are declared under `runtime_features`.
 - Core methods and endpoints are declared under `core`.
 - Extension retention policy is declared under `extension_retention`.
 - Per-method retention and availability are declared under `method_retention`.
+- `/health` returns the same structured profile summary under `profile`.
 
 Retention guidance:
 

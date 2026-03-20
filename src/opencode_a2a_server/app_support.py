@@ -41,6 +41,7 @@ from .extension_contracts import (
     build_wire_contract_params,
 )
 from .jsonrpc_ext import SESSION_CONTEXT_PREFIX
+from .runtime_profile import RuntimeProfile, build_runtime_profile
 
 logger = logging.getLogger(__name__)
 
@@ -145,27 +146,10 @@ def _request_body_too_large_response(
 
 
 def _build_deployment_context(settings: Settings) -> dict[str, str | bool]:
-    context: dict[str, str | bool] = {
-        "allow_directory_override": settings.a2a_allow_directory_override,
-        "deployment_profile": "single_tenant_shared_workspace",
-        "shared_workspace_across_consumers": True,
-        "tenant_isolation": "none",
-        "session_shell_enabled": settings.a2a_enable_session_shell,
-    }
-    if settings.a2a_project:
-        context["project"] = settings.a2a_project
-    if settings.opencode_workspace_root:
-        context["workspace_root"] = settings.opencode_workspace_root
-    if settings.opencode_agent:
-        context["agent"] = settings.opencode_agent
-    if settings.opencode_variant:
-        context["variant"] = settings.opencode_variant
-    return context
+    return build_runtime_profile(settings).to_deployment_context()
 
 
-def _build_agent_card_description(
-    settings: Settings, deployment_context: dict[str, str | bool]
-) -> str:
+def _build_agent_card_description(settings: Settings, runtime_profile: RuntimeProfile) -> str:
     base = (settings.a2a_description or "").strip() or "A2A wrapper service for OpenCode."
     summary = (
         "Supports HTTP+JSON and JSON-RPC transports, streaming-first A2A messaging "
@@ -182,10 +166,11 @@ def _build_agent_card_description(
         "underlying OpenCode workspace/environment; per-consumer workspace "
         "isolation is not provided."
     )
-    project = deployment_context.get("project")
+    runtime_context = runtime_profile.runtime_context.to_dict()
+    project = runtime_context.get("project")
     if isinstance(project, str) and project.strip():
         parts.append(f"Deployment project: {project}.")
-    workspace_root = deployment_context.get("workspace_root")
+    workspace_root = runtime_context.get("workspace_root")
     if isinstance(workspace_root, str) and workspace_root.strip():
         parts.append(f"Workspace root: {workspace_root}.")
     return " ".join(parts)
@@ -508,33 +493,32 @@ def _patch_jsonrpc_openapi_contract(
     app: FastAPI,
     settings: Settings,
     *,
-    deployment_context: dict[str, str | bool],
+    runtime_profile: RuntimeProfile,
 ) -> None:
     session_binding = build_session_binding_extension_params(
-        deployment_context=deployment_context,
-        directory_override_enabled=bool(deployment_context["allow_directory_override"]),
+        runtime_profile=runtime_profile,
     )
     model_selection = build_model_selection_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     streaming = build_streaming_extension_params()
     session_query = build_session_query_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
     )
     provider_discovery = build_provider_discovery_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     interrupt_callback = build_interrupt_callback_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     compatibility_profile = build_compatibility_profile_params(
         protocol_version=settings.a2a_protocol_version,
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     wire_contract = build_wire_contract_params(
         protocol_version=settings.a2a_protocol_version,
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     original_openapi = app.openapi
 
@@ -551,7 +535,7 @@ def _patch_jsonrpc_openapi_contract(
                 if isinstance(post, dict):
                     post["summary"] = "Handle A2A JSON-RPC Requests"
                     post["description"] = _build_jsonrpc_extension_openapi_description(
-                        session_shell_enabled=bool(deployment_context.get("session_shell_enabled")),
+                        session_shell_enabled=runtime_profile.runtime_features.session_shell_enabled,
                     )
                     post["x-a2a-extension-contracts"] = {
                         "session_binding": session_binding,
@@ -571,8 +555,8 @@ def _patch_jsonrpc_openapi_contract(
                             app_json = content.setdefault("application/json", {})
                             if isinstance(app_json, dict):
                                 app_json["examples"] = _build_jsonrpc_extension_openapi_examples(
-                                    session_shell_enabled=bool(
-                                        deployment_context.get("session_shell_enabled")
+                                    session_shell_enabled=(
+                                        runtime_profile.runtime_features.session_shell_enabled
                                     ),
                                 )
 
@@ -627,7 +611,7 @@ def _patch_jsonrpc_openapi_contract(
 def build_agent_card(settings: Settings) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     base_url = public_url
-    deployment_context = _build_deployment_context(settings)
+    runtime_profile = build_runtime_profile(settings)
     security_schemes: dict[str, SecurityScheme] = {
         "bearerAuth": SecurityScheme(
             root=HTTPAuthSecurityScheme(
@@ -640,35 +624,34 @@ def build_agent_card(settings: Settings) -> AgentCard:
     security: list[dict[str, list[str]]] = [{"bearerAuth": []}]
 
     session_binding_extension_params = build_session_binding_extension_params(
-        deployment_context=deployment_context,
-        directory_override_enabled=settings.a2a_allow_directory_override,
+        runtime_profile=runtime_profile,
     )
     model_selection_extension_params = build_model_selection_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     streaming_extension_params = build_streaming_extension_params()
     session_query_extension_params = build_session_query_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
     )
     provider_discovery_extension_params = build_provider_discovery_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     interrupt_callback_extension_params = build_interrupt_callback_extension_params(
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     compatibility_profile_params = build_compatibility_profile_params(
         protocol_version=settings.a2a_protocol_version,
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
     wire_contract_params = build_wire_contract_params(
         protocol_version=settings.a2a_protocol_version,
-        deployment_context=deployment_context,
+        runtime_profile=runtime_profile,
     )
 
     return AgentCard(
         name=settings.a2a_title,
-        description=_build_agent_card_description(settings, deployment_context),
+        description=_build_agent_card_description(settings, runtime_profile),
         url=base_url,
         documentation_url=settings.a2a_documentation_url,
         version=settings.a2a_version,
