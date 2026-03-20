@@ -280,6 +280,10 @@ def _interrupt_meta(event: TaskStatusUpdateEvent) -> dict:
     return _status_shared_meta(event)["interrupt"]
 
 
+def _progress_meta(event: TaskStatusUpdateEvent) -> dict:
+    return _status_shared_meta(event)["progress"]
+
+
 @pytest.mark.asyncio
 async def test_streaming_accepts_file_input_without_breaking_contract() -> None:
     client = DummyStreamingClient(
@@ -897,6 +901,121 @@ async def test_streaming_does_not_emit_text_from_step_finish_snapshot_part() -> 
     usage = _status_shared_meta(final_status)["usage"]
     assert usage["input_tokens"] == 1
     assert usage["output_tokens"] == 4
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_progress_metadata_for_step_events() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            {
+                "type": "message.part.updated",
+                "properties": {
+                    "part": {
+                        "id": "prt-step-start-1",
+                        "sessionID": "ses-1",
+                        "messageID": "msg-1",
+                        "type": "step-start",
+                        "reason": "run",
+                        "state": {
+                            "status": "running",
+                            "title": "Planning",
+                            "subtitle": "Inspecting repository",
+                        },
+                    }
+                },
+            },
+            _step_finish_usage_event(
+                session_id="ses-1",
+                message_id="msg-1",
+                part_id="prt-step-finish-1",
+                input_tokens=3,
+                output_tokens=2,
+                total_tokens=5,
+                cost=0.0002,
+            ),
+        ],
+        response_text="done",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-progress", context_id="ctx-progress", text="hello"),
+        queue,
+    )
+
+    progress_statuses = [
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent)
+        and not event.final
+        and (event.metadata or {}).get("shared", {}).get("progress") is not None
+    ]
+    assert len(progress_statuses) == 2
+
+    first = _progress_meta(progress_statuses[0])
+    assert first["type"] == "step-start"
+    assert first["part_id"] == "prt-step-start-1"
+    assert first["reason"] == "run"
+    assert first["status"] == "running"
+    assert first["title"] == "Planning"
+    assert first["subtitle"] == "Inspecting repository"
+    assert _status_shared_meta(progress_statuses[0])["stream"]["source"] == "progress"
+
+    second = _progress_meta(progress_statuses[1])
+    assert second["type"] == "step-finish"
+    assert second["part_id"] == "prt-step-finish-1"
+    assert second["reason"] == "stop"
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_progress_metadata_for_snapshot_without_text_artifact() -> None:
+    snapshot_hash = "29ad5b502ac5884b0476ad858a4ebfb5d06c9d21"  # pragma: allowlist secret
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            {
+                "type": "message.part.updated",
+                "properties": {
+                    "part": {
+                        "id": "prt-snapshot-1",
+                        "sessionID": "ses-1",
+                        "messageID": "msg-1",
+                        "type": "snapshot",
+                        "snapshot": snapshot_hash,
+                    }
+                },
+            }
+        ],
+        response_text="",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-snapshot-progress", context_id="ctx-snapshot-progress", text="hello"
+        ),
+        queue,
+    )
+
+    progress_statuses = [
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent)
+        and not event.final
+        and (event.metadata or {}).get("shared", {}).get("progress") is not None
+    ]
+    assert len(progress_statuses) == 1
+    progress = _progress_meta(progress_statuses[0])
+    assert progress == {"type": "snapshot", "part_id": "prt-snapshot-1"}
+    text_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "text"
+    ]
+    assert text_updates == []
 
 
 @pytest.mark.asyncio

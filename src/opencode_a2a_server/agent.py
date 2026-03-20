@@ -114,6 +114,7 @@ class _StreamOutputState:
     stable_message_id: str
     event_id_namespace: str
     content_buffers: dict[BlockType, str] = field(default_factory=dict)
+    progress_buffers: dict[str, str] = field(default_factory=dict)
     token_usage: dict[str, Any] | None = None
     upstream_error: _UpstreamInBandError | None = None
     pending_interrupt_request_ids: set[str] = field(default_factory=set)
@@ -155,6 +156,13 @@ class _StreamOutputState:
         effective_append = self.emitted_stream_chunk
         self.emitted_stream_chunk = True
         return True, effective_append
+
+    def register_progress(self, *, identity: str, content_key: str) -> bool:
+        previous = self.progress_buffers.get(identity)
+        if previous == content_key:
+            return False
+        self.progress_buffers[identity] = content_key
+        return True
 
     def should_emit_final_snapshot(self, text: str) -> bool:
         if not text.strip():
@@ -1417,6 +1425,31 @@ class OpencodeAgentExecutor(AgentExecutor):
             elif phase == "resolved":
                 _emit_metric("interrupt_resolved_total")
 
+        async def _emit_progress_status(
+            *,
+            message_id: str | None,
+            progress: Mapping[str, Any],
+        ) -> None:
+            sequence = stream_state.next_sequence()
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    task_id=task_id,
+                    context_id=context_id,
+                    status=TaskStatus(state=TaskState.working),
+                    final=False,
+                    metadata=_build_output_metadata(
+                        session_id=session_id,
+                        stream={
+                            "message_id": stream_state.resolve_message_id(message_id),
+                            "event_id": stream_state.build_event_id(sequence),
+                            "source": "progress",
+                            "sequence": sequence,
+                        },
+                        progress=dict(progress),
+                    ),
+                )
+            )
+
         def _new_text_chunk(
             *,
             text: str,
@@ -1601,6 +1634,25 @@ class OpencodeAgentExecutor(AgentExecutor):
                             continue
                         event_session_id = _extract_event_session_id(event)
                         if event_session_id == session_id:
+                            part = props.get("part")
+                            if isinstance(part, Mapping):
+                                progress = _extract_progress_metadata(part, props)
+                                if progress is not None:
+                                    progress_identity = _build_progress_identity(part, props)
+                                    progress_key = json.dumps(
+                                        progress,
+                                        ensure_ascii=False,
+                                        sort_keys=True,
+                                        separators=(",", ":"),
+                                    )
+                                    if stream_state.register_progress(
+                                        identity=progress_identity,
+                                        content_key=progress_key,
+                                    ):
+                                        await _emit_progress_status(
+                                            message_id=_extract_stream_message_id(part, props),
+                                            progress=progress,
+                                        )
                             upstream_error = _extract_upstream_error_from_event(event)
                             if upstream_error is not None and stream_state.upstream_error is None:
                                 stream_state.upstream_error = upstream_error
@@ -1842,6 +1894,7 @@ def _build_output_metadata(
     session_title: str | None = None,
     usage: Mapping[str, Any] | None = None,
     stream: Mapping[str, Any] | None = None,
+    progress: Mapping[str, Any] | None = None,
     interrupt: Mapping[str, Any] | None = None,
     opencode_private: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
@@ -1857,6 +1910,8 @@ def _build_output_metadata(
         shared_meta["usage"] = dict(usage)
     if stream is not None:
         shared_meta["stream"] = dict(stream)
+    if progress is not None:
+        shared_meta["progress"] = dict(progress)
     if interrupt is not None:
         shared_meta["interrupt"] = dict(interrupt)
     if shared_meta:
@@ -2137,6 +2192,45 @@ def _extract_upstream_error_from_event(event: Mapping[str, Any]) -> _UpstreamInB
         if isinstance(info, Mapping):
             return _extract_upstream_error_from_payload(info, source="message.updated")
     return None
+
+
+def _extract_progress_metadata(
+    part: Mapping[str, Any],
+    props: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    part_type = _extract_stream_part_type(part, props)
+    if part_type not in {"step-start", "step-finish", "snapshot"}:
+        return None
+    progress: dict[str, Any] = {"type": part_type}
+    part_id = _extract_stream_part_id(part, props)
+    if part_id:
+        progress["part_id"] = part_id
+    reason = _extract_first_nonempty_string(part, ("reason",))
+    if reason:
+        progress["reason"] = reason
+    state = part.get("state")
+    if isinstance(state, Mapping):
+        status = _extract_first_nonempty_string(state, ("status",))
+        if status:
+            progress["status"] = status
+        title = _extract_first_nonempty_string(state, ("title",))
+        if title:
+            progress["title"] = title
+        subtitle = _extract_first_nonempty_string(state, ("subtitle",))
+        if subtitle:
+            progress["subtitle"] = subtitle
+    return progress
+
+
+def _build_progress_identity(part: Mapping[str, Any], props: Mapping[str, Any]) -> str:
+    part_type = _extract_stream_part_type(part, props) or "unknown"
+    part_id = _extract_stream_part_id(part, props)
+    if part_id:
+        return f"{part_type}:{part_id}"
+    message_id = _extract_stream_message_id(part, props)
+    if message_id:
+        return f"{part_type}:{message_id}"
+    return part_type
 
 
 def _extract_string_list(value: Any) -> list[str]:

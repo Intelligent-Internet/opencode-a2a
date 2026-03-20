@@ -7,6 +7,7 @@ SHARED_SESSION_BINDING_FIELD = "metadata.shared.session.id"
 SHARED_SESSION_METADATA_FIELD = "metadata.shared.session"
 SHARED_MODEL_SELECTION_FIELD = "metadata.shared.model"
 SHARED_STREAM_METADATA_FIELD = "metadata.shared.stream"
+SHARED_PROGRESS_METADATA_FIELD = "metadata.shared.progress"
 SHARED_INTERRUPT_METADATA_FIELD = "metadata.shared.interrupt"
 SHARED_USAGE_METADATA_FIELD = "metadata.shared.usage"
 OPENCODE_DIRECTORY_METADATA_FIELD = "metadata.opencode.directory"
@@ -393,6 +394,7 @@ def build_streaming_extension_params() -> dict[str, Any]:
     return {
         "artifact_metadata_field": SHARED_STREAM_METADATA_FIELD,
         "status_metadata_field": SHARED_STREAM_METADATA_FIELD,
+        "progress_metadata_field": SHARED_PROGRESS_METADATA_FIELD,
         "interrupt_metadata_field": SHARED_INTERRUPT_METADATA_FIELD,
         "session_metadata_field": SHARED_SESSION_METADATA_FIELD,
         "usage_metadata_field": SHARED_USAGE_METADATA_FIELD,
@@ -404,6 +406,14 @@ def build_streaming_extension_params() -> dict[str, Any]:
             "event_id": f"{SHARED_STREAM_METADATA_FIELD}.event_id",
             "sequence": f"{SHARED_STREAM_METADATA_FIELD}.sequence",
             "role": f"{SHARED_STREAM_METADATA_FIELD}.role",
+        },
+        "progress_fields": {
+            "type": f"{SHARED_PROGRESS_METADATA_FIELD}.type",
+            "part_id": f"{SHARED_PROGRESS_METADATA_FIELD}.part_id",
+            "reason": f"{SHARED_PROGRESS_METADATA_FIELD}.reason",
+            "status": f"{SHARED_PROGRESS_METADATA_FIELD}.status",
+            "title": f"{SHARED_PROGRESS_METADATA_FIELD}.title",
+            "subtitle": f"{SHARED_PROGRESS_METADATA_FIELD}.subtitle",
         },
         "interrupt_fields": {
             "request_id": f"{SHARED_INTERRUPT_METADATA_FIELD}.request_id",
