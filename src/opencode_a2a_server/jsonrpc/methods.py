@@ -4,12 +4,12 @@ from typing import Any, cast
 
 from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus, TextPart
 
-from .extension_contracts import (
+from ..extension_contracts import (
     COMMAND_REQUEST_ALLOWED_FIELDS,
     PROMPT_ASYNC_REQUEST_ALLOWED_FIELDS,
     SHELL_REQUEST_ALLOWED_FIELDS,
 )
-from .text_parts import extract_text_from_parts
+from ..parts.text import extract_text_from_parts
 
 SESSION_CONTEXT_PREFIX = "ctx:opencode-session:"
 

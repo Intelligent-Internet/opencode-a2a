@@ -18,12 +18,12 @@ from fastapi.responses import JSONResponse
 from starlette.requests import Request
 from starlette.responses import Response
 
-from .extension_contracts import (
+from ..extension_contracts import (
     INTERRUPT_ERROR_BUSINESS_CODES,
     PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES,
     SESSION_QUERY_ERROR_BUSINESS_CODES,
 )
-from .jsonrpc_ext_support import (
+from .methods import (
     SESSION_CONTEXT_PREFIX,
     _apply_session_query_limit,
     _as_a2a_message,
@@ -41,12 +41,12 @@ from .jsonrpc_ext_support import (
     _validate_prompt_async_request_payload,
     _validate_shell_request_payload,
 )
-from .jsonrpc_models import (
+from .params import (
     JsonRpcParamsValidationError,
     parse_get_session_messages_params,
     parse_list_sessions_params,
 )
-from .opencode_client import OpencodeClient, UpstreamContractError
+from ..opencode_client import OpencodeClient, UpstreamContractError
 
 logger = logging.getLogger(__name__)
 

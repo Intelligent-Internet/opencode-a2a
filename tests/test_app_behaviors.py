@@ -11,8 +11,10 @@ from a2a.types import Task, TaskIdParams, TaskNotCancelableError, TaskState, Tas
 from a2a.utils.errors import ServerError
 from fastapi import Request
 
-import opencode_a2a_server.app as app_module
-from opencode_a2a_server.app import (
+import opencode_a2a_server.server.application as app_module
+from opencode_a2a_server.extension_contracts import build_capability_snapshot
+from opencode_a2a_server.runtime_profile import build_runtime_profile
+from opencode_a2a_server.server.application import (
     KeepaliveRESTAdapter,
     OpencodeRequestHandler,
     _build_agent_card_description,
@@ -36,8 +38,6 @@ from opencode_a2a_server.app import (
     build_agent_card,
     create_app,
 )
-from opencode_a2a_server.extension_contracts import build_capability_snapshot
-from opencode_a2a_server.runtime_profile import build_runtime_profile
 from tests.helpers import DummyChatOpencodeClient, make_settings
 
 
@@ -455,7 +455,7 @@ async def test_on_message_send_covers_error_cleanup_and_internal_error(monkeypat
     )
 
     error_handler = _Handler(_Aggregator(error=RuntimeError("boom")))
-    with caplog.at_level("ERROR", logger="opencode_a2a_server.app"):
+    with caplog.at_level("ERROR", logger="opencode_a2a_server.server.application"):
         with pytest.raises(RuntimeError, match="boom"):
             await error_handler.on_message_send(params)
     assert any("Agent execution failed" in record.message for record in caplog.records)

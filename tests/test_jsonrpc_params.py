@@ -5,7 +5,7 @@ from opencode_a2a_server.extension_contracts import (
     SESSION_QUERY_MAX_LIMIT,
     SESSION_QUERY_PAGINATION_UNSUPPORTED,
 )
-from opencode_a2a_server.jsonrpc_models import (
+from opencode_a2a_server.jsonrpc.params import (
     JsonRpcParamsValidationError,
     parse_get_session_messages_params,
     parse_list_sessions_params,

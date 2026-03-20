@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from opencode_a2a_server.app import create_app
+from opencode_a2a_server.server.application import create_app
 from tests.helpers import make_settings
 
 

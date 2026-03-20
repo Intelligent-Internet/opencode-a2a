@@ -10,7 +10,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from opencode_a2a_server.agent import (
+from opencode_a2a_server.execution.executor import (
     BlockType,
     OpencodeAgentExecutor,
     _extract_token_usage,

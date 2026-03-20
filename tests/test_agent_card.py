@@ -1,4 +1,9 @@
-from opencode_a2a_server.app import (
+from opencode_a2a_server.extension_contracts import (
+    SESSION_QUERY_DEFAULT_LIMIT,
+    SESSION_QUERY_MAX_LIMIT,
+)
+from opencode_a2a_server.jsonrpc.application import SESSION_CONTEXT_PREFIX
+from opencode_a2a_server.server.application import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
@@ -9,11 +14,6 @@ from opencode_a2a_server.app import (
     WIRE_CONTRACT_EXTENSION_URI,
     build_agent_card,
 )
-from opencode_a2a_server.extension_contracts import (
-    SESSION_QUERY_DEFAULT_LIMIT,
-    SESSION_QUERY_MAX_LIMIT,
-)
-from opencode_a2a_server.jsonrpc_ext import SESSION_CONTEXT_PREFIX
 from tests.helpers import make_settings
 
 

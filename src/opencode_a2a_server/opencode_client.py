@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
-from .text_parts import extract_text_from_parts
+from .parts.text import extract_text_from_parts
 
 _UNSET = object()
 logger = logging.getLogger(__name__)

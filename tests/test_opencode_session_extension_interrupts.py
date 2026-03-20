@@ -9,7 +9,7 @@ from tests.opencode_session_extension_support import _BASE_SETTINGS
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_permission_reply(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     class InterruptClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -84,7 +84,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_legacy_permission_fields(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -113,7 +113,7 @@ async def test_interrupt_callback_extension_rejects_legacy_permission_fields(mon
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_legacy_metadata_directory(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -149,7 +149,7 @@ async def test_interrupt_callback_extension_rejects_legacy_metadata_directory(mo
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     class InterruptClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -249,7 +249,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     class NotFoundInterruptClient(DummyOpencodeClient):
         async def permission_reply(
@@ -297,7 +297,7 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     class ExpiredInterruptClient(DummyOpencodeClient):
         def resolve_interrupt_request(self, request_id: str):
@@ -329,7 +329,7 @@ async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     class InterruptClient(DummyOpencodeClient):
         def __init__(self, _settings: Settings) -> None:
@@ -377,7 +377,7 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     class InterruptClient(DummyOpencodeClient):
         pass
@@ -415,7 +415,7 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
 
 @pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_identity_mismatch(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     class InterruptClient(DummyOpencodeClient):
         pass

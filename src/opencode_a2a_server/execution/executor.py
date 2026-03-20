@@ -30,7 +30,7 @@ from a2a.types import (
     TextPart,
 )
 
-from .agent_support import (
+from .streaming import (
     BlockType,
     _await_stream_terminal_signal,
     _build_history,
@@ -74,8 +74,8 @@ from .agent_support import (
     _StreamTerminalSignal,
     _TTLCache,
 )
-from .opencode_client import OpencodeClient, UpstreamContractError
-from .parts_mapper import (
+from ..opencode_client import OpencodeClient, UpstreamContractError
+from ..parts.mapping import (
     UnsupportedA2AInputError,
     extract_text_from_a2a_parts,
     map_a2a_parts_to_opencode_parts,

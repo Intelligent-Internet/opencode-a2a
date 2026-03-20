@@ -14,9 +14,9 @@ import httpx
 from a2a.server.agent_execution import RequestContext
 from a2a.types import Message, Part, TaskState
 
-from .opencode_client import UpstreamContractError
+from ..opencode_client import UpstreamContractError
 
-logger = logging.getLogger("opencode_a2a_server.agent")
+logger = logging.getLogger(__name__)
 
 _INTERRUPT_ASKED_EVENT_TYPES = {"permission.asked", "question.asked"}
 _INTERRUPT_RESOLVED_EVENT_TYPES = {"permission.replied", "question.replied", "question.rejected"}

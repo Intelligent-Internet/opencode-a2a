@@ -18,7 +18,7 @@ from a2a.types import (
 )
 from a2a.utils.errors import ServerError
 
-from opencode_a2a_server.app import OpencodeRequestHandler
+from opencode_a2a_server.server.application import OpencodeRequestHandler
 
 
 def _task(*, task_id: str, context_id: str, state: TaskState) -> Task:

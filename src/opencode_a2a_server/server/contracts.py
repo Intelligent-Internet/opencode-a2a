@@ -17,8 +17,8 @@ from a2a.types import (
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from .config import Settings
-from .extension_contracts import (
+from ..config import Settings
+from ..extension_contracts import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
@@ -42,8 +42,8 @@ from .extension_contracts import (
     build_streaming_extension_params,
     build_wire_contract_params,
 )
-from .jsonrpc_ext import SESSION_CONTEXT_PREFIX
-from .runtime_profile import RuntimeProfile, build_runtime_profile
+from ..jsonrpc.application import SESSION_CONTEXT_PREFIX
+from ..runtime_profile import RuntimeProfile, build_runtime_profile
 
 logger = logging.getLogger(__name__)
 

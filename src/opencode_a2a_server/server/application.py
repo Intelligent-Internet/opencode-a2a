@@ -35,8 +35,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
-from .agent import OpencodeAgentExecutor, _emit_metric
-from .app_support import (
+from ..execution.executor import OpencodeAgentExecutor, _emit_metric
+from .contracts import (
     _build_agent_card_description,
     _build_chat_examples,
     _build_jsonrpc_extension_openapi_description,
@@ -56,8 +56,8 @@ from .app_support import (
     _RequestBodyTooLargeError,
     build_agent_card,
 )
-from .config import Settings
-from .extension_contracts import (
+from ..config import Settings
+from ..extension_contracts import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
@@ -72,11 +72,11 @@ from .extension_contracts import (
     WIRE_CONTRACT_EXTENSION_URI,
     build_capability_snapshot,
 )
-from .jsonrpc_ext import (
+from ..jsonrpc.application import (
     OpencodeSessionQueryJSONRPCApplication,
 )
-from .opencode_client import OpencodeClient
-from .runtime_profile import build_runtime_profile
+from ..opencode_client import OpencodeClient
+from ..runtime_profile import build_runtime_profile
 
 logger = logging.getLogger(__name__)
 

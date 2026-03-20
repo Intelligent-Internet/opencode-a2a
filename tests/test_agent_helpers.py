@@ -6,7 +6,7 @@ import httpx
 import pytest
 from a2a.types import TaskState
 
-from opencode_a2a_server.agent import (
+from opencode_a2a_server.execution.executor import (
     BlockType,
     _await_stream_terminal_signal,
     _build_output_metadata,

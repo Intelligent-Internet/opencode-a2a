@@ -11,7 +11,7 @@ from tests.opencode_session_extension_support import _BASE_SETTINGS
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_success(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -63,7 +63,7 @@ async def test_session_prompt_async_extension_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_rejects_invalid_params(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -162,7 +162,7 @@ async def test_session_prompt_async_extension_rejects_invalid_params(monkeypatch
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_rejects_owner_mismatch(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -197,7 +197,7 @@ async def test_session_prompt_async_extension_rejects_owner_mismatch(monkeypatch
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_reuses_directory_boundary_validation(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -242,7 +242,7 @@ async def test_session_prompt_async_extension_reuses_directory_boundary_validati
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_honors_directory_override_switch(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(
@@ -289,7 +289,7 @@ async def test_session_prompt_async_extension_honors_directory_override_switch(m
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_maps_404_to_session_not_found(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     class NotFoundPromptAsyncClient(DummyOpencodeClient):
         async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
@@ -326,7 +326,7 @@ async def test_session_prompt_async_extension_maps_404_to_session_not_found(monk
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_maps_non_204_to_payload_error(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     class InvalidPromptAsyncStatusClient(DummyOpencodeClient):
         async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
@@ -363,7 +363,7 @@ async def test_session_prompt_async_extension_maps_non_204_to_payload_error(monk
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_maps_500_to_upstream_http_error(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     class UpstreamErrorPromptAsyncClient(DummyOpencodeClient):
         async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
@@ -401,7 +401,7 @@ async def test_session_prompt_async_extension_maps_500_to_upstream_http_error(mo
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_maps_network_error_to_unreachable(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     class NetworkErrorPromptAsyncClient(DummyOpencodeClient):
         async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
@@ -437,8 +437,8 @@ async def test_session_prompt_async_extension_maps_network_error_to_unreachable(
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_release_failure_does_not_override_response(monkeypatch, caplog):
-    import opencode_a2a_server.app as app_module
-    from opencode_a2a_server.agent import OpencodeAgentExecutor
+    import opencode_a2a_server.server.application as app_module
+    from opencode_a2a_server.execution.executor import OpencodeAgentExecutor
 
     class NetworkErrorPromptAsyncClient(DummyOpencodeClient):
         async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
@@ -486,7 +486,7 @@ async def test_session_prompt_async_release_failure_does_not_override_response(m
 
 @pytest.mark.asyncio
 async def test_session_prompt_async_extension_notification_returns_204(monkeypatch):
-    import opencode_a2a_server.app as app_module
+    import opencode_a2a_server.server.application as app_module
 
     dummy = DummyOpencodeClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)

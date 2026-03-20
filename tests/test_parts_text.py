@@ -1,4 +1,4 @@
-from opencode_a2a_server.text_parts import extract_text_from_parts
+from opencode_a2a_server.parts.text import extract_text_from_parts
 
 
 def test_extract_text_from_parts_returns_empty_for_non_list_input() -> None:

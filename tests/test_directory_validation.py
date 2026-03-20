@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 from a2a.server.events.event_queue import EventQueue
 
-from opencode_a2a_server.agent import OpencodeAgentExecutor
+from opencode_a2a_server.execution.executor import OpencodeAgentExecutor
 from opencode_a2a_server.opencode_client import OpencodeClient
 from tests.helpers import make_request_context_mock, make_settings
 

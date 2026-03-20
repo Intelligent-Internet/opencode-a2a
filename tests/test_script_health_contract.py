@@ -60,9 +60,9 @@ def test_smoke_test_requires_explicit_wheel_selection_when_dist_is_ambiguous() -
 
 def test_coverage_policy_tracks_overall_and_critical_file_thresholds() -> None:
     assert "OVERALL_MINIMUM = 90.0" in COVERAGE_GATE_TEXT
-    assert '"src/opencode_a2a_server/agent.py": 90.0' in COVERAGE_GATE_TEXT
-    assert '"src/opencode_a2a_server/app.py": 90.0' in COVERAGE_GATE_TEXT
-    assert '"src/opencode_a2a_server/jsonrpc_ext.py": 85.0' in COVERAGE_GATE_TEXT
+    assert '"src/opencode_a2a_server/execution/executor.py": 90.0' in COVERAGE_GATE_TEXT
+    assert '"src/opencode_a2a_server/server/application.py": 90.0' in COVERAGE_GATE_TEXT
+    assert '"src/opencode_a2a_server/jsonrpc/application.py": 85.0' in COVERAGE_GATE_TEXT
     assert '"src/opencode_a2a_server/opencode_client.py": 85.0' in COVERAGE_GATE_TEXT
     assert "--cov-fail-under=90" in PYPROJECT_TEXT
     assert "--cov-report=json:.coverage.json" in PYPROJECT_TEXT
