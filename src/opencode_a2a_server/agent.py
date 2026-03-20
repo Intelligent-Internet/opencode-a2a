@@ -87,7 +87,8 @@ class _NormalizedStreamChunk:
     accumulate_content: bool
     append: bool
     block_type: BlockType
-    source: str
+    internal_source: str
+    shared_source: str
     message_id: str | None
     role: str | None
 
@@ -874,7 +875,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                             last_chunk=True,
                             artifact_metadata=_build_stream_artifact_metadata(
                                 block_type=BlockType.TEXT,
-                                source="final_snapshot",
+                                shared_source="final_snapshot",
                                 message_id=resolved_message_id,
                                 event_id=stream_state.build_event_id(sequence),
                                 sequence=sequence,
@@ -1363,7 +1364,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     last_chunk=False,
                     artifact_metadata=_build_stream_artifact_metadata(
                         block_type=chunk.block_type,
-                        source=chunk.source,
+                        shared_source=chunk.shared_source,
                         message_id=resolved_message_id,
                         role=chunk.role,
                         event_id=stream_state.build_event_id(sequence),
@@ -1371,11 +1372,14 @@ class OpencodeAgentExecutor(AgentExecutor):
                     ),
                 )
                 logger.debug(
-                    "Stream chunk task_id=%s session_id=%s block_type=%s append=%s text=%s",
+                    "Stream chunk task_id=%s session_id=%s block_type=%s append=%s "
+                    "shared_source=%s internal_source=%s text=%s",
                     task_id,
                     session_id,
                     chunk.block_type,
                     effective_append,
+                    chunk.shared_source,
+                    chunk.internal_source,
                     chunk.content_key,
                 )
                 if chunk.block_type == BlockType.TOOL_CALL:
@@ -1455,7 +1459,8 @@ class OpencodeAgentExecutor(AgentExecutor):
             text: str,
             append: bool,
             block_type: BlockType,
-            source: str,
+            internal_source: str,
+            shared_source: str,
             message_id: str | None,
             role: str | None,
         ) -> _NormalizedStreamChunk:
@@ -1465,7 +1470,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                 accumulate_content=True,
                 append=append,
                 block_type=block_type,
-                source=source,
+                internal_source=internal_source,
+                shared_source=shared_source,
                 message_id=message_id,
                 role=role,
             )
@@ -1476,7 +1482,8 @@ class OpencodeAgentExecutor(AgentExecutor):
             content_key: str,
             append: bool,
             block_type: BlockType,
-            source: str,
+            internal_source: str,
+            shared_source: str,
             message_id: str | None,
             role: str | None,
         ) -> _NormalizedStreamChunk:
@@ -1486,7 +1493,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                 accumulate_content=False,
                 append=append,
                 block_type=block_type,
-                source=source,
+                internal_source=internal_source,
+                shared_source=shared_source,
                 message_id=message_id,
                 role=role,
             )
@@ -1523,7 +1531,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             state: _StreamPartState,
             delta_text: str,
             message_id: str | None,
-            source: str,
+            internal_source: str,
         ) -> list[_NormalizedStreamChunk]:
             if not delta_text:
                 return []
@@ -1536,7 +1544,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                     text=delta_text,
                     append=True,
                     block_type=state.block_type,
-                    source=source,
+                    internal_source=internal_source,
+                    shared_source="stream",
                     message_id=state.message_id,
                     role=state.role,
                 )
@@ -1564,7 +1573,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                         text=delta_text,
                         append=True,
                         block_type=state.block_type,
-                        source="part_text_diff",
+                        internal_source="part_text_diff",
+                        shared_source="stream",
                         message_id=state.message_id,
                         role=state.role,
                     )
@@ -1608,7 +1618,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                     content_key=content_key,
                     append=bool(previous),
                     block_type=state.block_type,
-                    source="tool_part_update",
+                    internal_source="tool_part_update",
+                    shared_source="tool_part_update",
                     message_id=state.message_id,
                     role=state.role,
                 )
@@ -1738,7 +1749,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                                 state=state,
                                 delta_text=delta,
                                 message_id=message_id,
-                                source="delta_event",
+                                internal_source="delta_event",
                             )
                             if delta_chunks:
                                 await _emit_chunks(delta_chunks)
@@ -1769,7 +1780,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     state=state,
                                     delta_text=buffered.delta,
                                     message_id=buffered.message_id,
-                                    source="delta_event_buffered",
+                                    internal_source="delta_event_buffered",
                                 )
                             )
 
@@ -1780,7 +1791,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     state=state,
                                     delta_text=delta,
                                     message_id=message_id,
-                                    source="delta",
+                                    internal_source="delta",
                                 )
                             )
                         elif state.block_type == BlockType.TOOL_CALL:
@@ -1867,7 +1878,7 @@ async def _enqueue_artifact_update(
 def _build_stream_artifact_metadata(
     *,
     block_type: BlockType,
-    source: str,
+    shared_source: str,
     message_id: str | None = None,
     role: str | None = None,
     event_id: str | None = None,
@@ -1875,7 +1886,7 @@ def _build_stream_artifact_metadata(
 ) -> dict[str, Any]:
     stream_meta: dict[str, Any] = {
         "block_type": block_type.value,
-        "source": _normalize_shared_stream_source(block_type=block_type, source=source),
+        "source": shared_source,
     }
     if message_id:
         stream_meta["message_id"] = message_id
@@ -1886,16 +1897,6 @@ def _build_stream_artifact_metadata(
     if sequence is not None:
         stream_meta["sequence"] = sequence
     return {"shared": {"stream": stream_meta}}
-
-
-def _normalize_shared_stream_source(*, block_type: BlockType, source: str) -> str:
-    if source == "final_snapshot":
-        return "final_snapshot"
-    if block_type == BlockType.TOOL_CALL:
-        return "tool_part_update"
-    if block_type in {BlockType.TEXT, BlockType.REASONING}:
-        return "stream"
-    return source
 
 
 def _build_output_metadata(
