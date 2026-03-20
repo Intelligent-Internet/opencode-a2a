@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .runtime_profile import RuntimeProfile
+from .runtime_profile import SESSION_SHELL_TOGGLE, RuntimeProfile
 
 SHARED_SESSION_BINDING_FIELD = "metadata.shared.session.id"
 SHARED_SESSION_METADATA_FIELD = "metadata.shared.session"
@@ -297,19 +297,134 @@ PROVIDER_DISCOVERY_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
 )
 
 
-def build_supported_jsonrpc_methods(*, session_shell_enabled: bool) -> list[str]:
-    methods = [
-        *CORE_JSONRPC_METHODS,
-        SESSION_QUERY_METHODS["list_sessions"],
-        SESSION_QUERY_METHODS["get_session_messages"],
-        SESSION_CONTROL_METHODS["prompt_async"],
-        SESSION_CONTROL_METHODS["command"],
-        *PROVIDER_DISCOVERY_METHODS.values(),
-        *INTERRUPT_CALLBACK_METHODS.values(),
-    ]
-    if session_shell_enabled:
-        methods.append(SESSION_CONTROL_METHODS["shell"])
-    return methods
+@dataclass(frozen=True)
+class DeploymentConditionalMethod:
+    method: str
+    enabled: bool
+    extension_uri: str
+    toggle: str
+    reason_when_disabled: str = "disabled_by_configuration"
+
+    @property
+    def availability(self) -> str:
+        return "enabled" if self.enabled else "disabled"
+
+    def control_method_flag(self) -> dict[str, Any]:
+        return {
+            "enabled_by_default": False,
+            "config_key": self.toggle,
+        }
+
+    def method_retention(self) -> dict[str, Any]:
+        return {
+            "surface": "extension",
+            "availability": self.availability,
+            "retention": "deployment-conditional",
+            "extension_uri": self.extension_uri,
+            "toggle": self.toggle,
+        }
+
+    def disabled_wire_contract_entry(self) -> dict[str, str] | None:
+        if self.enabled:
+            return None
+        return {
+            "reason": self.reason_when_disabled,
+            "toggle": self.toggle,
+        }
+
+
+@dataclass(frozen=True)
+class JsonRpcCapabilitySnapshot:
+    conditional_methods: dict[str, DeploymentConditionalMethod]
+
+    def is_method_enabled(self, method: str) -> bool:
+        conditional_method = self.conditional_methods.get(method)
+        if conditional_method is None:
+            return True
+        return conditional_method.enabled
+
+    def session_query_methods(self) -> dict[str, str]:
+        methods = dict(SESSION_QUERY_METHODS)
+        if not self.is_method_enabled(SESSION_QUERY_METHODS["shell"]):
+            methods.pop("shell", None)
+        return methods
+
+    def session_control_methods(self) -> dict[str, str]:
+        methods = dict(SESSION_CONTROL_METHODS)
+        if not self.is_method_enabled(SESSION_CONTROL_METHODS["shell"]):
+            methods.pop("shell", None)
+        return methods
+
+    def provider_discovery_methods(self) -> dict[str, str]:
+        return dict(PROVIDER_DISCOVERY_METHODS)
+
+    def interrupt_callback_methods(self) -> dict[str, str]:
+        return dict(INTERRUPT_CALLBACK_METHODS)
+
+    def supported_jsonrpc_methods(self) -> list[str]:
+        methods = [
+            *CORE_JSONRPC_METHODS,
+            SESSION_QUERY_METHODS["list_sessions"],
+            SESSION_QUERY_METHODS["get_session_messages"],
+            SESSION_CONTROL_METHODS["prompt_async"],
+            SESSION_CONTROL_METHODS["command"],
+            *PROVIDER_DISCOVERY_METHODS.values(),
+            *INTERRUPT_CALLBACK_METHODS.values(),
+        ]
+        if self.is_method_enabled(SESSION_CONTROL_METHODS["shell"]):
+            methods.append(SESSION_CONTROL_METHODS["shell"])
+        return methods
+
+    def extension_jsonrpc_methods(self) -> list[str]:
+        methods = [
+            SESSION_QUERY_METHODS["list_sessions"],
+            SESSION_QUERY_METHODS["get_session_messages"],
+            SESSION_CONTROL_METHODS["prompt_async"],
+            SESSION_CONTROL_METHODS["command"],
+            *PROVIDER_DISCOVERY_METHODS.values(),
+            *INTERRUPT_CALLBACK_METHODS.values(),
+        ]
+        if self.is_method_enabled(SESSION_CONTROL_METHODS["shell"]):
+            methods.append(SESSION_CONTROL_METHODS["shell"])
+        return methods
+
+    def conditionally_available_methods(self) -> dict[str, dict[str, str]]:
+        return {
+            method: disabled_entry
+            for method, conditional_method in self.conditional_methods.items()
+            if (disabled_entry := conditional_method.disabled_wire_contract_entry()) is not None
+        }
+
+    def control_method_flags(self) -> dict[str, dict[str, Any]]:
+        return {
+            method: conditional_method.control_method_flag()
+            for method, conditional_method in self.conditional_methods.items()
+            if method in SESSION_CONTROL_METHODS.values()
+        }
+
+    def conditional_method_retention(self) -> dict[str, dict[str, Any]]:
+        return {
+            method: conditional_method.method_retention()
+            for method, conditional_method in self.conditional_methods.items()
+        }
+
+
+def build_capability_snapshot(*, runtime_profile: RuntimeProfile) -> JsonRpcCapabilitySnapshot:
+    return JsonRpcCapabilitySnapshot(
+        conditional_methods={
+            SESSION_CONTROL_METHODS["shell"]: DeploymentConditionalMethod(
+                method=SESSION_CONTROL_METHODS["shell"],
+                enabled=runtime_profile.session_shell_enabled,
+                extension_uri=SESSION_QUERY_EXTENSION_URI,
+                toggle=SESSION_SHELL_TOGGLE,
+            )
+        }
+    )
+
+
+def build_supported_jsonrpc_methods(*, runtime_profile: RuntimeProfile) -> list[str]:
+    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    return capability_snapshot.supported_jsonrpc_methods()
 
 
 def _build_method_contract_params(
@@ -430,18 +545,16 @@ def build_session_query_extension_params(
     runtime_profile: RuntimeProfile,
     context_id_prefix: str,
 ) -> dict[str, Any]:
-    session_shell_enabled = runtime_profile.session_shell_enabled
-    methods = dict(SESSION_QUERY_METHODS)
-    control_methods = dict(SESSION_CONTROL_METHODS)
-    if not session_shell_enabled:
-        methods.pop("shell", None)
-        control_methods.pop("shell", None)
+    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    methods = capability_snapshot.session_query_methods()
+    control_methods = capability_snapshot.session_control_methods()
+    active_session_query_methods = set(methods.values())
 
     method_contracts: dict[str, Any] = {}
     pagination_applies_to: list[str] = []
 
     for method_contract in SESSION_QUERY_METHOD_CONTRACTS.values():
-        if method_contract.method == SESSION_QUERY_METHODS["shell"] and not session_shell_enabled:
+        if method_contract.method not in active_session_query_methods:
             continue
         params_contract = _build_method_contract_params(
             required=method_contract.required_params,
@@ -468,12 +581,7 @@ def build_session_query_extension_params(
     return {
         "methods": methods,
         "control_methods": control_methods,
-        "control_method_flags": {
-            SESSION_QUERY_METHODS["shell"]: {
-                "enabled_by_default": False,
-                "config_key": "A2A_ENABLE_SESSION_SHELL",
-            }
-        },
+        "control_method_flags": capability_snapshot.control_method_flags(),
         "profile": runtime_profile.summary_dict(),
         "pagination": {
             "mode": SESSION_QUERY_PAGINATION_MODE,
@@ -623,7 +731,7 @@ def build_compatibility_profile_params(
     protocol_version: str,
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
-    session_shell_enabled = runtime_profile.session_shell_enabled
+    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
     method_retention: dict[str, dict[str, Any]] = {
         method: {
             "surface": "core",
@@ -648,13 +756,7 @@ def build_compatibility_profile_params(
             )
         }
     )
-    method_retention[SESSION_CONTROL_METHODS["shell"]] = {
-        "surface": "extension",
-        "availability": "enabled" if session_shell_enabled else "disabled",
-        "retention": "deployment-conditional",
-        "extension_uri": SESSION_QUERY_EXTENSION_URI,
-        "toggle": "A2A_ENABLE_SESSION_SHELL",
-    }
+    method_retention.update(capability_snapshot.conditional_method_retention())
     method_retention.update(
         {
             method: {
@@ -749,23 +851,7 @@ def build_wire_contract_params(
     protocol_version: str,
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
-    session_shell_enabled = runtime_profile.session_shell_enabled
-    extension_jsonrpc_methods = [
-        SESSION_QUERY_METHODS["list_sessions"],
-        SESSION_QUERY_METHODS["get_session_messages"],
-        SESSION_CONTROL_METHODS["prompt_async"],
-        SESSION_CONTROL_METHODS["command"],
-        *PROVIDER_DISCOVERY_METHODS.values(),
-        *INTERRUPT_CALLBACK_METHODS.values(),
-    ]
-    conditionally_available_methods: dict[str, dict[str, str]] = {}
-    if session_shell_enabled:
-        extension_jsonrpc_methods.append(SESSION_CONTROL_METHODS["shell"])
-    else:
-        conditionally_available_methods[SESSION_CONTROL_METHODS["shell"]] = {
-            "reason": "disabled_by_configuration",
-            "toggle": "A2A_ENABLE_SESSION_SHELL",
-        }
+    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
 
     return {
         "protocol_version": protocol_version,
@@ -777,8 +863,10 @@ def build_wire_contract_params(
             "http_endpoints": list(CORE_HTTP_ENDPOINTS),
         },
         "extensions": {
-            "jsonrpc_methods": extension_jsonrpc_methods,
-            "conditionally_available_methods": conditionally_available_methods,
+            "jsonrpc_methods": capability_snapshot.extension_jsonrpc_methods(),
+            "conditionally_available_methods": (
+                capability_snapshot.conditionally_available_methods()
+            ),
             "extension_uris": [
                 SESSION_BINDING_EXTENSION_URI,
                 MODEL_SELECTION_EXTENSION_URI,
@@ -788,9 +876,7 @@ def build_wire_contract_params(
                 INTERRUPT_CALLBACK_EXTENSION_URI,
             ],
         },
-        "all_jsonrpc_methods": build_supported_jsonrpc_methods(
-            session_shell_enabled=session_shell_enabled,
-        ),
+        "all_jsonrpc_methods": capability_snapshot.supported_jsonrpc_methods(),
         "unsupported_method_error": {
             "code": -32601,
             "type": "METHOD_NOT_SUPPORTED",

@@ -36,6 +36,7 @@ from opencode_a2a_server.app import (
     build_agent_card,
     create_app,
 )
+from opencode_a2a_server.extension_contracts import build_capability_snapshot
 from opencode_a2a_server.runtime_profile import build_runtime_profile
 from tests.helpers import DummyChatOpencodeClient, make_settings
 
@@ -124,6 +125,12 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
     )
 
     runtime_profile = build_runtime_profile(settings)
+    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    disabled_capability_snapshot = build_capability_snapshot(
+        runtime_profile=build_runtime_profile(
+            make_settings(a2a_bearer_token="test-token", a2a_enable_session_shell=False)
+        )
+    )
     assert runtime_profile.summary_dict() == {
         "profile_id": "opencode-a2a-single-tenant-coding-v1",
         "deployment": {
@@ -168,15 +175,20 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
     assert any("project alpha" in item for item in _build_chat_examples("alpha"))
     assert all(
         "shell" not in item
-        for item in _build_session_query_skill_examples(session_shell_enabled=False)
+        for item in _build_session_query_skill_examples(
+            capability_snapshot=disabled_capability_snapshot
+        )
     )
     assert any(
-        "shell" in item for item in _build_session_query_skill_examples(session_shell_enabled=True)
+        "shell" in item
+        for item in _build_session_query_skill_examples(capability_snapshot=capability_snapshot)
     )
     assert "opencode.sessions.shell" in _build_jsonrpc_extension_openapi_description(
-        session_shell_enabled=True
+        capability_snapshot=capability_snapshot
     )
-    assert "session_shell" in _build_jsonrpc_extension_openapi_examples(session_shell_enabled=True)
+    assert "session_shell" in _build_jsonrpc_extension_openapi_examples(
+        capability_snapshot=capability_snapshot
+    )
     assert "continue_session" in _build_rest_message_openapi_examples()
 
 

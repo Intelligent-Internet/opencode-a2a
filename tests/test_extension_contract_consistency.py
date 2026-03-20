@@ -17,6 +17,7 @@ from opencode_a2a_server.extension_contracts import (
     INTERRUPT_CALLBACK_METHODS,
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
+    build_capability_snapshot,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
@@ -206,6 +207,37 @@ def test_openapi_jsonrpc_examples_use_declared_default_session_limit() -> None:
 
     assert examples["session_list"]["value"]["params"]["limit"] == SESSION_QUERY_DEFAULT_LIMIT
     assert examples["session_messages"]["value"]["params"]["limit"] == SESSION_QUERY_DEFAULT_LIMIT
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("session_shell_enabled", [False, True])
+async def test_runtime_supported_methods_align_with_capability_snapshot(
+    session_shell_enabled: bool,
+) -> None:
+    settings = make_settings(
+        a2a_bearer_token="test-token",
+        a2a_enable_session_shell=session_shell_enabled,
+    )
+    app = create_app(settings)
+    runtime_profile = build_runtime_profile(settings)
+    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    wire_contract = build_wire_contract_params(
+        protocol_version=settings.a2a_protocol_version,
+        runtime_profile=runtime_profile,
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers={"Authorization": "Bearer test-token"},
+            json={"jsonrpc": "2.0", "id": 901, "method": "unsupported.method", "params": {}},
+        )
+
+    assert response.status_code == 200
+    error = response.json()["error"]
+    assert error["data"]["supported_methods"] == capability_snapshot.supported_jsonrpc_methods()
+    assert error["data"]["supported_methods"] == wire_contract["all_jsonrpc_methods"]
 
 
 @pytest.mark.asyncio

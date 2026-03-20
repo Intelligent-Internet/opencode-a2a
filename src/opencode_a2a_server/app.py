@@ -70,7 +70,7 @@ from .extension_contracts import (
     SESSION_QUERY_METHODS,
     STREAMING_EXTENSION_URI,
     WIRE_CONTRACT_EXTENSION_URI,
-    build_supported_jsonrpc_methods,
+    build_capability_snapshot,
 )
 from .jsonrpc_ext import (
     OpencodeSessionQueryJSONRPCApplication,
@@ -84,10 +84,14 @@ __all__ = [
     "_RequestBodyTooLargeError",
     "COMPATIBILITY_PROFILE_EXTENSION_URI",
     "INTERRUPT_CALLBACK_EXTENSION_URI",
+    "INTERRUPT_CALLBACK_METHODS",
     "MODEL_SELECTION_EXTENSION_URI",
     "PROVIDER_DISCOVERY_EXTENSION_URI",
+    "PROVIDER_DISCOVERY_METHODS",
     "SESSION_BINDING_EXTENSION_URI",
+    "SESSION_CONTROL_METHODS",
     "SESSION_QUERY_EXTENSION_URI",
+    "SESSION_QUERY_METHODS",
     "STREAMING_EXTENSION_URI",
     "WIRE_CONTRACT_EXTENSION_URI",
     "_build_agent_card_description",
@@ -410,15 +414,14 @@ def create_app(settings: Settings) -> FastAPI:
 
     agent_card = build_agent_card(settings)
     context_builder = IdentityAwareCallContextBuilder()
+    runtime_profile = build_runtime_profile(settings)
+    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
 
     jsonrpc_methods = {
-        **SESSION_QUERY_METHODS,
-        **SESSION_CONTROL_METHODS,
-        **PROVIDER_DISCOVERY_METHODS,
-        **INTERRUPT_CALLBACK_METHODS,
+        **capability_snapshot.session_query_methods(),
+        **capability_snapshot.provider_discovery_methods(),
+        **capability_snapshot.interrupt_callback_methods(),
     }
-    if not settings.a2a_enable_session_shell:
-        jsonrpc_methods.pop("shell", None)
 
     # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.
     app = OpencodeSessionQueryJSONRPCApplication(
@@ -427,9 +430,7 @@ def create_app(settings: Settings) -> FastAPI:
         context_builder=context_builder,
         opencode_client=client,
         protocol_version=settings.a2a_protocol_version,
-        supported_methods=build_supported_jsonrpc_methods(
-            session_shell_enabled=settings.a2a_enable_session_shell,
-        ),
+        supported_methods=capability_snapshot.supported_jsonrpc_methods(),
         directory_resolver=executor.resolve_directory_for_control,
         session_claim=executor.claim_session_for_control,
         session_claim_finalize=executor.finalize_session_for_control,
@@ -437,7 +438,6 @@ def create_app(settings: Settings) -> FastAPI:
         methods=jsonrpc_methods,
     ).build(title=settings.a2a_title, version=settings.a2a_version, lifespan=lifespan)
     app.state.opencode_agent_executor = executor
-    runtime_profile = build_runtime_profile(settings)
     _patch_jsonrpc_openapi_contract(app, settings, runtime_profile=runtime_profile)
 
     rest_adapter = KeepaliveRESTAdapter(

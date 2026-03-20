@@ -31,6 +31,8 @@ from .extension_contracts import (
     SESSION_QUERY_METHODS,
     STREAMING_EXTENSION_URI,
     WIRE_CONTRACT_EXTENSION_URI,
+    JsonRpcCapabilitySnapshot,
+    build_capability_snapshot,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
@@ -183,27 +185,26 @@ def _build_chat_examples(project: str | None) -> list[str]:
     return examples
 
 
-def _build_session_query_skill_examples(*, session_shell_enabled: bool) -> list[str]:
+def _build_session_query_skill_examples(
+    *,
+    capability_snapshot: JsonRpcCapabilitySnapshot,
+) -> list[str]:
     examples = [
         "List OpenCode sessions (method opencode.sessions.list).",
         "List messages for a session (method opencode.sessions.messages.list).",
         "Send async prompt to a session (method opencode.sessions.prompt_async).",
         "Send command to a session (method opencode.sessions.command).",
     ]
-    if session_shell_enabled:
+    if capability_snapshot.is_method_enabled(SESSION_QUERY_METHODS["shell"]):
         examples.append("Run shell in a session (method opencode.sessions.shell).")
     return examples
 
 
-def _build_jsonrpc_extension_openapi_description(*, session_shell_enabled: bool) -> str:
-    session_methods = [
-        SESSION_QUERY_METHODS["list_sessions"],
-        SESSION_QUERY_METHODS["get_session_messages"],
-        SESSION_QUERY_METHODS["prompt_async"],
-        SESSION_QUERY_METHODS["command"],
-    ]
-    if session_shell_enabled:
-        session_methods.append(SESSION_QUERY_METHODS["shell"])
+def _build_jsonrpc_extension_openapi_description(
+    *,
+    capability_snapshot: JsonRpcCapabilitySnapshot,
+) -> str:
+    session_methods = list(capability_snapshot.session_query_methods().values())
     provider_methods = ", ".join(sorted(PROVIDER_DISCOVERY_METHODS.values()))
     interrupt_methods = ", ".join(sorted(INTERRUPT_CALLBACK_METHODS.values()))
     return (
@@ -218,7 +219,10 @@ def _build_jsonrpc_extension_openapi_description(*, session_shell_enabled: bool)
     )
 
 
-def _build_jsonrpc_extension_openapi_examples(*, session_shell_enabled: bool) -> dict[str, Any]:
+def _build_jsonrpc_extension_openapi_examples(
+    *,
+    capability_snapshot: JsonRpcCapabilitySnapshot,
+) -> dict[str, Any]:
     examples = {
         "message_send": {
             "summary": "Send message via JSON-RPC core method",
@@ -399,7 +403,7 @@ def _build_jsonrpc_extension_openapi_examples(*, session_shell_enabled: bool) ->
             },
         },
     }
-    if session_shell_enabled:
+    if capability_snapshot.is_method_enabled(SESSION_QUERY_METHODS["shell"]):
         examples["session_shell"] = {
             "summary": "Run shell command in an existing session",
             "value": {
@@ -516,6 +520,7 @@ def _patch_jsonrpc_openapi_contract(
         protocol_version=settings.a2a_protocol_version,
         runtime_profile=runtime_profile,
     )
+    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
     original_openapi = app.openapi
 
     def custom_openapi() -> dict[str, Any]:
@@ -531,7 +536,7 @@ def _patch_jsonrpc_openapi_contract(
                 if isinstance(post, dict):
                     post["summary"] = "Handle A2A JSON-RPC Requests"
                     post["description"] = _build_jsonrpc_extension_openapi_description(
-                        session_shell_enabled=runtime_profile.session_shell_enabled,
+                        capability_snapshot=capability_snapshot,
                     )
                     post["x-a2a-extension-contracts"] = {
                         "session_binding": session_binding,
@@ -551,7 +556,7 @@ def _patch_jsonrpc_openapi_contract(
                             app_json = content.setdefault("application/json", {})
                             if isinstance(app_json, dict):
                                 app_json["examples"] = _build_jsonrpc_extension_openapi_examples(
-                                    session_shell_enabled=runtime_profile.session_shell_enabled,
+                                    capability_snapshot=capability_snapshot,
                                 )
 
             rest_post_contracts: dict[str, dict[str, Any]] = {
@@ -616,6 +621,7 @@ def build_agent_card(settings: Settings) -> AgentCard:
         )
     }
     security: list[dict[str, list[str]]] = [{"bearerAuth": []}]
+    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
 
     session_binding_extension_params = build_session_binding_extension_params(
         runtime_profile=runtime_profile,
@@ -755,7 +761,7 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 ),
                 tags=["opencode", "sessions", "history", "provider-private"],
                 examples=_build_session_query_skill_examples(
-                    session_shell_enabled=settings.a2a_enable_session_shell
+                    capability_snapshot=capability_snapshot,
                 ),
             ),
             AgentSkill(
