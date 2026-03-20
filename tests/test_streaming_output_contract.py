@@ -37,12 +37,16 @@ class DummyStreamingClient:
         response_message_id: str | None = "msg-1",
         response_raw: dict | None = None,
         send_delay: float = 0.02,
+        stream_event_delays: list[float] | None = None,
+        auto_idle: bool = True,
     ) -> None:
         self._stream_events_payload = stream_events_payload
         self._response_text = response_text
         self._response_message_id = response_message_id
         self._response_raw = response_raw or {}
         self._send_delay = send_delay
+        self._stream_event_delays = stream_event_delays or []
+        self._auto_idle = auto_idle
         self._in_flight_send = 0
         self.max_in_flight_send = 0
         self.stream_timeout = None
@@ -86,11 +90,19 @@ class DummyStreamingClient:
 
     async def stream_events(self, stop_event=None, *, directory: str | None = None):  # noqa: ANN001
         del directory
-        for event in self._stream_events_payload:
+        for index, event in enumerate(self._stream_events_payload):
             if stop_event and stop_event.is_set():
                 break
-            await asyncio.sleep(0)
+            delay = (
+                self._stream_event_delays[index] if index < len(self._stream_event_delays) else 0
+            )
+            await asyncio.sleep(delay)
             yield event
+        if self._auto_idle and not any(
+            event.get("type") in {"session.idle", "session.error"}
+            for event in self._stream_events_payload
+        ):
+            yield {"type": "session.idle", "properties": {"sessionID": "ses-1"}}
 
     def remember_interrupt_request(
         self,
@@ -268,6 +280,10 @@ def _interrupt_meta(event: TaskStatusUpdateEvent) -> dict:
     return _status_shared_meta(event)["interrupt"]
 
 
+def _progress_meta(event: TaskStatusUpdateEvent) -> dict:
+    return _status_shared_meta(event)["progress"]
+
+
 @pytest.mark.asyncio
 async def test_streaming_accepts_file_input_without_breaking_contract() -> None:
     client = DummyStreamingClient(
@@ -408,6 +424,117 @@ async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types
 
 
 @pytest.mark.asyncio
+async def test_streaming_waits_for_session_idle_before_emitting_completed() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="text",
+                delta="late final answer",
+            ),
+        ],
+        response_text="",
+        send_delay=0,
+        stream_event_delays=[0.05],
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-late", context_id="ctx-late", text="hello"), queue
+    )
+
+    updates = _artifact_updates(queue)
+    assert updates
+    assert _part_text(updates[-1]) == "late final answer"
+
+    final_statuses = [
+        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+    ]
+    assert final_statuses
+    assert final_statuses[-1].status.state == TaskState.completed
+
+
+@pytest.mark.asyncio
+async def test_streaming_fails_when_event_stream_ends_before_terminal_signal() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(
+                session_id="ses-1",
+                role="assistant",
+                part_type="text",
+                delta="partial answer",
+            ),
+        ],
+        response_text="",
+        send_delay=0,
+        auto_idle=False,
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-no-terminal", context_id="ctx-no-terminal", text="hello"
+        ),
+        queue,
+    )
+
+    final_statuses = [
+        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+    ]
+    assert final_statuses
+    assert final_statuses[-1].status.state == TaskState.failed
+    assert final_statuses[-1].metadata is not None
+    assert final_statuses[-1].metadata["opencode"]["error"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_only_failed_terminal_status_for_session_error() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            {
+                "type": "session.error",
+                "properties": {
+                    "sessionID": "ses-1",
+                    "error": {
+                        "name": "ProviderAuthError",
+                        "data": {
+                            "statusCode": 401,
+                            "message": "bad key",
+                        },
+                    },
+                },
+            }
+        ],
+        response_text="",
+        send_delay=0,
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-session-error", context_id="ctx-session-error", text="hi"
+        ),
+        queue,
+    )
+
+    final_statuses = [
+        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+    ]
+    assert len(final_statuses) == 1
+    assert final_statuses[0].status.state == TaskState.auth_required
+    assert final_statuses[0].metadata is not None
+    assert final_statuses[0].metadata["opencode"]["error"]["type"] == "UPSTREAM_UNAUTHORIZED"
+    assert not any(event.status.state == TaskState.completed for event in final_statuses)
+
+
+@pytest.mark.asyncio
 async def test_streaming_does_not_send_duplicate_final_snapshot_when_chunks_exist() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[
@@ -435,7 +562,7 @@ async def test_streaming_does_not_send_duplicate_final_snapshot_when_chunks_exis
     ]
     assert len(final_updates) == 1
     assert _part_text(final_updates[0]) == "stable final answer"
-    assert _artifact_stream_meta(final_updates[0])["source"] != "final_snapshot"
+    assert _artifact_stream_meta(final_updates[0])["source"] == "stream"
 
 
 @pytest.mark.asyncio
@@ -524,7 +651,7 @@ async def test_streaming_emits_events_without_message_id_using_stable_fallback()
     assert len(updates) == 1
     update = updates[0]
     assert _part_text(update) == "final answer from send_message"
-    assert _artifact_stream_meta(update)["source"] == "delta"
+    assert _artifact_stream_meta(update)["source"] == "stream"
     assert _artifact_stream_meta(update)["block_type"] == "text"
     assert _artifact_stream_meta(update)["message_id"] == "task-6:ctx-6:assistant"
     assert _artifact_stream_meta(update)["event_id"] == "task-6:ctx-6:task-6:stream:1"
@@ -569,7 +696,7 @@ async def test_streaming_emits_snapshot_when_message_id_missing_and_stream_is_pa
     assert _part_text(first) == "partial "
     assert first.append is False
     assert first.last_chunk is None
-    assert _artifact_stream_meta(first)["source"] == "delta"
+    assert _artifact_stream_meta(first)["source"] == "stream"
     assert _artifact_stream_meta(first)["message_id"] == "task-6b:ctx-6b:assistant"
     assert _artifact_stream_meta(first)["event_id"] == "task-6b:ctx-6b:task-6b:stream:1"
     assert _artifact_stream_meta(first)["sequence"] == 1
@@ -724,7 +851,7 @@ async def test_streaming_final_status_state_is_completed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_streaming_emits_text_from_step_finish_snapshot_part() -> None:
+async def test_streaming_does_not_emit_text_from_step_finish_snapshot_part() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[
             {
@@ -761,13 +888,12 @@ async def test_streaming_emits_text_from_step_finish_snapshot_part() -> None:
         queue,
     )
 
-    updates = _artifact_updates(queue)
-    assert updates
     text_updates = [
-        event for event in updates if _artifact_stream_meta(event)["block_type"] == "text"
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "text"
     ]
-    assert text_updates
-    assert _part_text(text_updates[-1]) == "final answer from snapshot"
+    assert text_updates == []
 
     final_status = [
         event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
@@ -775,6 +901,121 @@ async def test_streaming_emits_text_from_step_finish_snapshot_part() -> None:
     usage = _status_shared_meta(final_status)["usage"]
     assert usage["input_tokens"] == 1
     assert usage["output_tokens"] == 4
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_progress_metadata_for_step_events() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            {
+                "type": "message.part.updated",
+                "properties": {
+                    "part": {
+                        "id": "prt-step-start-1",
+                        "sessionID": "ses-1",
+                        "messageID": "msg-1",
+                        "type": "step-start",
+                        "reason": "run",
+                        "state": {
+                            "status": "running",
+                            "title": "Planning",
+                            "subtitle": "Inspecting repository",
+                        },
+                    }
+                },
+            },
+            _step_finish_usage_event(
+                session_id="ses-1",
+                message_id="msg-1",
+                part_id="prt-step-finish-1",
+                input_tokens=3,
+                output_tokens=2,
+                total_tokens=5,
+                cost=0.0002,
+            ),
+        ],
+        response_text="done",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-progress", context_id="ctx-progress", text="hello"),
+        queue,
+    )
+
+    progress_statuses = [
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent)
+        and not event.final
+        and (event.metadata or {}).get("shared", {}).get("progress") is not None
+    ]
+    assert len(progress_statuses) == 2
+
+    first = _progress_meta(progress_statuses[0])
+    assert first["type"] == "step-start"
+    assert first["part_id"] == "prt-step-start-1"
+    assert first["reason"] == "run"
+    assert first["status"] == "running"
+    assert first["title"] == "Planning"
+    assert first["subtitle"] == "Inspecting repository"
+    assert _status_shared_meta(progress_statuses[0])["stream"]["source"] == "progress"
+
+    second = _progress_meta(progress_statuses[1])
+    assert second["type"] == "step-finish"
+    assert second["part_id"] == "prt-step-finish-1"
+    assert second["reason"] == "stop"
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_progress_metadata_for_snapshot_without_text_artifact() -> None:
+    snapshot_hash = "29ad5b502ac5884b0476ad858a4ebfb5d06c9d21"  # pragma: allowlist secret
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            {
+                "type": "message.part.updated",
+                "properties": {
+                    "part": {
+                        "id": "prt-snapshot-1",
+                        "sessionID": "ses-1",
+                        "messageID": "msg-1",
+                        "type": "snapshot",
+                        "snapshot": snapshot_hash,
+                    }
+                },
+            }
+        ],
+        response_text="",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-snapshot-progress", context_id="ctx-snapshot-progress", text="hello"
+        ),
+        queue,
+    )
+
+    progress_statuses = [
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent)
+        and not event.final
+        and (event.metadata or {}).get("shared", {}).get("progress") is not None
+    ]
+    assert len(progress_statuses) == 1
+    progress = _progress_meta(progress_statuses[0])
+    assert progress == {"type": "snapshot", "part_id": "prt-snapshot-1"}
+    text_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "text"
+    ]
+    assert text_updates == []
 
 
 @pytest.mark.asyncio
@@ -1327,6 +1568,7 @@ async def test_streaming_supports_message_part_delta_events() -> None:
     assert reasoning_updates
     merged = "".join(_part_text(ev) for ev in reasoning_updates)
     assert merged == "first second"
+    assert {_artifact_stream_meta(ev)["source"] for ev in reasoning_updates} == {"stream"}
 
 
 @pytest.mark.asyncio
@@ -1365,6 +1607,7 @@ async def test_streaming_buffers_delta_until_part_updated_arrives() -> None:
     assert reasoning_updates
     merged = "".join(_part_text(ev) for ev in reasoning_updates)
     assert merged == "first second"
+    assert {_artifact_stream_meta(ev)["source"] for ev in reasoning_updates} == {"stream"}
 
 
 @pytest.mark.asyncio

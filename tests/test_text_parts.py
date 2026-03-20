@@ -1,7 +1,7 @@
 from opencode_a2a_server.text_parts import extract_text_from_parts
 
 
-def test_extract_text_from_parts_falls_back_to_latest_snapshot() -> None:
+def test_extract_text_from_parts_ignores_snapshot_parts() -> None:
     parts = [
         {
             "type": "step-start",
@@ -13,10 +13,10 @@ def test_extract_text_from_parts_falls_back_to_latest_snapshot() -> None:
         },
     ]
 
-    assert extract_text_from_parts(parts) == "final answer"
+    assert extract_text_from_parts(parts) == ""
 
 
-def test_extract_text_from_parts_prefers_text_parts_over_snapshots() -> None:
+def test_extract_text_from_parts_returns_text_parts_only() -> None:
     parts = [
         {
             "type": "step-finish",

@@ -25,6 +25,11 @@ repos:
         args: ["--baseline", ".secrets.baseline"]
   - repo: local
     hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run mypy src/opencode_a2a_server
+        language: system
+        pass_filenames: false
       - id: bash-n
         name: bash syntax check
         entry: bash -n

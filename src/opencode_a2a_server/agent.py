@@ -87,7 +87,8 @@ class _NormalizedStreamChunk:
     accumulate_content: bool
     append: bool
     block_type: BlockType
-    source: str
+    internal_source: str
+    shared_source: str
     message_id: str | None
     role: str | None
 
@@ -114,7 +115,9 @@ class _StreamOutputState:
     stable_message_id: str
     event_id_namespace: str
     content_buffers: dict[BlockType, str] = field(default_factory=dict)
+    progress_buffers: dict[str, str] = field(default_factory=dict)
     token_usage: dict[str, Any] | None = None
+    upstream_error: _UpstreamInBandError | None = None
     pending_interrupt_request_ids: set[str] = field(default_factory=set)
     saw_any_chunk: bool = False
     emitted_stream_chunk: bool = False
@@ -154,6 +157,13 @@ class _StreamOutputState:
         effective_append = self.emitted_stream_chunk
         self.emitted_stream_chunk = True
         return True, effective_append
+
+    def register_progress(self, *, identity: str, content_key: str) -> bool:
+        previous = self.progress_buffers.get(identity)
+        if previous == content_key:
+            return False
+        self.progress_buffers[identity] = content_key
+        return True
 
     def should_emit_final_snapshot(self, text: str) -> bool:
         if not text.strip():
@@ -202,10 +212,26 @@ class _StreamOutputState:
 
 
 @dataclass(frozen=True)
+class _StreamTerminalSignal:
+    state: TaskState
+    error_type: str | None = None
+    message: str | None = None
+    upstream_status: int | None = None
+
+
+@dataclass(frozen=True)
 class _UpstreamErrorProfile:
     error_type: str
     state: TaskState
     default_message: str
+
+
+@dataclass(frozen=True)
+class _UpstreamInBandError:
+    error_type: str
+    state: TaskState
+    message: str
+    upstream_status: int | None = None
 
 
 _UPSTREAM_HTTP_ERROR_PROFILE_BY_STATUS: dict[int, _UpstreamErrorProfile] = {
@@ -300,6 +326,143 @@ def _format_upstream_error(
         profile.state,
         f"{profile.default_message} ({request}, status={status}).",
     )
+
+
+def _format_stream_terminal_error(
+    *,
+    detail: str | None,
+    status: int | None,
+    error_name: str | None,
+) -> _StreamTerminalSignal:
+    if status is not None:
+        profile = _resolve_upstream_error_profile(status)
+        if detail:
+            message = (
+                f"{profile.default_message} (session.error, status={status}, detail={detail})."
+            )
+        else:
+            message = f"{profile.default_message} (session.error, status={status})."
+        return _StreamTerminalSignal(
+            state=profile.state,
+            error_type=profile.error_type,
+            message=message,
+            upstream_status=status,
+        )
+
+    if error_name == "ProviderAuthError":
+        if detail:
+            message = (
+                "OpenCode rejected the request due to authentication failure "
+                f"(session.error, detail={detail})."
+            )
+        else:
+            message = "OpenCode rejected the request due to authentication failure (session.error)."
+        return _StreamTerminalSignal(
+            state=TaskState.auth_required,
+            error_type="UPSTREAM_UNAUTHORIZED",
+            message=message,
+        )
+
+    if detail:
+        message = f"OpenCode execution failed (session.error, detail={detail})."
+    elif error_name:
+        message = f"OpenCode execution failed (session.error, error={error_name})."
+    else:
+        message = "OpenCode execution failed (session.error)."
+    return _StreamTerminalSignal(
+        state=TaskState.failed,
+        error_type="UPSTREAM_EXECUTION_ERROR",
+        message=message,
+    )
+
+
+def _format_inband_upstream_error(
+    *,
+    source: str,
+    detail: str | None,
+    status: int | None,
+    error_name: str | None,
+) -> _UpstreamInBandError:
+    if status is not None:
+        profile = _resolve_upstream_error_profile(status)
+        if detail:
+            message = f"{profile.default_message} ({source}, status={status}, detail={detail})."
+        else:
+            message = f"{profile.default_message} ({source}, status={status})."
+        return _UpstreamInBandError(
+            error_type=profile.error_type,
+            state=profile.state,
+            message=message,
+            upstream_status=status,
+        )
+
+    if error_name == "ProviderAuthError":
+        if detail:
+            message = (
+                "OpenCode rejected the request due to authentication failure "
+                f"({source}, detail={detail})."
+            )
+        else:
+            message = f"OpenCode rejected the request due to authentication failure ({source})."
+        return _UpstreamInBandError(
+            error_type="UPSTREAM_UNAUTHORIZED",
+            state=TaskState.auth_required,
+            message=message,
+        )
+
+    if detail:
+        message = f"OpenCode execution failed ({source}, detail={detail})."
+    elif error_name:
+        message = f"OpenCode execution failed ({source}, error={error_name})."
+    else:
+        message = f"OpenCode execution failed ({source})."
+    return _UpstreamInBandError(
+        error_type="UPSTREAM_EXECUTION_ERROR",
+        state=TaskState.failed,
+        message=message,
+    )
+
+
+async def _await_stream_terminal_signal(
+    *,
+    stream_task: asyncio.Task[None] | None,
+    terminal_signal: asyncio.Future[_StreamTerminalSignal],
+    session_id: str,
+) -> _StreamTerminalSignal:
+    if terminal_signal.done():
+        return terminal_signal.result()
+    if stream_task is None:
+        raise RuntimeError("Streaming task was not initialized")
+
+    terminal_wait_task = asyncio.create_task(_wait_for_terminal_signal(terminal_signal))
+    try:
+        done, _pending = await asyncio.wait(
+            {stream_task, terminal_wait_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if terminal_wait_task in done:
+            return terminal_wait_task.result()
+        if stream_task in done:
+            with suppress(asyncio.CancelledError):
+                await stream_task
+            if terminal_signal.done():
+                return terminal_signal.result()
+            raise UpstreamContractError(
+                "OpenCode event stream ended before terminal signal "
+                f"(session_id={session_id}, expected session.idle or session.error)"
+            )
+        return await terminal_wait_task
+    finally:
+        if not terminal_wait_task.done():
+            terminal_wait_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await terminal_wait_task
+
+
+async def _wait_for_terminal_signal(
+    terminal_signal: asyncio.Future[_StreamTerminalSignal],
+) -> _StreamTerminalSignal:
+    return await terminal_signal
 
 
 class _TTLCache:
@@ -574,6 +737,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             stable_message_id=f"{task_id}:{context_id}:assistant",
             event_id_namespace=f"{task_id}:{context_id}:{stream_artifact_id}",
         )
+        stream_terminal_signal: asyncio.Future[_StreamTerminalSignal] | None = None
         stop_event = asyncio.Event()
         stream_task: asyncio.Task[None] | None = None
         pending_preferred_claim = False
@@ -602,6 +766,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 self._running_directories[execution_key] = directory
 
             if streaming_request:
+                stream_terminal_signal = asyncio.get_running_loop().create_future()
                 stream_task = asyncio.create_task(
                     self._consume_opencode_stream(
                         session_id=session_id,
@@ -613,6 +778,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                         event_queue=event_queue,
                         stop_event=stop_event,
                         directory=directory,
+                        terminal_signal=stream_terminal_signal,
                     )
                 )
 
@@ -655,10 +821,7 @@ class OpencodeAgentExecutor(AgentExecutor):
 
             response_text = response.text or ""
             resolved_message_id = stream_state.resolve_message_id(response.message_id)
-            resolved_token_usage = _merge_token_usage(
-                _extract_token_usage(response.raw),
-                stream_state.token_usage,
-            )
+            response_error = _extract_upstream_error_from_response(response.raw)
             logger.debug(
                 "OpenCode response task_id=%s session_id=%s message_id=%s text=%s",
                 task_id,
@@ -667,44 +830,106 @@ class OpencodeAgentExecutor(AgentExecutor):
                 response_text,
             )
             if streaming_request:
-                if stream_state.should_emit_final_snapshot(response_text):
-                    sequence = stream_state.next_sequence()
-                    await _enqueue_artifact_update(
-                        event_queue=event_queue,
-                        task_id=task_id,
-                        context_id=context_id,
-                        artifact_id=stream_artifact_id,
-                        part=Part(root=TextPart(text=response_text)),
-                        append=stream_state.emitted_stream_chunk,
-                        last_chunk=True,
-                        artifact_metadata=_build_stream_artifact_metadata(
-                            block_type=BlockType.TEXT,
-                            source="final_snapshot",
-                            message_id=resolved_message_id,
-                            event_id=stream_state.build_event_id(sequence),
-                            sequence=sequence,
-                        ),
-                    )
-                await event_queue.enqueue_event(
-                    TaskStatusUpdateEvent(
-                        task_id=task_id,
-                        context_id=context_id,
-                        status=TaskStatus(
-                            state=TaskState.completed,
-                        ),
-                        final=True,
-                        metadata=_build_output_metadata(
-                            session_id=response.session_id,
-                            usage=resolved_token_usage,
-                            stream={
-                                "message_id": resolved_message_id,
-                                "event_id": f"{stream_state.event_id_namespace}:status",
-                                "source": "status",
-                            },
-                        ),
-                    )
+                resolved_token_usage = _merge_token_usage(
+                    _extract_token_usage(response.raw),
+                    stream_state.token_usage,
                 )
+                if response_error is not None:
+                    await self._emit_error(
+                        event_queue,
+                        task_id=task_id,
+                        context_id=context_id,
+                        message=response_error.message,
+                        state=response_error.state,
+                        error_type=response_error.error_type,
+                        upstream_status=response_error.upstream_status,
+                        streaming_request=True,
+                    )
+                    return
+                if stream_terminal_signal is None:
+                    raise RuntimeError("Streaming terminal signal was not initialized")
+                terminal_signal = await _await_stream_terminal_signal(
+                    stream_task=stream_task,
+                    terminal_signal=stream_terminal_signal,
+                    session_id=session_id,
+                )
+                if terminal_signal.state != TaskState.completed:
+                    await self._emit_error(
+                        event_queue,
+                        task_id=task_id,
+                        context_id=context_id,
+                        message=terminal_signal.message or "OpenCode execution failed.",
+                        state=terminal_signal.state,
+                        error_type=terminal_signal.error_type,
+                        upstream_status=terminal_signal.upstream_status,
+                        streaming_request=True,
+                    )
+                elif stream_state.upstream_error is not None:
+                    await self._emit_error(
+                        event_queue,
+                        task_id=task_id,
+                        context_id=context_id,
+                        message=stream_state.upstream_error.message,
+                        state=stream_state.upstream_error.state,
+                        error_type=stream_state.upstream_error.error_type,
+                        upstream_status=stream_state.upstream_error.upstream_status,
+                        streaming_request=True,
+                    )
+                else:
+                    if stream_state.should_emit_final_snapshot(response_text):
+                        sequence = stream_state.next_sequence()
+                        await _enqueue_artifact_update(
+                            event_queue=event_queue,
+                            task_id=task_id,
+                            context_id=context_id,
+                            artifact_id=stream_artifact_id,
+                            part=Part(root=TextPart(text=response_text)),
+                            append=stream_state.emitted_stream_chunk,
+                            last_chunk=True,
+                            artifact_metadata=_build_stream_artifact_metadata(
+                                block_type=BlockType.TEXT,
+                                shared_source="final_snapshot",
+                                message_id=resolved_message_id,
+                                event_id=stream_state.build_event_id(sequence),
+                                sequence=sequence,
+                            ),
+                        )
+                    await event_queue.enqueue_event(
+                        TaskStatusUpdateEvent(
+                            task_id=task_id,
+                            context_id=context_id,
+                            status=TaskStatus(
+                                state=TaskState.completed,
+                            ),
+                            final=True,
+                            metadata=_build_output_metadata(
+                                session_id=response.session_id,
+                                usage=resolved_token_usage,
+                                stream={
+                                    "message_id": resolved_message_id,
+                                    "event_id": f"{stream_state.event_id_namespace}:status",
+                                    "source": "status",
+                                },
+                            ),
+                        ),
+                    )
             else:
+                resolved_token_usage = _merge_token_usage(
+                    _extract_token_usage(response.raw),
+                    stream_state.token_usage,
+                )
+                if response_error is not None:
+                    await self._emit_error(
+                        event_queue,
+                        task_id=task_id,
+                        context_id=context_id,
+                        message=response_error.message,
+                        state=response_error.state,
+                        error_type=response_error.error_type,
+                        upstream_status=response_error.upstream_status,
+                        streaming_request=False,
+                    )
+                    return
                 response_text = response_text or "(No text content returned by OpenCode.)"
                 assistant_message = _build_assistant_message(
                     task_id=task_id,
@@ -1115,6 +1340,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         stream_state: _StreamOutputState,
         event_queue: EventQueue,
         stop_event: asyncio.Event,
+        terminal_signal: asyncio.Future[_StreamTerminalSignal],
         directory: str | None = None,
     ) -> None:
         part_states: dict[str, _StreamPartState] = {}
@@ -1151,7 +1377,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     last_chunk=False,
                     artifact_metadata=_build_stream_artifact_metadata(
                         block_type=chunk.block_type,
-                        source=chunk.source,
+                        shared_source=chunk.shared_source,
                         message_id=resolved_message_id,
                         role=chunk.role,
                         event_id=stream_state.build_event_id(sequence),
@@ -1159,11 +1385,14 @@ class OpencodeAgentExecutor(AgentExecutor):
                     ),
                 )
                 logger.debug(
-                    "Stream chunk task_id=%s session_id=%s block_type=%s append=%s text=%s",
+                    "Stream chunk task_id=%s session_id=%s block_type=%s append=%s "
+                    "shared_source=%s internal_source=%s text=%s",
                     task_id,
                     session_id,
                     chunk.block_type,
                     effective_append,
+                    chunk.shared_source,
+                    chunk.internal_source,
                     chunk.content_key,
                 )
                 if chunk.block_type == BlockType.TOOL_CALL:
@@ -1213,12 +1442,38 @@ class OpencodeAgentExecutor(AgentExecutor):
             elif phase == "resolved":
                 _emit_metric("interrupt_resolved_total")
 
+        async def _emit_progress_status(
+            *,
+            message_id: str | None,
+            progress: Mapping[str, Any],
+        ) -> None:
+            sequence = stream_state.next_sequence()
+            await event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    task_id=task_id,
+                    context_id=context_id,
+                    status=TaskStatus(state=TaskState.working),
+                    final=False,
+                    metadata=_build_output_metadata(
+                        session_id=session_id,
+                        stream={
+                            "message_id": stream_state.resolve_message_id(message_id),
+                            "event_id": stream_state.build_event_id(sequence),
+                            "source": "progress",
+                            "sequence": sequence,
+                        },
+                        progress=dict(progress),
+                    ),
+                )
+            )
+
         def _new_text_chunk(
             *,
             text: str,
             append: bool,
             block_type: BlockType,
-            source: str,
+            internal_source: str,
+            shared_source: str,
             message_id: str | None,
             role: str | None,
         ) -> _NormalizedStreamChunk:
@@ -1228,7 +1483,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                 accumulate_content=True,
                 append=append,
                 block_type=block_type,
-                source=source,
+                internal_source=internal_source,
+                shared_source=shared_source,
                 message_id=message_id,
                 role=role,
             )
@@ -1239,7 +1495,8 @@ class OpencodeAgentExecutor(AgentExecutor):
             content_key: str,
             append: bool,
             block_type: BlockType,
-            source: str,
+            internal_source: str,
+            shared_source: str,
             message_id: str | None,
             role: str | None,
         ) -> _NormalizedStreamChunk:
@@ -1249,7 +1506,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                 accumulate_content=False,
                 append=append,
                 block_type=block_type,
-                source=source,
+                internal_source=internal_source,
+                shared_source=shared_source,
                 message_id=message_id,
                 role=role,
             )
@@ -1286,7 +1544,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             state: _StreamPartState,
             delta_text: str,
             message_id: str | None,
-            source: str,
+            internal_source: str,
         ) -> list[_NormalizedStreamChunk]:
             if not delta_text:
                 return []
@@ -1299,7 +1557,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                     text=delta_text,
                     append=True,
                     block_type=state.block_type,
-                    source=source,
+                    internal_source=internal_source,
+                    shared_source="stream",
                     message_id=state.message_id,
                     role=state.role,
                 )
@@ -1327,7 +1586,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                         text=delta_text,
                         append=True,
                         block_type=state.block_type,
-                        source="part_text_diff",
+                        internal_source="part_text_diff",
+                        shared_source="stream",
                         message_id=state.message_id,
                         role=state.role,
                     )
@@ -1371,7 +1631,8 @@ class OpencodeAgentExecutor(AgentExecutor):
                     content_key=content_key,
                     append=bool(previous),
                     block_type=state.block_type,
-                    source="tool_part_update",
+                    internal_source="tool_part_update",
+                    shared_source="tool_part_update",
                     message_id=state.message_id,
                     role=state.role,
                 )
@@ -1397,6 +1658,32 @@ class OpencodeAgentExecutor(AgentExecutor):
                             continue
                         event_session_id = _extract_event_session_id(event)
                         if event_session_id == session_id:
+                            part = props.get("part")
+                            if isinstance(part, Mapping):
+                                progress = _extract_progress_metadata(part, props)
+                                if progress is not None:
+                                    progress_identity = _build_progress_identity(part, props)
+                                    progress_key = json.dumps(
+                                        progress,
+                                        ensure_ascii=False,
+                                        sort_keys=True,
+                                        separators=(",", ":"),
+                                    )
+                                    if stream_state.register_progress(
+                                        identity=progress_identity,
+                                        content_key=progress_key,
+                                    ):
+                                        await _emit_progress_status(
+                                            message_id=_extract_stream_message_id(part, props),
+                                            progress=progress,
+                                        )
+                            upstream_error = _extract_upstream_error_from_event(event)
+                            if upstream_error is not None and stream_state.upstream_error is None:
+                                stream_state.upstream_error = upstream_error
+                            signal = _extract_stream_terminal_signal(event)
+                            if signal is not None and not terminal_signal.done():
+                                terminal_signal.set_result(signal)
+                                stop_event.set()
                             usage = _extract_token_usage(event)
                             if usage is not None:
                                 stream_state.ingest_token_usage(usage)
@@ -1475,7 +1762,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                                 state=state,
                                 delta_text=delta,
                                 message_id=message_id,
-                                source="delta_event",
+                                internal_source="delta_event",
                             )
                             if delta_chunks:
                                 await _emit_chunks(delta_chunks)
@@ -1506,7 +1793,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     state=state,
                                     delta_text=buffered.delta,
                                     message_id=buffered.message_id,
-                                    source="delta_event_buffered",
+                                    internal_source="delta_event_buffered",
                                 )
                             )
 
@@ -1517,7 +1804,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                                     state=state,
                                     delta_text=delta,
                                     message_id=message_id,
-                                    source="delta",
+                                    internal_source="delta",
                                 )
                             )
                         elif state.block_type == BlockType.TOOL_CALL:
@@ -1604,7 +1891,7 @@ async def _enqueue_artifact_update(
 def _build_stream_artifact_metadata(
     *,
     block_type: BlockType,
-    source: str,
+    shared_source: str,
     message_id: str | None = None,
     role: str | None = None,
     event_id: str | None = None,
@@ -1612,7 +1899,7 @@ def _build_stream_artifact_metadata(
 ) -> dict[str, Any]:
     stream_meta: dict[str, Any] = {
         "block_type": block_type.value,
-        "source": source,
+        "source": shared_source,
     }
     if message_id:
         stream_meta["message_id"] = message_id
@@ -1631,6 +1918,7 @@ def _build_output_metadata(
     session_title: str | None = None,
     usage: Mapping[str, Any] | None = None,
     stream: Mapping[str, Any] | None = None,
+    progress: Mapping[str, Any] | None = None,
     interrupt: Mapping[str, Any] | None = None,
     opencode_private: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
@@ -1646,6 +1934,8 @@ def _build_output_metadata(
         shared_meta["usage"] = dict(usage)
     if stream is not None:
         shared_meta["stream"] = dict(stream)
+    if progress is not None:
+        shared_meta["progress"] = dict(progress)
     if interrupt is not None:
         shared_meta["interrupt"] = dict(interrupt)
     if shared_meta:
@@ -1838,6 +2128,135 @@ def _extract_event_session_id(event: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _extract_stream_terminal_signal(event: Mapping[str, Any]) -> _StreamTerminalSignal | None:
+    event_type = event.get("type")
+    if event_type == "session.idle":
+        return _StreamTerminalSignal(state=TaskState.completed)
+    if event_type != "session.error":
+        return None
+    props = event.get("properties")
+    if not isinstance(props, Mapping):
+        return _StreamTerminalSignal(
+            state=TaskState.failed,
+            error_type="UPSTREAM_EXECUTION_ERROR",
+            message="OpenCode execution failed (session.error).",
+        )
+    error = props.get("error")
+    if not isinstance(error, Mapping):
+        return _StreamTerminalSignal(
+            state=TaskState.failed,
+            error_type="UPSTREAM_EXECUTION_ERROR",
+            message="OpenCode execution failed (session.error).",
+        )
+    error_name = _extract_first_nonempty_string(error, ("name",))
+    error_data = error.get("data")
+    error_data_map = error_data if isinstance(error_data, Mapping) else {}
+    detail = _extract_first_nonempty_string(
+        error_data_map, ("message",)
+    ) or _extract_first_nonempty_string(error, ("message",))
+    upstream_status = error_data_map.get("statusCode")
+    if not isinstance(upstream_status, int):
+        upstream_status = None
+    return _format_stream_terminal_error(
+        detail=detail,
+        status=upstream_status,
+        error_name=error_name,
+    )
+
+
+def _extract_upstream_error_from_payload(
+    payload: Mapping[str, Any] | None,
+    *,
+    source: str,
+) -> _UpstreamInBandError | None:
+    if not isinstance(payload, Mapping):
+        return None
+    error = payload.get("error")
+    if not isinstance(error, Mapping):
+        return None
+    error_name = _extract_first_nonempty_string(error, ("name",))
+    error_data = error.get("data")
+    error_data_map = error_data if isinstance(error_data, Mapping) else {}
+    detail = _extract_first_nonempty_string(
+        error_data_map, ("message",)
+    ) or _extract_first_nonempty_string(error, ("message",))
+    upstream_status = error_data_map.get("statusCode")
+    if not isinstance(upstream_status, int):
+        upstream_status = None
+    return _format_inband_upstream_error(
+        source=source,
+        detail=detail,
+        status=upstream_status,
+        error_name=error_name,
+    )
+
+
+def _extract_upstream_error_from_response(
+    response_raw: Mapping[str, Any] | None,
+) -> _UpstreamInBandError | None:
+    if not isinstance(response_raw, Mapping):
+        return None
+    info = response_raw.get("info")
+    if not isinstance(info, Mapping):
+        return None
+    return _extract_upstream_error_from_payload(info, source="response.info.error")
+
+
+def _extract_upstream_error_from_event(event: Mapping[str, Any]) -> _UpstreamInBandError | None:
+    event_type = event.get("type")
+    if not isinstance(event_type, str):
+        return None
+    props = event.get("properties")
+    if not isinstance(props, Mapping):
+        return None
+    if event_type == "session.error":
+        return _extract_upstream_error_from_payload(props, source="session.error")
+    if event_type == "message.updated":
+        info = props.get("info")
+        if isinstance(info, Mapping):
+            return _extract_upstream_error_from_payload(info, source="message.updated")
+    return None
+
+
+def _extract_progress_metadata(
+    part: Mapping[str, Any],
+    props: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    part_type = _extract_stream_part_type(part, props)
+    if part_type not in {"step-start", "step-finish", "snapshot"}:
+        return None
+    progress: dict[str, Any] = {"type": part_type}
+    part_id = _extract_stream_part_id(part, props)
+    if part_id:
+        progress["part_id"] = part_id
+    reason = _extract_first_nonempty_string(part, ("reason",))
+    if reason:
+        progress["reason"] = reason
+    state = part.get("state")
+    if isinstance(state, Mapping):
+        status = _extract_first_nonempty_string(state, ("status",))
+        if status:
+            progress["status"] = status
+        title = _extract_first_nonempty_string(state, ("title",))
+        if title:
+            progress["title"] = title
+        subtitle = _extract_first_nonempty_string(state, ("subtitle",))
+        if subtitle:
+            progress["subtitle"] = subtitle
+    return progress
+
+
+def _build_progress_identity(part: Mapping[str, Any], props: Mapping[str, Any]) -> str:
+    part_type = _extract_stream_part_type(part, props) or "unknown"
+    part_id = _extract_stream_part_id(part, props)
+    if part_id:
+        return f"{part_type}:{part_id}"
+    message_id = _extract_stream_message_id(part, props)
+    if message_id:
+        return f"{part_type}:{message_id}"
+    return part_type
+
+
 def _extract_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -1986,8 +2405,6 @@ def _extract_stream_part_type(part: Mapping[str, Any], props: Mapping[str, Any])
 
 def _extract_stream_snapshot_text(part: Mapping[str, Any]) -> str | None:
     part_type = _extract_stream_part_type(part, {})
-    if part_type in {"step-start", "step-finish", "snapshot"}:
-        return _extract_first_nonempty_string(part, ("snapshot",))
     if part_type in {"text", "reasoning"}:
         return _extract_first_nonempty_string(part, ("text",))
     return None
@@ -2052,7 +2469,7 @@ def _log_stream_event_debug(event: Mapping[str, Any], *, limit: int) -> None:
 def _map_part_type_to_block_type(part_type: str | None) -> BlockType | None:
     if not part_type:
         return None
-    if part_type in {"text", "snapshot", "step-start", "step-finish"}:
+    if part_type == "text":
         return BlockType.TEXT
     if part_type == "reasoning":
         return BlockType.REASONING

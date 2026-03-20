@@ -131,6 +131,7 @@ async def test_streaming_metrics_capture_tool_call_and_interrupt_events(caplog) 
             self._interrupt_requests.pop(request_id, None)
 
     executor = OpencodeAgentExecutor(_Client(), streaming_enabled=True)
+    terminal_signal = asyncio.get_running_loop().create_future()
 
     with caplog.at_level(logging.DEBUG, logger="opencode_a2a_server.agent"):
         await executor._consume_opencode_stream(
@@ -146,6 +147,7 @@ async def test_streaming_metrics_capture_tool_call_and_interrupt_events(caplog) 
             ),
             event_queue=DummyEventQueue(),
             stop_event=asyncio.Event(),
+            terminal_signal=terminal_signal,
         )
 
     messages = [record.message for record in caplog.records]
@@ -180,6 +182,7 @@ async def test_streaming_retry_metric_increments_once_per_retry(monkeypatch, cap
     monkeypatch.setattr("opencode_a2a_server.agent.asyncio.sleep", _fast_sleep)
 
     executor = OpencodeAgentExecutor(_FlakyClient(), streaming_enabled=True)
+    terminal_signal = asyncio.get_running_loop().create_future()
 
     with caplog.at_level(logging.DEBUG, logger="opencode_a2a_server.agent"):
         await executor._consume_opencode_stream(
@@ -195,6 +198,7 @@ async def test_streaming_retry_metric_increments_once_per_retry(monkeypatch, cap
             ),
             event_queue=DummyEventQueue(),
             stop_event=asyncio.Event(),
+            terminal_signal=terminal_signal,
         )
 
     messages = [record.message for record in caplog.records]
