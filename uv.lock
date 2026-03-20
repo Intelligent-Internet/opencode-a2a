@@ -712,19 +712,19 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", specifier = "==0.3.25" },
-    { name = "fastapi", specifier = ">=0.110" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.19.1" },
-    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.9" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
-    { name = "pydantic", specifier = ">=2.6" },
-    { name = "pydantic-settings", specifier = ">=2.2" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
-    { name = "sse-starlette", specifier = ">=2.1" },
-    { name = "uvicorn", specifier = ">=0.29" },
+    { name = "fastapi", specifier = ">=0.110,<1.0" },
+    { name = "httpx", specifier = ">=0.27,<1.0" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.19.1,<2.0" },
+    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.9,<3.0" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.1,<5.0" },
+    { name = "pydantic", specifier = ">=2.6,<3.0" },
+    { name = "pydantic-settings", specifier = ">=2.2,<3.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0,<10.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23,<2.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0.0,<8.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5,<0.16" },
+    { name = "sse-starlette", specifier = ">=2.1,<4.0" },
+    { name = "uvicorn", specifier = ">=0.29,<1.0" },
 ]
 provides-extras = ["dev"]
 

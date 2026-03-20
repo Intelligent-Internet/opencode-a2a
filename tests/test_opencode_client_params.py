@@ -3,7 +3,11 @@ import json as json_module
 import httpx
 import pytest
 
-from opencode_a2a_server.opencode_client import OpencodeClient, UpstreamContractError
+from opencode_a2a_server.opencode_client import (
+    _UNSET,
+    OpencodeClient,
+    UpstreamContractError,
+)
 from tests.helpers import make_settings
 
 
@@ -534,5 +538,246 @@ async def test_interrupt_request_binding_expires_after_ttl() -> None:
     assert status == "expired"
     assert binding is None
     assert client.resolve_interrupt_session("perm-1") is None
+
+    await client.close()
+
+
+def test_response_body_preview_handles_empty_and_long_payloads() -> None:
+    empty = _DummyResponse(text="   ")
+    assert OpencodeClient._response_body_preview(empty) == "<empty>"
+
+    long_response = _DummyResponse(text="  " + ("word " * 60))
+    preview = OpencodeClient._response_body_preview(long_response, limit=40)
+    assert preview.endswith("...")
+    assert len(preview) == 40
+
+
+def test_decode_json_response_reports_unknown_content_type_for_empty_body() -> None:
+    response = _DummyResponse(
+        text="",
+        json_error=json_module.JSONDecodeError("Expecting value", "", 0),
+    )
+
+    with pytest.raises(UpstreamContractError) as exc_info:
+        OpencodeClient(make_settings(a2a_bearer_token="t-1"))._decode_json_response(
+            response,
+            endpoint="/session",
+        )
+
+    message = str(exc_info.value)
+    assert "content-type=unknown" in message
+    assert "body=<empty>" in message
+
+
+def test_normalize_model_ref_rejects_blank_or_partial_values() -> None:
+    assert OpencodeClient._normalize_model_ref(None) is None
+    assert OpencodeClient._normalize_model_ref(
+        {"providerID": " google ", "modelID": " gemini "}
+    ) == {
+        "providerID": "google",
+        "modelID": "gemini",
+    }
+    assert OpencodeClient._normalize_model_ref({"providerID": "google"}) is None
+    assert OpencodeClient._normalize_model_ref({"providerID": "", "modelID": "gemini"}) is None
+    assert OpencodeClient._normalize_model_ref({"providerID": "google", "modelID": 1}) is None
+
+
+def test_merge_params_keeps_empty_directory_out_of_query() -> None:
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_workspace_root=None,
+        )
+    )
+
+    assert client._query_params() == {}
+    assert client._merge_params({"limit": 5, "enabled": False}, directory=None) == {
+        "limit": "5",
+        "enabled": "False",
+    }
+
+
+@pytest.mark.asyncio
+async def test_create_session_raises_when_upstream_omits_id(monkeypatch) -> None:
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
+        del path, params, json
+        return _DummyResponse({"title": "missing id"})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    with pytest.raises(RuntimeError, match="missing id"):
+        await client.create_session("title")
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_create_session_raises_when_upstream_id_is_not_string(monkeypatch) -> None:
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
+        del path, params, json
+        return _DummyResponse({"id": 123})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    with pytest.raises(RuntimeError, match="missing id"):
+        await client.create_session("title")
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_list_provider_catalog_uses_directory_query(monkeypatch) -> None:
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_workspace_root="/safe",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    seen = {}
+
+    async def fake_get(path: str, *, params=None, **_kwargs):
+        seen["path"] = path
+        seen["params"] = params
+        return _DummyResponse({"all": [], "default": {}, "connected": []})
+
+    monkeypatch.setattr(client._client, "get", fake_get)
+
+    await client.list_provider_catalog()
+
+    assert seen["path"] == "/provider"
+    assert seen["params"] == {"directory": "/safe"}
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_send_message_requires_text_or_parts() -> None:
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    with pytest.raises(ValueError, match="requires either text or parts"):
+        await client.send_message("ses-1", None)
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        await client.send_message("ses-1", parts=[])
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_send_message_includes_client_level_agent_system_variant(monkeypatch) -> None:
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_agent="planner",
+            opencode_system="be precise",
+            opencode_variant="fast",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    seen = {}
+
+    async def fake_post(path: str, *, params=None, json=None, timeout=_UNSET, **_kwargs):
+        seen["path"] = path
+        seen["params"] = params
+        seen["json"] = json
+        seen["timeout"] = timeout
+        return _DummyResponse({"info": {"id": "m-1"}, "parts": [{"type": "text", "text": "ok"}]})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    message = await client.send_message("ses-1", "hello", timeout_override=3.5)
+
+    assert message.message_id == "m-1"
+    assert seen["path"] == "/session/ses-1/message"
+    assert seen["json"]["agent"] == "planner"
+    assert seen["json"]["system"] == "be precise"
+    assert seen["json"]["variant"] == "fast"
+    assert seen["timeout"] == 3.5
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_request_helpers_ignore_invalid_and_trim_values() -> None:
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    client.remember_interrupt_request(
+        request_id="   ",
+        session_id="ses-1",
+        interrupt_type="permission",
+    )
+    client.remember_interrupt_request(
+        request_id="perm-1",
+        session_id="   ",
+        interrupt_type="permission",
+    )
+    client.remember_interrupt_request(
+        request_id="perm-2",
+        session_id="ses-2",
+        interrupt_type="unsupported",
+    )
+
+    assert client.resolve_interrupt_request("perm-1") == ("missing", None)
+
+    client.remember_interrupt_request(
+        request_id=" perm-3 ",
+        session_id=" ses-3 ",
+        interrupt_type=" question ",
+        identity=" user-1 ",
+        task_id=" task-1 ",
+        context_id=" ctx-1 ",
+    )
+    status, binding = client.resolve_interrupt_request("perm-3")
+    assert status == "active"
+    assert binding is not None
+    assert binding.request_id == "perm-3"
+    assert binding.session_id == "ses-3"
+    assert binding.identity == "user-1"
+    assert binding.task_id == "task-1"
+    assert binding.context_id == "ctx-1"
+
+    assert client.resolve_interrupt_request("   ") == ("missing", None)
+    client.discard_interrupt_request("   ")
+    client.discard_interrupt_request("perm-3")
+    assert client.resolve_interrupt_session("perm-3") is None
 
     await client.close()

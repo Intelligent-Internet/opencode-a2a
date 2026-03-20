@@ -1,6 +1,10 @@
 from opencode_a2a_server.text_parts import extract_text_from_parts
 
 
+def test_extract_text_from_parts_returns_empty_for_non_list_input() -> None:
+    assert extract_text_from_parts({"type": "text", "text": "ignored"}) == ""
+
+
 def test_extract_text_from_parts_ignores_snapshot_parts() -> None:
     parts = [
         {
@@ -29,3 +33,23 @@ def test_extract_text_from_parts_returns_text_parts_only() -> None:
     ]
 
     assert extract_text_from_parts(parts) == "final answer"
+
+
+def test_extract_text_from_parts_merges_text_and_reasoning_parts() -> None:
+    parts = [
+        "skip-me",
+        {
+            "type": "reasoning",
+            "text": " draft",
+        },
+        {
+            "type": "text",
+            "text": " answer ",
+        },
+        {
+            "type": "text",
+            "text": 123,
+        },
+    ]
+
+    assert extract_text_from_parts(parts) == "draft answer"

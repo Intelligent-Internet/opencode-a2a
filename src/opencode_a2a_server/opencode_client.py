@@ -318,7 +318,7 @@ class OpencodeClient:
             json_body=payload,
         )
         session_id = data.get("id")
-        if not session_id:
+        if not isinstance(session_id, str) or not session_id:
             raise RuntimeError("OpenCode session response missing id")
         return session_id
 

@@ -2,12 +2,14 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+UNKNOWN_VERSION = "0+unknown"
+
 
 def get_package_version() -> str:
     try:
         return version("opencode-a2a-server")
     except PackageNotFoundError:
-        return "0.1.0"
+        return UNKNOWN_VERSION
 
 
 __version__ = get_package_version()

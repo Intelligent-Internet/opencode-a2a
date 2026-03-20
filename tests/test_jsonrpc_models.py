@@ -3,6 +3,7 @@ import pytest
 from opencode_a2a_server.extension_contracts import (
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
+    SESSION_QUERY_PAGINATION_UNSUPPORTED,
 )
 from opencode_a2a_server.jsonrpc_models import (
     JsonRpcParamsValidationError,
@@ -55,3 +56,38 @@ def test_parse_get_session_messages_params_rejects_ambiguous_limit() -> None:
 
     assert str(exc_info.value) == "limit is ambiguous between params.limit and params.query.limit"
     assert exc_info.value.data == {"type": "INVALID_FIELD", "field": "limit"}
+
+
+def test_parse_list_sessions_params_rejects_non_object_query() -> None:
+    with pytest.raises(JsonRpcParamsValidationError) as exc_info:
+        parse_list_sessions_params({"query": "invalid"})
+
+    assert str(exc_info.value) == "query must be an object"
+    assert exc_info.value.data == {"type": "INVALID_FIELD", "field": "query"}
+
+
+def test_parse_list_sessions_params_rejects_unsupported_pagination_fields() -> None:
+    with pytest.raises(JsonRpcParamsValidationError) as exc_info:
+        parse_list_sessions_params({"cursor": "next-page"})
+
+    assert str(exc_info.value) == "Only limit pagination is supported"
+    assert exc_info.value.data == {
+        "type": "INVALID_PAGINATION_MODE",
+        "supported": ["limit"],
+        "unsupported": list(SESSION_QUERY_PAGINATION_UNSUPPORTED),
+    }
+
+
+def test_parse_list_sessions_params_rejects_boolean_limit() -> None:
+    with pytest.raises(JsonRpcParamsValidationError) as exc_info:
+        parse_list_sessions_params({"limit": True})
+
+    assert str(exc_info.value) == "limit must be an integer"
+    assert exc_info.value.data == {"type": "INVALID_FIELD", "field": "limit"}
+
+
+def test_parse_get_session_messages_params_trims_session_id() -> None:
+    session_id, query = parse_get_session_messages_params({"session_id": "  s-1  "})
+
+    assert session_id == "s-1"
+    assert query == {"limit": SESSION_QUERY_DEFAULT_LIMIT}
