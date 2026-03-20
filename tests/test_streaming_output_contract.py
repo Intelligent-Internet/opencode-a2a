@@ -562,7 +562,7 @@ async def test_streaming_does_not_send_duplicate_final_snapshot_when_chunks_exis
     ]
     assert len(final_updates) == 1
     assert _part_text(final_updates[0]) == "stable final answer"
-    assert _artifact_stream_meta(final_updates[0])["source"] != "final_snapshot"
+    assert _artifact_stream_meta(final_updates[0])["source"] == "stream"
 
 
 @pytest.mark.asyncio
@@ -651,7 +651,7 @@ async def test_streaming_emits_events_without_message_id_using_stable_fallback()
     assert len(updates) == 1
     update = updates[0]
     assert _part_text(update) == "final answer from send_message"
-    assert _artifact_stream_meta(update)["source"] == "delta"
+    assert _artifact_stream_meta(update)["source"] == "stream"
     assert _artifact_stream_meta(update)["block_type"] == "text"
     assert _artifact_stream_meta(update)["message_id"] == "task-6:ctx-6:assistant"
     assert _artifact_stream_meta(update)["event_id"] == "task-6:ctx-6:task-6:stream:1"
@@ -696,7 +696,7 @@ async def test_streaming_emits_snapshot_when_message_id_missing_and_stream_is_pa
     assert _part_text(first) == "partial "
     assert first.append is False
     assert first.last_chunk is None
-    assert _artifact_stream_meta(first)["source"] == "delta"
+    assert _artifact_stream_meta(first)["source"] == "stream"
     assert _artifact_stream_meta(first)["message_id"] == "task-6b:ctx-6b:assistant"
     assert _artifact_stream_meta(first)["event_id"] == "task-6b:ctx-6b:task-6b:stream:1"
     assert _artifact_stream_meta(first)["sequence"] == 1
@@ -1568,6 +1568,7 @@ async def test_streaming_supports_message_part_delta_events() -> None:
     assert reasoning_updates
     merged = "".join(_part_text(ev) for ev in reasoning_updates)
     assert merged == "first second"
+    assert {_artifact_stream_meta(ev)["source"] for ev in reasoning_updates} == {"stream"}
 
 
 @pytest.mark.asyncio
@@ -1606,6 +1607,7 @@ async def test_streaming_buffers_delta_until_part_updated_arrives() -> None:
     assert reasoning_updates
     merged = "".join(_part_text(ev) for ev in reasoning_updates)
     assert merged == "first second"
+    assert {_artifact_stream_meta(ev)["source"] for ev in reasoning_updates} == {"stream"}
 
 
 @pytest.mark.asyncio

@@ -1875,7 +1875,7 @@ def _build_stream_artifact_metadata(
 ) -> dict[str, Any]:
     stream_meta: dict[str, Any] = {
         "block_type": block_type.value,
-        "source": source,
+        "source": _normalize_shared_stream_source(block_type=block_type, source=source),
     }
     if message_id:
         stream_meta["message_id"] = message_id
@@ -1886,6 +1886,16 @@ def _build_stream_artifact_metadata(
     if sequence is not None:
         stream_meta["sequence"] = sequence
     return {"shared": {"stream": stream_meta}}
+
+
+def _normalize_shared_stream_source(*, block_type: BlockType, source: str) -> str:
+    if source == "final_snapshot":
+        return "final_snapshot"
+    if block_type == BlockType.TOOL_CALL:
+        return "tool_part_update"
+    if block_type in {BlockType.TEXT, BlockType.REASONING}:
+        return "stream"
+    return source
 
 
 def _build_output_metadata(
