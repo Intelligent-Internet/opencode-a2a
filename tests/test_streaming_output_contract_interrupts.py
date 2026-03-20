@@ -1,4 +1,3 @@
-
 import pytest
 from a2a.types import (
     TaskState,

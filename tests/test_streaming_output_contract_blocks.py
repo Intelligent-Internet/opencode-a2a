@@ -1,4 +1,3 @@
-
 import pytest
 
 from opencode_a2a_server.agent import (
