@@ -30,21 +30,27 @@ from a2a.types import (
     TextPart,
 )
 
-from .streaming import (
-    BlockType,
-    _await_stream_terminal_signal,
+from ..opencode_client import OpencodeClient, UpstreamContractError
+from ..parts.mapping import (
+    UnsupportedA2AInputError,
+    extract_text_from_a2a_parts,
+    map_a2a_parts_to_opencode_parts,
+    summarize_a2a_parts,
+)
+from .request_context import (
     _build_history,
-    _build_output_metadata,
+    _extract_opencode_directory,
+    _extract_shared_model,
+    _extract_shared_session_id,
+)
+from .stream_events import (
+    BlockType,
     _build_progress_identity,
-    _build_stream_artifact_metadata,
     _coerce_number,
     _extract_event_session_id,
     _extract_interrupt_asked_event,
     _extract_interrupt_resolved_event,
-    _extract_opencode_directory,
     _extract_progress_metadata,
-    _extract_shared_model,
-    _extract_shared_session_id,
     _extract_stream_message_id,
     _extract_stream_part_id,
     _extract_stream_role,
@@ -53,33 +59,33 @@ from .streaming import (
     _extract_stream_terminal_signal,
     _extract_token_usage,
     _extract_tool_part_payload,
-    _extract_upstream_error_detail,
     _extract_upstream_error_from_event,
     _extract_upstream_error_from_response,
-    _format_inband_upstream_error,
-    _format_stream_terminal_error,
-    _format_upstream_error,
     _log_stream_event_debug,
-    _merge_token_usage,
     _normalize_interrupt_question_options,
     _normalize_interrupt_questions,
     _normalize_role,
-    _NormalizedStreamChunk,
-    _PendingDelta,
     _preview_log_value,
     _resolve_stream_block_type,
-    _resolve_upstream_error_profile,
+)
+from .stream_state import (
+    _build_output_metadata,
+    _build_stream_artifact_metadata,
+    _merge_token_usage,
+    _NormalizedStreamChunk,
+    _PendingDelta,
     _StreamOutputState,
     _StreamPartState,
-    _StreamTerminalSignal,
     _TTLCache,
 )
-from ..opencode_client import OpencodeClient, UpstreamContractError
-from ..parts.mapping import (
-    UnsupportedA2AInputError,
-    extract_text_from_a2a_parts,
-    map_a2a_parts_to_opencode_parts,
-    summarize_a2a_parts,
+from .upstream_errors import (
+    _await_stream_terminal_signal,
+    _extract_upstream_error_detail,
+    _format_inband_upstream_error,
+    _format_stream_terminal_error,
+    _format_upstream_error,
+    _resolve_upstream_error_profile,
+    _StreamTerminalSignal,
 )
 
 logger = logging.getLogger(__name__)

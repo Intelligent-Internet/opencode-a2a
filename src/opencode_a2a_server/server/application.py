@@ -35,28 +35,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
-from ..execution.executor import OpencodeAgentExecutor, _emit_metric
-from .contracts import (
-    _build_agent_card_description,
-    _build_chat_examples,
-    _build_jsonrpc_extension_openapi_description,
-    _build_jsonrpc_extension_openapi_examples,
-    _build_rest_message_openapi_examples,
-    _build_session_query_skill_examples,
-    _decode_payload_preview,
-    _detect_sensitive_extension_method,
-    _is_json_content_type,
-    _looks_like_jsonrpc_envelope,
-    _looks_like_jsonrpc_message_payload,
-    _normalize_content_type,
-    _parse_content_length,
-    _parse_json_body,
-    _patch_jsonrpc_openapi_contract,
-    _request_body_too_large_response,
-    _RequestBodyTooLargeError,
-    build_agent_card,
-)
 from ..config import Settings
+from ..execution.executor import OpencodeAgentExecutor, _emit_metric
 from ..extension_contracts import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
@@ -77,6 +57,30 @@ from ..jsonrpc.application import (
 )
 from ..opencode_client import OpencodeClient
 from ..runtime_profile import build_runtime_profile
+from .agent_card import (
+    _build_agent_card_description,
+    _build_chat_examples,
+    _build_session_query_skill_examples,
+    build_agent_card,
+)
+from .openapi import (
+    _build_jsonrpc_extension_openapi_description,
+    _build_jsonrpc_extension_openapi_examples,
+    _build_rest_message_openapi_examples,
+    _patch_jsonrpc_openapi_contract,
+)
+from .request_parsing import (
+    _decode_payload_preview,
+    _detect_sensitive_extension_method,
+    _is_json_content_type,
+    _looks_like_jsonrpc_envelope,
+    _looks_like_jsonrpc_message_payload,
+    _normalize_content_type,
+    _parse_content_length,
+    _parse_json_body,
+    _request_body_too_large_response,
+    _RequestBodyTooLargeError,
+)
 
 logger = logging.getLogger(__name__)
 

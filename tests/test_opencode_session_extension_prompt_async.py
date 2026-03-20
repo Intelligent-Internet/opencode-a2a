@@ -6,7 +6,7 @@ import pytest
 from opencode_a2a_server.opencode_client import UpstreamContractError
 from tests.helpers import DummySessionQueryOpencodeClient as DummyOpencodeClient
 from tests.helpers import make_settings
-from tests.opencode_session_extension_support import _BASE_SETTINGS
+from tests.session_extension_fixtures import _BASE_SETTINGS
 
 
 @pytest.mark.asyncio

@@ -23,6 +23,7 @@ from ..extension_contracts import (
     PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES,
     SESSION_QUERY_ERROR_BUSINESS_CODES,
 )
+from ..opencode_client import OpencodeClient, UpstreamContractError
 from .methods import (
     SESSION_CONTEXT_PREFIX,
     _apply_session_query_limit,
@@ -46,7 +47,6 @@ from .params import (
     parse_get_session_messages_params,
     parse_list_sessions_params,
 )
-from ..opencode_client import OpencodeClient, UpstreamContractError
 
 logger = logging.getLogger(__name__)
 

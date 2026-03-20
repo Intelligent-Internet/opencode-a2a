@@ -3,7 +3,7 @@ import pytest
 
 from tests.helpers import DummySessionQueryOpencodeClient as DummyOpencodeClient
 from tests.helpers import make_settings
-from tests.opencode_session_extension_support import _BASE_SETTINGS, _session_meta
+from tests.session_extension_fixtures import _BASE_SETTINGS, _session_meta
 
 
 @pytest.mark.asyncio

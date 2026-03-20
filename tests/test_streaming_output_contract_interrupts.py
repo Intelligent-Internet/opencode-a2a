@@ -11,7 +11,7 @@ from tests.helpers import (
     DummyEventQueue,
     make_request_context,
 )
-from tests.streaming_output_contract_support import (
+from tests.streaming_output_fixtures import (
     DummyStreamingClient,
     _event,
     _interrupt_meta,

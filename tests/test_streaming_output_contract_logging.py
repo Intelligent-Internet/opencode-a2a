@@ -10,7 +10,7 @@ from tests.helpers import (
     make_request_context,
     make_settings,
 )
-from tests.streaming_output_contract_support import (
+from tests.streaming_output_fixtures import (
     DummyStreamingClient,
     _artifact_stream_meta,
     _artifact_updates,
