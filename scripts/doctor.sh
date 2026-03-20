@@ -11,3 +11,6 @@ uv run pre-commit run --all-files
 
 echo "[doctor] run tests"
 uv run pytest
+
+echo "[doctor] enforce coverage policy"
+uv run python ./scripts/check_coverage.py

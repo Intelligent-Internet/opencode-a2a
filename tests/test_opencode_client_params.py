@@ -621,6 +621,29 @@ async def test_create_session_raises_when_upstream_omits_id(monkeypatch) -> None
 
 
 @pytest.mark.asyncio
+async def test_create_session_raises_when_upstream_id_is_not_string(monkeypatch) -> None:
+    client = OpencodeClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
+        del path, params, json
+        return _DummyResponse({"id": 123})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    with pytest.raises(RuntimeError, match="missing id"):
+        await client.create_session("title")
+
+    await client.close()
+
+
+@pytest.mark.asyncio
 async def test_list_provider_catalog_uses_directory_query(monkeypatch) -> None:
     client = OpencodeClient(
         make_settings(

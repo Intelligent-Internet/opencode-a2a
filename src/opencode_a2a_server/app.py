@@ -318,7 +318,8 @@ class OpencodeRequestHandler(DefaultRequestHandler):
                 self._track_background_task(cleanup_task)
             else:
                 try:
-                    if asyncio.current_task() and asyncio.current_task().cancelled():
+                    current_task = asyncio.current_task()
+                    if current_task is not None and current_task.cancelled():
                         logger.warning(
                             "Client disconnected from message request. Cancelling task %s", task_id
                         )
@@ -337,7 +338,7 @@ class OpencodeRequestHandler(DefaultRequestHandler):
 
         if hasattr(result, "id") and result.id:
             self._validate_task_id_match(task_id, result.id)
-            if params.configuration:
+            if params.configuration and isinstance(result, Task):
                 from a2a.utils.task import apply_history_length
 
                 result = apply_history_length(result, params.configuration.history_length)

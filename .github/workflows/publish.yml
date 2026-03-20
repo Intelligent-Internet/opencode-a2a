@@ -50,18 +50,28 @@ jobs:
 
           dist_dir = pathlib.Path("dist")
           wheels = sorted(dist_dir.glob("opencode_a2a_server-*.whl"))
+          sdists = sorted(dist_dir.glob("opencode_a2a_server-*.tar.gz"))
           if len(wheels) != 1:
               raise SystemExit(f"Expected exactly one wheel in dist/, found {len(wheels)}")
+          if len(sdists) != 1:
+              raise SystemExit(f"Expected exactly one sdist in dist/, found {len(sdists)}")
           wheel = wheels[0].name
+          sdist = sdists[0].name
           version = wheel.removeprefix("opencode_a2a_server-").split("-py3", 1)[0]
+          sdist_version = sdist.removeprefix("opencode_a2a_server-").removesuffix(".tar.gz")
           tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
           if version != tag:
               raise SystemExit(f"Wheel version {version!r} does not match tag {tag!r}")
+          if sdist_version != tag:
+              raise SystemExit(f"sdist version {sdist_version!r} does not match tag {tag!r}")
           print(f"Validated release version: {version}")
           PY
 
       - name: Smoke test wheel install
-        run: bash ./scripts/smoke_test_built_cli.sh
+        run: bash ./scripts/smoke_test_built_cli.sh dist/opencode_a2a_server-*.whl
+
+      - name: Smoke test sdist install
+        run: bash ./scripts/smoke_test_built_cli.sh dist/opencode_a2a_server-*.tar.gz
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

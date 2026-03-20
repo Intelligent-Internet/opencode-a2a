@@ -12,10 +12,54 @@ permissions:
 jobs:
   quality-gate:
     runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Sync Dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Run pre-commit
+        run: bash ./scripts/lint.sh
+
+      - name: Run pytest
+        run: uv run pytest
+
+      - name: Enforce coverage policy
+        run: uv run python ./scripts/check_coverage.py
+
+      - name: Run dependency vulnerability audit
+        run: uv run pip-audit
+
+      - name: Clean previous build artifacts
+        run: rm -rf build dist
+
+      - name: Build package artifacts
+        run: uv build --no-sources
+
+      - name: Smoke test built wheel
+        run: bash ./scripts/smoke_test_built_cli.sh dist/opencode_a2a_server-*.whl
+
+      - name: Smoke test built sdist
+        run: bash ./scripts/smoke_test_built_cli.sh dist/opencode_a2a_server-*.tar.gz
+
+  runtime-matrix:
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12"]
 
     steps:
       - name: Checkout
@@ -34,20 +78,5 @@ jobs:
       - name: Sync Dependencies
         run: uv sync --all-extras --frozen
 
-      - name: Run pre-commit
-        run: bash ./scripts/lint.sh
-
-      - name: Run pytest
-        run: uv run pytest
-
-      - name: Run dependency vulnerability audit
-        run: uv run pip-audit
-
-      - name: Clean previous build artifacts
-        run: rm -rf build dist
-
-      - name: Build package artifacts
-        run: uv build --no-sources
-
-      - name: Smoke test built CLI
-        run: bash ./scripts/smoke_test_built_cli.sh
+      - name: Run pytest runtime matrix
+        run: uv run pytest --no-cov

@@ -72,11 +72,12 @@ tag_regex = "^v?(?P<version>.+)$"
 [tool.mypy]
 python_version = "3.11"
 files = ["src/opencode_a2a_server"]
-ignore_missing_imports = true
 show_error_codes = true
 pretty = true
 warn_redundant_casts = true
 warn_unused_ignores = true
+check_untyped_defs = true
+warn_return_any = true
 
 [tool.pytest.ini_options]
-addopts = "--cov=src/opencode_a2a_server --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=src/opencode_a2a_server --cov-report=term-missing --cov-report=json:.coverage.json --cov-fail-under=90"

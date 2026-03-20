@@ -12,10 +12,11 @@ remaining repository-maintenance helpers.
 
 ## Other Scripts
 
-- [`doctor.sh`](./doctor.sh): local development regression entrypoint (`sync`/`pip check` + lint + tests)
+- [`doctor.sh`](./doctor.sh): local development regression entrypoint (`sync`/`pip check` + lint + tests + coverage policy)
 - [`dependency_health.sh`](./dependency_health.sh): dependency review entrypoint (`sync`/`pip check` + outdated + audit)
+- [`check_coverage.py`](./check_coverage.py): enforces the overall coverage floor and per-file minimums for critical modules
 - [`lint.sh`](./lint.sh): lint helper
-- [`smoke_test_built_cli.sh`](./smoke_test_built_cli.sh): wheel-install smoke test for the released CLI runtime; uses the active Python interpreter by default and requires an explicit wheel path when multiple local wheels exist
+- [`smoke_test_built_cli.sh`](./smoke_test_built_cli.sh): built-artifact smoke test for the released CLI runtime; defaults to the only local wheel, supports explicit wheel/sdist paths, and rejects ambiguous local artifact selection
 
 ## Notes
 
