@@ -150,9 +150,14 @@ opencode-a2a-server serve
 - Structured `tool` parts are emitted as `tool_call` blocks backed by
   `DataPart(data={...})`, while `text` and `reasoning` continue to use
   `TextPart`.
+- `tool_call` block payloads are normalized structured objects that may expose
+  fields such as `call_id`, `tool`, `status`, `title`, `subtitle`, `input`,
+  `output`, and `error`.
 - Final status event metadata may include normalized token usage at
   `metadata.shared.usage` with fields such as `input_tokens`,
-  `output_tokens`, `total_tokens`, and optional `cost`.
+  `output_tokens`, `total_tokens`, optional `reasoning_tokens`, optional
+  `cache_tokens.read_tokens` / `cache_tokens.write_tokens`, and optional
+  `cost`.
 - Usage is extracted from documented info payloads and supported usage parts
   such as `step-finish`; non-usage parts with similar fields are ignored.
 - Interrupt events (`permission.asked` / `question.asked`) are mapped to
@@ -480,10 +485,12 @@ Shared runtime fields:
     `event_id`, `sequence`, and `role`
 - `metadata.shared.usage`
   - normalized usage data such as `input_tokens`, `output_tokens`,
-    `total_tokens`, and optional `cost`
+    `total_tokens`, optional `reasoning_tokens`, optional
+    `cache_tokens.read_tokens` / `cache_tokens.write_tokens`, and optional
+    `cost`
 - `metadata.shared.interrupt`
   - normalized interrupt request or resolution metadata including `request_id`,
-    `type`, `phase`, and callback-safe details
+    `type`, `phase`, optional `resolution`, and callback-safe details
 - `metadata.shared.session`
   - session-level metadata such as the bound upstream session ID and session
     title when available
@@ -503,6 +510,8 @@ Consumer guidance:
 Minimal stream semantics summary:
 
 - `text`, `reasoning`, and `tool_call` are emitted as canonical block types
+- `text` and `reasoning` blocks use `TextPart`, while `tool_call` uses
+  `DataPart`
 - `message_id` and `event_id` preserve stable timeline identity where possible
 - `sequence` is the per-request canonical stream sequence
 - final task/status metadata may repeat normalized usage and interrupt context

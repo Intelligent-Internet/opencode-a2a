@@ -112,9 +112,57 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert streaming.params["artifact_metadata_field"] == "metadata.shared.stream"
     assert streaming.params["progress_metadata_field"] == "metadata.shared.progress"
     assert streaming.params["interrupt_metadata_field"] == "metadata.shared.interrupt"
+    assert streaming.params["session_metadata_field"] == "metadata.shared.session"
     assert streaming.params["usage_metadata_field"] == "metadata.shared.usage"
+    assert streaming.params["block_types"] == ["text", "reasoning", "tool_call"]
+    assert streaming.params["block_contracts"] == {
+        "text": {
+            "part_kind": "text",
+            "payload_field": "artifact.parts[].text",
+        },
+        "reasoning": {
+            "part_kind": "text",
+            "payload_field": "artifact.parts[].text",
+        },
+        "tool_call": {
+            "part_kind": "data",
+            "payload_field": "artifact.parts[].data",
+            "payload_fields": {
+                "call_id": "artifact.parts[].data.call_id",
+                "tool": "artifact.parts[].data.tool",
+                "status": "artifact.parts[].data.status",
+                "title": "artifact.parts[].data.title",
+                "subtitle": "artifact.parts[].data.subtitle",
+                "input": "artifact.parts[].data.input",
+                "output": "artifact.parts[].data.output",
+                "error": "artifact.parts[].data.error",
+            },
+        },
+    }
     assert streaming.params["stream_fields"]["sequence"] == "metadata.shared.stream.sequence"
     assert streaming.params["progress_fields"]["type"] == "metadata.shared.progress.type"
+    assert streaming.params["interrupt_fields"] == {
+        "request_id": "metadata.shared.interrupt.request_id",
+        "type": "metadata.shared.interrupt.type",
+        "phase": "metadata.shared.interrupt.phase",
+        "details": "metadata.shared.interrupt.details",
+        "resolution": "metadata.shared.interrupt.resolution",
+    }
+    assert streaming.params["session_fields"] == {
+        "id": "metadata.shared.session.id",
+        "title": "metadata.shared.session.title",
+    }
+    assert streaming.params["usage_fields"] == {
+        "input_tokens": "metadata.shared.usage.input_tokens",
+        "output_tokens": "metadata.shared.usage.output_tokens",
+        "total_tokens": "metadata.shared.usage.total_tokens",
+        "reasoning_tokens": "metadata.shared.usage.reasoning_tokens",
+        "cost": "metadata.shared.usage.cost",
+        "cache_tokens": {
+            "read_tokens": "metadata.shared.usage.cache_tokens.read_tokens",
+            "write_tokens": "metadata.shared.usage.cache_tokens.write_tokens",
+        },
+    }
 
     session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
     assert session_query.params["profile"]["runtime_context"]["project"] == "alpha"

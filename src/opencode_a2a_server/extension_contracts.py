@@ -510,6 +510,30 @@ def build_streaming_extension_params() -> dict[str, Any]:
         "session_metadata_field": SHARED_SESSION_METADATA_FIELD,
         "usage_metadata_field": SHARED_USAGE_METADATA_FIELD,
         "block_types": ["text", "reasoning", "tool_call"],
+        "block_contracts": {
+            "text": {
+                "part_kind": "text",
+                "payload_field": "artifact.parts[].text",
+            },
+            "reasoning": {
+                "part_kind": "text",
+                "payload_field": "artifact.parts[].text",
+            },
+            "tool_call": {
+                "part_kind": "data",
+                "payload_field": "artifact.parts[].data",
+                "payload_fields": {
+                    "call_id": "artifact.parts[].data.call_id",
+                    "tool": "artifact.parts[].data.tool",
+                    "status": "artifact.parts[].data.status",
+                    "title": "artifact.parts[].data.title",
+                    "subtitle": "artifact.parts[].data.subtitle",
+                    "input": "artifact.parts[].data.input",
+                    "output": "artifact.parts[].data.output",
+                    "error": "artifact.parts[].data.error",
+                },
+            },
+        },
         "stream_fields": {
             "block_type": f"{SHARED_STREAM_METADATA_FIELD}.block_type",
             "source": f"{SHARED_STREAM_METADATA_FIELD}.source",
@@ -529,13 +553,24 @@ def build_streaming_extension_params() -> dict[str, Any]:
         "interrupt_fields": {
             "request_id": f"{SHARED_INTERRUPT_METADATA_FIELD}.request_id",
             "type": f"{SHARED_INTERRUPT_METADATA_FIELD}.type",
+            "phase": f"{SHARED_INTERRUPT_METADATA_FIELD}.phase",
             "details": f"{SHARED_INTERRUPT_METADATA_FIELD}.details",
+            "resolution": f"{SHARED_INTERRUPT_METADATA_FIELD}.resolution",
+        },
+        "session_fields": {
+            "id": f"{SHARED_SESSION_METADATA_FIELD}.id",
+            "title": f"{SHARED_SESSION_METADATA_FIELD}.title",
         },
         "usage_fields": {
             "input_tokens": f"{SHARED_USAGE_METADATA_FIELD}.input_tokens",
             "output_tokens": f"{SHARED_USAGE_METADATA_FIELD}.output_tokens",
             "total_tokens": f"{SHARED_USAGE_METADATA_FIELD}.total_tokens",
+            "reasoning_tokens": f"{SHARED_USAGE_METADATA_FIELD}.reasoning_tokens",
             "cost": f"{SHARED_USAGE_METADATA_FIELD}.cost",
+            "cache_tokens": {
+                "read_tokens": f"{SHARED_USAGE_METADATA_FIELD}.cache_tokens.read_tokens",
+                "write_tokens": f"{SHARED_USAGE_METADATA_FIELD}.cache_tokens.write_tokens",
+            },
         },
     }
 
