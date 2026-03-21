@@ -50,7 +50,7 @@ class OpencodeUpstreamClient:
         self._variant = settings.opencode_variant
         self._stream_timeout = settings.opencode_timeout_stream
         self._log_payloads = settings.a2a_log_payloads
-        self._interrupt_request_ttl_seconds = 600.0
+        self._interrupt_request_ttl_seconds = float(settings.a2a_interrupt_request_ttl_seconds)
         self._interrupt_request_clock = time.monotonic
         self._interrupt_requests: dict[str, InterruptRequestBinding] = {}
         self._client = self._build_http_client(self._base_url)

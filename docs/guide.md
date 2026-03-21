@@ -60,6 +60,9 @@ Key variables to understand protocol behavior:
   return HTTP `413`.
 - `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`: session cache
   behavior for `(identity, contextId) -> session_id`.
+- `A2A_INTERRUPT_REQUEST_TTL_SECONDS`: retention window for the in-memory
+  interrupt request binding cache used by `a2a.interrupt.*` callback methods.
+  Default: `3600` seconds (`60` minutes).
 - `A2A_CANCEL_ABORT_TIMEOUT_SECONDS`: best-effort timeout for upstream
   `session.abort` in cancel flow.
 - `OPENCODE_TIMEOUT` / `OPENCODE_TIMEOUT_STREAM`: upstream request timeout and
@@ -761,6 +764,10 @@ Notes:
   (`metadata.shared.interrupt.request_id`).
 - The server keeps an in-memory interrupt binding cache; callbacks with unknown
   or expired `request_id` are rejected.
+- The cache retention window is controlled by
+  `A2A_INTERRUPT_REQUEST_TTL_SECONDS` (default: `3600` seconds / `60`
+  minutes). This is a deployment/runtime setting and is intentionally not part
+  of the shared extension method contract.
 - Callback requests are validated against interrupt type and caller identity.
 - Callback context variables use the shared method contract plus
   OpenCode-private metadata when needed

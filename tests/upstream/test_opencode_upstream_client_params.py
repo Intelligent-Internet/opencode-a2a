@@ -542,6 +542,32 @@ async def test_interrupt_request_binding_expires_after_ttl() -> None:
     await client.close()
 
 
+@pytest.mark.asyncio
+async def test_interrupt_request_ttl_defaults_to_one_hour_and_is_configurable() -> None:
+    default_client = OpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+    assert default_client._interrupt_request_ttl_seconds == 3600.0
+    await default_client.close()
+
+    configured_client = OpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+            a2a_interrupt_request_ttl_seconds=90.0,
+        )
+    )
+    assert configured_client._interrupt_request_ttl_seconds == 90.0
+    await configured_client.close()
+
+
 def test_response_body_preview_handles_empty_and_long_payloads() -> None:
     empty = _DummyResponse(text="   ")
     assert OpencodeUpstreamClient._response_body_preview(empty) == "<empty>"
