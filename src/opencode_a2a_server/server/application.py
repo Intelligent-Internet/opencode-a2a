@@ -6,7 +6,7 @@ import logging
 import secrets
 from contextlib import asynccontextmanager
 from contextvars import ContextVar, Token
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import uvicorn
 from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPI

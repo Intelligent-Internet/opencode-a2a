@@ -22,6 +22,9 @@ PROVIDER_DISCOVERY_EXTENSION_URI = "urn:opencode-a2a:provider-discovery/v1"
 INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
 COMPATIBILITY_PROFILE_EXTENSION_URI = "urn:a2a:compatibility-profile/v1"
 WIRE_CONTRACT_EXTENSION_URI = "urn:a2a:wire-contract/v1"
+SERVICE_BEHAVIOR_CLASSIFICATION = "service-level-semantic-enhancement"
+CANCEL_IDEMPOTENCY_BEHAVIOR = "return_current_terminal_task"
+TERMINAL_RESUBSCRIBE_BEHAVIOR = "replay_terminal_task_once_then_close"
 
 
 @dataclass(frozen=True)
@@ -756,6 +759,7 @@ def build_compatibility_profile_params(
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
     capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    service_behaviors = build_service_behavior_contract_params()
     method_retention: dict[str, dict[str, Any]] = {
         method: {
             "surface": "core",
@@ -842,6 +846,7 @@ def build_compatibility_profile_params(
             },
         },
         "method_retention": method_retention,
+        "service_behaviors": service_behaviors,
         "consumer_guidance": [
             "Treat core A2A methods as the stable interoperability baseline for generic clients.",
             (
@@ -866,6 +871,10 @@ def build_compatibility_profile_params(
                 "Treat opencode.sessions.shell as deployment-conditional and discover it from "
                 "the declared profile and current wire contract before calling it."
             ),
+            (
+                "Treat declared service behaviors as stable server-level semantic "
+                "enhancements layered on top of the core A2A method baseline."
+            ),
         ],
     }
 
@@ -876,6 +885,7 @@ def build_wire_contract_params(
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
     capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    service_behaviors = build_service_behavior_contract_params()
 
     return {
         "protocol_version": protocol_version,
@@ -901,9 +911,38 @@ def build_wire_contract_params(
             ],
         },
         "all_jsonrpc_methods": capability_snapshot.supported_jsonrpc_methods(),
+        "service_behaviors": service_behaviors,
         "unsupported_method_error": {
             "code": -32601,
             "type": "METHOD_NOT_SUPPORTED",
             "data_fields": list(WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS),
+        },
+    }
+
+
+def build_service_behavior_contract_params() -> dict[str, Any]:
+    return {
+        "classification": SERVICE_BEHAVIOR_CLASSIFICATION,
+        "methods": {
+            "tasks/cancel": {
+                "baseline": "core",
+                "retention": "stable",
+                "idempotency": {
+                    "already_canceled": {
+                        "behavior": CANCEL_IDEMPOTENCY_BEHAVIOR,
+                        "returns_current_state": "canceled",
+                        "error": None,
+                    }
+                },
+            },
+            "tasks/resubscribe": {
+                "baseline": "core",
+                "retention": "stable",
+                "terminal_state_behavior": {
+                    "behavior": TERMINAL_RESUBSCRIBE_BEHAVIOR,
+                    "delivery": "single_task_snapshot",
+                    "closes_stream": True,
+                },
+            },
         },
     }

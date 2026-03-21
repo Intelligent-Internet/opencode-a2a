@@ -208,7 +208,8 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     required=False,
                     description=(
                         "Expose the A2A compatibility profile defining core baselines, "
-                        "extension retention policies, and deployment-conditional methods."
+                        "extension retention policies, declared service behaviors, and "
+                        "deployment-conditional methods."
                     ),
                     params=compatibility_profile_params,
                 ),
@@ -217,7 +218,8 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     required=False,
                     description=(
                         "Expose the wire-level contract declaring supported JSON-RPC methods, "
-                        "HTTP endpoints, and unified error contracts."
+                        "HTTP endpoints, declared service behaviors, and unified error "
+                        "contracts."
                     ),
                     params=wire_contract_params,
                 ),
