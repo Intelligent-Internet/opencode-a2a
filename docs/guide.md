@@ -53,9 +53,6 @@ Key variables to understand protocol behavior:
 - `A2A_LOG_PAYLOADS` / `A2A_LOG_BODY_LIMIT`: payload logging behavior and
   truncation. When `A2A_LOG_LEVEL=DEBUG`, upstream OpenCode stream events are
   also logged with preview truncation controlled by `A2A_LOG_BODY_LIMIT`.
-- `A2A_STREAM_SSE_PING_SECONDS`: explicit SSE keepalive interval for REST
-  streaming endpoints (`/v1/message:stream` and `/v1/tasks/{id}:subscribe`).
-  Default: `15`.
 - `A2A_MAX_REQUEST_BODY_BYTES`: runtime request-body limit. Oversized requests
   return HTTP `413`.
 - `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`: session cache

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.events import EventConsumer
 from a2a.types import Task, TaskIdParams, TaskNotCancelableError, TaskState, TaskStatus
 from a2a.utils.errors import ServerError
@@ -15,7 +16,6 @@ import opencode_a2a_server.server.application as app_module
 from opencode_a2a_server.contracts.extensions import build_capability_snapshot
 from opencode_a2a_server.profile.runtime import build_runtime_profile
 from opencode_a2a_server.server.application import (
-    KeepaliveRESTAdapter,
     OpencodeRequestHandler,
     _build_agent_card_description,
     _build_chat_examples,
@@ -308,12 +308,11 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_keepalive_rest_adapter_routes_and_preconsume_error() -> None:
+async def test_rest_adapter_routes_and_preconsume_error() -> None:
     handler = MagicMock()
-    adapter = KeepaliveRESTAdapter(
+    adapter = RESTAdapter(
         agent_card=build_agent_card(make_settings(a2a_bearer_token="test-token")),
         http_handler=handler,
-        sse_ping_seconds=12,
     )
 
     async def _stream(_request: Request, _context):  # noqa: ANN001
@@ -323,7 +322,7 @@ async def test_keepalive_rest_adapter_routes_and_preconsume_error() -> None:
     response = await adapter.routes()[("/v1/tasks/{id}:subscribe", "GET")](
         _request("/v1/tasks/x:subscribe")
     )
-    assert response.ping_interval == 12
+    assert response is not None
 
     class _BrokenRequest:
         async def body(self) -> bytes:

@@ -3,11 +3,10 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
+from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.types import TransportProtocol
-from starlette.requests import Request
 
 from opencode_a2a_server.server.application import (
-    KeepaliveRESTAdapter,
     _normalize_log_level,
     build_agent_card,
     create_app,
@@ -36,75 +35,18 @@ def test_rest_subscription_route_matches_current_sdk_contract() -> None:
     assert "/v1/tasks/{id}:resubscribe" not in route_paths
 
 
-def _request(path: str, body: bytes = b"{}") -> Request:
-    sent = False
-
-    async def receive() -> dict:
-        nonlocal sent
-        if sent:
-            return {"type": "http.disconnect"}
-        sent = True
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": "POST",
-        "scheme": "http",
-        "path": path,
-        "raw_path": path.encode("utf-8"),
-        "query_string": b"",
-        "headers": [(b"content-type", b"application/json")],
-        "client": ("127.0.0.1", 12345),
-        "server": ("testserver", 80),
-        "state": {},
-    }
-    req = Request(scope, receive)
-    req.state.user_identity = "opaque:test-id"
-    return req
-
-
-@pytest.mark.asyncio
-async def test_keepalive_rest_adapter_sets_explicit_sse_ping() -> None:
-    adapter = KeepaliveRESTAdapter(
+def test_rest_adapter_exposes_sdk_rest_routes() -> None:
+    rest_adapter = RESTAdapter(
         agent_card=build_agent_card(make_settings(a2a_bearer_token="test-token")),
         http_handler=MagicMock(),
-        sse_ping_seconds=27,
     )
+    route_paths = {route[0] for route in rest_adapter.routes()}
 
-    async def _stream(_request: Request, _context):  # noqa: ANN001
-        yield {"id": "evt-1"}
-
-    response = await adapter._handle_streaming_request(_stream, _request("/v1/message:stream"))
-
-    assert response.ping_interval == 27
-
-
-def test_create_app_wires_configured_sse_ping_into_rest_adapter(monkeypatch) -> None:
-    import opencode_a2a_server.server.application as app_module
-
-    captured: dict[str, int] = {}
-    original = app_module.KeepaliveRESTAdapter
-
-    class SpyKeepaliveRESTAdapter:
-        def __init__(self, *args, sse_ping_seconds: int, **kwargs):  # noqa: ANN002, ANN003
-            captured["sse_ping_seconds"] = sse_ping_seconds
-            self._delegate = original(*args, sse_ping_seconds=sse_ping_seconds, **kwargs)
-
-        def routes(self):
-            return self._delegate.routes()
-
-    monkeypatch.setattr(app_module, "KeepaliveRESTAdapter", SpyKeepaliveRESTAdapter)
-
-    app_module.create_app(
-        make_settings(
-            a2a_bearer_token="test-token",
-            a2a_stream_sse_ping_seconds=22,
-        )
-    )
-
-    assert captured["sse_ping_seconds"] == 22
+    assert "/v1/message:send" in route_paths
+    assert "/v1/message:stream" in route_paths
+    assert "/v1/tasks/{id}" in route_paths
+    assert "/v1/tasks/{id}:cancel" in route_paths
+    assert "/v1/tasks/{id}:subscribe" in route_paths
 
 
 def test_openapi_rest_message_routes_include_schema_and_examples() -> None:
