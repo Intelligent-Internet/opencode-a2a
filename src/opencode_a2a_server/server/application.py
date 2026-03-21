@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 import uvicorn
 from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPI
 from a2a.server.apps.jsonrpc.jsonrpc_app import DefaultCallContextBuilder
-from a2a.server.apps.rest.fastapi_app import A2ARESTFastAPIApplication
 from a2a.server.apps.rest.rest_adapter import (
     EventSourceResponse,
     InvalidRequestError,
@@ -33,7 +32,7 @@ from a2a.types import (
     TaskState,
 )
 from a2a.utils.errors import ServerError
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
@@ -118,7 +117,6 @@ __all__ = [
     "_parse_json_body",
     "_request_body_too_large_response",
     "build_agent_card",
-    "KeepaliveA2ARESTFastAPIApplication",
 ]
 
 _REQUEST_BODY_BYTES: ContextVar[bytes | None] = ContextVar(
@@ -348,27 +346,6 @@ class KeepaliveRESTAdapter(RESTAdapter):
         )
 
 
-class KeepaliveA2ARESTFastAPIApplication(A2ARESTFastAPIApplication):
-    """Attach SDK REST routes to an existing FastAPI app with explicit SSE ping."""
-
-    def __init__(self, *args: Any, sse_ping_seconds: int, **kwargs: Any) -> None:
-        self._adapter = KeepaliveRESTAdapter(
-            *args,
-            sse_ping_seconds=sse_ping_seconds,
-            **kwargs,
-        )
-
-    def add_routes_to_app(self, app: FastAPI, rpc_url: str = "") -> None:
-        router = APIRouter()
-        for route, callback in self._adapter.routes().items():
-            router.add_api_route(
-                f"{rpc_url}{route[0]}",
-                callback,
-                methods=[route[1]],
-            )
-        app.include_router(router)
-
-
 def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
     token = settings.a2a_bearer_token
 
@@ -443,7 +420,7 @@ def create_app(settings: Settings) -> FastAPI:
         session_claim_release=executor.release_session_for_control,
         methods=jsonrpc_methods,
     )
-    rest_app = KeepaliveA2ARESTFastAPIApplication(
+    rest_adapter = KeepaliveRESTAdapter(
         agent_card=agent_card,
         http_handler=handler,
         context_builder=context_builder,
@@ -456,7 +433,8 @@ def create_app(settings: Settings) -> FastAPI:
         lifespan=lifespan,
     )
     jsonrpc_app.add_routes_to_app(app)
-    rest_app.add_routes_to_app(app)
+    for route, callback in rest_adapter.routes().items():
+        app.add_api_route(route[0], callback, methods=[route[1]])
     app.state.opencode_agent_executor = executor
     _patch_jsonrpc_openapi_contract(app, settings, runtime_profile=runtime_profile)
 
