@@ -10,7 +10,9 @@ from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING, Any
 
 import uvicorn
+from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPI
 from a2a.server.apps.jsonrpc.jsonrpc_app import DefaultCallContextBuilder
+from a2a.server.apps.rest.fastapi_app import A2ARESTFastAPIApplication
 from a2a.server.apps.rest.rest_adapter import (
     EventSourceResponse,
     InvalidRequestError,
@@ -31,7 +33,7 @@ from a2a.types import (
     TaskState,
 )
 from a2a.utils.errors import ServerError
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
@@ -116,6 +118,7 @@ __all__ = [
     "_parse_json_body",
     "_request_body_too_large_response",
     "build_agent_card",
+    "KeepaliveA2ARESTFastAPIApplication",
 ]
 
 _REQUEST_BODY_BYTES: ContextVar[bytes | None] = ContextVar(
@@ -321,9 +324,9 @@ class KeepaliveRESTAdapter(RESTAdapter):
     @rest_stream_error_handler
     async def _handle_streaming_request(
         self,
-        method,
-        request,
-    ):
+        method: Any,
+        request: Request,
+    ) -> EventSourceResponse:
         try:
             await request.body()
         except (ValueError, RuntimeError, OSError) as exc:
@@ -344,27 +347,26 @@ class KeepaliveRESTAdapter(RESTAdapter):
             ping=self._sse_ping_seconds,
         )
 
-    def routes(self) -> dict[tuple[str, str], Any]:
-        routes = super().routes()
 
-        async def message_stream(request):
-            return await self._handle_streaming_request(
-                self.handler.on_message_send_stream,
-                request,
+class KeepaliveA2ARESTFastAPIApplication(A2ARESTFastAPIApplication):
+    """Attach SDK REST routes to an existing FastAPI app with explicit SSE ping."""
+
+    def __init__(self, *args: Any, sse_ping_seconds: int, **kwargs: Any) -> None:
+        self._adapter = KeepaliveRESTAdapter(
+            *args,
+            sse_ping_seconds=sse_ping_seconds,
+            **kwargs,
+        )
+
+    def add_routes_to_app(self, app: FastAPI, rpc_url: str = "") -> None:
+        router = APIRouter()
+        for route, callback in self._adapter.routes().items():
+            router.add_api_route(
+                f"{rpc_url}{route[0]}",
+                callback,
+                methods=[route[1]],
             )
-
-        async def subscribe(request):
-            return await self._handle_streaming_request(
-                self.handler.on_resubscribe_to_task,
-                request,
-            )
-
-        message_stream.__annotations__ = {"request": Request}
-        subscribe.__annotations__ = {"request": Request}
-
-        routes[("/v1/message:stream", "POST")] = message_stream
-        routes[("/v1/tasks/{id}:subscribe", "GET")] = subscribe
-        return routes
+        app.include_router(router)
 
 
 def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
@@ -428,7 +430,7 @@ def create_app(settings: Settings) -> FastAPI:
     }
 
     # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.
-    app = OpencodeSessionQueryJSONRPCApplication(
+    jsonrpc_app = OpencodeSessionQueryJSONRPCApplication(
         agent_card=agent_card,
         http_handler=handler,
         context_builder=context_builder,
@@ -440,18 +442,23 @@ def create_app(settings: Settings) -> FastAPI:
         session_claim_finalize=executor.finalize_session_for_control,
         session_claim_release=executor.release_session_for_control,
         methods=jsonrpc_methods,
-    ).build(title=settings.a2a_title, version=settings.a2a_version, lifespan=lifespan)
-    app.state.opencode_agent_executor = executor
-    _patch_jsonrpc_openapi_contract(app, settings, runtime_profile=runtime_profile)
-
-    rest_adapter = KeepaliveRESTAdapter(
+    )
+    rest_app = KeepaliveA2ARESTFastAPIApplication(
         agent_card=agent_card,
         http_handler=handler,
         context_builder=context_builder,
         sse_ping_seconds=settings.a2a_stream_sse_ping_seconds,
     )
-    for route, callback in rest_adapter.routes().items():
-        app.add_api_route(route[0], callback, methods=[route[1]])
+
+    app = A2AFastAPI(
+        title=settings.a2a_title,
+        version=settings.a2a_version,
+        lifespan=lifespan,
+    )
+    jsonrpc_app.add_routes_to_app(app)
+    rest_app.add_routes_to_app(app)
+    app.state.opencode_agent_executor = executor
+    _patch_jsonrpc_openapi_contract(app, settings, runtime_profile=runtime_profile)
 
     @app.get("/health")
     async def health_check():

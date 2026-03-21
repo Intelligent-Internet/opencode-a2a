@@ -4,9 +4,11 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 from a2a.types import TransportProtocol
+from fastapi import FastAPI
 from starlette.requests import Request
 
 from opencode_a2a_server.server.application import (
+    KeepaliveA2ARESTFastAPIApplication,
     KeepaliveRESTAdapter,
     _normalize_log_level,
     build_agent_card,
@@ -81,21 +83,25 @@ async def test_keepalive_rest_adapter_sets_explicit_sse_ping() -> None:
     assert response.ping_interval == 27
 
 
-def test_create_app_wires_configured_sse_ping_into_rest_adapter(monkeypatch) -> None:
+def test_create_app_wires_configured_sse_ping_into_rest_fastapi_app(monkeypatch) -> None:
     import opencode_a2a_server.server.application as app_module
 
     captured: dict[str, int] = {}
-    original = app_module.KeepaliveRESTAdapter
+    original = app_module.KeepaliveA2ARESTFastAPIApplication
 
-    class SpyKeepaliveRESTAdapter:
+    class SpyKeepaliveA2ARESTFastAPIApplication:
         def __init__(self, *args, sse_ping_seconds: int, **kwargs):  # noqa: ANN002, ANN003
             captured["sse_ping_seconds"] = sse_ping_seconds
             self._delegate = original(*args, sse_ping_seconds=sse_ping_seconds, **kwargs)
 
-        def routes(self):
-            return self._delegate.routes()
+        def add_routes_to_app(self, app, rpc_url: str = ""):  # noqa: ANN001
+            return self._delegate.add_routes_to_app(app, rpc_url=rpc_url)
 
-    monkeypatch.setattr(app_module, "KeepaliveRESTAdapter", SpyKeepaliveRESTAdapter)
+    monkeypatch.setattr(
+        app_module,
+        "KeepaliveA2ARESTFastAPIApplication",
+        SpyKeepaliveA2ARESTFastAPIApplication,
+    )
 
     app_module.create_app(
         make_settings(
@@ -105,6 +111,23 @@ def test_create_app_wires_configured_sse_ping_into_rest_adapter(monkeypatch) -> 
     )
 
     assert captured["sse_ping_seconds"] == 22
+
+
+def test_keepalive_rest_fastapi_app_adds_sdk_rest_routes() -> None:
+    app = FastAPI()
+    rest_app = KeepaliveA2ARESTFastAPIApplication(
+        agent_card=build_agent_card(make_settings(a2a_bearer_token="test-token")),
+        http_handler=MagicMock(),
+        sse_ping_seconds=15,
+    )
+    rest_app.add_routes_to_app(app, rpc_url="/api")
+    route_paths = {route.path for route in app.router.routes if hasattr(route, "path")}
+
+    assert "/api/v1/message:send" in route_paths
+    assert "/api/v1/message:stream" in route_paths
+    assert "/api/v1/tasks/{id}" in route_paths
+    assert "/api/v1/tasks/{id}:cancel" in route_paths
+    assert "/api/v1/tasks/{id}:subscribe" in route_paths
 
 
 def test_openapi_rest_message_routes_include_schema_and_examples() -> None:
