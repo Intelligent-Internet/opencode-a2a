@@ -5,7 +5,7 @@ import sys
 from collections.abc import Sequence
 
 from . import __version__
-from .app import main as serve_main
+from .server.application import main as serve_main
 
 
 def build_parser() -> argparse.ArgumentParser:

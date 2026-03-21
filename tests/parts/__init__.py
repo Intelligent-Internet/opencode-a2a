@@ -1,0 +1,1 @@
+"""Part-normalization tests."""
