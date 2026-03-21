@@ -60,6 +60,14 @@ Key variables to understand protocol behavior:
   return HTTP `413`.
 - `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`: session cache
   behavior for `(identity, contextId) -> session_id`.
+- `A2A_INTERRUPT_REQUEST_TTL_SECONDS`: active retention window for the
+  in-memory interrupt request binding cache used by `a2a.interrupt.*`
+  callback methods. Default: `10800` seconds (`180` minutes).
+- `A2A_INTERRUPT_REQUEST_TOMBSTONE_TTL_SECONDS`: retention window for expired
+  interrupt tombstones after active TTL has elapsed. During this window,
+  repeated replies keep returning `INTERRUPT_REQUEST_EXPIRED` instead of
+  falling through to `INTERRUPT_REQUEST_NOT_FOUND`. Default: `600` seconds
+  (`10` minutes).
 - `A2A_CANCEL_ABORT_TIMEOUT_SECONDS`: best-effort timeout for upstream
   `session.abort` in cancel flow.
 - `OPENCODE_TIMEOUT` / `OPENCODE_TIMEOUT_STREAM`: upstream request timeout and
@@ -761,6 +769,15 @@ Notes:
   (`metadata.shared.interrupt.request_id`).
 - The server keeps an in-memory interrupt binding cache; callbacks with unknown
   or expired `request_id` are rejected.
+- The cache retention windows are controlled by
+  `A2A_INTERRUPT_REQUEST_TTL_SECONDS` (default: `10800` seconds / `180`
+  minutes) and `A2A_INTERRUPT_REQUEST_TOMBSTONE_TTL_SECONDS` (default: `600`
+  seconds / `10` minutes). After the active TTL elapses, the server keeps a
+  short-lived tombstone so repeated replies continue to return
+  `INTERRUPT_REQUEST_EXPIRED` before eventually aging out to
+  `INTERRUPT_REQUEST_NOT_FOUND`.
+- These values are deployment/runtime settings and are intentionally not part
+  of the shared extension method contract.
 - Callback requests are validated against interrupt type and caller identity.
 - Callback context variables use the shared method contract plus
   OpenCode-private metadata when needed

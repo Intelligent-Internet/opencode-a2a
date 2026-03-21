@@ -512,6 +512,7 @@ async def test_interrupt_request_binding_expires_after_ttl() -> None:
             opencode_timeout=1.0,
             a2a_log_level="DEBUG",
             a2a_log_payloads=False,
+            a2a_interrupt_request_tombstone_ttl_seconds=2.0,
         )
     )
 
@@ -538,8 +539,81 @@ async def test_interrupt_request_binding_expires_after_ttl() -> None:
     assert status == "expired"
     assert binding is None
     assert client.resolve_interrupt_session("perm-1") is None
+    assert client.resolve_interrupt_request("perm-1") == ("expired", None)
+
+    now = 1009.0
+    status, binding = client.resolve_interrupt_request("perm-1")
+    assert status == "missing"
+    assert binding is None
 
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_request_prune_keeps_expired_tombstone() -> None:
+    client = OpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+            a2a_interrupt_request_tombstone_ttl_seconds=5.0,
+        )
+    )
+
+    now = 100.0
+    client._interrupt_request_clock = lambda: now  # type: ignore[method-assign]
+    client.remember_interrupt_request(
+        request_id="perm-1",
+        session_id="ses-1",
+        interrupt_type="permission",
+        ttl_seconds=2.0,
+    )
+
+    now = 103.0
+    client.remember_interrupt_request(
+        request_id="perm-2",
+        session_id="ses-2",
+        interrupt_type="permission",
+        ttl_seconds=10.0,
+    )
+
+    assert client.resolve_interrupt_request("perm-1") == ("expired", None)
+    assert client.resolve_interrupt_request("perm-2")[0] == "active"
+
+    now = 109.0
+    assert client.resolve_interrupt_request("perm-1") == ("missing", None)
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_request_ttl_defaults_to_three_hours_and_is_configurable() -> None:
+    default_client = OpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+    assert default_client._interrupt_request_ttl_seconds == 10_800.0
+    assert default_client._interrupt_request_tombstone_ttl_seconds == 600.0
+    await default_client.close()
+
+    configured_client = OpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+            a2a_interrupt_request_ttl_seconds=90.0,
+            a2a_interrupt_request_tombstone_ttl_seconds=15.0,
+        )
+    )
+    assert configured_client._interrupt_request_ttl_seconds == 90.0
+    assert configured_client._interrupt_request_tombstone_ttl_seconds == 15.0
+    await configured_client.close()
 
 
 def test_response_body_preview_handles_empty_and_long_payloads() -> None:

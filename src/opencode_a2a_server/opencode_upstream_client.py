@@ -40,6 +40,12 @@ class InterruptRequestBinding:
     expires_at: float
 
 
+@dataclass(frozen=True)
+class InterruptRequestTombstone:
+    request_id: str
+    expires_at: float
+
+
 class OpencodeUpstreamClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -50,9 +56,13 @@ class OpencodeUpstreamClient:
         self._variant = settings.opencode_variant
         self._stream_timeout = settings.opencode_timeout_stream
         self._log_payloads = settings.a2a_log_payloads
-        self._interrupt_request_ttl_seconds = 600.0
+        self._interrupt_request_ttl_seconds = float(settings.a2a_interrupt_request_ttl_seconds)
+        self._interrupt_request_tombstone_ttl_seconds = float(
+            settings.a2a_interrupt_request_tombstone_ttl_seconds
+        )
         self._interrupt_request_clock = time.monotonic
         self._interrupt_requests: dict[str, InterruptRequestBinding] = {}
+        self._interrupt_request_tombstones: dict[str, InterruptRequestTombstone] = {}
         self._client = self._build_http_client(self._base_url)
 
     def _build_http_client(self, base_url: str) -> httpx.AsyncClient:
@@ -155,6 +165,26 @@ class OpencodeUpstreamClient:
         ]
         for request_id in expired:
             self._interrupt_requests.pop(request_id, None)
+            self._remember_interrupt_request_tombstone(request_id, now=now)
+
+    def _prune_interrupt_request_tombstones(self, *, now: float) -> None:
+        expired = [
+            request_id
+            for request_id, tombstone in self._interrupt_request_tombstones.items()
+            if tombstone.expires_at <= now
+        ]
+        for request_id in expired:
+            self._interrupt_request_tombstones.pop(request_id, None)
+
+    def _remember_interrupt_request_tombstone(self, request_id: str, *, now: float) -> None:
+        ttl = self._interrupt_request_tombstone_ttl_seconds
+        if ttl <= 0:
+            self._interrupt_request_tombstones.pop(request_id, None)
+            return
+        self._interrupt_request_tombstones[request_id] = InterruptRequestTombstone(
+            request_id=request_id,
+            expires_at=now + ttl,
+        )
 
     def remember_interrupt_request(
         self,
@@ -174,6 +204,7 @@ class OpencodeUpstreamClient:
             return
         now = self._interrupt_request_clock()
         self._prune_interrupt_requests(now=now)
+        self._prune_interrupt_request_tombstones(now=now)
         ttl = self._interrupt_request_ttl_seconds if ttl_seconds is None else ttl_seconds
         expires_at = now + max(0.0, float(ttl))
         self._interrupt_requests[request] = InterruptRequestBinding(
@@ -187,6 +218,7 @@ class OpencodeUpstreamClient:
             ),
             expires_at=expires_at,
         )
+        self._interrupt_request_tombstones.pop(request, None)
 
     def resolve_interrupt_request(
         self,
@@ -196,12 +228,16 @@ class OpencodeUpstreamClient:
         if not request:
             return "missing", None
         now = self._interrupt_request_clock()
+        self._prune_interrupt_request_tombstones(now=now)
         binding = self._interrupt_requests.get(request)
         if binding is None:
+            if request in self._interrupt_request_tombstones:
+                return "expired", None
             return "missing", None
         if binding.expires_at <= now:
             self._interrupt_requests.pop(request, None)
             self._prune_interrupt_requests(now=now)
+            self._remember_interrupt_request_tombstone(request, now=now)
             return "expired", None
         self._prune_interrupt_requests(now=now)
         return "active", binding
@@ -217,6 +253,7 @@ class OpencodeUpstreamClient:
         if not request:
             return
         self._interrupt_requests.pop(request, None)
+        self._interrupt_request_tombstones.pop(request, None)
 
     @property
     def stream_timeout(self) -> float | None:
