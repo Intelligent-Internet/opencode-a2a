@@ -99,6 +99,12 @@ starting that upstream process:
 If your provider uses environment variables for auth, export them before
 starting `opencode serve`.
 
+Do not assume startup-script env vars always erase previously persisted
+OpenCode auth state for the deployed user. When debugging provider-auth
+surprises, inspect the deployed user's HOME/XDG config directories and the
+OpenCode files stored there before concluding that `opencode-a2a` changed the
+credential selection.
+
 Then start `opencode-a2a` against that explicit upstream URL:
 
 ```bash
@@ -110,6 +116,23 @@ A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a serve
 ```
+
+## Troubleshooting Provider Auth State
+
+If one deployment works while another fails against the same upstream provider,
+check the deployed OpenCode user's local state before assuming the difference
+comes from the `opencode-a2a` package itself.
+
+- Provider auth and service-level model defaults belong to `opencode serve`.
+- The deployed user's HOME/XDG config directories are operational input.
+- Existing OpenCode auth/config files may still influence runtime behavior even
+  when you also inject provider env vars from a process manager or shell
+  wrapper.
+- Compare the deployed user's OpenCode auth/config files, HOME/XDG values, and
+  effective workspace directory before blaming the A2A adapter layer.
+- For OpenCode-specific auth/config troubleshooting, inspect files such as
+  `~/.local/share/opencode/auth.json` and `~/.config/opencode/opencode.json`
+  (or the equivalent XDG-resolved paths for that service user).
 
 ## Core Behavior
 
