@@ -13,9 +13,7 @@ from a2a.types import (
 )
 
 A2AClientEvent = (
-    Message
-    | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None]
-    | None
+    Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None
 )
 A2AClientEventStream = AsyncIterator[A2AClientEvent]
 A2AClientMetadata = Mapping[str, Any]

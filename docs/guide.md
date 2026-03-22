@@ -69,6 +69,8 @@ Key variables to understand protocol behavior:
   `session.abort` in cancel flow.
 - `OPENCODE_TIMEOUT` / `OPENCODE_TIMEOUT_STREAM`: upstream request timeout and
   optional stream timeout override.
+- `A2A_CLIENT_TIMEOUT_SECONDS`: outbound client timeout. Default: matches `OPENCODE_TIMEOUT`.
+- `A2A_CLIENT_USE_CLIENT_PREFERENCE`: whether the outbound client prefers its own transport choices.
 - Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
 - Client-side bootstrap flags are not part of the core server runtime contract, but
   are available for consumer-side integration under `src/opencode_a2a/client/`:

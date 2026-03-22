@@ -75,11 +75,27 @@ Default local address: `http://127.0.0.1:8000`
 - A2A HTTP+JSON endpoints such as `/v1/message:send` and
   `/v1/message:stream`
 - A2A JSON-RPC support on `POST /`
+- Peering capabilities: can act as a client via `opencode-a2a call`
+- Autonomous tool execution: supports `a2a_call` tool for outbound agent-to-agent communication
 - SSE streaming with normalized `text`, `reasoning`, and `tool_call` blocks
 - Explicit REST SSE keepalive configurable through `A2A_STREAM_SSE_PING_SECONDS`
 - Session continuity through `metadata.shared.session.id`
 - Request-scoped model selection through `metadata.shared.model`
 - OpenCode-oriented JSON-RPC extensions for session and model/provider queries
+
+## Peering Node
+
+`opencode-a2a` supports a "Peering Node" architecture where a single process handles both inbound (Server) and outbound (Client) A2A traffic.
+
+### CLI Client
+Interact with other A2A agents directly from the command line:
+
+```bash
+opencode-a2a call http://other-agent:8000 "How are you?" --token your-outbound-token
+```
+
+### Outbound Agent Calls (Tools)
+The server can autonomously execute `a2a_call(url, message)` tool calls emitted by the OpenCode runtime. Results are fetched via A2A and returned to the model as tool results, enabling multi-agent orchestration.
 
 Detailed protocol contracts, examples, and extension docs live in
 [`docs/guide.md`](docs/guide.md).

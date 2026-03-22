@@ -30,6 +30,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
+from ..client import A2AClient
 from ..config import Settings
 from ..contracts.extensions import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
@@ -337,25 +338,49 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
         return await call_next(request)
 
 
+class A2AClientManager:
+    def __init__(self, settings: Settings) -> None:
+        from ..client.config import load_settings as load_client_settings
+
+        self.client_settings = load_client_settings(
+            {
+                "A2A_CLIENT_TIMEOUT_SECONDS": settings.a2a_client_timeout_seconds,
+                "A2A_CLIENT_USE_CLIENT_PREFERENCE": settings.a2a_client_use_client_preference,
+            }
+        )
+        self.clients: dict[str, A2AClient] = {}
+        self._lock = asyncio.Lock()
+
+    async def get_client(self, agent_url: str) -> A2AClient:
+        async with self._lock:
+            url = agent_url.rstrip("/")
+            if url not in self.clients:
+                self.clients[url] = A2AClient(url, settings=self.client_settings)
+            return self.clients[url]
+
+    async def close_all(self) -> None:
+        async with self._lock:
+            for client in self.clients.values():
+                await client.close()
+            self.clients.clear()
+
+
 def create_app(settings: Settings) -> FastAPI:
     upstream_client = OpencodeUpstreamClient(settings)
+    client_manager = A2AClientManager(settings)
     executor = OpencodeAgentExecutor(
         upstream_client,
         streaming_enabled=True,
         cancel_abort_timeout_seconds=settings.a2a_cancel_abort_timeout_seconds,
         session_cache_ttl_seconds=settings.a2a_session_cache_ttl_seconds,
         session_cache_maxsize=settings.a2a_session_cache_maxsize,
+        a2a_client_manager=client_manager,
     )
     task_store = InMemoryTaskStore()
     handler = OpencodeRequestHandler(
         agent_executor=executor,
         task_store=task_store,
     )
-
-    @asynccontextmanager
-    async def lifespan(_app: FastAPI):
-        yield
-        await upstream_client.close()
 
     agent_card = build_agent_card(settings)
     context_builder = IdentityAwareCallContextBuilder()
@@ -388,6 +413,12 @@ def create_app(settings: Settings) -> FastAPI:
         context_builder=context_builder,
     )
 
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        yield
+        await client_manager.close_all()
+        await upstream_client.close()
+
     app = A2AFastAPI(
         title=settings.a2a_title,
         version=settings.a2a_version,
@@ -397,6 +428,7 @@ def create_app(settings: Settings) -> FastAPI:
     for route, callback in rest_adapter.routes().items():
         app.add_api_route(route[0], callback, methods=[route[1]])
     app.state.opencode_agent_executor = executor
+    app.state.a2a_client_manager = client_manager
     _patch_jsonrpc_openapi_contract(app, settings, runtime_profile=runtime_profile)
 
     @app.get("/health")

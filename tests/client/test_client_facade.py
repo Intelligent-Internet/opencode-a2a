@@ -40,9 +40,7 @@ class _FakeClient:
         self.cancel_inputs: list[tuple[object, object]] = []
         self.resubscribe_inputs: list[tuple[object, object]] = []
 
-    async def send_message(
-        self, message, *args: object, **kwargs: object
-    ) -> AsyncIterator[object]:
+    async def send_message(self, message, *args: object, **kwargs: object) -> AsyncIterator[object]:
         self.send_message_inputs.append((message, args, kwargs))
         if self._fail:
             raise self._fail
@@ -61,9 +59,7 @@ class _FakeClient:
             raise self._fail
         return {"task_id": params.id, "status": "canceled"}
 
-    async def resubscribe(
-        self, params, *args: object, **kwargs: object
-    ) -> AsyncIterator[object]:
+    async def resubscribe(self, params, *args: object, **kwargs: object) -> AsyncIterator[object]:
         self.resubscribe_inputs.append((params, kwargs))
         if self._fail:
             raise self._fail

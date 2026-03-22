@@ -484,11 +484,13 @@ def test_create_app_propagates_cancel_abort_timeout(monkeypatch) -> None:
             cancel_abort_timeout_seconds: float,
             session_cache_ttl_seconds: int,
             session_cache_maxsize: int,
+            a2a_client_manager: object = None,
         ) -> None:
             captured["streaming_enabled"] = streaming_enabled
             captured["cancel_abort_timeout_seconds"] = cancel_abort_timeout_seconds
             captured["session_cache_ttl_seconds"] = session_cache_ttl_seconds
             captured["session_cache_maxsize"] = session_cache_maxsize
+            captured["a2a_client_manager"] = a2a_client_manager
 
         async def execute(self, _context, _event_queue) -> None:  # noqa: ANN001
             raise NotImplementedError
@@ -538,12 +540,14 @@ def test_create_app_requires_control_guard_hooks(monkeypatch) -> None:
             cancel_abort_timeout_seconds: float,
             session_cache_ttl_seconds: int,
             session_cache_maxsize: int,
+            a2a_client_manager: object = None,
         ) -> None:
             del (
                 streaming_enabled,
                 cancel_abort_timeout_seconds,
                 session_cache_ttl_seconds,
                 session_cache_maxsize,
+                a2a_client_manager,
             )
             self.claim_session_for_control = None
 

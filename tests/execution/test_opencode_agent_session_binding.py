@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 
 import pytest
 from a2a.types import Task
@@ -131,13 +132,15 @@ async def test_agent_uses_stable_fallback_message_id_when_upstream_missing_messa
         async def send_message(
             self,
             session_id: str,
-            text: str,
+            text: str | None = None,
             *,
+            parts: list[dict[str, Any]] | None = None,
             directory: str | None = None,
             model_override: dict[str, str] | None = None,
-            timeout_override=None,  # noqa: ANN001
+            timeout_override: float | None = None,
+            **kwargs: Any,
         ) -> OpencodeMessage:
-            del text, directory, model_override, timeout_override
+            del text, parts, directory, model_override, timeout_override, kwargs
             self.sent_session_ids.append(session_id)
             return OpencodeMessage(
                 text="echo:hello",
@@ -166,13 +169,15 @@ async def test_agent_includes_usage_in_non_stream_task_metadata() -> None:
         async def send_message(
             self,
             session_id: str,
-            text: str,
+            text: str | None = None,
             *,
+            parts: list[dict[str, Any]] | None = None,
             directory: str | None = None,
             model_override: dict[str, str] | None = None,
-            timeout_override=None,  # noqa: ANN001
+            timeout_override: float | None = None,
+            **kwargs: Any,
         ) -> OpencodeMessage:
-            del text, directory, model_override, timeout_override
+            del text, parts, directory, model_override, timeout_override, kwargs
             self.sent_session_ids.append(session_id)
             return OpencodeMessage(
                 text="echo:hello",
@@ -206,3 +211,147 @@ async def test_agent_includes_usage_in_non_stream_task_metadata() -> None:
     assert usage["output_tokens"] == 3
     assert usage["total_tokens"] == 10
     assert "raw" not in usage
+
+
+@pytest.mark.asyncio
+async def test_agent_handles_a2a_call_tool(monkeypatch) -> None:
+    from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus, TextPart
+
+    class MockA2AClient:
+        async def send(self, text: str) -> Task:
+            return Task(
+                id="remote-task",
+                context_id="remote-ctx",
+                status=TaskStatus(
+                    state=TaskState.completed,
+                    message=Message(
+                        role=Role.agent,
+                        message_id="m1",
+                        parts=[Part(root=TextPart(text=f"remote response to {text}"))],
+                    ),
+                ),
+            )
+
+        async def close(self):
+            pass
+
+    class MockManager:
+        async def get_client(self, url: str):
+            return MockA2AClient()
+
+    client = DummyChatOpencodeUpstreamClient()
+    manager = MockManager()
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False, a2a_client_manager=manager)
+
+    raw_response = {
+        "parts": [
+            {
+                "type": "tool",
+                "tool": "a2a_call",
+                "callID": "call-1",
+                "state": {
+                    "status": "calling",
+                    "input": {"url": "http://remote", "message": "hello remote"},
+                },
+            }
+        ]
+    }
+
+    results = await executor._maybe_handle_tools(raw_response)
+    assert results is not None
+    assert len(results) == 1
+    assert results[0]["call_id"] == "call-1"
+    assert "remote response to hello remote" in results[0]["output"]
+
+
+@pytest.mark.asyncio
+async def test_execution_coordinator_handles_tool_loop() -> None:
+    class ToolLoopClient(DummyChatOpencodeUpstreamClient):
+        def __init__(self):
+            super().__init__()
+            self.call_count = 0
+
+        async def send_message(self, *args, **kwargs) -> OpencodeMessage:
+            self.call_count += 1
+            if self.call_count == 1:
+                return OpencodeMessage(
+                    text="call tool",
+                    session_id="s1",
+                    message_id="m1",
+                    raw={
+                        "parts": [
+                            {
+                                "type": "tool",
+                                "tool": "a2a_call",
+                                "callID": "c1",
+                                "state": {
+                                    "status": "calling",
+                                    "input": {"url": "http://x", "message": "y"},
+                                },
+                            }
+                        ]
+                    },
+                )
+            return OpencodeMessage(text="done", session_id="s1", message_id="m2", raw={})
+
+    class MockManager:
+        async def get_client(self, url: str):
+            mock_client = MagicMock()
+            mock_client.send = AsyncMock(
+                return_value=Task(
+                    id="t", context_id="c", status=TaskStatus(state=TaskState.completed)
+                )
+            )
+            return mock_client
+
+    from unittest.mock import AsyncMock, MagicMock
+    from a2a.types import Task, TaskStatus, TaskState
+
+    client = ToolLoopClient()
+    manager = MockManager()
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False, a2a_client_manager=manager)
+    q = DummyEventQueue()
+
+    await executor.execute(make_request_context(task_id="t1", context_id="c1", text="start"), q)
+
+    assert client.call_count == 2
+    task = next(event for event in q.events if isinstance(event, Task))
+    assert task.status.message.parts[0].root.text == "done"
+
+
+@pytest.mark.asyncio
+async def test_agent_handles_a2a_call_tool_errors() -> None:
+    from unittest.mock import MagicMock
+
+    client = DummyChatOpencodeUpstreamClient()
+    # No manager
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False, a2a_client_manager=None)
+
+    raw_response = {
+        "parts": [
+            {
+                "type": "tool",
+                "tool": "a2a_call",
+                "callID": "c1",
+                "state": {"status": "calling", "input": {"url": "h", "message": "m"}},
+            }
+        ]
+    }
+    results = await executor._maybe_handle_tools(raw_response)
+    assert results is not None
+    assert "not available" in results[0]["error"]
+
+    # Invalid input
+    executor = OpencodeAgentExecutor(
+        client, streaming_enabled=False, a2a_client_manager=MagicMock()
+    )
+    raw_response["parts"][0]["state"]["input"] = "invalid"
+    results = await executor._maybe_handle_tools(raw_response)
+    assert results is not None
+    assert "Invalid input" in results[0]["error"]
+
+    # Missing message
+    raw_response["parts"][0]["state"]["input"] = {"url": "http://x"}
+    results = await executor._maybe_handle_tools(raw_response)
+    assert results is not None
+    assert "Missing url or message" in results[0]["error"]

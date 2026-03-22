@@ -11,7 +11,10 @@ from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ..server.application import A2AClientManager
 
 import httpx
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -184,15 +187,61 @@ class _ExecutionCoordinator:
         try:
             await self._bind_session()
             await self._enqueue_working_status()
-            response = await self._send_message()
-            if self._pending_preferred_claim:
-                await self._executor._finalize_preferred_session_binding(
-                    identity=self._prepared.identity,
-                    context_id=self._context_id,
-                    session_id=self._session_id,
-                )
-                self._pending_preferred_claim = False
-            await self._handle_response(response)
+
+            turn_request_parts = list(self._prepared.request_parts)
+            user_text = self._prepared.user_text
+
+            while True:
+                send_kwargs: dict[str, Any] = {
+                    "directory": self._prepared.directory,
+                    "model_override": self._prepared.model_override,
+                }
+                if self._prepared.streaming_request:
+                    send_kwargs["timeout_override"] = self._executor._client.stream_timeout
+
+                if not self._prepared.use_structured_parts and not turn_request_parts:
+                    response = await self._executor._client.send_message(
+                        self._session_id,
+                        user_text,
+                        **send_kwargs,
+                    )
+                else:
+                    response = await self._executor._client.send_message(
+                        self._session_id,
+                        user_text or None,
+                        parts=turn_request_parts,
+                        **send_kwargs,
+                    )
+
+                if self._pending_preferred_claim:
+                    await self._executor._finalize_preferred_session_binding(
+                        identity=self._prepared.identity,
+                        context_id=self._context_id,
+                        session_id=self._session_id,
+                    )
+                    self._pending_preferred_claim = False
+
+                # Check for tool calls that we should handle
+                tool_results = await self._executor._maybe_handle_tools(response.raw)
+                if tool_results:
+                    # Clear user_text/parts for the next turn with tool results.
+                    user_text = ""
+                    turn_request_parts = [
+                        {
+                            "type": "tool",
+                            "tool": res["tool"],
+                            "call_id": res["call_id"],
+                            "output": res.get("output"),
+                            "error": res.get("error"),
+                        }
+                        for res in tool_results
+                    ]
+                    # Loop back to send tool results
+                    continue
+
+                await self._handle_response(response)
+                break
+
         except httpx.HTTPStatusError as exc:
             logger.exception("OpenCode request failed with HTTP error")
             error_type, state, message = _format_upstream_error(
@@ -508,10 +557,12 @@ class OpencodeAgentExecutor(AgentExecutor):
         cancel_abort_timeout_seconds: float = 2.0,
         session_cache_ttl_seconds: int = 3600,
         session_cache_maxsize: int = 10_000,
+        a2a_client_manager: A2AClientManager | None = None,
     ) -> None:
         self._client = client
         self._streaming_enabled = streaming_enabled
         self._cancel_abort_timeout_seconds = max(0.0, float(cancel_abort_timeout_seconds))
+        self._a2a_client_manager = a2a_client_manager
         self._sessions = _TTLCache(
             ttl_seconds=session_cache_ttl_seconds,
             maxsize=session_cache_maxsize,
@@ -603,6 +654,92 @@ class OpencodeAgentExecutor(AgentExecutor):
     async def release_session_for_control(self, *, identity: str, session_id: str) -> None:
         """Release pending control-session ownership on failure."""
         await self._release_preferred_session_claim(identity=identity, session_id=session_id)
+
+    async def _maybe_handle_tools(
+        self, raw_response: dict[str, Any]
+    ) -> list[dict[str, Any]] | None:
+        """Heuristically detect and execute A2A tool calls from upstream OpenCode."""
+        parts = raw_response.get("parts", [])
+        if not isinstance(parts, list):
+            return None
+
+        results: list[dict[str, Any]] = []
+        for part in parts:
+            if not isinstance(part, dict) or part.get("type") != "tool":
+                continue
+
+            state = part.get("state")
+            if not isinstance(state, dict) or state.get("status") != "calling":
+                continue
+
+            tool_name = part.get("tool")
+            if tool_name == "a2a_call":
+                result = await self._handle_a2a_call_tool(part)
+                if result:
+                    results.append(result)
+
+        return results if results else None
+
+    async def _handle_a2a_call_tool(self, part: dict[str, Any]) -> dict[str, Any]:
+        call_id = part.get("callID") or str(uuid.uuid4())
+        tool_name = part.get("tool") or "a2a_call"
+        state = part.get("state", {})
+        inputs = state.get("input", {})
+
+        if not isinstance(inputs, dict):
+            return {"call_id": call_id, "tool": tool_name, "error": "Invalid input format"}
+
+        agent_url = inputs.get("url")
+        message = inputs.get("message")
+        if not agent_url or not message:
+            return {"call_id": call_id, "tool": tool_name, "error": "Missing url or message"}
+
+        mgr = self._a2a_client_manager
+        if mgr is None:
+            return {
+                "call_id": call_id,
+                "tool": tool_name,
+                "error": "A2A client manager not available",
+            }
+
+        try:
+            client = await mgr.get_client(agent_url)
+            event = await client.send(message)
+
+            from a2a.types import Task
+
+            if isinstance(event, Task):
+                result_text = ""
+                # Extract text from Task's assistant message if available
+                if event.status and event.status.message:
+                    for part_obj in event.status.message.parts:
+                        # Use dict-style access if available or getattr to satisfy type checkers
+                        root = getattr(part_obj, "root", part_obj)
+                        text_val = getattr(root, "text", "")
+                        if text_val:
+                            result_text += str(text_val)
+                return {
+                    "call_id": call_id,
+                    "tool": tool_name,
+                    "output": result_text or "Task completed.",
+                }
+
+            # Handle case where event is a tuple (Task, Update)
+            if isinstance(event, tuple) and len(event) > 0 and isinstance(event[0], Task):
+                return {
+                    "call_id": call_id,
+                    "tool": tool_name,
+                    "output": "Task completed (streaming).",
+                }
+
+            return {
+                "call_id": call_id,
+                "tool": tool_name,
+                "error": f"Unexpected agent response type: {type(event).__name__}",
+            }
+        except Exception as exc:
+            logger.exception("A2A tool call failed")
+            return {"call_id": call_id, "tool": tool_name, "error": str(exc)}
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id

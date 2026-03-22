@@ -175,9 +175,7 @@ class A2AClient:
         """Cancel one task by id."""
         client = await self._ensure_client()
         try:
-            return await client.cancel_task(
-                TaskIdParams(id=task_id, metadata=dict(metadata or {}))
-            )
+            return await client.cancel_task(TaskIdParams(id=task_id, metadata=dict(metadata or {})))
         except A2AClientHTTPError as exc:
             raise self._map_http_error("tasks/cancel", exc) from exc
         except A2AClientJSONRPCError as exc:
@@ -303,11 +301,7 @@ class A2AClient:
     def _map_jsonrpc_error(
         self,
         exc: A2AClientJSONRPCError,
-    ) -> (
-        A2AUnsupportedOperationError
-        | A2APeerProtocolError
-        | A2AClientResetRequiredError
-    ):
+    ) -> A2AUnsupportedOperationError | A2APeerProtocolError | A2AClientResetRequiredError:
         message, code, data = self._extract_jsonrpc_error_payload(exc)
         if code == -32601:
             parsed_error = A2AUnsupportedOperationError(message)
@@ -337,15 +331,9 @@ class A2AClient:
         self,
         operation: str,
         exc: A2AClientHTTPError,
-    ) -> (
-        A2AClientResetRequiredError
-        | A2AUnsupportedOperationError
-        | A2AAgentUnavailableError
-    ):
+    ) -> A2AClientResetRequiredError | A2AUnsupportedOperationError | A2AAgentUnavailableError:
         if exc.status_code in {404, 405, 409, 501}:
-            parsed_error = A2AUnsupportedOperationError(
-                f"{operation} is not supported by peer"
-            )
+            parsed_error = A2AUnsupportedOperationError(f"{operation} is not supported by peer")
             parsed_error.http_status = exc.status_code
             return parsed_error
         if exc.status_code in {502, 503, 504}:
@@ -359,5 +347,6 @@ class A2AClient:
     # keep parts construction explicitly typed for mypy compatibility in older stubs
     def _normalize_parts(self, text: str) -> list[Part]:
         return [cast(Part, TextPart(text=text))]
+
 
 __all__ = ["A2AClient"]
