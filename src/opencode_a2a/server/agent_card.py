@@ -38,7 +38,7 @@ from ..profile.runtime import RuntimeProfile, build_runtime_profile
 
 
 def _build_agent_card_description(settings: Settings, runtime_profile: RuntimeProfile) -> str:
-    base = (settings.a2a_description or "").strip() or "A2A wrapper service for OpenCode."
+    base = (settings.a2a_description or "").strip() or "OpenCode A2A runtime."
     summary = (
         "Supports HTTP+JSON and JSON-RPC transports, streaming-first A2A messaging "
         "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
@@ -48,9 +48,11 @@ def _build_agent_card_description(settings: Settings, runtime_profile: RuntimePr
         "callback extensions."
     )
     parts: list[str] = [base, summary]
-    parts.append("This server profile is intended for single-tenant, self-hosted coding workflows.")
     parts.append(
-        "Within one opencode-a2a-server instance, all consumers share the same "
+        "This runtime profile is intended for single-tenant, self-hosted coding workflows."
+    )
+    parts.append(
+        "Within one opencode-a2a instance, all consumers share the same "
         "underlying OpenCode workspace/environment; per-consumer workspace "
         "isolation is not provided."
     )

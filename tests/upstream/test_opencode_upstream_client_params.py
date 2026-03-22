@@ -3,7 +3,7 @@ import json as json_module
 import httpx
 import pytest
 
-from opencode_a2a_server.opencode_upstream_client import (
+from opencode_a2a.opencode_upstream_client import (
     _UNSET,
     OpencodeUpstreamClient,
     UpstreamContractError,

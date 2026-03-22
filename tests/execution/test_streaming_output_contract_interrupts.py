@@ -4,7 +4,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from opencode_a2a_server.execution.executor import (
+from opencode_a2a.execution.executor import (
     OpencodeAgentExecutor,
 )
 from tests.support.helpers import (

@@ -6,8 +6,8 @@ import pytest
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
-from opencode_a2a_server.execution.executor import OpencodeAgentExecutor
-from opencode_a2a_server.opencode_upstream_client import OpencodeMessage, UpstreamContractError
+from opencode_a2a.execution.executor import OpencodeAgentExecutor
+from opencode_a2a.opencode_upstream_client import OpencodeMessage, UpstreamContractError
 from tests.support.helpers import configure_mock_client_runtime, make_request_context_mock
 
 

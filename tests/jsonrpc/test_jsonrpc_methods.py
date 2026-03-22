@@ -1,6 +1,6 @@
 import pytest
 
-from opencode_a2a_server.jsonrpc.application import (
+from opencode_a2a.jsonrpc.application import (
     _extract_provider_catalog,
     _normalize_model_summaries,
     _normalize_permission_reply,

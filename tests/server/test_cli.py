@@ -4,11 +4,11 @@ from unittest import mock
 
 import pytest
 
-from opencode_a2a_server import __version__, cli
+from opencode_a2a import __version__, cli
 
 
 def test_cli_help_does_not_require_runtime_settings(capsys: pytest.CaptureFixture[str]) -> None:
-    with mock.patch("opencode_a2a_server.cli.serve_main") as serve_mock:
+    with mock.patch("opencode_a2a.cli.serve_main") as serve_mock:
         with pytest.raises(SystemExit) as excinfo:
             cli.main(["--help"])
 
@@ -29,13 +29,13 @@ def test_cli_serve_help_exposes_runtime_contract(
 
     assert excinfo.value.code == 0
     help_text = capsys.readouterr().out
-    assert "Start the A2A server using environment-based settings." in help_text
+    assert "Start the OpenCode A2A runtime using environment-based settings." in help_text
 
 
 def test_cli_version_does_not_require_runtime_settings(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with mock.patch("opencode_a2a_server.cli.serve_main") as serve_mock:
+    with mock.patch("opencode_a2a.cli.serve_main") as serve_mock:
         with pytest.raises(SystemExit) as excinfo:
             cli.main(["--version"])
 
@@ -45,14 +45,14 @@ def test_cli_version_does_not_require_runtime_settings(
 
 
 def test_cli_defaults_to_serve_when_no_subcommand() -> None:
-    with mock.patch("opencode_a2a_server.cli.serve_main") as serve_mock:
+    with mock.patch("opencode_a2a.cli.serve_main") as serve_mock:
         assert cli.main([]) == 0
 
     serve_mock.assert_called_once_with()
 
 
 def test_cli_serve_subcommand_invokes_runtime() -> None:
-    with mock.patch("opencode_a2a_server.cli.serve_main") as serve_mock:
+    with mock.patch("opencode_a2a.cli.serve_main") as serve_mock:
         assert cli.main(["serve"]) == 0
 
     serve_mock.assert_called_once_with()

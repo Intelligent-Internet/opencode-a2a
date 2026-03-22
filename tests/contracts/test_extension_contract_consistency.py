@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from opencode_a2a_server.contracts.extensions import (
+from opencode_a2a.contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
@@ -15,9 +15,9 @@ from opencode_a2a_server.contracts.extensions import (
     build_streaming_extension_params,
     build_wire_contract_params,
 )
-from opencode_a2a_server.jsonrpc.application import SESSION_CONTEXT_PREFIX
-from opencode_a2a_server.profile.runtime import build_runtime_profile
-from opencode_a2a_server.server.application import (
+from opencode_a2a.jsonrpc.application import SESSION_CONTEXT_PREFIX
+from opencode_a2a.profile.runtime import build_runtime_profile
+from opencode_a2a.server.application import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
@@ -293,7 +293,7 @@ async def test_extension_notification_contracts_return_204(
     params: dict[str, object],
     interrupt_type: str | None,
 ) -> None:
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     dummy = DummyOpencodeUpstreamClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False)

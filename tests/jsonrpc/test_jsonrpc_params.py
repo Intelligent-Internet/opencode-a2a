@@ -1,11 +1,11 @@
 import pytest
 
-from opencode_a2a_server.contracts.extensions import (
+from opencode_a2a.contracts.extensions import (
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
     SESSION_QUERY_PAGINATION_UNSUPPORTED,
 )
-from opencode_a2a_server.jsonrpc.params import (
+from opencode_a2a.jsonrpc.params import (
     JsonRpcParamsValidationError,
     parse_get_session_messages_params,
     parse_list_sessions_params,

@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from opencode_a2a_server.execution.executor import (
+from opencode_a2a.execution.executor import (
     OpencodeAgentExecutor,
 )
 from tests.support.helpers import (
@@ -47,7 +47,7 @@ async def test_streaming_logs_raw_upstream_events_at_debug(caplog) -> None:
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
-    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_server.execution"):
+    with caplog.at_level(logging.DEBUG, logger="opencode_a2a.execution"):
         await executor.execute(
             make_request_context(task_id="task-debug", context_id="ctx-debug", text="go"),
             queue,
@@ -95,7 +95,7 @@ async def test_streaming_logs_interrupt_payload_at_debug_with_redaction(caplog) 
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
-    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_server.execution"):
+    with caplog.at_level(logging.DEBUG, logger="opencode_a2a.execution"):
         await executor.execute(
             make_request_context(
                 task_id="task-interrupt-debug", context_id="ctx-interrupt-debug", text="go"
@@ -135,7 +135,7 @@ async def test_streaming_does_not_log_raw_upstream_events_above_debug(caplog) ->
     executor._should_stream = lambda context: True  # type: ignore[method-assign]
     queue = DummyEventQueue()
 
-    with caplog.at_level(logging.INFO, logger="opencode_a2a_server.execution"):
+    with caplog.at_level(logging.INFO, logger="opencode_a2a.execution"):
         await executor.execute(
             make_request_context(task_id="task-no-debug", context_id="ctx-no-debug", text="go"),
             queue,

@@ -4,8 +4,8 @@ from unittest import mock
 import pytest
 from pydantic import ValidationError
 
-from opencode_a2a_server import __version__
-from opencode_a2a_server.config import Settings
+from opencode_a2a import __version__
+from opencode_a2a.config import Settings
 
 
 def test_settings_missing_required():

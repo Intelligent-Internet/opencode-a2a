@@ -7,8 +7,8 @@ from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.types import Message, MessageSendParams, Part, Role, TextPart
 
-from opencode_a2a_server.config import Settings
-from opencode_a2a_server.opencode_upstream_client import OpencodeMessage
+from opencode_a2a.config import Settings
+from opencode_a2a.opencode_upstream_client import OpencodeMessage
 
 
 def make_settings(**overrides: Any) -> Settings:

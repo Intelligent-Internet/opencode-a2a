@@ -8,8 +8,8 @@ import pytest
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import Message, MessageSendParams, Role, Task, TaskState, TaskStatus, TextPart
 
-from opencode_a2a_server.execution.executor import OpencodeAgentExecutor, _StreamOutputState
-from opencode_a2a_server.server.application import OpencodeRequestHandler
+from opencode_a2a.execution.executor import OpencodeAgentExecutor, _StreamOutputState
+from opencode_a2a.server.application import OpencodeRequestHandler
 from tests.support.helpers import DummyEventQueue, make_settings
 
 
@@ -53,7 +53,7 @@ async def test_stream_request_metrics_track_total_and_active(caplog) -> None:
 
     handler = _TestHandler(agent_executor=MagicMock(), task_store=InMemoryTaskStore())
 
-    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_server.execution.executor"):
+    with caplog.at_level(logging.DEBUG, logger="opencode_a2a.execution.executor"):
         stream = handler.on_message_send_stream(_make_message_send_params())
         first_event = await stream.__anext__()
         assert isinstance(first_event, Task)
@@ -133,7 +133,7 @@ async def test_streaming_metrics_capture_tool_call_and_interrupt_events(caplog) 
     executor = OpencodeAgentExecutor(_Client(), streaming_enabled=True)
     terminal_signal = asyncio.get_running_loop().create_future()
 
-    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_server.execution.executor"):
+    with caplog.at_level(logging.DEBUG, logger="opencode_a2a.execution.executor"):
         await executor._consume_opencode_stream(
             session_id="ses-1",
             identity="user-1",
@@ -179,12 +179,12 @@ async def test_streaming_retry_metric_increments_once_per_retry(monkeypatch, cap
     async def _fast_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("opencode_a2a_server.execution.executor.asyncio.sleep", _fast_sleep)
+    monkeypatch.setattr("opencode_a2a.execution.executor.asyncio.sleep", _fast_sleep)
 
     executor = OpencodeAgentExecutor(_FlakyClient(), streaming_enabled=True)
     terminal_signal = asyncio.get_running_loop().create_future()
 
-    with caplog.at_level(logging.DEBUG, logger="opencode_a2a_server.execution.executor"):
+    with caplog.at_level(logging.DEBUG, logger="opencode_a2a.execution.executor"):
         await executor._consume_opencode_stream(
             session_id="ses-1",
             identity="user-1",

@@ -49,10 +49,10 @@ jobs:
         run: uv build --no-sources
 
       - name: Smoke test built wheel
-        run: bash ./scripts/smoke_test_built_cli.sh dist/opencode_a2a_server-*.whl
+        run: bash ./scripts/smoke_test_built_cli.sh dist/opencode_a2a-*.whl
 
       - name: Smoke test built sdist
-        run: bash ./scripts/smoke_test_built_cli.sh dist/opencode_a2a_server-*.tar.gz
+        run: bash ./scripts/smoke_test_built_cli.sh dist/opencode_a2a-*.tar.gz
 
   runtime-matrix:
     runs-on: ubuntu-latest

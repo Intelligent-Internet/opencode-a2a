@@ -10,10 +10,9 @@ from .server.application import main as serve_main
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="opencode-a2a-server",
+        prog="opencode-a2a",
         description=(
-            "OpenCode A2A server runtime. "
-            "Deployment supervision is intentionally left to the operator."
+            "OpenCode A2A runtime. Deployment supervision is intentionally left to the operator."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -26,8 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser(
         "serve",
-        help="Start the A2A server using environment-based settings.",
-        description="Start the A2A server using environment-based settings.",
+        help="Start the OpenCode A2A runtime using environment-based settings.",
+        description="Start the OpenCode A2A runtime using environment-based settings.",
     )
     return parser
 

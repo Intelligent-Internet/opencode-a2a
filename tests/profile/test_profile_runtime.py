@@ -1,4 +1,4 @@
-from opencode_a2a_server.profile.runtime import build_runtime_profile
+from opencode_a2a.profile.runtime import build_runtime_profile
 from tests.support.helpers import make_settings
 
 
@@ -82,12 +82,12 @@ def test_profile_runtime_splits_deployment_runtime_features_and_health_payload()
         },
     }
     assert profile.health_payload(
-        service="opencode-a2a-server",
+        service="opencode-a2a",
         version=settings.a2a_version,
         protocol_version=settings.a2a_protocol_version,
     ) == {
         "status": "ok",
-        "service": "opencode-a2a-server",
+        "service": "opencode-a2a",
         "version": settings.a2a_version,
         "profile": profile.summary_dict(protocol_version=settings.a2a_protocol_version),
     }

@@ -3,9 +3,9 @@ requires = ["setuptools>=77", "setuptools-scm[toml]>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "opencode-a2a-server"
+name = "opencode-a2a"
 dynamic = ["version"]
-description = "A2A wrapper service for opencode"
+description = "OpenCode A2A runtime"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -45,12 +45,12 @@ dev = [
 ]
 
 [project.scripts]
-opencode-a2a-server = "opencode_a2a_server.cli:main"
+opencode-a2a = "opencode_a2a.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Intelligent-Internet/opencode-a2a-server"
-Repository = "https://github.com/Intelligent-Internet/opencode-a2a-server"
-Issues = "https://github.com/Intelligent-Internet/opencode-a2a-server/issues"
+Homepage = "https://github.com/Intelligent-Internet/opencode-a2a"
+Repository = "https://github.com/Intelligent-Internet/opencode-a2a"
+Issues = "https://github.com/Intelligent-Internet/opencode-a2a/issues"
 
 [tool.ruff]
 line-length = 100
@@ -71,7 +71,7 @@ tag_regex = "^v?(?P<version>.+)$"
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src/opencode_a2a_server"]
+files = ["src/opencode_a2a"]
 show_error_codes = true
 pretty = true
 warn_redundant_casts = true
@@ -80,4 +80,4 @@ check_untyped_defs = true
 warn_return_any = true
 
 [tool.pytest.ini_options]
-addopts = "--cov=src/opencode_a2a_server --cov-report=term-missing --cov-report=json:.coverage.json --cov-fail-under=90"
+addopts = "--cov=src/opencode_a2a --cov-report=term-missing --cov-report=json:.coverage.json --cov-fail-under=90"

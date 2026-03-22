@@ -686,7 +686,7 @@ wheels = [
 ]
 
 [[package]]
-name = "opencode-a2a-server"
+name = "opencode-a2a"
 source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk" },

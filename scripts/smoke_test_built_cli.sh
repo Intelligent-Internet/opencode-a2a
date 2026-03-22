@@ -33,7 +33,7 @@ artifact_path="${1:-${SMOKE_TEST_ARTIFACT_PATH:-${SMOKE_TEST_WHEEL_PATH:-}}}"
 
 if [[ -z "${artifact_path}" ]]; then
   shopt -s nullglob
-  wheel_paths=(dist/opencode_a2a_server-*.whl)
+  wheel_paths=(dist/opencode_a2a-*.whl)
   shopt -u nullglob
 
   if [[ "${#wheel_paths[@]}" -eq 0 ]]; then
@@ -92,7 +92,7 @@ bearer_token="smoke-test-token"
 A2A_BEARER_TOKEN="${bearer_token}" \
 A2A_PORT="${port}" \
 A2A_HOST="127.0.0.1" \
-"${tool_bin_dir}/opencode-a2a-server" >"${server_log}" 2>&1 &
+"${tool_bin_dir}/opencode-a2a" >"${server_log}" 2>&1 &
 server_pid="$!"
 
 health_url="http://127.0.0.1:${port}/health"

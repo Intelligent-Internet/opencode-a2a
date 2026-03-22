@@ -1,10 +1,10 @@
-from opencode_a2a_server.contracts.extensions import (
+from opencode_a2a.contracts.extensions import (
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
     build_service_behavior_contract_params,
 )
-from opencode_a2a_server.jsonrpc.application import SESSION_CONTEXT_PREFIX
-from opencode_a2a_server.server.application import (
+from opencode_a2a.jsonrpc.application import SESSION_CONTEXT_PREFIX
+from opencode_a2a.server.application import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,

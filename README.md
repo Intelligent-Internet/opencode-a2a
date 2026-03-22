@@ -1,8 +1,8 @@
-# opencode-a2a-server
+# opencode-a2a
 
 > Expose OpenCode through A2A.
 
-`opencode-a2a-server` adds an A2A service layer to `opencode serve`, with
+`opencode-a2a` adds an A2A runtime layer to `opencode serve`, with
 auth, streaming, session continuity, interrupt handling, and a clear
 deployment boundary.
 
@@ -17,7 +17,7 @@ flowchart TD
     Client["a2a-client-hub / any A2A client"]
 
     subgraph ServerSide["Server-side"]
-        Adapter["opencode-a2a-server\nA2A adapter service"]
+        Adapter["opencode-a2a\nA2A adapter service"]
         Runtime["opencode serve\nOpenCode runtime"]
 
         Adapter <--> Runtime
@@ -31,13 +31,13 @@ flowchart TD
 Install the released CLI with `uv tool`:
 
 ```bash
-uv tool install opencode-a2a-server
+uv tool install opencode-a2a
 ```
 
 Upgrade later with:
 
 ```bash
-uv tool upgrade opencode-a2a-server
+uv tool upgrade opencode-a2a
 ```
 
 Make sure provider credentials and a default model are configured on the
@@ -49,7 +49,7 @@ opencode models
 opencode serve --hostname 127.0.0.1 --port 4096
 ```
 
-Then start `opencode-a2a-server` against that upstream:
+Then start `opencode-a2a` against that upstream:
 
 ```bash
 A2A_BEARER_TOKEN=dev-token \
@@ -59,7 +59,7 @@ A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 A2A_STREAM_SSE_PING_SECONDS=15 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
-opencode-a2a-server serve
+opencode-a2a serve
 ```
 
 Verify that the service is up:

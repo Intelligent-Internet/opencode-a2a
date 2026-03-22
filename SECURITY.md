@@ -2,7 +2,7 @@
 
 ## Scope
 
-This repository wraps OpenCode as an A2A adapter service. It exposes A2A
+This repository wraps OpenCode as an A2A runtime. It exposes A2A
 HTTP+JSON and JSON-RPC interfaces, and adds authentication, task/session
 contracts, streaming, interrupt handling, and runtime guidance. It does not
 fully isolate upstream model credentials from OpenCode runtime behavior.
@@ -11,7 +11,7 @@ fully isolate upstream model credentials from OpenCode runtime behavior.
 
 - `A2A_BEARER_TOKEN` protects access to the A2A surface, but it is not a
   tenant-isolation boundary inside one deployed instance.
-- One `OpenCode + opencode-a2a-server` instance pair is treated as a
+- One `OpenCode + opencode-a2a` instance pair is treated as a
   single-tenant trust boundary by design.
 - Tenant isolation across consumers is expected to come from parameterized
   self-deployment.

@@ -3,8 +3,8 @@ import logging
 import httpx
 import pytest
 
-from opencode_a2a_server.config import Settings
-from opencode_a2a_server.contracts.extensions import (
+from opencode_a2a.config import Settings
+from opencode_a2a.contracts.extensions import (
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
 )
@@ -17,7 +17,7 @@ from tests.support.session_extensions import _BASE_SETTINGS, _session_meta
 
 @pytest.mark.asyncio
 async def test_session_query_extension_requires_bearer_token(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyOpencodeUpstreamClient)
     app = app_module.create_app(
@@ -46,7 +46,7 @@ async def test_session_query_extension_requires_bearer_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     dummy = DummyOpencodeUpstreamClient(
         make_settings(
@@ -119,7 +119,7 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_query_extension_applies_default_limit(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     dummy = DummyOpencodeUpstreamClient(
         make_settings(
@@ -174,7 +174,7 @@ async def test_session_query_extension_applies_default_limit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_query_extension_enforces_session_limit_locally(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     dummy = DummyOpencodeUpstreamClient(
         make_settings(
@@ -220,7 +220,7 @@ async def test_session_query_extension_enforces_session_limit_locally(monkeypatc
 
 @pytest.mark.asyncio
 async def test_provider_discovery_extension_returns_normalized_catalog(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     dummy = DummyOpencodeUpstreamClient(
         make_settings(
@@ -280,7 +280,7 @@ async def test_provider_discovery_extension_returns_normalized_catalog(monkeypat
 
 @pytest.mark.asyncio
 async def test_provider_discovery_extension_rejects_invalid_provider_id(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     dummy = DummyOpencodeUpstreamClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -310,7 +310,7 @@ async def test_provider_discovery_extension_rejects_invalid_provider_id(monkeypa
 
 @pytest.mark.asyncio
 async def test_provider_discovery_extension_maps_payload_mismatch(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     dummy = DummyOpencodeUpstreamClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
@@ -341,7 +341,7 @@ async def test_provider_discovery_extension_maps_payload_mismatch(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_non_array_upstream_payload(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     class WeirdPayloadClient(DummyOpencodeUpstreamClient):
         def __init__(self, _settings: Settings) -> None:
@@ -374,7 +374,7 @@ async def test_session_query_extension_rejects_non_array_upstream_payload(monkey
 
 @pytest.mark.asyncio
 async def test_session_query_extension_session_title_is_extracted_or_placeholder(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     class TitlePayloadClient(DummyOpencodeUpstreamClient):
         def __init__(self, _settings: Settings) -> None:
@@ -402,7 +402,7 @@ async def test_session_query_extension_session_title_is_extracted_or_placeholder
 
 @pytest.mark.asyncio
 async def test_session_query_extension_keeps_session_with_empty_title(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     class EmptyTitlePayloadClient(DummyOpencodeUpstreamClient):
         def __init__(self, _settings: Settings) -> None:
@@ -430,7 +430,7 @@ async def test_session_query_extension_keeps_session_with_empty_title(monkeypatc
 
 @pytest.mark.asyncio
 async def test_session_query_extension_message_role_and_id_from_info(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     class InfoRoleClient(DummyOpencodeUpstreamClient):
         def __init__(self, _settings: Settings) -> None:
@@ -469,7 +469,7 @@ async def test_session_query_extension_message_role_and_id_from_info(monkeypatch
 
 @pytest.mark.asyncio
 async def test_session_query_extension_accepts_top_level_list_payload(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     class ListPayloadClient(DummyOpencodeUpstreamClient):
         def __init__(self, _settings: Settings) -> None:
@@ -518,7 +518,7 @@ async def test_session_query_extension_accepts_top_level_list_payload(monkeypatc
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     class AltKeyPayloadClient(DummyOpencodeUpstreamClient):
         def __init__(self, _settings: Settings) -> None:
@@ -560,7 +560,7 @@ async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypa
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_cursor_limit(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     dummy = DummyOpencodeUpstreamClient(
         make_settings(
@@ -602,7 +602,7 @@ async def test_session_query_extension_rejects_cursor_limit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_page_size_pagination(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     dummy = DummyOpencodeUpstreamClient(
         make_settings(
@@ -643,7 +643,7 @@ async def test_session_query_extension_rejects_page_size_pagination(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_session_query_extension_rejects_limit_above_max(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     dummy = DummyOpencodeUpstreamClient(
         make_settings(
@@ -689,7 +689,7 @@ async def test_session_query_extension_rejects_limit_above_max(monkeypatch):
 async def test_session_query_extension_accepts_equivalent_string_and_integer_limit(
     monkeypatch,
 ):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     dummy = DummyOpencodeUpstreamClient(
         make_settings(
@@ -732,7 +732,7 @@ async def test_session_query_extension_accepts_equivalent_string_and_integer_lim
 
 @pytest.mark.asyncio
 async def test_session_query_extension_maps_404_to_session_not_found(monkeypatch):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     class NotFoundOpencodeUpstreamClient(DummyOpencodeUpstreamClient):
         async def list_messages(self, session_id: str, *, params=None):
@@ -767,10 +767,10 @@ async def test_session_query_extension_maps_404_to_session_not_found(monkeypatch
 
 @pytest.mark.asyncio
 async def test_session_query_extension_does_not_log_response_bodies(monkeypatch, caplog):
-    import opencode_a2a_server.server.application as app_module
+    import opencode_a2a.server.application as app_module
 
     monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyOpencodeUpstreamClient)
-    caplog.set_level(logging.DEBUG, logger="opencode_a2a_server.server.application")
+    caplog.set_level(logging.DEBUG, logger="opencode_a2a.server.application")
 
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=True, **_BASE_SETTINGS)

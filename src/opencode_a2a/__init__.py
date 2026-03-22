@@ -7,7 +7,7 @@ UNKNOWN_VERSION = "0+unknown"
 
 def get_package_version() -> str:
     try:
-        return version("opencode-a2a-server")
+        return version("opencode-a2a")
     except PackageNotFoundError:
         return UNKNOWN_VERSION
 

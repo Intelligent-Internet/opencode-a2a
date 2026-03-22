@@ -1,8 +1,8 @@
 import pytest
 from a2a.types import DataPart, FilePart, FileWithBytes, FileWithUri, TextPart
 
-from opencode_a2a_server.execution.executor import OpencodeAgentExecutor
-from opencode_a2a_server.opencode_upstream_client import OpencodeMessage
+from opencode_a2a.execution.executor import OpencodeAgentExecutor
+from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from tests.support.helpers import DummyEventQueue, make_request_context_with_parts, make_settings
 
 

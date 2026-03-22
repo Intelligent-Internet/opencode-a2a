@@ -19,7 +19,7 @@ JSON-RPC extension details; README stays at overview level.
 
 This section keeps only the protocol-relevant variables.
 For the full runtime variable catalog and defaults, see
-[`../src/opencode_a2a_server/config.py`](../src/opencode_a2a_server/config.py).
+[`../src/opencode_a2a/config.py`](../src/opencode_a2a/config.py).
 Deployment supervision is intentionally out of scope for this project; use your
 own process manager, container runtime, or host orchestration.
 
@@ -99,7 +99,7 @@ starting that upstream process:
 If your provider uses environment variables for auth, export them before
 starting `opencode serve`.
 
-Then start `opencode-a2a-server` against that explicit upstream URL:
+Then start `opencode-a2a` against that explicit upstream URL:
 
 ```bash
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \
@@ -108,7 +108,7 @@ A2A_HOST=127.0.0.1 \
 A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
-opencode-a2a-server serve
+opencode-a2a serve
 ```
 
 ## Core Behavior
@@ -443,7 +443,7 @@ Consumer guidance:
 - Treat `metadata.shared.model` as request-scoped preference data rather than
   deployment configuration.
 - Provider auth and service-level model defaults belong to `opencode serve`,
-  not to `opencode-a2a-server`.
+  not to `opencode-a2a`.
 
 Minimal example:
 
@@ -856,7 +856,7 @@ If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscr
 - Idempotency contract: repeated `tasks/cancel` on an already `canceled` task returns the current terminal task state without error.
 - Terminal subscribe contract: calling `subscribe` on a terminal task replays one terminal `Task` snapshot and then closes the stream.
 - These two semantics are also declared as machine-readable `service_behaviors` in the compatibility profile and wire contract extensions.
-- The service emits lightweight metric log records (`logger=opencode_a2a_server.execution.executor`):
+- The service emits lightweight metric log records (`logger=opencode_a2a.execution.executor`):
   - `a2a_stream_requests_total`
   - `a2a_stream_active` (`value=1` when a stream starts, `value=-1` when it closes)
   - `opencode_stream_retries_total`

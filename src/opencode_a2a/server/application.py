@@ -402,7 +402,7 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/health")
     async def health_check():
         return runtime_profile.health_payload(
-            service="opencode-a2a-server",
+            service="opencode-a2a",
             version=settings.a2a_version,
             protocol_version=settings.a2a_protocol_version,
         )

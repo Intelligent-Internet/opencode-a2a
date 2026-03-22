@@ -1,8 +1,8 @@
 # Contributing
 
-Thanks for contributing to `opencode-a2a-server`.
+Thanks for contributing to `opencode-a2a`.
 
-This repository maintains an A2A adapter service around OpenCode. Changes
+This repository maintains an OpenCode A2A runtime. Changes
 should keep runtime behavior, Agent Card declarations, OpenAPI examples, and
 machine-readable extension contracts aligned.
 
@@ -32,13 +32,13 @@ Start OpenCode in one terminal:
 opencode serve --hostname 127.0.0.1 --port 4096
 ```
 
-Then start the A2A server in another terminal:
+Then start the A2A runtime in another terminal:
 
 ```bash
 A2A_BEARER_TOKEN=dev-token \
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
-uv run opencode-a2a-server serve
+uv run opencode-a2a serve
 ```
 
 ## Validation
@@ -63,7 +63,7 @@ contract surfaces, also run:
 
 ```bash
 uv run pytest tests/contracts/test_extension_contract_consistency.py
-uv run mypy src/opencode_a2a_server
+uv run mypy src/opencode_a2a
 ```
 
 ## Change Expectations
@@ -95,7 +95,7 @@ Keep compatibility guidance centralized in [docs/guide.md](docs/guide.md) unless
 new standalone document is clearly necessary.
 
 When changing extension contracts, update
-[`src/opencode_a2a_server/contracts/extensions.py`](src/opencode_a2a_server/contracts/extensions.py)
+[`src/opencode_a2a/contracts/extensions.py`](src/opencode_a2a/contracts/extensions.py)
 first and keep these generated/documented surfaces aligned:
 
 - Agent Card extension params

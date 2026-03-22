@@ -1,6 +1,6 @@
 from starlette.requests import Request
 
-from opencode_a2a_server.server.application import IdentityAwareCallContextBuilder
+from opencode_a2a.server.application import IdentityAwareCallContextBuilder
 
 
 def _request(path: str, *, raw_path: bytes | None = None) -> Request:

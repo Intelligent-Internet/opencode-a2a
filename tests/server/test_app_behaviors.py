@@ -12,10 +12,10 @@ from a2a.types import Task, TaskIdParams, TaskNotCancelableError, TaskState, Tas
 from a2a.utils.errors import ServerError
 from fastapi import Request
 
-import opencode_a2a_server.server.application as app_module
-from opencode_a2a_server.contracts.extensions import build_capability_snapshot
-from opencode_a2a_server.profile.runtime import build_runtime_profile
-from opencode_a2a_server.server.application import (
+import opencode_a2a.server.application as app_module
+from opencode_a2a.contracts.extensions import build_capability_snapshot
+from opencode_a2a.profile.runtime import build_runtime_profile
+from opencode_a2a.server.application import (
     OpencodeRequestHandler,
     _build_agent_card_description,
     _build_chat_examples,
@@ -240,7 +240,7 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch) -> None:
         assert health.status_code == 200
         assert health.json() == {
             "status": "ok",
-            "service": "opencode-a2a-server",
+            "service": "opencode-a2a",
             "version": settings.a2a_version,
             "profile": {
                 "profile_id": "opencode-a2a-single-tenant-coding-v1",
@@ -454,7 +454,7 @@ async def test_on_message_send_covers_error_cleanup_and_internal_error(monkeypat
     )
 
     error_handler = _Handler(_Aggregator(error=RuntimeError("boom")))
-    with caplog.at_level("ERROR", logger="opencode_a2a_server.server.application"):
+    with caplog.at_level("ERROR", logger="opencode_a2a.server.application"):
         with pytest.raises(RuntimeError, match="boom"):
             await error_handler.on_message_send(params)
     assert any("Agent execution failed" in record.message for record in caplog.records)
