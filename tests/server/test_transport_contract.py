@@ -591,3 +591,36 @@ def test_create_app_requires_control_guard_hooks(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="Control methods require guard hooks"):
         app_module.create_app(make_settings(a2a_bearer_token="test-token"))
+
+
+def test_create_app_builds_configured_task_store(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    captured: dict[str, object] = {}
+
+    def _build_task_store(settings):  # noqa: ANN001
+        captured["backend"] = settings.a2a_task_store_backend
+        captured["database_url"] = settings.a2a_task_store_database_url
+        captured["table_name"] = settings.a2a_task_store_table_name
+        captured["create_table"] = settings.a2a_task_store_create_table
+        return MagicMock()
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    monkeypatch.setattr(app_module, "build_task_store", _build_task_store)
+
+    app_module.create_app(
+        make_settings(
+            a2a_bearer_token="test-token",
+            a2a_task_store_backend="database",
+            a2a_task_store_database_url="sqlite+aiosqlite:///./test.db",
+            a2a_task_store_table_name="a2a_tasks",
+            a2a_task_store_create_table=False,
+        )
+    )
+
+    assert captured == {
+        "backend": "database",
+        "database_url": "sqlite+aiosqlite:///./test.db",
+        "table_name": "a2a_tasks",
+        "create_table": False,
+    }

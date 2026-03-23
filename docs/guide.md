@@ -76,6 +76,13 @@ Key variables to understand protocol behavior:
 - `A2A_CLIENT_BEARER_TOKEN`: optional bearer token attached to outbound peer
   calls made by the embedded A2A client and `a2a_call` tool path.
 - `A2A_CLIENT_SUPPORTED_TRANSPORTS`: ordered outbound transport preference list.
+- `A2A_TASK_STORE_BACKEND`: task store backend. Supported values: `memory`,
+  `database`. Default: `memory`.
+- `A2A_TASK_STORE_DATABASE_URL`: database URL used when
+  `A2A_TASK_STORE_BACKEND=database`. For local persistence, prefer
+  `sqlite+aiosqlite:///./opencode-a2a.db`.
+- `A2A_TASK_STORE_TABLE_NAME` / `A2A_TASK_STORE_CREATE_TABLE`: database task
+  store table name and whether to auto-create it on startup.
 - Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
 - The same outbound client flags are also honored by the server-side embedded
   A2A client used for peer calls and `a2a_call` tool execution:
@@ -156,6 +163,21 @@ A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a
 ```
+
+To persist A2A task records across restarts, switch the task store backend to
+SQLite:
+
+```bash
+OPENCODE_BASE_URL=http://127.0.0.1:4096 \
+A2A_BEARER_TOKEN=dev-token \
+A2A_TASK_STORE_BACKEND=database \
+A2A_TASK_STORE_DATABASE_URL=sqlite+aiosqlite:///./opencode-a2a.db \
+opencode-a2a
+```
+
+At the moment, this database-backed store persists task records only.
+Session binding state and interrupt request bindings remain in-process runtime
+state and are not yet persisted.
 
 ## Troubleshooting Provider Auth State
 

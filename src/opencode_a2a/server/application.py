@@ -18,7 +18,6 @@ from a2a.server.request_handlers.default_request_handler import (
     TERMINAL_TASK_STATES,
     DefaultRequestHandler,
 )
-from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
     Task,
     TaskIdParams,
@@ -79,6 +78,7 @@ from .request_parsing import (
     _request_body_too_large_response,
     _RequestBodyTooLargeError,
 )
+from .task_store import build_task_store, close_task_store, initialize_task_store
 
 logger = logging.getLogger(__name__)
 
@@ -499,7 +499,7 @@ def create_app(settings: Settings) -> FastAPI:
         session_cache_maxsize=settings.a2a_session_cache_maxsize,
         a2a_client_manager=client_manager,
     )
-    task_store = InMemoryTaskStore()
+    task_store = build_task_store(settings)
     handler = OpencodeRequestHandler(
         agent_executor=executor,
         task_store=task_store,
@@ -549,7 +549,9 @@ def create_app(settings: Settings) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        await initialize_task_store(task_store)
         yield
+        await close_task_store(task_store)
         await client_manager.close_all()
         await upstream_client.close()
 

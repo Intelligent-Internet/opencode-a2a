@@ -35,6 +35,7 @@ WriteAccessScope = Literal[
     "custom",
 ]
 OutsideWorkspaceAccess = Literal["unknown", "allowed", "disallowed", "custom"]
+TaskStoreBackend = Literal["memory", "database"]
 
 
 def _parse_declared_list(value: Any) -> tuple[str, ...]:
@@ -176,7 +177,30 @@ class Settings(BaseSettings):
         alias="A2A_CLIENT_SUPPORTED_TRANSPORTS",
     )
 
+    # Task store settings
+    a2a_task_store_backend: TaskStoreBackend = Field(
+        default="memory",
+        alias="A2A_TASK_STORE_BACKEND",
+    )
+    a2a_task_store_database_url: str | None = Field(
+        default=None,
+        alias="A2A_TASK_STORE_DATABASE_URL",
+    )
+    a2a_task_store_table_name: str = Field(
+        default="tasks",
+        min_length=1,
+        alias="A2A_TASK_STORE_TABLE_NAME",
+    )
+    a2a_task_store_create_table: bool = Field(
+        default=True,
+        alias="A2A_TASK_STORE_CREATE_TABLE",
+    )
+
     @model_validator(mode="after")
     def _validate_sandbox_policy(self) -> Settings:
         SandboxPolicy.from_settings(self).validate_configuration()
+        if self.a2a_task_store_backend == "database" and not self.a2a_task_store_database_url:
+            raise ValueError(
+                "A2A_TASK_STORE_DATABASE_URL is required when A2A_TASK_STORE_BACKEND=database"
+            )
         return self
