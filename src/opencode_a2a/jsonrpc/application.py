@@ -9,9 +9,7 @@ from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPIApplication
 from a2a.types import (
     A2AError,
     InternalError,
-    InvalidParamsError,
     InvalidRequestError,
-    JSONRPCError,
     JSONRPCRequest,
 )
 from fastapi.responses import JSONResponse
@@ -24,6 +22,16 @@ from ..contracts.extensions import (
     SESSION_QUERY_ERROR_BUSINESS_CODES,
 )
 from ..opencode_upstream_client import OpencodeUpstreamClient, UpstreamContractError
+from .error_mapping import (
+    interrupt_not_found_error,
+    invalid_params_error,
+    method_not_supported_error,
+    session_forbidden_error,
+    session_not_found_error,
+    upstream_http_error,
+    upstream_payload_error,
+    upstream_unreachable_error,
+)
 from .methods import (
     SESSION_CONTEXT_PREFIX,
     _apply_session_query_limit,
@@ -139,11 +147,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
     ) -> Response:
         return self._generate_error_response(
             request_id,
-            JSONRPCError(
-                code=ERR_SESSION_FORBIDDEN,
-                message="Session forbidden",
-                data={"type": "SESSION_FORBIDDEN", "session_id": session_id},
-            ),
+            session_forbidden_error(ERR_SESSION_FORBIDDEN, session_id=session_id),
         )
 
     def _extract_directory_from_metadata(
@@ -156,11 +160,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         if metadata is not None and not isinstance(metadata, dict):
             return None, self._generate_error_response(
                 request_id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message="metadata must be an object",
-                        data={"type": "INVALID_FIELD", "field": "metadata"},
-                    )
+                invalid_params_error(
+                    "metadata must be an object",
+                    data={"type": "INVALID_FIELD", "field": "metadata"},
                 ),
             )
 
@@ -171,22 +173,18 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 prefixed_fields = [f"metadata.{field}" for field in unknown_metadata_fields]
                 return None, self._generate_error_response(
                     request_id,
-                    A2AError(
-                        root=InvalidParamsError(
-                            message=f"Unsupported metadata fields: {', '.join(prefixed_fields)}",
-                            data={"type": "INVALID_FIELD", "fields": prefixed_fields},
-                        )
+                    invalid_params_error(
+                        f"Unsupported metadata fields: {', '.join(prefixed_fields)}",
+                        data={"type": "INVALID_FIELD", "fields": prefixed_fields},
                     ),
                 )
             raw_opencode_metadata = metadata.get("opencode")
             if raw_opencode_metadata is not None and not isinstance(raw_opencode_metadata, dict):
                 return None, self._generate_error_response(
                     request_id,
-                    A2AError(
-                        root=InvalidParamsError(
-                            message="metadata.opencode must be an object",
-                            data={"type": "INVALID_FIELD", "field": "metadata.opencode"},
-                        )
+                    invalid_params_error(
+                        "metadata.opencode must be an object",
+                        data={"type": "INVALID_FIELD", "field": "metadata.opencode"},
                     ),
                 )
             if isinstance(raw_opencode_metadata, dict):
@@ -195,11 +193,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             if raw_shared_metadata is not None and not isinstance(raw_shared_metadata, dict):
                 return None, self._generate_error_response(
                     request_id,
-                    A2AError(
-                        root=InvalidParamsError(
-                            message="metadata.shared must be an object",
-                            data={"type": "INVALID_FIELD", "field": "metadata.shared"},
-                        )
+                    invalid_params_error(
+                        "metadata.shared must be an object",
+                        data={"type": "INVALID_FIELD", "field": "metadata.shared"},
                     ),
                 )
 
@@ -209,11 +205,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         if directory is not None and not isinstance(directory, str):
             return None, self._generate_error_response(
                 request_id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message="metadata.opencode.directory must be a string",
-                        data={"type": "INVALID_FIELD", "field": "metadata.opencode.directory"},
-                    )
+                invalid_params_error(
+                    "metadata.opencode.directory must be a string",
+                    data={"type": "INVALID_FIELD", "field": "metadata.opencode.directory"},
                 ),
             )
 
@@ -281,15 +275,10 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
 
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_METHOD_NOT_SUPPORTED,
-                    message=f"Unsupported method: {base_request.method}",
-                    data={
-                        "type": "METHOD_NOT_SUPPORTED",
-                        "method": base_request.method,
-                        "supported_methods": self._supported_methods,
-                        "protocol_version": self._protocol_version,
-                    },
+                method_not_supported_error(
+                    method=base_request.method,
+                    supported_methods=self._supported_methods,
+                    protocol_version=self._protocol_version,
                 ),
             )
 
@@ -297,7 +286,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         if not isinstance(params, dict):
             return self._generate_error_response(
                 base_request.id,
-                A2AError(root=InvalidParamsError(message="params must be an object")),
+                invalid_params_error("params must be an object"),
             )
 
         if base_request.method in session_query_methods:
@@ -326,12 +315,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         except JsonRpcParamsValidationError as exc:
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message=str(exc),
-                        data=exc.data,
-                    )
-                ),
+                invalid_params_error(str(exc), data=exc.data),
             )
 
         limit = int(query["limit"])
@@ -344,33 +328,22 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         except httpx.HTTPStatusError as exc:
             upstream_status = exc.response.status_code
             if upstream_status == 404 and base_request.method == self._method_get_session_messages:
+                assert session_id is not None
                 return self._generate_error_response(
                     base_request.id,
-                    JSONRPCError(
-                        code=ERR_SESSION_NOT_FOUND,
-                        message="Session not found",
-                        data={"type": "SESSION_NOT_FOUND", "session_id": session_id},
-                    ),
+                    session_not_found_error(ERR_SESSION_NOT_FOUND, session_id=session_id),
                 )
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_UPSTREAM_HTTP_ERROR,
-                    message="Upstream OpenCode error",
-                    data={
-                        "type": "UPSTREAM_HTTP_ERROR",
-                        "upstream_status": upstream_status,
-                    },
+                upstream_http_error(
+                    ERR_UPSTREAM_HTTP_ERROR,
+                    upstream_status=upstream_status,
                 ),
             )
         except httpx.HTTPError:
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_UPSTREAM_UNREACHABLE,
-                    message="Upstream OpenCode unreachable",
-                    data={"type": "UPSTREAM_UNREACHABLE"},
-                ),
+                upstream_unreachable_error(ERR_UPSTREAM_UNREACHABLE),
             )
         except Exception as exc:
             logger.exception("OpenCode session query JSON-RPC method failed")
@@ -388,10 +361,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             logger.warning("Upstream OpenCode payload mismatch: %s", exc)
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_UPSTREAM_PAYLOAD_ERROR,
-                    message="Upstream OpenCode payload mismatch",
-                    data={"type": "UPSTREAM_PAYLOAD_ERROR", "detail": str(exc)},
+                upstream_payload_error(
+                    ERR_UPSTREAM_PAYLOAD_ERROR,
+                    detail=str(exc),
                 ),
             )
 
@@ -441,11 +413,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             prefixed_fields = [f"params.{field}" for field in unknown_fields]
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message=f"Unsupported params fields: {', '.join(prefixed_fields)}",
-                        data={"type": "INVALID_FIELD", "fields": prefixed_fields},
-                    )
+                invalid_params_error(
+                    f"Unsupported params fields: {', '.join(prefixed_fields)}",
+                    data={"type": "INVALID_FIELD", "fields": prefixed_fields},
                 ),
             )
 
@@ -456,11 +426,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 if not isinstance(raw_provider_id, str) or not raw_provider_id.strip():
                     return self._generate_error_response(
                         base_request.id,
-                        A2AError(
-                            root=InvalidParamsError(
-                                message="provider_id must be a non-empty string",
-                                data={"type": "INVALID_FIELD", "field": "provider_id"},
-                            )
+                        invalid_params_error(
+                            "provider_id must be a non-empty string",
+                            data={"type": "INVALID_FIELD", "field": "provider_id"},
                         ),
                     )
                 provider_id = raw_provider_id.strip()
@@ -477,11 +445,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         except ValueError as exc:
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message=str(exc),
-                        data={"type": "INVALID_FIELD", "field": "metadata.opencode.directory"},
-                    )
+                invalid_params_error(
+                    str(exc),
+                    data={"type": "INVALID_FIELD", "field": "metadata.opencode.directory"},
                 ),
             )
 
@@ -491,23 +457,18 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             upstream_status = exc.response.status_code
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_DISCOVERY_UPSTREAM_HTTP_ERROR,
-                    message="Upstream OpenCode error",
-                    data={
-                        "type": "UPSTREAM_HTTP_ERROR",
-                        "method": base_request.method,
-                        "upstream_status": upstream_status,
-                    },
+                upstream_http_error(
+                    ERR_DISCOVERY_UPSTREAM_HTTP_ERROR,
+                    upstream_status=upstream_status,
+                    method=base_request.method,
                 ),
             )
         except httpx.HTTPError:
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_DISCOVERY_UPSTREAM_UNREACHABLE,
-                    message="Upstream OpenCode unreachable",
-                    data={"type": "UPSTREAM_UNREACHABLE", "method": base_request.method},
+                upstream_unreachable_error(
+                    ERR_DISCOVERY_UPSTREAM_UNREACHABLE,
+                    method=base_request.method,
                 ),
             )
         except Exception as exc:
@@ -536,14 +497,10 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             logger.warning("Upstream OpenCode provider payload mismatch: %s", exc)
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_DISCOVERY_UPSTREAM_PAYLOAD_ERROR,
-                    message="Upstream OpenCode payload mismatch",
-                    data={
-                        "type": "UPSTREAM_PAYLOAD_ERROR",
-                        "method": base_request.method,
-                        "detail": str(exc),
-                    },
+                upstream_payload_error(
+                    ERR_DISCOVERY_UPSTREAM_PAYLOAD_ERROR,
+                    detail=str(exc),
+                    method=base_request.method,
                 ),
             )
 
@@ -570,11 +527,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         if unknown_fields:
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message=f"Unsupported fields: {', '.join(unknown_fields)}",
-                        data={"type": "INVALID_FIELD", "fields": unknown_fields},
-                    )
+                invalid_params_error(
+                    f"Unsupported fields: {', '.join(unknown_fields)}",
+                    data={"type": "INVALID_FIELD", "fields": unknown_fields},
                 ),
             )
 
@@ -582,11 +537,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         if not isinstance(session_id, str) or not session_id.strip():
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message="Missing required params.session_id",
-                        data={"type": "MISSING_FIELD", "field": "session_id"},
-                    )
+                invalid_params_error(
+                    "Missing required params.session_id",
+                    data={"type": "MISSING_FIELD", "field": "session_id"},
                 ),
             )
         session_id = session_id.strip()
@@ -595,21 +548,17 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         if raw_request is None:
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message="Missing required params.request",
-                        data={"type": "MISSING_FIELD", "field": "request"},
-                    )
+                invalid_params_error(
+                    "Missing required params.request",
+                    data={"type": "MISSING_FIELD", "field": "request"},
                 ),
             )
         if not isinstance(raw_request, dict):
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message="params.request must be an object",
-                        data={"type": "INVALID_FIELD", "field": "request"},
-                    )
+                invalid_params_error(
+                    "params.request must be an object",
+                    data={"type": "INVALID_FIELD", "field": "request"},
                 ),
             )
 
@@ -647,12 +596,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         except _PromptAsyncValidationError as exc:
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message=str(exc),
-                        data={"type": "INVALID_FIELD", "field": exc.field},
-                    )
-                ),
+                invalid_params_error(str(exc), data={"type": "INVALID_FIELD", "field": exc.field}),
             )
 
         directory, metadata_error = self._extract_directory_from_metadata(
@@ -667,11 +611,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         except ValueError as exc:
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message=str(exc),
-                        data={"type": "INVALID_FIELD", "field": "metadata.opencode.directory"},
-                    )
+                invalid_params_error(
+                    str(exc),
+                    data={"type": "INVALID_FIELD", "field": "metadata.opencode.directory"},
                 ),
             )
 
@@ -739,53 +681,37 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 _log_shell_audit("upstream_404")
                 return self._generate_error_response(
                     base_request.id,
-                    JSONRPCError(
-                        code=ERR_SESSION_NOT_FOUND,
-                        message="Session not found",
-                        data={"type": "SESSION_NOT_FOUND", "session_id": session_id},
-                    ),
+                    session_not_found_error(ERR_SESSION_NOT_FOUND, session_id=session_id),
                 )
             _log_shell_audit("upstream_http_error")
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_UPSTREAM_HTTP_ERROR,
-                    message="Upstream OpenCode error",
-                    data={
-                        "type": "UPSTREAM_HTTP_ERROR",
-                        "method": base_request.method,
-                        "upstream_status": upstream_status,
-                        "session_id": session_id,
-                    },
+                upstream_http_error(
+                    ERR_UPSTREAM_HTTP_ERROR,
+                    upstream_status=upstream_status,
+                    method=base_request.method,
+                    session_id=session_id,
                 ),
             )
         except httpx.HTTPError:
             _log_shell_audit("upstream_unreachable")
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_UPSTREAM_UNREACHABLE,
-                    message="Upstream OpenCode unreachable",
-                    data={
-                        "type": "UPSTREAM_UNREACHABLE",
-                        "method": base_request.method,
-                        "session_id": session_id,
-                    },
+                upstream_unreachable_error(
+                    ERR_UPSTREAM_UNREACHABLE,
+                    method=base_request.method,
+                    session_id=session_id,
                 ),
             )
         except UpstreamContractError as exc:
             _log_shell_audit("upstream_payload_error")
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_UPSTREAM_PAYLOAD_ERROR,
-                    message="Upstream OpenCode payload mismatch",
-                    data={
-                        "type": "UPSTREAM_PAYLOAD_ERROR",
-                        "method": base_request.method,
-                        "detail": str(exc),
-                        "session_id": session_id,
-                    },
+                upstream_payload_error(
+                    ERR_UPSTREAM_PAYLOAD_ERROR,
+                    detail=str(exc),
+                    method=base_request.method,
+                    session_id=session_id,
                 ),
             )
         except PermissionError:
@@ -832,11 +758,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         if not isinstance(request_id, str) or not request_id.strip():
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message="Missing required params.request_id",
-                        data={"type": "MISSING_FIELD", "field": "request_id"},
-                    )
+                invalid_params_error(
+                    "Missing required params.request_id",
+                    data={"type": "MISSING_FIELD", "field": "request_id"},
                 ),
             )
         request_id = request_id.strip()
@@ -854,39 +778,28 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         if callable(resolve_request):
             status, binding = resolve_request(request_id)
             if status != "active" or binding is None:
-                error_type = (
-                    "INTERRUPT_REQUEST_EXPIRED"
-                    if status == "expired"
-                    else "INTERRUPT_REQUEST_NOT_FOUND"
-                )
                 return self._generate_error_response(
                     base_request.id,
-                    JSONRPCError(
-                        code=ERR_INTERRUPT_NOT_FOUND,
-                        message=(
-                            "Interrupt request expired"
-                            if status == "expired"
-                            else "Interrupt request not found"
-                        ),
-                        data={"type": error_type, "request_id": request_id},
+                    interrupt_not_found_error(
+                        ERR_INTERRUPT_NOT_FOUND,
+                        request_id=request_id,
+                        expired=status == "expired",
                     ),
                 )
             if binding.interrupt_type != expected_interrupt_type:
                 return self._generate_error_response(
                     base_request.id,
-                    A2AError(
-                        root=InvalidParamsError(
-                            message=(
-                                "Interrupt type mismatch: "
-                                f"expected {expected_interrupt_type}, got {binding.interrupt_type}"
-                            ),
-                            data={
-                                "type": "INTERRUPT_TYPE_MISMATCH",
-                                "request_id": request_id,
-                                "expected": expected_interrupt_type,
-                                "actual": binding.interrupt_type,
-                            },
-                        )
+                    invalid_params_error(
+                        (
+                            "Interrupt type mismatch: "
+                            f"expected {expected_interrupt_type}, got {binding.interrupt_type}"
+                        ),
+                        data={
+                            "type": "INTERRUPT_TYPE_MISMATCH",
+                            "request_id": request_id,
+                            "expected": expected_interrupt_type,
+                            "actual": binding.interrupt_type,
+                        },
                     ),
                 )
             if (
@@ -897,13 +810,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             ):
                 return self._generate_error_response(
                     base_request.id,
-                    JSONRPCError(
-                        code=ERR_INTERRUPT_NOT_FOUND,
-                        message="Interrupt request not found",
-                        data={
-                            "type": "INTERRUPT_REQUEST_NOT_FOUND",
-                            "request_id": request_id,
-                        },
+                    interrupt_not_found_error(
+                        ERR_INTERRUPT_NOT_FOUND,
+                        request_id=request_id,
                     ),
                 )
         else:
@@ -912,13 +821,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 if not resolve_session(request_id):
                     return self._generate_error_response(
                         base_request.id,
-                        JSONRPCError(
-                            code=ERR_INTERRUPT_NOT_FOUND,
-                            message="Interrupt request not found",
-                            data={
-                                "type": "INTERRUPT_REQUEST_NOT_FOUND",
-                                "request_id": request_id,
-                            },
+                        interrupt_not_found_error(
+                            ERR_INTERRUPT_NOT_FOUND,
+                            request_id=request_id,
                         ),
                     )
         if base_request.method == self._method_reply_permission:
@@ -931,11 +836,9 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         if unknown_fields:
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message=f"Unsupported fields: {', '.join(unknown_fields)}",
-                        data={"type": "INVALID_FIELD", "fields": unknown_fields},
-                    )
+                invalid_params_error(
+                    f"Unsupported fields: {', '.join(unknown_fields)}",
+                    data={"type": "INVALID_FIELD", "fields": unknown_fields},
                 ),
             )
 
@@ -970,12 +873,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         except ValueError as exc:
             return self._generate_error_response(
                 base_request.id,
-                A2AError(
-                    root=InvalidParamsError(
-                        message=str(exc),
-                        data={"type": "INVALID_FIELD"},
-                    )
-                ),
+                invalid_params_error(str(exc), data={"type": "INVALID_FIELD"}),
             )
         except httpx.HTTPStatusError as exc:
             upstream_status = exc.response.status_code
@@ -985,34 +883,25 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                     discard_request(request_id)
                 return self._generate_error_response(
                     base_request.id,
-                    JSONRPCError(
-                        code=ERR_INTERRUPT_NOT_FOUND,
-                        message="Interrupt request not found",
-                        data={
-                            "type": "INTERRUPT_REQUEST_NOT_FOUND",
-                            "request_id": request_id,
-                        },
+                    interrupt_not_found_error(
+                        ERR_INTERRUPT_NOT_FOUND,
+                        request_id=request_id,
                     ),
                 )
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_UPSTREAM_HTTP_ERROR,
-                    message="Upstream OpenCode error",
-                    data={
-                        "type": "UPSTREAM_HTTP_ERROR",
-                        "upstream_status": upstream_status,
-                        "request_id": request_id,
-                    },
+                upstream_http_error(
+                    ERR_UPSTREAM_HTTP_ERROR,
+                    upstream_status=upstream_status,
+                    request_id=request_id,
                 ),
             )
         except httpx.HTTPError:
             return self._generate_error_response(
                 base_request.id,
-                JSONRPCError(
-                    code=ERR_UPSTREAM_UNREACHABLE,
-                    message="Upstream OpenCode unreachable",
-                    data={"type": "UPSTREAM_UNREACHABLE", "request_id": request_id},
+                upstream_unreachable_error(
+                    ERR_UPSTREAM_UNREACHABLE,
+                    request_id=request_id,
                 ),
             )
         except Exception as exc:
