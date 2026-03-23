@@ -252,6 +252,32 @@ async def test_send_message_preserves_explicit_authorization_metadata(
 
 
 @pytest.mark.asyncio
+async def test_send_message_prefers_explicit_authorization_without_default_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = A2AClient("http://agent.example.com")
+    fake_client = _FakeClient(events=["ok"])
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+    monkeypatch.setattr(
+        A2AClient,
+        "_build_card_resolver",
+        AsyncMock(return_value=_FakeCardResolver("card")),
+    )
+
+    result = [
+        event
+        async for event in client.send_message(
+            "hello", metadata={"authorization": "Bearer explicit-token"}
+        )
+    ]
+
+    assert result == ["ok"]
+    _, _, kwargs = fake_client.send_message_inputs[0]
+    assert kwargs["request_metadata"] is None
+    assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
+
+
+@pytest.mark.asyncio
 async def test_send_message_maps_jsonrpc_not_supported(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

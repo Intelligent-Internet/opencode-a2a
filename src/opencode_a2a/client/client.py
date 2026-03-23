@@ -350,8 +350,6 @@ class A2AClient:
 
     def _build_interceptors(self) -> list[ClientCallInterceptor] | None:
         default_headers = self._build_default_headers()
-        if not default_headers:
-            return None
         return [_HeaderInterceptor(default_headers)]
 
     def _build_resolver_http_kwargs(self) -> dict[str, Any]:
