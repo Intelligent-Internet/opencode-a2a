@@ -705,12 +705,12 @@ class OpencodeAgentExecutor(AgentExecutor):
         try:
             client = await mgr.get_client(agent_url)
             event = None
-            result_text = None
+            result_text = ""
             async for current_event in client.send_message(message):
                 event = current_event
                 extracted = client.extract_text(current_event)
                 if extracted:
-                    result_text = extracted
+                    result_text = self._merge_streamed_tool_output(result_text, extracted)
 
             from a2a.types import Task
 
@@ -753,6 +753,23 @@ class OpencodeAgentExecutor(AgentExecutor):
         except Exception as exc:
             logger.exception("A2A tool call failed")
             return {"call_id": call_id, "tool": tool_name, "error": str(exc)}
+
+    @staticmethod
+    def _merge_streamed_tool_output(current: str, incoming: str) -> str:
+        if not current:
+            return incoming
+        if incoming == current or incoming in current:
+            return current
+        if incoming.startswith(current):
+            return incoming
+        if current.startswith(incoming):
+            return current
+        separator = (
+            ""
+            if current.endswith(("\n", " ", "\t")) or incoming.startswith(("\n", " ", "\t"))
+            else "\n"
+        )
+        return f"{current}{separator}{incoming}"
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id

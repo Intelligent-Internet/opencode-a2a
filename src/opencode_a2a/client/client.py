@@ -16,6 +16,7 @@ from a2a.client.errors import (
     A2AClientJSONError,
     A2AClientJSONRPCError,
 )
+from a2a.client.middleware import ClientCallContext, ClientCallInterceptor
 from a2a.types import (
     Message,
     Part,
@@ -42,6 +43,34 @@ from .errors import (
     A2AUnsupportedOperationError,
 )
 from .types import A2AClientEvent
+
+
+class _HeaderInterceptor(ClientCallInterceptor):
+    def __init__(self, default_headers: Mapping[str, str] | None = None) -> None:
+        self._default_headers = {
+            key: value for key, value in dict(default_headers or {}).items() if value is not None
+        }
+
+    async def intercept(
+        self,
+        method_name: str,
+        request_payload: dict[str, Any],
+        http_kwargs: dict[str, Any],
+        agent_card: object | None,
+        context: ClientCallContext | None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        del method_name, agent_card
+        headers = dict(http_kwargs.get("headers") or {})
+        headers.update(self._default_headers)
+        if context is not None:
+            dynamic_headers = context.state.get("headers")
+            if isinstance(dynamic_headers, Mapping):
+                for key, value in dynamic_headers.items():
+                    if isinstance(key, str) and value is not None:
+                        headers[key] = str(value)
+        if headers:
+            http_kwargs["headers"] = headers
+        return request_payload, http_kwargs
 
 
 class A2AClient:
@@ -77,9 +106,7 @@ class A2AClient:
 
         resolver = await self._build_card_resolver()
         try:
-            card = await resolver.get_agent_card(
-                http_kwargs={"timeout": self._settings.card_fetch_timeout}
-            )
+            card = await resolver.get_agent_card(http_kwargs=self._build_resolver_http_kwargs())
         except A2AClientHTTPError as exc:
             raise A2AAgentUnavailableError(str(exc)) from exc
         except A2AClientJSONError as exc:
@@ -102,7 +129,7 @@ class A2AClient:
     ) -> AsyncIterator[A2AClientEvent]:
         """Send one user message and stream protocol events."""
         client = await self._ensure_client()
-        request_metadata = self._build_request_metadata(metadata)
+        request_metadata, extra_headers = self._split_request_metadata(metadata)
         request = self._build_user_message(
             text=text,
             context_id=context_id,
@@ -112,6 +139,7 @@ class A2AClient:
         try:
             async for event in client.send_message(
                 request,
+                context=self._build_call_context(extra_headers),
                 request_metadata=request_metadata,
                 extensions=extensions,
             ):
@@ -153,13 +181,15 @@ class A2AClient:
     ) -> Task:
         """Fetch one task by id."""
         client = await self._ensure_client()
+        request_metadata, extra_headers = self._split_request_metadata(metadata)
         try:
             return await client.get_task(
                 TaskQueryParams(
                     id=task_id,
                     history_length=history_length,
-                    metadata=self._build_request_metadata(metadata) or {},
-                )
+                    metadata=request_metadata or {},
+                ),
+                context=self._build_call_context(extra_headers),
             )
         except A2AClientHTTPError as exc:
             raise self._map_http_error("tasks/get", exc) from exc
@@ -174,9 +204,11 @@ class A2AClient:
     ) -> Task:
         """Cancel one task by id."""
         client = await self._ensure_client()
+        request_metadata, extra_headers = self._split_request_metadata(metadata)
         try:
             return await client.cancel_task(
-                TaskIdParams(id=task_id, metadata=self._build_request_metadata(metadata) or {})
+                TaskIdParams(id=task_id, metadata=request_metadata or {}),
+                context=self._build_call_context(extra_headers),
             )
         except A2AClientHTTPError as exc:
             raise self._map_http_error("tasks/cancel", exc) from exc
@@ -191,9 +223,11 @@ class A2AClient:
     ) -> AsyncIterator[tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None]]:
         """Resubscribe to task updates."""
         client = await self._ensure_client()
+        request_metadata, extra_headers = self._split_request_metadata(metadata)
         try:
             async for event in client.resubscribe(
-                TaskIdParams(id=task_id, metadata=self._build_request_metadata(metadata) or {})
+                TaskIdParams(id=task_id, metadata=request_metadata or {}),
+                context=self._build_call_context(extra_headers),
             ):
                 yield event
         except A2AClientHTTPError as exc:
@@ -218,7 +252,7 @@ class A2AClient:
         )
         try:
             factory = ClientFactory(config, consumers=None)
-            client = factory.create(card)
+            client = factory.create(card, interceptors=self._build_interceptors())
         except ValueError as exc:
             raise A2AUnsupportedBindingError(
                 f"No supported transport found for {self.agent_url}"
@@ -287,18 +321,45 @@ class A2AClient:
             metadata=None,
         )
 
-    def _build_request_metadata(
+    def _split_request_metadata(
         self,
         metadata: Mapping[str, Any] | None,
-    ) -> dict[str, Any] | None:
-        request_metadata = dict(metadata or {})
-        bearer_token = self._settings.bearer_token
-        has_authorization = any(
-            isinstance(key, str) and key.lower() == "authorization" for key in request_metadata
-        )
-        if bearer_token and not has_authorization:
-            request_metadata["authorization"] = f"Bearer {bearer_token}"
-        return request_metadata or None
+    ) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
+        request_metadata: dict[str, Any] = {}
+        extra_headers: dict[str, str] = {}
+        for key, value in dict(metadata or {}).items():
+            if isinstance(key, str) and key.lower() == "authorization":
+                if value is not None:
+                    extra_headers["Authorization"] = str(value)
+                continue
+            request_metadata[key] = value
+        return request_metadata or None, extra_headers or None
+
+    def _build_call_context(
+        self,
+        extra_headers: Mapping[str, str] | None,
+    ) -> ClientCallContext | None:
+        if not extra_headers:
+            return None
+        return ClientCallContext(state={"headers": dict(extra_headers)})
+
+    def _build_default_headers(self) -> dict[str, str]:
+        if not self._settings.bearer_token:
+            return {}
+        return {"Authorization": f"Bearer {self._settings.bearer_token}"}
+
+    def _build_interceptors(self) -> list[ClientCallInterceptor] | None:
+        default_headers = self._build_default_headers()
+        if not default_headers:
+            return None
+        return [_HeaderInterceptor(default_headers)]
+
+    def _build_resolver_http_kwargs(self) -> dict[str, Any]:
+        http_kwargs: dict[str, Any] = {"timeout": self._settings.card_fetch_timeout}
+        default_headers = self._build_default_headers()
+        if default_headers:
+            http_kwargs["headers"] = default_headers
+        return http_kwargs
 
     @classmethod
     def extract_text(cls, payload: Any) -> str | None:

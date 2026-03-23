@@ -139,6 +139,7 @@ async def test_build_client_uses_settings_and_transport_config(
             default_timeout=10,
             use_client_preference=True,
             card_fetch_timeout=3,
+            bearer_token="peer-token",
             supported_transports=("HTTP+JSON",),
         ),
         httpx_client=fake_http_client,
@@ -152,7 +153,16 @@ async def test_build_client_uses_settings_and_transport_config(
             factory_calls["config"] = config
             factory_calls["consumers"] = consumers
 
-        def create(self, _card: object) -> _FakeClient:
+        def create(
+            self,
+            _card: object,
+            consumers: list[object] | None = None,
+            interceptors: list[object] | None = None,
+            extensions: list[str] | None = None,
+        ) -> _FakeClient:
+            factory_calls["create_consumers"] = consumers
+            factory_calls["interceptors"] = interceptors
+            factory_calls["extensions"] = extensions
             return fake_sdk_client
 
     async def _build_card_resolver(self: A2AClient) -> _FakeCardResolver:
@@ -168,6 +178,8 @@ async def test_build_client_uses_settings_and_transport_config(
     assert config.polling is False
     assert config.use_client_preference is True
     assert config.supported_transports == ["HTTP+JSON"]
+    assert factory_calls["interceptors"] is not None
+    assert len(factory_calls["interceptors"]) == 1
     assert actual is fake_sdk_client
 
 
@@ -205,7 +217,8 @@ async def test_send_message_adds_bearer_token_from_settings(
 
     assert result == ["ok"]
     _, _, kwargs = fake_client.send_message_inputs[0]
-    assert kwargs["request_metadata"]["authorization"] == "Bearer peer-token"
+    assert kwargs["request_metadata"] is None
+    assert kwargs["context"] is None
 
 
 @pytest.mark.asyncio
@@ -228,13 +241,14 @@ async def test_send_message_preserves_explicit_authorization_metadata(
         event
         async for event in client.send_message(
             "hello",
-            metadata={"authorization": "Bearer explicit-token"},
+            metadata={"authorization": "Bearer explicit-token", "trace_id": "trace-1"},
         )
     ]
 
     assert result == ["ok"]
     _, _, kwargs = fake_client.send_message_inputs[0]
-    assert kwargs["request_metadata"]["authorization"] == "Bearer explicit-token"
+    assert kwargs["request_metadata"] == {"trace_id": "trace-1"}
+    assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
 
 
 @pytest.mark.asyncio
@@ -385,7 +399,53 @@ async def test_cancel_task_adds_bearer_token_from_settings(
     await client.cancel_task("task-id")
 
     params, _ = fake_client.cancel_inputs[0]
-    assert params.metadata["authorization"] == "Bearer peer-token"
+    assert params.metadata == {}
+
+
+@pytest.mark.asyncio
+async def test_get_task_uses_authorization_header_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = A2AClient("http://agent.example.com")
+    fake_client = _FakeClient()
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+    monkeypatch.setattr(
+        A2AClient,
+        "_build_card_resolver",
+        AsyncMock(return_value=_FakeCardResolver("card")),
+    )
+
+    await client.get_task(
+        "task-id",
+        metadata={"authorization": "Bearer explicit-token", "trace_id": "trace-1"},
+    )
+
+    params, kwargs = fake_client.task_inputs[0]
+    assert params.metadata == {"trace_id": "trace-1"}
+    assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_uses_authorization_header_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = A2AClient("http://agent.example.com")
+    fake_client = _FakeClient()
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+    monkeypatch.setattr(
+        A2AClient,
+        "_build_card_resolver",
+        AsyncMock(return_value=_FakeCardResolver("card")),
+    )
+
+    await client.cancel_task(
+        "task-id",
+        metadata={"authorization": "Bearer explicit-token", "trace_id": "trace-1"},
+    )
+
+    params, kwargs = fake_client.cancel_inputs[0]
+    assert params.metadata == {"trace_id": "trace-1"}
+    assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
 
 
 def test_map_jsonrpc_error_variants() -> None:
@@ -443,6 +503,46 @@ async def test_build_card_resolver_requires_absolute_url() -> None:
         await client._build_card_resolver()
 
 
+def test_split_request_metadata_and_resolver_headers() -> None:
+    client = A2AClient(
+        "http://agent.example.com",
+        settings=A2AClientSettings(bearer_token="peer-token", card_fetch_timeout=7),
+    )
+
+    request_metadata, extra_headers = client._split_request_metadata(
+        {"authorization": "Bearer explicit-token", "trace_id": "trace-1"}
+    )
+
+    assert request_metadata == {"trace_id": "trace-1"}
+    assert extra_headers == {"Authorization": "Bearer explicit-token"}
+    assert client._build_default_headers() == {"Authorization": "Bearer peer-token"}
+    assert client._build_resolver_http_kwargs() == {
+        "timeout": 7,
+        "headers": {"Authorization": "Bearer peer-token"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_header_interceptor_merges_static_and_dynamic_headers() -> None:
+    interceptor = client_module._HeaderInterceptor({"Authorization": "Bearer peer-token"})
+    context = client_module.ClientCallContext(state={"headers": {"X-Trace-Id": "trace-1"}})
+
+    request_payload, http_kwargs = await interceptor.intercept(
+        "message/send",
+        {"jsonrpc": "2.0"},
+        {"headers": {"Accept": "application/json"}},
+        agent_card=None,
+        context=context,
+    )
+
+    assert request_payload == {"jsonrpc": "2.0"}
+    assert http_kwargs["headers"] == {
+        "Accept": "application/json",
+        "Authorization": "Bearer peer-token",
+        "X-Trace-Id": "trace-1",
+    }
+
+
 @pytest.mark.asyncio
 async def test_get_task_maps_transport_http_error(
     monkeypatch: pytest.MonkeyPatch,
@@ -472,6 +572,33 @@ async def test_resubscribe_forward_events(monkeypatch: pytest.MonkeyPatch) -> No
     )
     result = [event async for event in client.resubscribe_task("task-id")]
     assert result == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_resubscribe_uses_authorization_header_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = A2AClient("http://agent.example.com")
+    fake_client = _FakeClient(events=[1])
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+    monkeypatch.setattr(
+        A2AClient,
+        "_build_card_resolver",
+        AsyncMock(return_value=_FakeCardResolver("card")),
+    )
+
+    result = [
+        event
+        async for event in client.resubscribe_task(
+            "task-id",
+            metadata={"authorization": "Bearer explicit-token", "trace_id": "trace-1"},
+        )
+    ]
+
+    assert result == [1]
+    params, kwargs = fake_client.resubscribe_inputs[0]
+    assert params.metadata == {"trace_id": "trace-1"}
+    assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
 
 
 @pytest.mark.asyncio

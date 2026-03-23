@@ -361,6 +361,17 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agent_merges_streamed_a2a_tool_output() -> None:
+    merged = OpencodeAgentExecutor._merge_streamed_tool_output("hello", "hello world")
+    distinct = OpencodeAgentExecutor._merge_streamed_tool_output("hello world", "from peer")
+    duplicate = OpencodeAgentExecutor._merge_streamed_tool_output("hello world", "world")
+
+    assert merged == "hello world"
+    assert distinct == "hello world\nfrom peer"
+    assert duplicate == "hello world"
+
+
+@pytest.mark.asyncio
 async def test_agent_handles_a2a_call_tool_errors() -> None:
     from unittest.mock import MagicMock
 
