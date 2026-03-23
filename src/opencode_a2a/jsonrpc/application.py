@@ -22,7 +22,7 @@ from ..contracts.extensions import (
     SESSION_QUERY_ERROR_BUSINESS_CODES,
 )
 from ..opencode_upstream_client import OpencodeUpstreamClient, UpstreamContractError
-from .error_mapping import (
+from .error_responses import (
     interrupt_not_found_error,
     invalid_params_error,
     method_not_supported_error,

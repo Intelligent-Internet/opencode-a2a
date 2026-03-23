@@ -8,7 +8,7 @@ from typing import Any
 from a2a.types import TaskState
 
 from .stream_state import BlockType
-from .upstream_errors import (
+from .upstream_error_translator import (
     _format_inband_upstream_error,
     _format_stream_terminal_error,
     _StreamTerminalSignal,

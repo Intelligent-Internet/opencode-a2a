@@ -7,13 +7,13 @@ from dataclasses import dataclass
 import httpx
 from a2a.types import TaskState
 
-from ..error_taxonomy import (
+from ..opencode_upstream_client import UpstreamContractError
+from ..upstream_taxonomy import (
     extract_upstream_error_detail as _extract_upstream_error_detail,
 )
-from ..error_taxonomy import (
+from ..upstream_taxonomy import (
     resolve_upstream_http_error_profile as _resolve_upstream_error_profile,
 )
-from ..opencode_upstream_client import UpstreamContractError
 
 
 @dataclass(frozen=True)

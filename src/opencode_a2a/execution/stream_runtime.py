@@ -45,7 +45,7 @@ from .stream_state import (
     _StreamOutputState,
     _StreamPartState,
 )
-from .upstream_errors import _StreamTerminalSignal
+from .upstream_error_translator import _StreamTerminalSignal
 
 logger = logging.getLogger("opencode_a2a.execution.executor")
 

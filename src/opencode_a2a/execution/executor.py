@@ -72,7 +72,7 @@ from .stream_state import (
     _TTLCache,
 )
 from .tool_error_mapping import build_tool_error, map_a2a_tool_exception
-from .upstream_errors import (
+from .upstream_error_translator import (
     _await_stream_terminal_signal,
     _extract_upstream_error_detail,
     _format_inband_upstream_error,
