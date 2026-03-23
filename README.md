@@ -83,8 +83,6 @@ Verify that the service is up:
 curl http://127.0.0.1:8000/.well-known/agent-card.json
 ```
 
-Default local address: `http://127.0.0.1:8000`
-
 ## What You Get
 
 - A2A HTTP+JSON endpoints such as `/v1/message:send` and
