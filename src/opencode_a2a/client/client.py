@@ -339,9 +339,18 @@ class A2AClient:
         self,
         extra_headers: Mapping[str, str] | None,
     ) -> ClientCallContext | None:
-        if not extra_headers:
+        default_headers = self._build_default_headers()
+        merged_headers = dict(default_headers)
+        if extra_headers:
+            merged_headers.update(extra_headers)
+        if not merged_headers:
             return None
-        return ClientCallContext(state={"headers": dict(extra_headers)})
+        return ClientCallContext(
+            state={
+                "headers": dict(merged_headers),
+                "http_kwargs": {"headers": dict(merged_headers)},
+            }
+        )
 
     def _build_default_headers(self) -> dict[str, str]:
         if not self._settings.bearer_token:
