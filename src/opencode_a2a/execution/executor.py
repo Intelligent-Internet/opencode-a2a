@@ -34,8 +34,8 @@ from ..parts.mapping import (
     map_a2a_parts_to_opencode_parts,
     summarize_a2a_parts,
 )
+from ..sandbox_policy import SandboxPolicy
 from .event_helpers import _enqueue_artifact_update
-from .policy import PolicyEnforcer
 from .request_context import (
     _build_history,
     _extract_opencode_directory,
@@ -534,7 +534,10 @@ class OpencodeAgentExecutor(AgentExecutor):
         self._streaming_enabled = streaming_enabled
         self._cancel_abort_timeout_seconds = max(0.0, float(cancel_abort_timeout_seconds))
         self._a2a_client_manager = a2a_client_manager
-        self._policy = PolicyEnforcer(client=client)
+        self._sandbox_policy = SandboxPolicy.from_settings(
+            client.settings,
+            workspace_root=client.directory,
+        )
         self._session_manager = SessionManager(
             client=client,
             session_cache_ttl_seconds=session_cache_ttl_seconds,
@@ -561,10 +564,13 @@ class OpencodeAgentExecutor(AgentExecutor):
         _emit_metric(name, value, **labels)
 
     def _resolve_and_validate_directory(self, requested: str | None) -> str | None:
-        return self._policy.resolve_directory(requested)
+        return self._sandbox_policy.resolve_directory(
+            requested,
+            default_directory=self._client.directory,
+        )
 
     def resolve_directory_for_control(self, requested: str | None) -> str | None:
-        return self._policy.resolve_directory_for_control(requested)
+        return self._resolve_and_validate_directory(requested)
 
     async def claim_session_for_control(self, *, identity: str, session_id: str) -> bool:
         return await self._claim_preferred_session(identity=identity, session_id=session_id)
