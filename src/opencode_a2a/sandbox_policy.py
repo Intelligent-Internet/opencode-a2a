@@ -91,3 +91,34 @@ class SandboxPolicy:
         if self.write_access_scope == "none":
             return SessionShellAvailability(enabled=False, availability="disabled")
         return SessionShellAvailability(enabled=True, availability="enabled")
+
+    def validate_configuration(self) -> None:
+        if self.write_access_scope == "none" and self.writable_roots:
+            raise ValueError(
+                "Declared writable roots are incompatible with A2A_WRITE_ACCESS_SCOPE=none"
+            )
+        if self.write_access_scope == "workspace_only" or self.filesystem_scope == "workspace_only":
+            outside_workspace = [
+                str(root)
+                for root in self.writable_roots
+                if not _is_within_workspace(root, workspace_root=self.workspace_root)
+            ]
+            if outside_workspace:
+                joined = ", ".join(outside_workspace)
+                raise ValueError(
+                    "Declared writable roots must stay within the workspace root when "
+                    "the configured scope is workspace_only: "
+                    f"{joined}"
+                )
+
+
+def validate_sandbox_settings_consistency(settings: Any) -> None:
+    SandboxPolicy.from_settings(settings).validate_configuration()
+
+
+def _is_within_workspace(path: Path, *, workspace_root: Path) -> bool:
+    try:
+        path.relative_to(workspace_root)
+    except ValueError:
+        return False
+    return True

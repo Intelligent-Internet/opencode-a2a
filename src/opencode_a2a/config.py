@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Literal, cast
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from opencode_a2a import __version__
+from opencode_a2a.sandbox_policy import validate_sandbox_settings_consistency
 
 SandboxMode = Literal[
     "unknown",
@@ -182,6 +183,11 @@ class Settings(BaseSettings):
     @classmethod
     def _normalize_declared_lists(cls, value: Any) -> tuple[str, ...]:
         return _parse_declared_list(value)
+
+    @model_validator(mode="after")
+    def _validate_sandbox_policy(self) -> Settings:
+        validate_sandbox_settings_consistency(self)
+        return self
 
     @classmethod
     def from_env(cls) -> Settings:

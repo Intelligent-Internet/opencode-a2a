@@ -82,3 +82,33 @@ def test_settings_reject_negative_max_request_body_bytes():
 
     field_names = [e["loc"][0] for e in excinfo.value.errors()]
     assert "A2A_MAX_REQUEST_BODY_BYTES" in field_names
+
+
+def test_settings_reject_declared_writable_roots_outside_workspace_for_workspace_only_scope():
+    env = {
+        "A2A_BEARER_TOKEN": "test-token",
+        "OPENCODE_WORKSPACE_ROOT": "/srv/workspaces/alpha",
+        "A2A_SANDBOX_WRITABLE_ROOTS": "/srv/workspaces/alpha,/tmp/opencode",
+        "A2A_WRITE_ACCESS_SCOPE": "workspace_only",
+    }
+    with mock.patch.dict(os.environ, env, clear=True):
+        with pytest.raises(ValidationError) as excinfo:
+            Settings.from_env()
+
+    assert "Declared writable roots must stay within the workspace root" in str(excinfo.value)
+
+
+def test_settings_reject_declared_writable_roots_when_write_scope_is_none():
+    env = {
+        "A2A_BEARER_TOKEN": "test-token",
+        "OPENCODE_WORKSPACE_ROOT": "/srv/workspaces/alpha",
+        "A2A_SANDBOX_WRITABLE_ROOTS": "/srv/workspaces/alpha/tmp",
+        "A2A_WRITE_ACCESS_SCOPE": "none",
+    }
+    with mock.patch.dict(os.environ, env, clear=True):
+        with pytest.raises(ValidationError) as excinfo:
+            Settings.from_env()
+
+    assert "Declared writable roots are incompatible with A2A_WRITE_ACCESS_SCOPE=none" in str(
+        excinfo.value
+    )
