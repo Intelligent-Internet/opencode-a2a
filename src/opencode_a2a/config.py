@@ -158,6 +158,16 @@ class Settings(BaseSettings):
         default=False, alias="A2A_CLIENT_USE_CLIENT_PREFERENCE"
     )
     a2a_client_bearer_token: str | None = Field(default=None, alias="A2A_CLIENT_BEARER_TOKEN")
+    a2a_client_cache_ttl_seconds: float = Field(
+        default=900.0,
+        ge=0.0,
+        alias="A2A_CLIENT_CACHE_TTL_SECONDS",
+    )
+    a2a_client_cache_maxsize: int = Field(
+        default=256,
+        ge=0,
+        alias="A2A_CLIENT_CACHE_MAXSIZE",
+    )
     a2a_client_supported_transports: DeclaredStringList = Field(
         default=("JSONRPC", "HTTP+JSON"),
         alias="A2A_CLIENT_SUPPORTED_TRANSPORTS",

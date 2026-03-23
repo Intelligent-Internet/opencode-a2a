@@ -642,14 +642,14 @@ class OpencodeAgentExecutor(AgentExecutor):
             }
 
         try:
-            client = await mgr.get_client(agent_url)
             event = None
             result_text = ""
-            async for current_event in client.send_message(message):
-                event = current_event
-                extracted = client.extract_text(current_event)
-                if extracted:
-                    result_text = self._merge_streamed_tool_output(result_text, extracted)
+            async with mgr.borrow_client(agent_url) as client:
+                async for current_event in client.send_message(message):
+                    event = current_event
+                    extracted = client.extract_text(current_event)
+                    if extracted:
+                        result_text = self._merge_streamed_tool_output(result_text, extracted)
 
             from a2a.types import Task
 

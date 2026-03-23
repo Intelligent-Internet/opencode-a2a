@@ -340,6 +340,8 @@ def add_auth_middleware(app: FastAPI, settings: Settings) -> None:
 
 class A2AClientManager:
     def __init__(self, settings: Settings) -> None:
+        import time
+
         from ..client.config import load_settings as load_client_settings
 
         self.client_settings = load_client_settings(
@@ -353,21 +355,130 @@ class A2AClientManager:
                 "A2A_CLIENT_SUPPORTED_TRANSPORTS": settings.a2a_client_supported_transports,
             }
         )
-        self.clients: dict[str, A2AClient] = {}
+        self._cache_ttl_seconds = float(settings.a2a_client_cache_ttl_seconds)
+        self._cache_maxsize = int(settings.a2a_client_cache_maxsize)
+        self._now = time.monotonic
+        self.clients: dict[str, _ClientCacheEntry] = {}
         self._lock = asyncio.Lock()
 
-    async def get_client(self, agent_url: str) -> A2AClient:
+    @property
+    def cache_ttl_seconds(self) -> float:
+        return self._cache_ttl_seconds
+
+    @property
+    def cache_maxsize(self) -> int:
+        return self._cache_maxsize
+
+    @asynccontextmanager
+    async def borrow_client(self, agent_url: str):
+        url = agent_url.rstrip("/")
+        if self._cache_maxsize <= 0:
+            client = A2AClient(url, settings=self.client_settings)
+            try:
+                yield client
+            finally:
+                await client.close()
+            return
+
+        to_close: list[A2AClient] = []
         async with self._lock:
-            url = agent_url.rstrip("/")
-            if url not in self.clients:
-                self.clients[url] = A2AClient(url, settings=self.client_settings)
-            return self.clients[url]
+            now = self._now()
+            to_close.extend(self._evict_locked(now=now, protected_keys={url}))
+            entry = self.clients.get(url)
+            if entry is None:
+                entry = _ClientCacheEntry(
+                    client=A2AClient(url, settings=self.client_settings),
+                    last_used=now,
+                    expires_at=self._expires_at_for(now),
+                )
+                self.clients[url] = entry
+            else:
+                entry.last_used = now
+                entry.expires_at = self._expires_at_for(now)
+                entry.pending_eviction = False
+            to_close.extend(self._evict_locked(now=now, protected_keys={url}))
+        await self._close_clients(to_close)
+
+        try:
+            yield entry.client
+        finally:
+            async with self._lock:
+                now = self._now()
+                current = self.clients.get(url)
+                if current is entry:
+                    current.last_used = now
+                    current.expires_at = self._expires_at_for(now)
+                to_close = self._evict_locked(now=now)
+            await self._close_clients(to_close)
 
     async def close_all(self) -> None:
         async with self._lock:
-            for client in self.clients.values():
-                await client.close()
+            clients = [entry.client for entry in self.clients.values()]
             self.clients.clear()
+        for client in clients:
+            await client.close()
+
+    def _expires_at_for(self, now: float) -> float | None:
+        if self._cache_ttl_seconds <= 0:
+            return None
+        return now + self._cache_ttl_seconds
+
+    def _evict_locked(
+        self,
+        *,
+        now: float,
+        protected_keys: set[str] | None = None,
+    ) -> list[A2AClient]:
+        protected = protected_keys or set()
+        to_close: list[A2AClient] = []
+
+        for key, entry in list(self.clients.items()):
+            expired = entry.expires_at is not None and entry.expires_at <= now
+            if not expired and not entry.pending_eviction:
+                continue
+            if key in protected or entry.client.is_busy():
+                entry.pending_eviction = True
+                continue
+            self.clients.pop(key, None)
+            to_close.append(entry.client)
+
+        if self._cache_maxsize <= 0 or len(self.clients) <= self._cache_maxsize:
+            return to_close
+
+        if any(entry.pending_eviction for entry in self.clients.values()):
+            return to_close
+
+        for key, entry in sorted(self.clients.items(), key=lambda item: item[1].last_used):
+            if len(self.clients) <= self._cache_maxsize:
+                break
+            if key in protected:
+                continue
+            if entry.client.is_busy():
+                entry.pending_eviction = True
+                continue
+            self.clients.pop(key, None)
+            to_close.append(entry.client)
+
+        return to_close
+
+    async def _close_clients(self, clients: list[A2AClient]) -> None:
+        for client in clients:
+            await client.close()
+
+
+class _ClientCacheEntry:
+    def __init__(
+        self,
+        *,
+        client: A2AClient,
+        last_used: float,
+        expires_at: float | None,
+        pending_eviction: bool = False,
+    ) -> None:
+        self.client = client
+        self.last_used = last_used
+        self.expires_at = expires_at
+        self.pending_eviction = pending_eviction
 
 
 def create_app(settings: Settings) -> FastAPI:

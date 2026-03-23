@@ -57,12 +57,18 @@ class A2AClient:
         self._client: Client | None = None
         self._agent_card: object | None = None
         self._lock = asyncio.Lock()
+        self._request_lock = asyncio.Lock()
+        self._active_requests = 0
 
     async def close(self) -> None:
         """Close cached client resources and owned HTTP transport."""
         self._client = None
         if self._httpx_client is not None and self._owns_httpx_client:
             await self._httpx_client.aclose()
+
+    def is_busy(self) -> bool:
+        """Report whether this facade currently has in-flight work."""
+        return self._active_requests > 0
 
     async def get_agent_card(self) -> Any:
         """Fetch and cache peer Agent Card."""
@@ -101,29 +107,33 @@ class A2AClient:
         extensions: list[str] | None = None,
     ) -> AsyncIterator[A2AClientEvent]:
         """Send one user message and stream protocol events."""
-        client = await self._ensure_client()
-        request_metadata, extra_headers = split_request_metadata(metadata)
-        request = self._build_user_message(
-            text=text,
-            context_id=context_id,
-            task_id=task_id,
-            message_id=message_id,
-        )
+        await self._acquire_operation()
         try:
-            async for event in client.send_message(
-                request,
-                context=build_call_context(self._settings.bearer_token, extra_headers),
-                request_metadata=request_metadata,
-                extensions=extensions,
-            ):
-                yield event
-        except (
-            A2AClientHTTPError,
-            A2AClientJSONRPCError,
-            httpx.TimeoutException,
-            httpx.TransportError,
-        ) as exc:
-            raise map_operation_error("message/send", exc) from exc
+            client = await self._ensure_client()
+            request_metadata, extra_headers = split_request_metadata(metadata)
+            request = self._build_user_message(
+                text=text,
+                context_id=context_id,
+                task_id=task_id,
+                message_id=message_id,
+            )
+            try:
+                async for event in client.send_message(
+                    request,
+                    context=build_call_context(self._settings.bearer_token, extra_headers),
+                    request_metadata=request_metadata,
+                    extensions=extensions,
+                ):
+                    yield event
+            except (
+                A2AClientHTTPError,
+                A2AClientJSONRPCError,
+                httpx.TimeoutException,
+                httpx.TransportError,
+            ) as exc:
+                raise map_operation_error("message/send", exc) from exc
+        finally:
+            await self._release_operation()
 
     async def send(
         self,
@@ -156,24 +166,28 @@ class A2AClient:
         metadata: Mapping[str, Any] | None = None,
     ) -> Task:
         """Fetch one task by id."""
-        client = await self._ensure_client()
-        request_metadata, extra_headers = split_request_metadata(metadata)
+        await self._acquire_operation()
         try:
-            return await client.get_task(
-                TaskQueryParams(
-                    id=task_id,
-                    history_length=history_length,
-                    metadata=request_metadata or {},
-                ),
-                context=build_call_context(self._settings.bearer_token, extra_headers),
-            )
-        except (
-            A2AClientHTTPError,
-            A2AClientJSONRPCError,
-            httpx.TimeoutException,
-            httpx.TransportError,
-        ) as exc:
-            raise map_operation_error("tasks/get", exc) from exc
+            client = await self._ensure_client()
+            request_metadata, extra_headers = split_request_metadata(metadata)
+            try:
+                return await client.get_task(
+                    TaskQueryParams(
+                        id=task_id,
+                        history_length=history_length,
+                        metadata=request_metadata or {},
+                    ),
+                    context=build_call_context(self._settings.bearer_token, extra_headers),
+                )
+            except (
+                A2AClientHTTPError,
+                A2AClientJSONRPCError,
+                httpx.TimeoutException,
+                httpx.TransportError,
+            ) as exc:
+                raise map_operation_error("tasks/get", exc) from exc
+        finally:
+            await self._release_operation()
 
     async def cancel_task(
         self,
@@ -182,20 +196,24 @@ class A2AClient:
         metadata: Mapping[str, Any] | None = None,
     ) -> Task:
         """Cancel one task by id."""
-        client = await self._ensure_client()
-        request_metadata, extra_headers = split_request_metadata(metadata)
+        await self._acquire_operation()
         try:
-            return await client.cancel_task(
-                TaskIdParams(id=task_id, metadata=request_metadata or {}),
-                context=build_call_context(self._settings.bearer_token, extra_headers),
-            )
-        except (
-            A2AClientHTTPError,
-            A2AClientJSONRPCError,
-            httpx.TimeoutException,
-            httpx.TransportError,
-        ) as exc:
-            raise map_operation_error("tasks/cancel", exc) from exc
+            client = await self._ensure_client()
+            request_metadata, extra_headers = split_request_metadata(metadata)
+            try:
+                return await client.cancel_task(
+                    TaskIdParams(id=task_id, metadata=request_metadata or {}),
+                    context=build_call_context(self._settings.bearer_token, extra_headers),
+                )
+            except (
+                A2AClientHTTPError,
+                A2AClientJSONRPCError,
+                httpx.TimeoutException,
+                httpx.TransportError,
+            ) as exc:
+                raise map_operation_error("tasks/cancel", exc) from exc
+        finally:
+            await self._release_operation()
 
     async def resubscribe_task(
         self,
@@ -204,21 +222,25 @@ class A2AClient:
         metadata: Mapping[str, Any] | None = None,
     ) -> AsyncIterator[tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None]]:
         """Resubscribe to task updates."""
-        client = await self._ensure_client()
-        request_metadata, extra_headers = split_request_metadata(metadata)
+        await self._acquire_operation()
         try:
-            async for event in client.resubscribe(
-                TaskIdParams(id=task_id, metadata=request_metadata or {}),
-                context=build_call_context(self._settings.bearer_token, extra_headers),
-            ):
-                yield event
-        except (
-            A2AClientHTTPError,
-            A2AClientJSONRPCError,
-            httpx.TimeoutException,
-            httpx.TransportError,
-        ) as exc:
-            raise map_operation_error("tasks/resubscribe", exc) from exc
+            client = await self._ensure_client()
+            request_metadata, extra_headers = split_request_metadata(metadata)
+            try:
+                async for event in client.resubscribe(
+                    TaskIdParams(id=task_id, metadata=request_metadata or {}),
+                    context=build_call_context(self._settings.bearer_token, extra_headers),
+                ):
+                    yield event
+            except (
+                A2AClientHTTPError,
+                A2AClientJSONRPCError,
+                httpx.TimeoutException,
+                httpx.TransportError,
+            ) as exc:
+                raise map_operation_error("tasks/resubscribe", exc) from exc
+        finally:
+            await self._release_operation()
 
     async def _ensure_client(self) -> Client:
         async with self._lock:
@@ -253,6 +275,15 @@ class A2AClient:
             return self._httpx_client
         self._httpx_client = httpx.AsyncClient(timeout=self._settings.default_timeout)
         return self._httpx_client
+
+    async def _acquire_operation(self) -> None:
+        async with self._request_lock:
+            self._active_requests += 1
+
+    async def _release_operation(self) -> None:
+        async with self._request_lock:
+            if self._active_requests > 0:
+                self._active_requests -= 1
 
     def _build_user_message(
         self,
