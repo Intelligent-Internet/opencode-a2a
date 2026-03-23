@@ -7,6 +7,12 @@ from dataclasses import dataclass
 import httpx
 from a2a.types import TaskState
 
+from ..error_taxonomy import (
+    extract_upstream_error_detail as _extract_upstream_error_detail,
+)
+from ..error_taxonomy import (
+    resolve_upstream_http_error_profile as _resolve_upstream_error_profile,
+)
 from ..opencode_upstream_client import UpstreamContractError
 
 
@@ -19,93 +25,11 @@ class _StreamTerminalSignal:
 
 
 @dataclass(frozen=True)
-class _UpstreamErrorProfile:
-    error_type: str
-    state: TaskState
-    default_message: str
-
-
-@dataclass(frozen=True)
 class _UpstreamInBandError:
     error_type: str
     state: TaskState
     message: str
     upstream_status: int | None = None
-
-
-_UPSTREAM_HTTP_ERROR_PROFILE_BY_STATUS: dict[int, _UpstreamErrorProfile] = {
-    400: _UpstreamErrorProfile(
-        "UPSTREAM_BAD_REQUEST",
-        TaskState.failed,
-        "OpenCode rejected the request due to invalid input",
-    ),
-    401: _UpstreamErrorProfile(
-        "UPSTREAM_UNAUTHORIZED",
-        TaskState.auth_required,
-        "OpenCode rejected the request due to authentication failure",
-    ),
-    403: _UpstreamErrorProfile(
-        "UPSTREAM_PERMISSION_DENIED",
-        TaskState.failed,
-        "OpenCode rejected the request due to insufficient permissions",
-    ),
-    404: _UpstreamErrorProfile(
-        "UPSTREAM_RESOURCE_NOT_FOUND",
-        TaskState.failed,
-        "OpenCode rejected the request because the target resource was not found",
-    ),
-    429: _UpstreamErrorProfile(
-        "UPSTREAM_QUOTA_EXCEEDED",
-        TaskState.failed,
-        "OpenCode rejected the request due to quota limits",
-    ),
-}
-
-
-def _resolve_upstream_error_profile(status: int) -> _UpstreamErrorProfile:
-    if status in _UPSTREAM_HTTP_ERROR_PROFILE_BY_STATUS:
-        return _UPSTREAM_HTTP_ERROR_PROFILE_BY_STATUS[status]
-    if 400 <= status < 500:
-        return _UpstreamErrorProfile(
-            "UPSTREAM_CLIENT_ERROR",
-            TaskState.failed,
-            f"OpenCode rejected the request with client error {status}",
-        )
-    if status >= 500:
-        return _UpstreamErrorProfile(
-            "UPSTREAM_SERVER_ERROR",
-            TaskState.failed,
-            f"OpenCode rejected the request with server error {status}",
-        )
-    return _UpstreamErrorProfile(
-        "UPSTREAM_HTTP_ERROR",
-        TaskState.failed,
-        f"OpenCode rejected the request with HTTP status {status}",
-    )
-
-
-def _extract_upstream_error_detail(response: httpx.Response | None) -> str | None:
-    if response is None:
-        return None
-
-    payload = None
-    try:
-        payload = response.json()
-    except Exception:
-        payload = None
-
-    if isinstance(payload, dict):
-        for key in ("detail", "error", "message"):
-            value = payload.get(key)
-            if isinstance(value, str):
-                value = value.strip()
-                if value:
-                    return value
-
-    text = response.text.strip()
-    if text:
-        return text[:512]
-    return None
 
 
 def _format_upstream_error(
