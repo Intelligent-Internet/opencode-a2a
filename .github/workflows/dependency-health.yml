@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   dependency-health:
@@ -25,7 +27,7 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v4
         with:
-          enable-cache: true
+          enable-cache: false
 
       - name: Run dependency health checks
         run: bash ./scripts/dependency_health.sh

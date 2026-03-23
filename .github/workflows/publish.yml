@@ -9,6 +9,8 @@ on:
 permissions:
   contents: write
   id-token: write
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   publish:
@@ -28,7 +30,7 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v4
         with:
-          enable-cache: true
+          enable-cache: false
 
       - name: Run regression baseline
         run: bash ./scripts/doctor.sh
