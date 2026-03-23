@@ -7,12 +7,6 @@ from typing import Any
 
 
 @dataclass(frozen=True)
-class SessionShellAvailability:
-    enabled: bool
-    availability: str
-
-
-@dataclass(frozen=True)
 class SandboxPolicy:
     workspace_root: Path
     allow_directory_override: bool
@@ -20,7 +14,6 @@ class SandboxPolicy:
     filesystem_scope: str
     writable_roots: tuple[Path, ...]
     write_access_scope: str
-    write_access_outside_workspace: str
 
     @classmethod
     def from_settings(
@@ -28,9 +21,8 @@ class SandboxPolicy:
         settings: Any,
         *,
         workspace_root: str | None = None,
-        cwd: str | None = None,
     ) -> SandboxPolicy:
-        base_path = Path(workspace_root or settings.opencode_workspace_root or cwd or os.getcwd())
+        base_path = Path(workspace_root or settings.opencode_workspace_root or os.getcwd())
         writable_roots = tuple(
             Path(root).resolve()
             for root in settings.a2a_sandbox_writable_roots
@@ -43,7 +35,6 @@ class SandboxPolicy:
             filesystem_scope=settings.a2a_sandbox_filesystem_scope,
             writable_roots=writable_roots,
             write_access_scope=settings.a2a_write_access_scope,
-            write_access_outside_workspace=settings.a2a_write_access_outside_workspace,
         )
 
     def resolve_directory(
@@ -79,18 +70,18 @@ class SandboxPolicy:
             ) from err
         return str(requested_path)
 
-    def session_shell_availability(
+    def is_session_shell_enabled(
         self,
         *,
         enabled_by_config: bool,
-    ) -> SessionShellAvailability:
+    ) -> bool:
         if not enabled_by_config:
-            return SessionShellAvailability(enabled=False, availability="disabled")
+            return False
         if self.sandbox_mode == "read-only":
-            return SessionShellAvailability(enabled=False, availability="disabled")
+            return False
         if self.write_access_scope == "none":
-            return SessionShellAvailability(enabled=False, availability="disabled")
-        return SessionShellAvailability(enabled=True, availability="enabled")
+            return False
+        return True
 
     def validate_configuration(self) -> None:
         if self.write_access_scope == "none" and self.writable_roots:
@@ -110,10 +101,6 @@ class SandboxPolicy:
                     "the configured scope is workspace_only: "
                     f"{joined}"
                 )
-
-
-def validate_sandbox_settings_consistency(settings: Any) -> None:
-    SandboxPolicy.from_settings(settings).validate_configuration()
 
 
 def _is_within_workspace(path: Path, *, workspace_root: Path) -> bool:

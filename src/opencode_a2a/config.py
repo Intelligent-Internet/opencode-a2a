@@ -7,7 +7,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from opencode_a2a import __version__
-from opencode_a2a.sandbox_policy import validate_sandbox_settings_consistency
+from opencode_a2a.sandbox_policy import SandboxPolicy
 
 SandboxMode = Literal[
     "unknown",
@@ -186,7 +186,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_sandbox_policy(self) -> Settings:
-        validate_sandbox_settings_consistency(self)
+        SandboxPolicy.from_settings(self).validate_configuration()
         return self
 
     @classmethod

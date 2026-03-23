@@ -208,7 +208,7 @@ class RuntimeProfile:
 
 def build_runtime_profile(settings: Settings) -> RuntimeProfile:
     sandbox_policy = SandboxPolicy.from_settings(settings)
-    shell_availability = sandbox_policy.session_shell_availability(
+    shell_enabled = sandbox_policy.is_session_shell_enabled(
         enabled_by_config=settings.a2a_enable_session_shell,
     )
     directory_scope = (
@@ -224,8 +224,8 @@ def build_runtime_profile(settings: Settings) -> RuntimeProfile:
             scope=directory_scope,
         ),
         session_shell=SessionShellProfile(
-            enabled=shell_availability.enabled,
-            availability=shell_availability.availability,
+            enabled=shell_enabled,
+            availability="enabled" if shell_enabled else "disabled",
         ),
         execution_environment=ExecutionEnvironmentProfile(
             sandbox=SandboxProfile(
