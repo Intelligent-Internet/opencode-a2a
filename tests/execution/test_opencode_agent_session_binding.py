@@ -263,8 +263,17 @@ async def test_agent_handles_a2a_call_tool(monkeypatch) -> None:
             pass
 
     class MockManager:
-        async def get_client(self, url: str):
-            return MockA2AClient()
+        class _BorrowedClient:
+            async def __aenter__(self):
+                return MockA2AClient()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                del exc_type, exc, tb
+                return False
+
+        def borrow_client(self, url: str):
+            del url
+            return self._BorrowedClient()
 
     client = DummyChatOpencodeUpstreamClient()
     manager = MockManager()
@@ -322,27 +331,36 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
             return OpencodeMessage(text="done", session_id="s1", message_id="m2", raw={})
 
     class MockManager:
-        async def get_client(self, url: str):
-            mock_client = MagicMock()
+        class _BorrowedClient:
+            async def __aenter__(self):
+                mock_client = MagicMock()
 
-            async def _send_message(_text: str):
-                task = Task(id="t", context_id="c", status=TaskStatus(state=TaskState.working))
-                yield (
-                    task,
-                    TaskArtifactUpdateEvent(
-                        task_id="t",
-                        context_id="c",
-                        artifact=Artifact(
-                            artifact_id="artifact-1",
-                            name="response",
-                            parts=[Part(root=TextPart(text="streamed tool output"))],
+                async def _send_message(_text: str):
+                    task = Task(id="t", context_id="c", status=TaskStatus(state=TaskState.working))
+                    yield (
+                        task,
+                        TaskArtifactUpdateEvent(
+                            task_id="t",
+                            context_id="c",
+                            artifact=Artifact(
+                                artifact_id="artifact-1",
+                                name="response",
+                                parts=[Part(root=TextPart(text="streamed tool output"))],
+                            ),
                         ),
-                    ),
-                )
+                    )
 
-            mock_client.send_message = _send_message
-            mock_client.extract_text = A2AClient.extract_text
-            return mock_client
+                mock_client.send_message = _send_message
+                mock_client.extract_text = A2AClient.extract_text
+                return mock_client
+
+            async def __aexit__(self, exc_type, exc, tb):
+                del exc_type, exc, tb
+                return False
+
+        def borrow_client(self, url: str):
+            del url
+            return self._BorrowedClient()
 
     from unittest.mock import MagicMock
 
@@ -437,9 +455,17 @@ async def test_agent_maps_a2a_call_tool_auth_errors_to_stable_payload() -> None:
             return _AuthErrorStream()
 
     class MockManager:
-        async def get_client(self, url: str):
+        class _BorrowedClient:
+            async def __aenter__(self):
+                return MockA2AClient()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                del exc_type, exc, tb
+                return False
+
+        def borrow_client(self, url: str):
             del url
-            return MockA2AClient()
+            return self._BorrowedClient()
 
     client = DummyChatOpencodeUpstreamClient()
     executor = OpencodeAgentExecutor(

@@ -539,6 +539,8 @@ def test_create_app_propagates_outbound_client_settings(monkeypatch) -> None:
             a2a_client_card_fetch_timeout_seconds=7.0,
             a2a_client_use_client_preference=True,
             a2a_client_bearer_token="peer-token",
+            a2a_client_cache_ttl_seconds=321.0,
+            a2a_client_cache_maxsize=12,
             a2a_client_supported_transports=("http-json", "json-rpc"),
         )
     )
@@ -550,6 +552,8 @@ def test_create_app_propagates_outbound_client_settings(monkeypatch) -> None:
     assert settings.use_client_preference is True
     assert settings.bearer_token == "peer-token"
     assert settings.supported_transports == ("HTTP+JSON", "JSONRPC")
+    assert client_manager.cache_ttl_seconds == 321.0
+    assert client_manager.cache_maxsize == 12
 
 
 def test_create_app_requires_control_guard_hooks(monkeypatch) -> None:
