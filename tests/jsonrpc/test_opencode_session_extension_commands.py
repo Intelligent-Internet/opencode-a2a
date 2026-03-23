@@ -380,7 +380,9 @@ async def test_session_shell_extension_rejects_owner_mismatch(monkeypatch):
             **_BASE_SETTINGS,
         )
     )
-    app.state.opencode_agent_executor._session_owners.set("s-1", "bearer:other")  # noqa: SLF001
+    app.state.opencode_agent_executor._session_manager._session_owners.set(  # noqa: SLF001
+        "s-1", "bearer:other"
+    )
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
