@@ -67,7 +67,6 @@ Key variables to understand protocol behavior:
   (`10` minutes).
 - `A2A_CANCEL_ABORT_TIMEOUT_SECONDS`: best-effort timeout for upstream
   `session.abort` in cancel flow.
-- `A2A_STREAM_SSE_PING_SECONDS`: REST SSE keepalive interval. Default: `15`.
 - `OPENCODE_TIMEOUT` / `OPENCODE_TIMEOUT_STREAM`: upstream request timeout and
   optional stream timeout override.
 - `A2A_CLIENT_TIMEOUT_SECONDS`: outbound client timeout. Default: `30` seconds.

@@ -62,7 +62,6 @@ OPENCODE_BASE_URL=http://127.0.0.1:4096 \
 A2A_HOST=127.0.0.1 \
 A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
-A2A_STREAM_SSE_PING_SECONDS=15 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a serve
 ```
@@ -83,7 +82,6 @@ Default local address: `http://127.0.0.1:8000`
 - Peering capabilities: can act as a client via `opencode-a2a call`
 - Autonomous tool execution: supports `a2a_call` tool for outbound agent-to-agent communication
 - SSE streaming with normalized `text`, `reasoning`, and `tool_call` blocks
-- Explicit REST SSE keepalive configurable through `A2A_STREAM_SSE_PING_SECONDS`
 - Session continuity through `metadata.shared.session.id`
 - Request-scoped model selection through `metadata.shared.model`
 - OpenCode-oriented JSON-RPC extensions for session and model/provider queries
