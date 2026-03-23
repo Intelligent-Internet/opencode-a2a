@@ -1,10 +1,20 @@
 import asyncio
 from typing import Any
 
+import httpx
 import pytest
-from a2a.types import Task
+from a2a.client.errors import A2AClientHTTPError, A2AClientJSONRPCError
+from a2a.types import JSONRPCError, JSONRPCErrorResponse, Task
 
+from opencode_a2a.client.errors import (
+    A2AClientResetRequiredError,
+    A2APeerProtocolError,
+    A2APermissionDeniedError,
+    A2ATimeoutError,
+    A2AUnsupportedOperationError,
+)
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
+from opencode_a2a.execution.tool_error_mapping import map_a2a_tool_exception
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from tests.support.helpers import (
     DummyChatOpencodeUpstreamClient,
@@ -391,6 +401,7 @@ async def test_agent_handles_a2a_call_tool_errors() -> None:
     }
     results = await executor._maybe_handle_tools(raw_response)
     assert results is not None
+    assert results[0]["error_code"] == "a2a_client_manager_unavailable"
     assert "not available" in results[0]["error"]
 
     # Invalid input
@@ -400,10 +411,90 @@ async def test_agent_handles_a2a_call_tool_errors() -> None:
     raw_response["parts"][0]["state"]["input"] = "invalid"
     results = await executor._maybe_handle_tools(raw_response)
     assert results is not None
-    assert "Invalid input" in results[0]["error"]
+    assert results[0]["error_code"] == "a2a_invalid_input"
+    assert "Invalid a2a_call input" in results[0]["error"]
 
     # Missing message
     raw_response["parts"][0]["state"]["input"] = {"url": "http://x"}
     results = await executor._maybe_handle_tools(raw_response)
     assert results is not None
-    assert "Missing url or message" in results[0]["error"]
+    assert results[0]["error_code"] == "a2a_missing_required_input"
+    assert "Missing required a2a_call" in results[0]["error"]
+
+
+@pytest.mark.asyncio
+async def test_agent_maps_a2a_call_tool_auth_errors_to_stable_payload() -> None:
+    class MockA2AClient:
+        async def send_message(self, text: str):
+            del text
+            raise A2AClientHTTPError(401, "unauthorized")
+            yield
+
+    class MockManager:
+        async def get_client(self, url: str):
+            del url
+            return MockA2AClient()
+
+    client = DummyChatOpencodeUpstreamClient()
+    executor = OpencodeAgentExecutor(
+        client,
+        streaming_enabled=False,
+        a2a_client_manager=MockManager(),
+    )
+
+    results = await executor._maybe_handle_tools(
+        {
+            "parts": [
+                {
+                    "type": "tool",
+                    "tool": "a2a_call",
+                    "callID": "c-auth",
+                    "state": {
+                        "status": "calling",
+                        "input": {"url": "http://remote", "message": "hello"},
+                    },
+                }
+            ]
+        }
+    )
+
+    assert results is not None
+    assert results[0]["error_code"] == "a2a_peer_auth_failed"
+    assert results[0]["error"] == "Authentication failed when calling remote A2A peer"
+    assert results[0]["error_meta"]["http_status"] == 401
+
+
+def test_map_a2a_tool_exception_protocol_and_unavailable_variants() -> None:
+    rpc_error = A2AClientJSONRPCError(
+        JSONRPCErrorResponse(
+            error=JSONRPCError(code=-32602, message="bad params"),
+            id="req-1",
+        )
+    )
+    protocol_payload = map_a2a_tool_exception(rpc_error)
+    unavailable_payload = map_a2a_tool_exception(httpx.ConnectError("down"))
+    invalid_card_payload = map_a2a_tool_exception(
+        A2APeerProtocolError(
+            "bad card",
+            error_code="invalid_agent_card",
+        )
+    )
+
+    assert protocol_payload["error_code"] == "a2a_peer_protocol_error"
+    assert protocol_payload["error_meta"]["rpc_code"] == -32602
+    assert unavailable_payload["error_code"] == "a2a_unavailable"
+    assert invalid_card_payload["error_code"] == "a2a_invalid_agent_card"
+
+
+def test_map_a2a_tool_exception_additional_variants() -> None:
+    permission_payload = map_a2a_tool_exception(A2APermissionDeniedError("denied"))
+    timeout_payload = map_a2a_tool_exception(A2ATimeoutError("slow"))
+    unsupported_payload = map_a2a_tool_exception(A2AUnsupportedOperationError("unsupported"))
+    reset_payload = map_a2a_tool_exception(A2AClientResetRequiredError("retry"))
+    generic_payload = map_a2a_tool_exception(RuntimeError("boom"))
+
+    assert permission_payload["error_code"] == "a2a_peer_permission_denied"
+    assert timeout_payload["error_code"] == "a2a_timeout"
+    assert unsupported_payload["error_code"] == "a2a_unsupported_operation"
+    assert reset_payload["error_code"] == "a2a_retryable_unavailable"
+    assert generic_payload["error_code"] == "a2a_call_failed"

@@ -18,10 +18,28 @@ class A2AAgentUnavailableError(A2AClientError):
     error_code = "agent_unavailable"
 
 
+class A2AAuthenticationError(A2AClientError):
+    """Raised when a remote A2A peer rejects authentication."""
+
+    error_code = "authentication_failed"
+
+
+class A2APermissionDeniedError(A2AClientError):
+    """Raised when a remote A2A peer rejects authorization."""
+
+    error_code = "permission_denied"
+
+
 class A2AClientResetRequiredError(A2AAgentUnavailableError):
     """Raised when the cached transport should be rebuilt."""
 
     error_code = "reset_required"
+
+
+class A2ATimeoutError(A2AAgentUnavailableError):
+    """Raised when an outbound call to a remote A2A peer times out."""
+
+    error_code = "timeout"
 
 
 class A2AUnsupportedBindingError(A2AClientError):
@@ -58,7 +76,10 @@ class A2APeerProtocolError(A2AClientError):
 __all__ = [
     "A2AClientError",
     "A2AAgentUnavailableError",
+    "A2AAuthenticationError",
+    "A2APermissionDeniedError",
     "A2AClientResetRequiredError",
+    "A2ATimeoutError",
     "A2AUnsupportedBindingError",
     "A2AUnsupportedOperationError",
     "A2APeerProtocolError",

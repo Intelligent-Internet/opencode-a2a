@@ -71,6 +71,7 @@ from .stream_state import (
     _StreamOutputState,
     _TTLCache,
 )
+from .tool_error_mapping import build_tool_error, map_a2a_tool_exception
 from .upstream_errors import (
     _await_stream_terminal_signal,
     _extract_upstream_error_detail,
@@ -630,19 +631,36 @@ class OpencodeAgentExecutor(AgentExecutor):
         inputs = state.get("input", {})
 
         if not isinstance(inputs, dict):
-            return {"call_id": call_id, "tool": tool_name, "error": "Invalid input format"}
+            return {
+                "call_id": call_id,
+                "tool": tool_name,
+                **build_tool_error(
+                    error_code="a2a_invalid_input",
+                    error="Invalid a2a_call input payload",
+                ),
+            }
 
         agent_url = inputs.get("url")
         message = inputs.get("message")
         if not agent_url or not message:
-            return {"call_id": call_id, "tool": tool_name, "error": "Missing url or message"}
+            return {
+                "call_id": call_id,
+                "tool": tool_name,
+                **build_tool_error(
+                    error_code="a2a_missing_required_input",
+                    error="Missing required a2a_call url or message",
+                ),
+            }
 
         mgr = self._a2a_client_manager
         if mgr is None:
             return {
                 "call_id": call_id,
                 "tool": tool_name,
-                "error": "A2A client manager not available",
+                **build_tool_error(
+                    error_code="a2a_client_manager_unavailable",
+                    error="A2A client manager is not available",
+                ),
             }
 
         try:
@@ -691,11 +709,19 @@ class OpencodeAgentExecutor(AgentExecutor):
             return {
                 "call_id": call_id,
                 "tool": tool_name,
-                "error": f"Unexpected agent response type: {type(event).__name__}",
+                **build_tool_error(
+                    error_code="a2a_unexpected_response",
+                    error="Remote A2A peer returned an unexpected response type",
+                    error_meta={"response_type": type(event).__name__},
+                ),
             }
         except Exception as exc:
             logger.exception("A2A tool call failed")
-            return {"call_id": call_id, "tool": tool_name, "error": str(exc)}
+            return {
+                "call_id": call_id,
+                "tool": tool_name,
+                **map_a2a_tool_exception(exc),
+            }
 
     @staticmethod
     def _merge_streamed_tool_output(current: str, incoming: str) -> str:
