@@ -183,6 +183,5 @@ class Settings(BaseSettings):
 
     @classmethod
     def from_env(cls) -> Settings:
-        # BaseSettings constructor loads values from env and applies validation.
         settings_cls: type[BaseSettings] = cls
         return cast(Settings, settings_cls())
