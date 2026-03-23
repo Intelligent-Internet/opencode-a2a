@@ -21,7 +21,6 @@ from a2a.types import (
     Part,
     Role,
     Task,
-    TaskArtifactUpdateEvent,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
@@ -35,6 +34,7 @@ from ..parts.mapping import (
     map_a2a_parts_to_opencode_parts,
     summarize_a2a_parts,
 )
+from .event_helpers import _enqueue_artifact_update
 from .policy import PolicyEnforcer
 from .request_context import (
     _build_history,
@@ -566,11 +566,6 @@ class OpencodeAgentExecutor(AgentExecutor):
             emit_metric=self._emit_metric,
             sleep=asyncio.sleep,
         )
-        self._sessions = self._session_manager._sessions
-        self._session_owners = self._session_manager._session_owners
-        self._pending_session_claims = self._session_manager._pending_session_claims
-        self._inflight_session_creates = self._session_manager._inflight_session_creates
-        self._session_locks = self._session_manager._session_locks
         self._lock = asyncio.Lock()
         self._running_requests: dict[tuple[str, str], asyncio.Task[Any]] = {}
         self._running_stop_events: dict[tuple[str, str], asyncio.Event] = {}
@@ -1113,34 +1108,4 @@ def _build_assistant_message(
         parts=[Part(root=TextPart(text=text))],
         task_id=task_id,
         context_id=context_id,
-    )
-
-
-async def _enqueue_artifact_update(
-    *,
-    event_queue: EventQueue,
-    task_id: str,
-    context_id: str,
-    artifact_id: str,
-    part: Part,
-    append: bool | None,
-    last_chunk: bool | None,
-    artifact_metadata: Mapping[str, Any] | None = None,
-    event_metadata: Mapping[str, Any] | None = None,
-) -> None:
-    normalized_last_chunk = True if last_chunk is True else None
-    artifact = Artifact(
-        artifact_id=artifact_id,
-        parts=[part],
-        metadata=dict(artifact_metadata) if artifact_metadata else None,
-    )
-    await event_queue.enqueue_event(
-        TaskArtifactUpdateEvent(
-            task_id=task_id,
-            context_id=context_id,
-            artifact=artifact,
-            append=append,
-            last_chunk=normalized_last_chunk,
-            metadata=dict(event_metadata) if event_metadata else None,
-        )
     )

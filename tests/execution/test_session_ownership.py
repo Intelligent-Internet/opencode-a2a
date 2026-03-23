@@ -49,7 +49,7 @@ async def test_identity_isolation(mock_client):
 
     await executor.execute(context1, event_queue)
     mock_client.create_session.assert_called_once()
-    assert executor._sessions.get(("user-1", "context-A")) == "session-1"
+    assert executor._session_manager._sessions.get(("user-1", "context-A")) == "session-1"
 
     # User 2, Context A (Same context ID, different user)
     context2 = make_request_context_mock(
@@ -62,9 +62,9 @@ async def test_identity_isolation(mock_client):
     await executor.execute(context2, event_queue)
     # Should create a NEW session for user-2
     assert mock_client.create_session.call_count == 2
-    assert executor._sessions.get(("user-2", "context-A")) == "session-2"
+    assert executor._session_manager._sessions.get(("user-2", "context-A")) == "session-2"
     # User 1's session should still be there
-    assert executor._sessions.get(("user-1", "context-A")) == "session-1"
+    assert executor._session_manager._sessions.get(("user-1", "context-A")) == "session-1"
 
 
 @pytest.mark.asyncio
@@ -81,7 +81,7 @@ async def test_session_hijack_prevention(mock_client):
     )
 
     await executor.execute(context1, event_queue)
-    assert executor._session_owners.get("session-1") == "user-1"
+    assert executor._session_manager._session_owners.get("session-1") == "user-1"
 
     # User 2 tries to bind to session-1 via metadata
     context2 = make_request_context_mock(
@@ -168,8 +168,8 @@ async def test_concurrent_session_create_isolated_by_identity():
     )
 
     assert client.create_session.call_count == 2
-    assert executor._sessions.get(("user-1", "context-A")) == "session-1"
-    assert executor._sessions.get(("user-2", "context-A")) == "session-2"
+    assert executor._session_manager._sessions.get(("user-1", "context-A")) == "session-1"
+    assert executor._session_manager._sessions.get(("user-2", "context-A")) == "session-2"
 
 
 def test_session_owner_cache_is_bounded():
@@ -180,12 +180,12 @@ def test_session_owner_cache_is_bounded():
         session_cache_maxsize=2,
     )
 
-    executor._session_owners.set("session-1", "user-1")
-    executor._session_owners.set("session-2", "user-2")
-    executor._session_owners.set("session-3", "user-3")
+    executor._session_manager._session_owners.set("session-1", "user-1")
+    executor._session_manager._session_owners.set("session-2", "user-2")
+    executor._session_manager._session_owners.set("session-3", "user-3")
 
     # Cache is bounded by maxsize and should not grow unbounded.
-    assert len(executor._session_owners._store) <= 2
+    assert len(executor._session_manager._session_owners._store) <= 2
 
 
 def test_owner_cache_refresh_on_get_extends_ttl():
@@ -257,8 +257,8 @@ async def test_preferred_session_claim_is_released_on_upstream_failure():
 
     await executor.execute(context, event_queue)
 
-    assert executor._session_owners.get("session-X") is None
-    assert executor._pending_session_claims.get("session-X") is None
+    assert executor._session_manager._session_owners.get("session-X") is None
+    assert executor._session_manager._pending_session_claims.get("session-X") is None
 
 
 @pytest.mark.asyncio
@@ -292,8 +292,8 @@ async def test_preferred_session_claim_is_released_on_upstream_cancellation():
     with pytest.raises(asyncio.CancelledError):
         await executor.execute(context, event_queue)
 
-    assert executor._session_owners.get("session-X") is None
-    assert executor._pending_session_claims.get("session-X") is None
+    assert executor._session_manager._session_owners.get("session-X") is None
+    assert executor._session_manager._pending_session_claims.get("session-X") is None
 
 
 @pytest.mark.asyncio

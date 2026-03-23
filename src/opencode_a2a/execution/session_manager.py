@@ -138,4 +138,3 @@ class SessionManager:
         async with self._lock:
             self._sessions.pop((identity, context_id))
             return self._inflight_session_creates.pop((identity, context_id), None)
-

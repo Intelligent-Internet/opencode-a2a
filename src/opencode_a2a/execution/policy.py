@@ -42,4 +42,3 @@ class PolicyEnforcer:
 
     def resolve_directory_for_control(self, requested: str | None) -> str | None:
         return self.resolve_directory(requested)
-
