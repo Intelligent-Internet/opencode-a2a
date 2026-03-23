@@ -432,6 +432,7 @@ def create_app(settings: Settings) -> FastAPI:
     jsonrpc_app.add_routes_to_app(app)
     for route, callback in rest_adapter.routes().items():
         app.add_api_route(route[0], callback, methods=[route[1]])
+    app.state._jsonrpc_app = jsonrpc_app
     app.state.a2a_client_manager = client_manager
     _patch_jsonrpc_openapi_contract(app, settings, runtime_profile=runtime_profile)
 

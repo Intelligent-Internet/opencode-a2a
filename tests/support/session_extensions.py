@@ -13,13 +13,7 @@ def _session_meta(payload: dict) -> dict:
 
 
 def _jsonrpc_app(app: FastAPI):
-    for route in app.routes:
-        if getattr(route, "path", None) != "/":
-            continue
-        if "POST" not in getattr(route, "methods", set()):
-            continue
-        endpoint = getattr(route, "endpoint", None)
-        target = getattr(endpoint, "__self__", None)
-        if target is not None:
-            return target
-    raise AssertionError("JSON-RPC app route not found")
+    target = getattr(app.state, "_jsonrpc_app", None)
+    if target is not None:
+        return target
+    raise AssertionError("JSON-RPC app handle not found")
