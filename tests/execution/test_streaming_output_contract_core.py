@@ -346,6 +346,47 @@ async def test_streaming_emits_final_snapshot_only_when_stream_has_no_final_answ
 
 
 @pytest.mark.asyncio
+async def test_streaming_final_snapshot_does_not_repeat_reasoning_content() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(session_id="ses-1", role="assistant", part_type="reasoning", delta="draft plan"),
+        ],
+        response_text="final answer from send_message",
+        response_raw={
+            "parts": [
+                {"type": "reasoning", "text": "draft plan"},
+                {"type": "text", "text": "final answer from send_message"},
+            ]
+        },
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-3b", context_id="ctx-3b", text="hello"), queue
+    )
+
+    reasoning_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "reasoning"
+    ]
+    assert len(reasoning_updates) == 1
+    assert _part_text(reasoning_updates[0]) == "draft plan"
+
+    text_updates = [
+        event
+        for event in _artifact_updates(queue)
+        if _artifact_stream_meta(event)["block_type"] == "text"
+    ]
+    assert len(text_updates) == 1
+    assert _part_text(text_updates[0]) == "final answer from send_message"
+    assert "draft plan" not in _part_text(text_updates[0])
+    assert _artifact_stream_meta(text_updates[0])["source"] == "final_snapshot"
+
+
+@pytest.mark.asyncio
 async def test_execute_serializes_send_message_per_session() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[],

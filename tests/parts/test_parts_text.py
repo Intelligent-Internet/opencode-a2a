@@ -35,7 +35,7 @@ def test_extract_text_from_parts_returns_text_parts_only() -> None:
     assert extract_text_from_parts(parts) == "final answer"
 
 
-def test_extract_text_from_parts_merges_text_and_reasoning_parts() -> None:
+def test_extract_text_from_parts_ignores_reasoning_parts() -> None:
     parts = [
         "skip-me",
         {
@@ -52,4 +52,4 @@ def test_extract_text_from_parts_merges_text_and_reasoning_parts() -> None:
         },
     ]
 
-    assert extract_text_from_parts(parts) == "draft answer"
+    assert extract_text_from_parts(parts) == "answer"

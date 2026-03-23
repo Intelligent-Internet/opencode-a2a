@@ -15,10 +15,6 @@ def extract_text_from_parts(parts: Any) -> str:
             part_text = part.get("text")
             if isinstance(part_text, str):
                 texts.append(part_text)
-        elif part_type == "reasoning":
-            part_text = part.get("text")
-            if isinstance(part_text, str):
-                texts.append(part_text)
     if texts:
         return "".join(texts).strip()
     return ""

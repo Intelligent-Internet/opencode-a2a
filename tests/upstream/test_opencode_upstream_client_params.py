@@ -808,6 +808,39 @@ async def test_send_message_includes_client_level_agent_system_variant(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_send_message_response_text_ignores_reasoning_parts(monkeypatch) -> None:
+    client = OpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    async def fake_post(path: str, *, params=None, json=None, timeout=_UNSET, **_kwargs):
+        del path, params, json, timeout
+        return _DummyResponse(
+            {
+                "info": {"id": "m-2"},
+                "parts": [
+                    {"type": "reasoning", "text": "draft plan"},
+                    {"type": "text", "text": "final answer"},
+                ],
+            }
+        )
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    message = await client.send_message("ses-1", "hello")
+
+    assert message.message_id == "m-2"
+    assert message.text == "final answer"
+
+    await client.close()
+
+
+@pytest.mark.asyncio
 async def test_interrupt_request_helpers_ignore_invalid_and_trim_values() -> None:
     client = OpencodeUpstreamClient(
         make_settings(
