@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from a2a.types import InvalidParamsError
 
-from opencode_a2a.jsonrpc.error_mapping import (
+from opencode_a2a.jsonrpc.error_responses import (
     interrupt_not_found_error,
     invalid_params_error,
     method_not_supported_error,
