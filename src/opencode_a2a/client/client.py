@@ -102,7 +102,7 @@ class A2AClient:
     ) -> AsyncIterator[A2AClientEvent]:
         """Send one user message and stream protocol events."""
         client = await self._ensure_client()
-        request_metadata = dict(metadata) if metadata else None
+        request_metadata = self._build_request_metadata(metadata)
         request = self._build_user_message(
             text=text,
             context_id=context_id,
@@ -158,7 +158,7 @@ class A2AClient:
                 TaskQueryParams(
                     id=task_id,
                     history_length=history_length,
-                    metadata=dict(metadata or {}),
+                    metadata=self._build_request_metadata(metadata) or {},
                 )
             )
         except A2AClientHTTPError as exc:
@@ -175,7 +175,9 @@ class A2AClient:
         """Cancel one task by id."""
         client = await self._ensure_client()
         try:
-            return await client.cancel_task(TaskIdParams(id=task_id, metadata=dict(metadata or {})))
+            return await client.cancel_task(
+                TaskIdParams(id=task_id, metadata=self._build_request_metadata(metadata) or {})
+            )
         except A2AClientHTTPError as exc:
             raise self._map_http_error("tasks/cancel", exc) from exc
         except A2AClientJSONRPCError as exc:
@@ -191,7 +193,7 @@ class A2AClient:
         client = await self._ensure_client()
         try:
             async for event in client.resubscribe(
-                TaskIdParams(id=task_id, metadata=dict(metadata or {}))
+                TaskIdParams(id=task_id, metadata=self._build_request_metadata(metadata) or {})
             ):
                 yield event
         except A2AClientHTTPError as exc:
@@ -284,6 +286,20 @@ class A2AClient:
             parts=self._normalize_parts(text),
             metadata=None,
         )
+
+    def _build_request_metadata(
+        self,
+        metadata: Mapping[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        request_metadata = dict(metadata or {})
+        bearer_token = self._settings.bearer_token
+        has_authorization = any(
+            isinstance(key, str) and key.lower() == "authorization"
+            for key in request_metadata
+        )
+        if bearer_token and not has_authorization:
+            request_metadata["authorization"] = f"Bearer {bearer_token}"
+        return request_metadata or None
 
     @staticmethod
     def _extract_jsonrpc_error_payload(

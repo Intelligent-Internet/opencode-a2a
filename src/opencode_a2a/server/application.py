@@ -346,6 +346,7 @@ class A2AClientManager:
             {
                 "A2A_CLIENT_TIMEOUT_SECONDS": settings.a2a_client_timeout_seconds,
                 "A2A_CLIENT_USE_CLIENT_PREFERENCE": settings.a2a_client_use_client_preference,
+                "A2A_CLIENT_BEARER_TOKEN": settings.a2a_client_bearer_token,
             }
         )
         self.clients: dict[str, A2AClient] = {}

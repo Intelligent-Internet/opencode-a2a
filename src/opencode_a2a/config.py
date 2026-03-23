@@ -153,6 +153,7 @@ class Settings(BaseSettings):
     a2a_client_use_client_preference: bool = Field(
         default=False, alias="A2A_CLIENT_USE_CLIENT_PREFERENCE"
     )
+    a2a_client_bearer_token: str | None = Field(default=None, alias="A2A_CLIENT_BEARER_TOKEN")
 
     @field_validator("a2a_sandbox_writable_roots", "a2a_network_allowed_domains", mode="before")
     @classmethod

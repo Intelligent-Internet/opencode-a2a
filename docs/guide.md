@@ -71,12 +71,15 @@ Key variables to understand protocol behavior:
   optional stream timeout override.
 - `A2A_CLIENT_TIMEOUT_SECONDS`: outbound client timeout. Default: matches `OPENCODE_TIMEOUT`.
 - `A2A_CLIENT_USE_CLIENT_PREFERENCE`: whether the outbound client prefers its own transport choices.
+- `A2A_CLIENT_BEARER_TOKEN`: optional bearer token attached to outbound peer
+  calls made by the embedded A2A client and `a2a_call` tool path.
 - Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
 - Client-side bootstrap flags are not part of the core server runtime contract, but
   are available for consumer-side integration under `src/opencode_a2a/client/`:
   - `A2A_CLIENT_TIMEOUT_SECONDS`
   - `A2A_CLIENT_CARD_FETCH_TIMEOUT_SECONDS`
   - `A2A_CLIENT_USE_CLIENT_PREFERENCE`
+  - `A2A_CLIENT_BEARER_TOKEN`
   - `A2A_CLIENT_SUPPORTED_TRANSPORTS`
 
 ## Client Initialization Facade (Preview)
@@ -99,6 +102,10 @@ Current client facade API:
 - `A2AClient.get_task()`
 - `A2AClient.cancel_task()`
 - `A2AClient.resubscribe_task()`
+
+Server-side outbound peer calls use bearer auth only for now. Configure
+`A2A_CLIENT_BEARER_TOKEN` when the remote agent protects its runtime surface.
+CLI outbound calls may pass `--token` explicitly.
 
 Execution-boundary metadata is intentionally declarative deployment metadata:
 it is published through `RuntimeProfile`, Agent Card, OpenAPI, and `/health`,

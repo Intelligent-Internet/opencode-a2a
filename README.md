@@ -97,6 +97,10 @@ opencode-a2a call http://other-agent:8000 "How are you?" --token your-outbound-t
 ### Outbound Agent Calls (Tools)
 The server can autonomously execute `a2a_call(url, message)` tool calls emitted by the OpenCode runtime. Results are fetched via A2A and returned to the model as tool results, enabling multi-agent orchestration.
 
+When the target peer requires bearer auth, configure `A2A_CLIENT_BEARER_TOKEN`
+for server-side outbound calls. CLI calls can continue using `--token` or
+`A2A_BEARER_TOKEN`.
+
 Detailed protocol contracts, examples, and extension docs live in
 [`docs/guide.md`](docs/guide.md).
 
@@ -123,6 +127,8 @@ This repository improves the service boundary around OpenCode, but it does not
 turn OpenCode into a hardened multi-tenant platform.
 
 - `A2A_BEARER_TOKEN` protects the A2A surface.
+- `A2A_CLIENT_BEARER_TOKEN` is used for outbound peer calls initiated by the
+  server-side `a2a_call` tool.
 - Provider auth and default model configuration remain on the OpenCode side.
 - Deployment supervision is intentionally BYO. Use `systemd`, Docker,
   Kubernetes, or another supervisor if you need long-running operation.

@@ -58,6 +58,15 @@ def _coerce_bool(name: str, value: Any, *, default: bool) -> bool:
     raise ValueError(f"{name} must be a boolean-like value, got {value!r}")
 
 
+def _coerce_optional_str(name: str, value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    raise ValueError(f"{name} must be a string, got {value!r}")
+
+
 def _normalize_transport(value: str) -> str:
     normalized = value.strip().lower()
     if normalized in {"jsonrpc", "json-rpc", "json_rpc"}:
@@ -96,6 +105,7 @@ class A2AClientSettings:
     default_timeout: float = 30.0
     use_client_preference: bool = False
     card_fetch_timeout: float = 5.0
+    bearer_token: str | None = None
     supported_transports: tuple[str, ...] = (
         "JSONRPC",
         "HTTP+JSON",
@@ -135,6 +145,14 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
         ),
         default=False,
     )
+    bearer_token = _coerce_optional_str(
+        "A2A_CLIENT_BEARER_TOKEN",
+        _read_setting(
+            raw_settings,
+            keys=("A2A_CLIENT_BEARER_TOKEN", "a2a_client_bearer_token"),
+            default=None,
+        ),
+    )
     supported_transports = _parse_transports(
         _read_setting(
             raw_settings,
@@ -151,6 +169,7 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
         default_timeout=default_timeout,
         use_client_preference=use_client_preference,
         card_fetch_timeout=card_fetch_timeout,
+        bearer_token=bearer_token,
         supported_transports=supported_transports,
     )
 

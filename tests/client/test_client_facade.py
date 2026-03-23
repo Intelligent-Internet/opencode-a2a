@@ -169,6 +169,58 @@ async def test_send_returns_last_event(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_send_message_adds_bearer_token_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = A2AClient(
+        "http://agent.example.com",
+        settings=A2AClientSettings(bearer_token="peer-token"),
+    )
+    fake_client = _FakeClient(events=["ok"])
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+    monkeypatch.setattr(
+        A2AClient,
+        "_build_card_resolver",
+        AsyncMock(return_value=_FakeCardResolver("card")),
+    )
+
+    result = [event async for event in client.send_message("hello")]
+
+    assert result == ["ok"]
+    _, _, kwargs = fake_client.send_message_inputs[0]
+    assert kwargs["request_metadata"]["authorization"] == "Bearer peer-token"
+
+
+@pytest.mark.asyncio
+async def test_send_message_preserves_explicit_authorization_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = A2AClient(
+        "http://agent.example.com",
+        settings=A2AClientSettings(bearer_token="peer-token"),
+    )
+    fake_client = _FakeClient(events=["ok"])
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+    monkeypatch.setattr(
+        A2AClient,
+        "_build_card_resolver",
+        AsyncMock(return_value=_FakeCardResolver("card")),
+    )
+
+    result = [
+        event
+        async for event in client.send_message(
+            "hello",
+            metadata={"authorization": "Bearer explicit-token"},
+        )
+    ]
+
+    assert result == ["ok"]
+    _, _, kwargs = fake_client.send_message_inputs[0]
+    assert kwargs["request_metadata"]["authorization"] == "Bearer explicit-token"
+
+
+@pytest.mark.asyncio
 async def test_send_message_maps_jsonrpc_not_supported(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
