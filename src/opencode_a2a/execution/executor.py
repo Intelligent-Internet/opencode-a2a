@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
 import time
 import uuid
-from collections import defaultdict
 from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -21,7 +17,6 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
     Artifact,
-    DataPart,
     Message,
     Part,
     Role,
@@ -40,12 +35,14 @@ from ..parts.mapping import (
     map_a2a_parts_to_opencode_parts,
     summarize_a2a_parts,
 )
+from .policy import PolicyEnforcer
 from .request_context import (
     _build_history,
     _extract_opencode_directory,
     _extract_shared_model,
     _extract_shared_session_id,
 )
+from .session_manager import SessionManager
 from .stream_events import (
     BlockType,
     _build_progress_identity,
@@ -54,9 +51,6 @@ from .stream_events import (
     _extract_interrupt_asked_event,
     _extract_interrupt_resolved_event,
     _extract_progress_metadata,
-    _extract_stream_message_id,
-    _extract_stream_part_id,
-    _extract_stream_role,
     _extract_stream_session_id,
     _extract_stream_snapshot_text,
     _extract_stream_terminal_signal,
@@ -64,21 +58,17 @@ from .stream_events import (
     _extract_tool_part_payload,
     _extract_upstream_error_from_event,
     _extract_upstream_error_from_response,
-    _log_stream_event_debug,
     _normalize_interrupt_question_options,
     _normalize_interrupt_questions,
     _normalize_role,
     _preview_log_value,
-    _resolve_stream_block_type,
 )
+from .stream_runtime import StreamRuntime
 from .stream_state import (
     _build_output_metadata,
     _build_stream_artifact_metadata,
     _merge_token_usage,
-    _NormalizedStreamChunk,
-    _PendingDelta,
     _StreamOutputState,
-    _StreamPartState,
     _TTLCache,
 )
 from .upstream_errors import (
@@ -105,6 +95,7 @@ __all__ = [
     "_extract_stream_snapshot_text",
     "_extract_stream_terminal_signal",
     "_extract_token_usage",
+    "_extract_tool_part_payload",
     "_extract_upstream_error_detail",
     "_extract_upstream_error_from_event",
     "_extract_upstream_error_from_response",
@@ -117,6 +108,7 @@ __all__ = [
     "_normalize_role",
     "_preview_log_value",
     "_resolve_upstream_error_profile",
+    "_TTLCache",
 ]
 
 
@@ -563,19 +555,23 @@ class OpencodeAgentExecutor(AgentExecutor):
         self._streaming_enabled = streaming_enabled
         self._cancel_abort_timeout_seconds = max(0.0, float(cancel_abort_timeout_seconds))
         self._a2a_client_manager = a2a_client_manager
-        self._sessions = _TTLCache(
-            ttl_seconds=session_cache_ttl_seconds,
-            maxsize=session_cache_maxsize,
+        self._policy = PolicyEnforcer(client=client)
+        self._session_manager = SessionManager(
+            client=client,
+            session_cache_ttl_seconds=session_cache_ttl_seconds,
+            session_cache_maxsize=session_cache_maxsize,
         )
-        self._session_owners = _TTLCache(
-            ttl_seconds=session_cache_ttl_seconds,
-            maxsize=session_cache_maxsize,
-            refresh_on_get=True,
-        )  # session_id -> identity
-        self._pending_session_claims: dict[str, str] = {}
+        self._stream_runtime = StreamRuntime(
+            client=client,
+            emit_metric=self._emit_metric,
+            sleep=asyncio.sleep,
+        )
+        self._sessions = self._session_manager._sessions
+        self._session_owners = self._session_manager._session_owners
+        self._pending_session_claims = self._session_manager._pending_session_claims
+        self._inflight_session_creates = self._session_manager._inflight_session_creates
+        self._session_locks = self._session_manager._session_locks
         self._lock = asyncio.Lock()
-        self._inflight_session_creates: dict[tuple[str, str], asyncio.Task[str]] = {}
-        self._session_locks: dict[str, asyncio.Lock] = {}
         self._running_requests: dict[tuple[str, str], asyncio.Task[Any]] = {}
         self._running_stop_events: dict[tuple[str, str], asyncio.Event] = {}
         self._running_identities: dict[tuple[str, str], str] = {}
@@ -591,60 +587,12 @@ class OpencodeAgentExecutor(AgentExecutor):
         _emit_metric(name, value, **labels)
 
     def _resolve_and_validate_directory(self, requested: str | None) -> str | None:
-        """Normalizes and validates the directory parameter against workspace boundaries.
-
-        Returns:
-            The normalized absolute path string if valid.
-        Raises:
-            ValueError: If the path is outside the allowed workspace.
-        """
-        base_dir_str = self._client.directory or os.getcwd()
-        base_path = Path(base_dir_str).resolve()
-
-        if requested is not None and not isinstance(requested, str):
-            raise ValueError("Directory must be a string path")
-
-        requested = requested.strip() if requested else requested
-        if not requested:
-            return str(base_path)
-
-        def _resolve_requested(path: str) -> Path:
-            p = Path(path)
-            if not p.is_absolute():
-                p = base_path / p
-            return p.resolve()
-
-        # 1. Deny override if disabled in settings
-        if not self._client.settings.a2a_allow_directory_override:
-            # If requested matches normalized base, it's fine.
-            requested_path = _resolve_requested(requested)
-            if requested_path == base_path:
-                return str(base_path)
-            raise ValueError("Directory override is disabled by service configuration")
-
-        # 2. Resolve requested path
-        requested_path = _resolve_requested(requested)
-
-        # 3. Boundary check: must be subpath of base_path
-        try:
-            requested_path.relative_to(base_path)
-        except ValueError as err:
-            raise ValueError(
-                f"Directory {requested} is outside the allowed workspace {base_path}"
-            ) from err
-
-        return str(requested_path)
+        return self._policy.resolve_directory(requested)
 
     def resolve_directory_for_control(self, requested: str | None) -> str | None:
-        """Shared directory policy for session control JSON-RPC methods."""
-        return self._resolve_and_validate_directory(requested)
+        return self._policy.resolve_directory_for_control(requested)
 
     async def claim_session_for_control(self, *, identity: str, session_id: str) -> bool:
-        """Reserve control access for a session.
-
-        Returns True when caller created a pending ownership claim that must be finalized or
-        released after upstream call completes.
-        """
         return await self._claim_preferred_session(identity=identity, session_id=session_id)
 
     async def finalize_session_for_control(self, *, identity: str, session_id: str) -> None:
@@ -924,8 +872,10 @@ class OpencodeAgentExecutor(AgentExecutor):
                 stop_event = self._running_stop_events.get(execution_key)
                 running_session_id = self._running_session_ids.get(execution_key)
                 running_directory = self._running_directories.get(execution_key)
-                self._sessions.pop((running_identity, context_id))
-                inflight = self._inflight_session_creates.pop((running_identity, context_id), None)
+            inflight = await self._session_manager.pop_cached_session(
+                identity=running_identity,
+                context_id=context_id,
+            )
             if stop_event:
                 stop_event.set()
             should_cancel_running_task = (
@@ -1012,50 +962,13 @@ class OpencodeAgentExecutor(AgentExecutor):
         preferred_session_id: str | None = None,
         directory: str | None = None,
     ) -> tuple[str, bool]:
-        # Caller explicitly bound the request to a known OpenCode session.
-        if preferred_session_id:
-            pending_claim = await self._claim_preferred_session(
-                identity=identity,
-                session_id=preferred_session_id,
-            )
-            if not pending_claim:
-                self._sessions.set((identity, context_id), preferred_session_id)
-            return preferred_session_id, pending_claim
-
-        task: asyncio.Task[str] | None = None
-        cache_key = (identity, context_id)
-        async with self._lock:
-            existing = self._sessions.get(cache_key)
-            if existing:
-                return existing, False
-            task = self._inflight_session_creates.get(cache_key)
-            if task is None:
-                task = asyncio.create_task(
-                    self._client.create_session(title=title, directory=directory)
-                )
-                self._inflight_session_creates[cache_key] = task
-
-        try:
-            session_id = await task
-        except Exception:
-            async with self._lock:
-                if self._inflight_session_creates.get(cache_key) is task:
-                    self._inflight_session_creates.pop(cache_key, None)
-            raise
-
-        async with self._lock:
-            # Session create finished; commit to cache and drop inflight marker.
-            owner = self._session_owners.get(session_id)
-            if owner and owner != identity:
-                if self._inflight_session_creates.get(cache_key) is task:
-                    self._inflight_session_creates.pop(cache_key, None)
-                raise PermissionError(f"Session {session_id} is not owned by you")
-            self._sessions.set(cache_key, session_id)
-            if not owner:
-                self._session_owners.set(session_id, identity)
-            if self._inflight_session_creates.get(cache_key) is task:
-                self._inflight_session_creates.pop(cache_key, None)
-        return session_id, False
+        return await self._session_manager.get_or_create_session(
+            identity,
+            context_id,
+            title,
+            preferred_session_id=preferred_session_id,
+            directory=directory,
+        )
 
     async def _finalize_preferred_session_binding(
         self,
@@ -1064,63 +977,32 @@ class OpencodeAgentExecutor(AgentExecutor):
         context_id: str,
         session_id: str,
     ) -> None:
-        await self._finalize_session_claim(identity=identity, session_id=session_id)
-        async with self._lock:
-            self._sessions.set((identity, context_id), session_id)
+        await self._session_manager.finalize_preferred_session_binding(
+            identity=identity,
+            context_id=context_id,
+            session_id=session_id,
+        )
 
     async def _claim_preferred_session(self, *, identity: str, session_id: str) -> bool:
-        async with self._lock:
-            owner = self._session_owners.get(session_id)
-            pending_owner = self._pending_session_claims.get(session_id)
-            if owner and owner != identity:
-                logger.warning(
-                    "Identity %s tried to hijack session %s owned by %s",
-                    identity,
-                    session_id,
-                    owner,
-                )
-                raise PermissionError(f"Session {session_id} is not owned by you")
-
-            if pending_owner and pending_owner != identity:
-                logger.warning(
-                    "Identity %s tried to use session %s while pending owner is %s",
-                    identity,
-                    session_id,
-                    pending_owner,
-                )
-                raise PermissionError(f"Session {session_id} is not owned by you")
-
-            if owner == identity:
-                return False
-
-            self._pending_session_claims[session_id] = identity
-            return True
+        return await self._session_manager.claim_preferred_session(
+            identity=identity,
+            session_id=session_id,
+        )
 
     async def _finalize_session_claim(self, *, identity: str, session_id: str) -> None:
-        async with self._lock:
-            owner = self._session_owners.get(session_id)
-            pending_owner = self._pending_session_claims.get(session_id)
-            if owner and owner != identity:
-                raise PermissionError(f"Session {session_id} is not owned by you")
-            if pending_owner and pending_owner != identity:
-                raise PermissionError(f"Session {session_id} is not owned by you")
-
-            self._session_owners.set(session_id, identity)
-            if self._pending_session_claims.get(session_id) == identity:
-                self._pending_session_claims.pop(session_id, None)
+        await self._session_manager.finalize_session_claim(
+            identity=identity,
+            session_id=session_id,
+        )
 
     async def _release_preferred_session_claim(self, *, identity: str, session_id: str) -> None:
-        async with self._lock:
-            if self._pending_session_claims.get(session_id) == identity:
-                self._pending_session_claims.pop(session_id, None)
+        await self._session_manager.release_preferred_session_claim(
+            identity=identity,
+            session_id=session_id,
+        )
 
     async def _get_session_lock(self, session_id: str) -> asyncio.Lock:
-        async with self._lock:
-            lock = self._session_locks.get(session_id)
-            if lock is None:
-                lock = asyncio.Lock()
-                self._session_locks[session_id] = lock
-            return lock
+        return await self._session_manager.get_session_lock(session_id)
 
     async def _emit_error(
         self,
@@ -1204,503 +1086,18 @@ class OpencodeAgentExecutor(AgentExecutor):
         terminal_signal: asyncio.Future[_StreamTerminalSignal],
         directory: str | None = None,
     ) -> None:
-        part_states: dict[str, _StreamPartState] = {}
-        pending_deltas: defaultdict[str, list[_PendingDelta]] = defaultdict(list)
-        backoff = 0.5
-        max_backoff = 5.0
-
-        async def _emit_chunks(chunks: list[_NormalizedStreamChunk]) -> None:
-            for chunk in chunks:
-                resolved_message_id = stream_state.resolve_message_id(chunk.message_id)
-                chunk_text = getattr(chunk.part.root, "text", "")
-                if stream_state.should_drop_initial_user_echo(
-                    chunk_text,
-                    block_type=chunk.block_type,
-                    role=chunk.role,
-                ):
-                    continue
-                should_emit, effective_append = stream_state.register_chunk(
-                    block_type=chunk.block_type,
-                    content_key=chunk.content_key,
-                    append=chunk.append,
-                    accumulate_content=chunk.accumulate_content,
-                )
-                if not should_emit:
-                    continue
-                sequence = stream_state.next_sequence()
-                await _enqueue_artifact_update(
-                    event_queue=event_queue,
-                    task_id=task_id,
-                    context_id=context_id,
-                    artifact_id=artifact_id,
-                    part=chunk.part,
-                    append=effective_append,
-                    last_chunk=False,
-                    artifact_metadata=_build_stream_artifact_metadata(
-                        block_type=chunk.block_type,
-                        shared_source=chunk.shared_source,
-                        message_id=resolved_message_id,
-                        role=chunk.role,
-                        event_id=stream_state.build_event_id(sequence),
-                        sequence=sequence,
-                    ),
-                )
-                logger.debug(
-                    "Stream chunk task_id=%s session_id=%s block_type=%s append=%s "
-                    "shared_source=%s internal_source=%s text=%s",
-                    task_id,
-                    session_id,
-                    chunk.block_type,
-                    effective_append,
-                    chunk.shared_source,
-                    chunk.internal_source,
-                    chunk.content_key,
-                )
-                if chunk.block_type == BlockType.TOOL_CALL:
-                    _emit_metric("tool_call_chunks_emitted_total")
-
-        async def _emit_interrupt_status(
-            *,
-            state: TaskState,
-            request_id: str,
-            interrupt_type: str,
-            phase: str,
-            details: Mapping[str, Any] | None = None,
-            resolution: str | None = None,
-        ) -> None:
-            interrupt_metadata: dict[str, Any] = {
-                "request_id": request_id,
-                "type": interrupt_type,
-                "phase": phase,
-            }
-            if details is not None:
-                interrupt_metadata["details"] = dict(details)
-            if resolution is not None:
-                interrupt_metadata["resolution"] = resolution
-            sequence = stream_state.next_sequence()
-            await event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    task_id=task_id,
-                    context_id=context_id,
-                    status=TaskStatus(state=state),
-                    final=False,
-                    metadata=_build_output_metadata(
-                        session_id=session_id,
-                        stream={
-                            "message_id": stream_state.resolve_message_id(None),
-                            "event_id": stream_state.build_event_id(sequence),
-                            "source": "interrupt",
-                            "sequence": sequence,
-                        },
-                        interrupt={
-                            **interrupt_metadata,
-                        },
-                    ),
-                )
-            )
-            if phase == "asked":
-                _emit_metric("interrupt_requests_total")
-            elif phase == "resolved":
-                _emit_metric("interrupt_resolved_total")
-
-        async def _emit_progress_status(
-            *,
-            message_id: str | None,
-            progress: Mapping[str, Any],
-        ) -> None:
-            sequence = stream_state.next_sequence()
-            await event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    task_id=task_id,
-                    context_id=context_id,
-                    status=TaskStatus(state=TaskState.working),
-                    final=False,
-                    metadata=_build_output_metadata(
-                        session_id=session_id,
-                        stream={
-                            "message_id": stream_state.resolve_message_id(message_id),
-                            "event_id": stream_state.build_event_id(sequence),
-                            "source": "progress",
-                            "sequence": sequence,
-                        },
-                        progress=dict(progress),
-                    ),
-                )
-            )
-
-        def _new_text_chunk(
-            *,
-            text: str,
-            append: bool,
-            block_type: BlockType,
-            internal_source: str,
-            shared_source: str,
-            message_id: str | None,
-            role: str | None,
-        ) -> _NormalizedStreamChunk:
-            return _NormalizedStreamChunk(
-                part=Part(root=TextPart(text=text)),
-                content_key=text,
-                accumulate_content=True,
-                append=append,
-                block_type=block_type,
-                internal_source=internal_source,
-                shared_source=shared_source,
-                message_id=message_id,
-                role=role,
-            )
-
-        def _new_data_chunk(
-            *,
-            data: Mapping[str, Any],
-            content_key: str,
-            append: bool,
-            block_type: BlockType,
-            internal_source: str,
-            shared_source: str,
-            message_id: str | None,
-            role: str | None,
-        ) -> _NormalizedStreamChunk:
-            return _NormalizedStreamChunk(
-                part=Part(root=DataPart(data=dict(data))),
-                content_key=content_key,
-                accumulate_content=False,
-                append=append,
-                block_type=block_type,
-                internal_source=internal_source,
-                shared_source=shared_source,
-                message_id=message_id,
-                role=role,
-            )
-
-        def _upsert_part_state(
-            *,
-            part_id: str,
-            part: Mapping[str, Any],
-            props: Mapping[str, Any],
-            role: str | None,
-            message_id: str | None,
-        ) -> _StreamPartState | None:
-            block_type = _resolve_stream_block_type(part, props)
-            if block_type is None:
-                return None
-            state = part_states.get(part_id)
-            if state is None:
-                state = _StreamPartState(
-                    block_type=block_type,
-                    message_id=message_id,
-                    role=role,
-                )
-                part_states[part_id] = state
-                return state
-            state.block_type = block_type
-            if role is not None:
-                state.role = role
-            if message_id:
-                state.message_id = message_id
-            return state
-
-        def _delta_chunks(
-            *,
-            state: _StreamPartState,
-            delta_text: str,
-            message_id: str | None,
-            internal_source: str,
-        ) -> list[_NormalizedStreamChunk]:
-            if not delta_text:
-                return []
-            if message_id:
-                state.message_id = message_id
-            state.buffer = f"{state.buffer}{delta_text}"
-            state.saw_delta = True
-            return [
-                _new_text_chunk(
-                    text=delta_text,
-                    append=True,
-                    block_type=state.block_type,
-                    internal_source=internal_source,
-                    shared_source="stream",
-                    message_id=state.message_id,
-                    role=state.role,
-                )
-            ]
-
-        def _snapshot_chunks(
-            *,
-            state: _StreamPartState,
-            snapshot: str,
-            message_id: str | None,
-            part_id: str,
-        ) -> list[_NormalizedStreamChunk]:
-            if message_id:
-                state.message_id = message_id
-            previous = state.buffer
-            if snapshot == previous:
-                return []
-            if snapshot.startswith(previous):
-                delta_text = snapshot[len(previous) :]
-                state.buffer = snapshot
-                if not delta_text:
-                    return []
-                return [
-                    _new_text_chunk(
-                        text=delta_text,
-                        append=True,
-                        block_type=state.block_type,
-                        internal_source="part_text_diff",
-                        shared_source="stream",
-                        message_id=state.message_id,
-                        role=state.role,
-                    )
-                ]
-            state.buffer = snapshot
-            logger.warning(
-                "Suppressing non-prefix snapshot rewrite "
-                "task_id=%s session_id=%s part_id=%s block_type=%s had_delta=%s",
-                task_id,
-                session_id,
-                part_id,
-                state.block_type.value,
-                state.saw_delta,
-            )
-            return []
-
-        def _tool_chunks(
-            *,
-            state: _StreamPartState,
-            part: Mapping[str, Any],
-            message_id: str | None,
-        ) -> list[_NormalizedStreamChunk]:
-            tool_payload = _extract_tool_part_payload(part)
-            if tool_payload is None:
-                return []
-            content_key = json.dumps(
-                tool_payload,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-            if message_id:
-                state.message_id = message_id
-            previous = state.buffer
-            if content_key == previous:
-                return []
-            state.buffer = content_key
-            return [
-                _new_data_chunk(
-                    data=tool_payload,
-                    content_key=content_key,
-                    append=bool(previous),
-                    block_type=state.block_type,
-                    internal_source="tool_part_update",
-                    shared_source="tool_part_update",
-                    message_id=state.message_id,
-                    role=state.role,
-                )
-            ]
-
-        try:
-            while not stop_event.is_set():
-                try:
-                    async for event in self._client.stream_events(
-                        stop_event=stop_event, directory=directory
-                    ):
-                        if stop_event.is_set():
-                            break
-                        _log_stream_event_debug(
-                            event,
-                            limit=max(0, self._client.settings.a2a_log_body_limit),
-                        )
-                        event_type = event.get("type")
-                        if not isinstance(event_type, str):
-                            continue
-                        props = event.get("properties")
-                        if not isinstance(props, Mapping):
-                            continue
-                        event_session_id = _extract_event_session_id(event)
-                        if event_session_id == session_id:
-                            part = props.get("part")
-                            if isinstance(part, Mapping):
-                                progress = _extract_progress_metadata(part, props)
-                                if progress is not None:
-                                    progress_identity = _build_progress_identity(part, props)
-                                    progress_key = json.dumps(
-                                        progress,
-                                        ensure_ascii=False,
-                                        sort_keys=True,
-                                        separators=(",", ":"),
-                                    )
-                                    if stream_state.register_progress(
-                                        identity=progress_identity,
-                                        content_key=progress_key,
-                                    ):
-                                        await _emit_progress_status(
-                                            message_id=_extract_stream_message_id(part, props),
-                                            progress=progress,
-                                        )
-                            upstream_error = _extract_upstream_error_from_event(event)
-                            if upstream_error is not None and stream_state.upstream_error is None:
-                                stream_state.upstream_error = upstream_error
-                            signal = _extract_stream_terminal_signal(event)
-                            if signal is not None and not terminal_signal.done():
-                                terminal_signal.set_result(signal)
-                                stop_event.set()
-                            usage = _extract_token_usage(event)
-                            if usage is not None:
-                                stream_state.ingest_token_usage(usage)
-                            asked = _extract_interrupt_asked_event(event)
-                            if asked is not None:
-                                request_id = asked["request_id"]
-                                if stream_state.mark_interrupt_pending(request_id):
-                                    remember_request = getattr(
-                                        self._client, "remember_interrupt_request", None
-                                    )
-                                    if callable(remember_request):
-                                        remember_request(
-                                            request_id=request_id,
-                                            session_id=session_id,
-                                            interrupt_type=asked["interrupt_type"],
-                                            identity=identity,
-                                            task_id=task_id,
-                                            context_id=context_id,
-                                        )
-                                    await _emit_interrupt_status(
-                                        state=TaskState.input_required,
-                                        request_id=request_id,
-                                        interrupt_type=asked["interrupt_type"],
-                                        phase="asked",
-                                        details=asked["details"],
-                                    )
-                            resolved = _extract_interrupt_resolved_event(event)
-                            if resolved is not None:
-                                resolved_request_id = resolved["request_id"]
-                                cleared_pending = stream_state.clear_interrupt_pending(
-                                    resolved_request_id
-                                )
-                                discard_request = getattr(
-                                    self._client, "discard_interrupt_request", None
-                                )
-                                if callable(discard_request):
-                                    discard_request(resolved_request_id)
-                                if cleared_pending:
-                                    await _emit_interrupt_status(
-                                        state=TaskState.working,
-                                        request_id=resolved_request_id,
-                                        interrupt_type=resolved["interrupt_type"],
-                                        phase="resolved",
-                                        resolution=resolved["resolution"],
-                                    )
-                        if event_type not in {"message.part.updated", "message.part.delta"}:
-                            continue
-                        part = props.get("part")
-                        if not isinstance(part, Mapping):
-                            part = {}
-                        if _extract_stream_session_id(part, props) != session_id:
-                            continue
-                        message_id = _extract_stream_message_id(part, props)
-                        part_id = _extract_stream_part_id(part, props)
-                        if not part_id:
-                            continue
-
-                        if event_type == "message.part.delta":
-                            field = props.get("field")
-                            delta = props.get("delta")
-                            if field != "text" or not isinstance(delta, str) or not delta:
-                                continue
-                            state = part_states.get(part_id)
-                            if state is None:
-                                pending_deltas[part_id].append(
-                                    _PendingDelta(
-                                        field=field,
-                                        delta=delta,
-                                        message_id=message_id,
-                                    )
-                                )
-                                continue
-                            if state.role in {"user", "system"}:
-                                continue
-                            delta_chunks = _delta_chunks(
-                                state=state,
-                                delta_text=delta,
-                                message_id=message_id,
-                                internal_source="delta_event",
-                            )
-                            if delta_chunks:
-                                await _emit_chunks(delta_chunks)
-                            continue
-
-                        role = _extract_stream_role(part, props)
-                        state = _upsert_part_state(
-                            part_id=part_id,
-                            part=part,
-                            props=props,
-                            role=role,
-                            message_id=message_id,
-                        )
-                        if state is None:
-                            pending_deltas.pop(part_id, None)
-                            continue
-                        if state.role in {"user", "system"}:
-                            pending_deltas.pop(part_id, None)
-                            continue
-
-                        chunks: list[_NormalizedStreamChunk] = []
-                        pending = pending_deltas.pop(part_id, [])
-                        for buffered in pending:
-                            if buffered.field != "text":
-                                continue
-                            chunks.extend(
-                                _delta_chunks(
-                                    state=state,
-                                    delta_text=buffered.delta,
-                                    message_id=buffered.message_id,
-                                    internal_source="delta_event_buffered",
-                                )
-                            )
-
-                        delta = props.get("delta")
-                        if isinstance(delta, str) and delta:
-                            chunks.extend(
-                                _delta_chunks(
-                                    state=state,
-                                    delta_text=delta,
-                                    message_id=message_id,
-                                    internal_source="delta",
-                                )
-                            )
-                        elif state.block_type == BlockType.TOOL_CALL:
-                            chunks.extend(
-                                _tool_chunks(
-                                    state=state,
-                                    part=part,
-                                    message_id=message_id,
-                                )
-                            )
-                        else:
-                            snapshot_text = _extract_stream_snapshot_text(part)
-                            if snapshot_text is not None:
-                                chunks.extend(
-                                    _snapshot_chunks(
-                                        state=state,
-                                        snapshot=snapshot_text,
-                                        message_id=message_id,
-                                        part_id=part_id,
-                                    )
-                                )
-
-                        if chunks:
-                            await _emit_chunks(chunks)
-
-                    break
-                except Exception:
-                    if stop_event.is_set():
-                        break
-                    _emit_metric("opencode_stream_retries_total")
-                    logger.exception("OpenCode event stream failed; retrying")
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 2, max_backoff)
-        except Exception:
-            logger.exception("OpenCode event stream failed")
+        await self._stream_runtime.consume(
+            session_id=session_id,
+            identity=identity,
+            task_id=task_id,
+            context_id=context_id,
+            artifact_id=artifact_id,
+            stream_state=stream_state,
+            event_queue=event_queue,
+            stop_event=stop_event,
+            terminal_signal=terminal_signal,
+            directory=directory,
+        )
 
 
 def _build_assistant_message(
