@@ -83,3 +83,38 @@ async def test_disabled_shell_reports_current_supported_methods() -> None:
     assert error["data"]["type"] == "METHOD_NOT_SUPPORTED"
     assert error["data"]["method"] == "opencode.sessions.shell"
     assert "opencode.sessions.shell" not in error["data"]["supported_methods"]
+
+
+@pytest.mark.asyncio
+async def test_policy_disabled_shell_reports_current_supported_methods() -> None:
+    settings = make_settings(
+        a2a_bearer_token="test-token",
+        a2a_enable_session_shell=True,
+        a2a_sandbox_mode="read-only",
+        a2a_write_access_scope="workspace_only",
+    )
+    app = create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers={"Authorization": "Bearer test-token"},
+            json={
+                "jsonrpc": "2.0",
+                "id": 125,
+                "method": "opencode.sessions.shell",
+                "params": {
+                    "session_id": "s-1",
+                    "request": {"agent": "code-reviewer", "command": "pwd"},
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    error = body["error"]
+    assert error["code"] == -32601
+    assert error["data"]["type"] == "METHOD_NOT_SUPPORTED"
+    assert error["data"]["method"] == "opencode.sessions.shell"
+    assert "opencode.sessions.shell" not in error["data"]["supported_methods"]

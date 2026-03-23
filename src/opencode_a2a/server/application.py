@@ -6,6 +6,7 @@ import logging
 import secrets
 from contextlib import asynccontextmanager
 from contextvars import ContextVar, Token
+from functools import partial
 from typing import TYPE_CHECKING
 
 import uvicorn
@@ -361,14 +362,6 @@ class A2AClientManager:
         self.clients: dict[str, _ClientCacheEntry] = {}
         self._lock = asyncio.Lock()
 
-    @property
-    def cache_ttl_seconds(self) -> float:
-        return self._cache_ttl_seconds
-
-    @property
-    def cache_maxsize(self) -> int:
-        return self._cache_maxsize
-
     @asynccontextmanager
     async def borrow_client(self, agent_url: str):
         url = agent_url.rstrip("/")
@@ -384,8 +377,8 @@ class A2AClientManager:
         async with self._lock:
             now = self._now()
             entry = self.clients.get(url)
-            if entry is not None and self._entry_expired(entry, now=now):
-                if self._entry_in_use(entry):
+            if entry is not None and entry.expires_at is not None and entry.expires_at <= now:
+                if entry.borrow_count > 0 or entry.client.is_busy():
                     entry.pending_eviction = True
                 else:
                     self.clients.pop(url, None)
@@ -396,12 +389,16 @@ class A2AClientManager:
                 entry = _ClientCacheEntry(
                     client=A2AClient(url, settings=self.client_settings),
                     last_used=now,
-                    expires_at=self._expires_at_for(now),
+                    expires_at=None
+                    if self._cache_ttl_seconds <= 0
+                    else now + self._cache_ttl_seconds,
                 )
                 self.clients[url] = entry
             else:
                 entry.last_used = now
-                entry.expires_at = self._expires_at_for(now)
+                entry.expires_at = (
+                    None if self._cache_ttl_seconds <= 0 else now + self._cache_ttl_seconds
+                )
                 entry.pending_eviction = False
             entry.borrow_count += 1
             to_close.extend(self._evict_locked(now=now, protected_keys={url}))
@@ -417,7 +414,9 @@ class A2AClientManager:
                     if current.borrow_count > 0:
                         current.borrow_count -= 1
                     current.last_used = now
-                    current.expires_at = self._expires_at_for(now)
+                    current.expires_at = (
+                        None if self._cache_ttl_seconds <= 0 else now + self._cache_ttl_seconds
+                    )
                 to_close = self._evict_locked(now=now)
             await self._close_clients(to_close)
 
@@ -427,11 +426,6 @@ class A2AClientManager:
             self.clients.clear()
         for client in clients:
             await client.close()
-
-    def _expires_at_for(self, now: float) -> float | None:
-        if self._cache_ttl_seconds <= 0:
-            return None
-        return now + self._cache_ttl_seconds
 
     def _evict_locked(
         self,
@@ -443,10 +437,10 @@ class A2AClientManager:
         to_close: list[A2AClient] = []
 
         for key, entry in list(self.clients.items()):
-            expired = self._entry_expired(entry, now=now)
+            expired = entry.expires_at is not None and entry.expires_at <= now
             if not expired and not entry.pending_eviction:
                 continue
-            if key in protected or self._entry_in_use(entry):
+            if key in protected or entry.borrow_count > 0 or entry.client.is_busy():
                 entry.pending_eviction = True
                 continue
             self.clients.pop(key, None)
@@ -463,19 +457,13 @@ class A2AClientManager:
                 break
             if key in protected:
                 continue
-            if self._entry_in_use(entry):
+            if entry.borrow_count > 0 or entry.client.is_busy():
                 entry.pending_eviction = True
                 continue
             self.clients.pop(key, None)
             to_close.append(entry.client)
 
         return to_close
-
-    def _entry_expired(self, entry: _ClientCacheEntry, *, now: float) -> bool:
-        return entry.expires_at is not None and entry.expires_at <= now
-
-    def _entry_in_use(self, entry: _ClientCacheEntry) -> bool:
-        return entry.borrow_count > 0 or entry.client.is_busy()
 
     async def _close_clients(self, clients: list[A2AClient]) -> None:
         for client in clients:
@@ -535,10 +523,21 @@ def create_app(settings: Settings) -> FastAPI:
         upstream_client=upstream_client,
         protocol_version=settings.a2a_protocol_version,
         supported_methods=capability_snapshot.supported_jsonrpc_methods(),
-        directory_resolver=executor.resolve_directory_for_control,
-        session_claim=executor.claim_session_for_control,
-        session_claim_finalize=executor.finalize_session_for_control,
-        session_claim_release=executor.release_session_for_control,
+        directory_resolver=(
+            partial(
+                executor._sandbox_policy.resolve_directory,
+                default_directory=upstream_client.directory,
+            )
+            if hasattr(executor, "_sandbox_policy")
+            else None
+        ),
+        session_claim=getattr(executor._session_manager, "claim_preferred_session", None),
+        session_claim_finalize=getattr(executor._session_manager, "finalize_session_claim", None),
+        session_claim_release=getattr(
+            executor._session_manager,
+            "release_preferred_session_claim",
+            None,
+        ),
         methods=jsonrpc_methods,
     )
     rest_adapter = RESTAdapter(

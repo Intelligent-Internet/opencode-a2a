@@ -302,10 +302,6 @@ class DeploymentConditionalMethod:
     toggle: str
     reason_when_disabled: str = "disabled_by_configuration"
 
-    @property
-    def availability(self) -> str:
-        return "enabled" if self.enabled else "disabled"
-
     def control_method_flag(self) -> dict[str, Any]:
         return {
             "enabled_by_default": False,
@@ -315,7 +311,7 @@ class DeploymentConditionalMethod:
     def method_retention(self) -> dict[str, Any]:
         return {
             "surface": "extension",
-            "availability": self.availability,
+            "availability": "enabled" if self.enabled else "disabled",
             "retention": "deployment-conditional",
             "extension_uri": self.extension_uri,
             "toggle": self.toggle,
@@ -411,7 +407,7 @@ def build_capability_snapshot(*, runtime_profile: RuntimeProfile) -> JsonRpcCapa
         conditional_methods={
             SESSION_CONTROL_METHODS["shell"]: DeploymentConditionalMethod(
                 method=SESSION_CONTROL_METHODS["shell"],
-                enabled=runtime_profile.session_shell_enabled,
+                enabled=runtime_profile.session_shell.enabled,
                 extension_uri=SESSION_QUERY_EXTENSION_URI,
                 toggle=SESSION_SHELL_TOGGLE,
             )

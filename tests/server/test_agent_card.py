@@ -390,3 +390,22 @@ def test_agent_card_skills_hide_shell_when_disabled_by_default() -> None:
     assert all("opencode.sessions.shell" not in example for example in session_skill.examples)
     assert "provider-private" in provider_skill.tags
     assert any("opencode.providers.list" in example for example in provider_skill.examples)
+
+
+def test_agent_card_hides_shell_when_policy_disables_it() -> None:
+    card = build_agent_card(
+        make_settings(
+            a2a_bearer_token="test-token",
+            a2a_enable_session_shell=True,
+            a2a_sandbox_mode="read-only",
+            a2a_write_access_scope="workspace_only",
+        )
+    )
+    ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
+
+    session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
+    compatibility = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
+
+    assert "shell" not in session_query.params["methods"]
+    assert "opencode.sessions.shell" not in session_query.params["method_contracts"]
+    assert compatibility.params["runtime_features"]["session_shell"]["availability"] == "disabled"

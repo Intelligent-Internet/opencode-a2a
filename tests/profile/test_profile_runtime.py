@@ -115,3 +115,20 @@ def test_profile_runtime_uses_conservative_execution_environment_defaults() -> N
             "outside_workspace": "unknown",
         },
     }
+
+
+def test_profile_runtime_disables_shell_when_policy_is_read_only() -> None:
+    settings = make_settings(
+        a2a_bearer_token="test-token",
+        a2a_enable_session_shell=True,
+        a2a_sandbox_mode="read-only",
+        a2a_write_access_scope="workspace_only",
+    )
+
+    profile = build_runtime_profile(settings)
+
+    assert profile.runtime_features_dict()["session_shell"] == {
+        "enabled": False,
+        "availability": "disabled",
+        "toggle": "A2A_ENABLE_SESSION_SHELL",
+    }

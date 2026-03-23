@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..config import Settings
+from ..sandbox_policy import SandboxPolicy
 
 PROFILE_ID = "opencode-a2a-single-tenant-coding-v1"
 DEPLOYMENT_ID = "single_tenant_shared_workspace"
@@ -165,10 +166,6 @@ class RuntimeProfile:
     service_features: ServiceFeaturesProfile
     runtime_context: RuntimeContext
 
-    @property
-    def session_shell_enabled(self) -> bool:
-        return self.session_shell.enabled
-
     def runtime_features_dict(self) -> dict[str, Any]:
         return {
             "directory_binding": self.directory_binding.as_dict(),
@@ -206,6 +203,10 @@ class RuntimeProfile:
 
 
 def build_runtime_profile(settings: Settings) -> RuntimeProfile:
+    sandbox_policy = SandboxPolicy.from_settings(settings)
+    shell_enabled = sandbox_policy.is_session_shell_enabled(
+        enabled_by_config=settings.a2a_enable_session_shell,
+    )
     directory_scope = (
         "workspace_root_or_descendant"
         if settings.a2a_allow_directory_override
@@ -219,8 +220,8 @@ def build_runtime_profile(settings: Settings) -> RuntimeProfile:
             scope=directory_scope,
         ),
         session_shell=SessionShellProfile(
-            enabled=settings.a2a_enable_session_shell,
-            availability="enabled" if settings.a2a_enable_session_shell else "disabled",
+            enabled=shell_enabled,
+            availability="enabled" if shell_enabled else "disabled",
         ),
         execution_environment=ExecutionEnvironmentProfile(
             sandbox=SandboxProfile(

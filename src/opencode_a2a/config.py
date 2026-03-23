@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Literal, cast
 
-from pydantic import Field, field_validator
+from pydantic import BeforeValidator, Field, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from opencode_a2a import __version__
+from opencode_a2a.sandbox_policy import SandboxPolicy
 
 SandboxMode = Literal[
     "unknown",
@@ -34,7 +35,6 @@ WriteAccessScope = Literal[
     "custom",
 ]
 OutsideWorkspaceAccess = Literal["unknown", "allowed", "disallowed", "custom"]
-DeclaredStringList = Annotated[tuple[str, ...], NoDecode]
 
 
 def _parse_declared_list(value: Any) -> tuple[str, ...]:
@@ -57,6 +57,9 @@ def _parse_declared_list(value: Any) -> tuple[str, ...]:
     if isinstance(value, (list, tuple)):
         return tuple(str(item).strip() for item in value if str(item).strip())
     raise TypeError("Expected a comma-separated string, JSON array, or sequence.")
+
+
+DeclaredStringList = Annotated[tuple[str, ...], NoDecode, BeforeValidator(_parse_declared_list)]
 
 
 class Settings(BaseSettings):
@@ -173,18 +176,12 @@ class Settings(BaseSettings):
         alias="A2A_CLIENT_SUPPORTED_TRANSPORTS",
     )
 
-    @field_validator(
-        "a2a_sandbox_writable_roots",
-        "a2a_network_allowed_domains",
-        "a2a_client_supported_transports",
-        mode="before",
-    )
-    @classmethod
-    def _normalize_declared_lists(cls, value: Any) -> tuple[str, ...]:
-        return _parse_declared_list(value)
+    @model_validator(mode="after")
+    def _validate_sandbox_policy(self) -> Settings:
+        SandboxPolicy.from_settings(self).validate_configuration()
+        return self
 
     @classmethod
     def from_env(cls) -> Settings:
-        # BaseSettings constructor loads values from env and applies validation.
         settings_cls: type[BaseSettings] = cls
         return cast(Settings, settings_cls())

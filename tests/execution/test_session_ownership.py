@@ -302,7 +302,7 @@ async def test_pending_preferred_session_claim_blocks_other_identity():
         AsyncMock(spec=OpencodeUpstreamClient), streaming_enabled=False
     )
 
-    session_id, pending = await executor._get_or_create_session(
+    session_id, pending = await executor._session_manager.get_or_create_session(
         "user-1",
         "context-A",
         "hello",
@@ -312,11 +312,14 @@ async def test_pending_preferred_session_claim_blocks_other_identity():
     assert pending is True
 
     with pytest.raises(PermissionError, match="not owned by you"):
-        await executor._get_or_create_session(
+        await executor._session_manager.get_or_create_session(
             "user-2",
             "context-B",
             "hello",
             preferred_session_id="session-X",
         )
 
-    await executor._release_preferred_session_claim(identity="user-1", session_id="session-X")
+    await executor._session_manager.release_preferred_session_claim(
+        identity="user-1",
+        session_id="session-X",
+    )

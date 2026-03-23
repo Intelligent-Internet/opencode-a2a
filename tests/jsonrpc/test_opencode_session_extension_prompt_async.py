@@ -443,7 +443,7 @@ async def test_session_prompt_async_extension_maps_network_error_to_unreachable(
 @pytest.mark.asyncio
 async def test_session_prompt_async_release_failure_does_not_override_response(monkeypatch, caplog):
     import opencode_a2a.server.application as app_module
-    from opencode_a2a.execution.executor import OpencodeAgentExecutor
+    from opencode_a2a.execution.session_manager import SessionManager
 
     class NetworkErrorPromptAsyncClient(DummyOpencodeUpstreamClient):
         async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
@@ -451,15 +451,13 @@ async def test_session_prompt_async_release_failure_does_not_override_response(m
             req = httpx.Request("POST", "http://opencode/session/s-1/prompt_async")
             raise httpx.ConnectError("network down", request=req)
 
-    async def _release_raises(
-        self: OpencodeAgentExecutor, *, identity: str, session_id: str
-    ) -> None:
+    async def _release_raises(self: SessionManager, *, identity: str, session_id: str) -> None:
         del identity, session_id
         raise RuntimeError("release failed")
 
     caplog.set_level(logging.ERROR)
     monkeypatch.setattr(app_module, "OpencodeUpstreamClient", NetworkErrorPromptAsyncClient)
-    monkeypatch.setattr(OpencodeAgentExecutor, "release_session_for_control", _release_raises)
+    monkeypatch.setattr(SessionManager, "release_preferred_session_claim", _release_raises)
     app = app_module.create_app(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )

@@ -24,49 +24,61 @@ def mock_client():
 
 def test_resolve_and_validate_directory_valid(mock_client):
     executor = OpencodeAgentExecutor(mock_client, streaming_enabled=False)
+    resolve_directory = lambda requested: executor._sandbox_policy.resolve_directory(  # noqa: E731, SLF001
+        requested,
+        default_directory=mock_client.directory,
+    )
 
     # Setup mock workspace
     base_dir = Path("/tmp/workspace").resolve()
 
     # Valid subpath
     requested = "/tmp/workspace/project1"
-    resolved = executor._resolve_and_validate_directory(requested)
+    resolved = resolve_directory(requested)
     assert resolved == str(Path(requested).resolve())
 
     # Valid base path
-    resolved = executor._resolve_and_validate_directory("/tmp/workspace")
+    resolved = resolve_directory("/tmp/workspace")
     assert resolved == str(base_dir)
 
     # Relative path should be resolved against workspace root, not process cwd.
-    resolved = executor._resolve_and_validate_directory("project2/sub")
+    resolved = resolve_directory("project2/sub")
     assert resolved == str((base_dir / "project2/sub").resolve())
 
 
 def test_resolve_and_validate_directory_traversal(mock_client):
     executor = OpencodeAgentExecutor(mock_client, streaming_enabled=False)
+    resolve_directory = lambda requested: executor._sandbox_policy.resolve_directory(  # noqa: E731, SLF001
+        requested,
+        default_directory=mock_client.directory,
+    )
 
     # Attempt traversal
     with pytest.raises(ValueError, match="outside the allowed workspace"):
-        executor._resolve_and_validate_directory("/tmp/workspace/../secret")
+        resolve_directory("/tmp/workspace/../secret")
 
     with pytest.raises(ValueError, match="outside the allowed workspace"):
-        executor._resolve_and_validate_directory("/etc/passwd")
+        resolve_directory("/etc/passwd")
 
     with pytest.raises(ValueError, match="outside the allowed workspace"):
-        executor._resolve_and_validate_directory("../secret")
+        resolve_directory("../secret")
 
 
 def test_resolve_and_validate_directory_override_disabled(mock_client):
     # Disable override
     mock_client._settings.a2a_allow_directory_override = False
     executor = OpencodeAgentExecutor(mock_client, streaming_enabled=False)
+    resolve_directory = lambda requested: executor._sandbox_policy.resolve_directory(  # noqa: E731, SLF001
+        requested,
+        default_directory=mock_client.directory,
+    )
 
     # Deny different path
     with pytest.raises(ValueError, match="override is disabled"):
-        executor._resolve_and_validate_directory("/tmp/workspace/other")
+        resolve_directory("/tmp/workspace/other")
 
     # Allow same path (resolved)
-    resolved = executor._resolve_and_validate_directory("/tmp/workspace/./")
+    resolved = resolve_directory("/tmp/workspace/./")
     assert resolved == str(Path("/tmp/workspace").resolve())
 
 
