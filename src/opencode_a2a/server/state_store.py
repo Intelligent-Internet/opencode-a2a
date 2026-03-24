@@ -34,8 +34,6 @@ _SESSION_BINDINGS = Table(
     Column("identity", String, primary_key=True),
     Column("context_id", String, primary_key=True),
     Column("session_id", String, nullable=False),
-    Column("expires_at", Float, nullable=True),
-    Column("updated_at", Float, nullable=False),
 )
 
 _SESSION_OWNERS = Table(
@@ -43,8 +41,6 @@ _SESSION_OWNERS = Table(
     _STATE_METADATA,
     Column("session_id", String, primary_key=True),
     Column("identity", String, nullable=False),
-    Column("expires_at", Float, nullable=True),
-    Column("updated_at", Float, nullable=False),
 )
 
 _PENDING_SESSION_CLAIMS = Table(
@@ -253,7 +249,6 @@ class DatabaseSessionStateRepository(SessionStateRepository):
 
     async def set_session(self, *, identity: str, context_id: str, session_id: str) -> None:
         await self._ensure_initialized()
-        now = self._clock()
         async with self._session_maker.begin() as session:
             exists = await session.execute(
                 select(_SESSION_BINDINGS.c.session_id).where(
@@ -263,17 +258,12 @@ class DatabaseSessionStateRepository(SessionStateRepository):
                     )
                 )
             )
-            values = {
-                "session_id": session_id,
-                "expires_at": None,
-                "updated_at": now,
-            }
             if exists.scalar_one_or_none() is None:
                 await session.execute(
                     insert(_SESSION_BINDINGS).values(
                         identity=identity,
                         context_id=context_id,
-                        **values,
+                        session_id=session_id,
                     )
                 )
             else:
@@ -285,7 +275,7 @@ class DatabaseSessionStateRepository(SessionStateRepository):
                             _SESSION_BINDINGS.c.context_id == context_id,
                         )
                     )
-                    .values(**values)
+                    .values(session_id=session_id)
                 )
 
     async def pop_session(self, *, identity: str, context_id: str) -> None:
@@ -310,27 +300,24 @@ class DatabaseSessionStateRepository(SessionStateRepository):
 
     async def set_owner(self, *, session_id: str, identity: str) -> None:
         await self._ensure_initialized()
-        now = self._clock()
         async with self._session_maker.begin() as session:
             exists = await session.execute(
                 select(_SESSION_OWNERS.c.session_id).where(
                     _SESSION_OWNERS.c.session_id == session_id
                 )
             )
-            values = {
-                "identity": identity,
-                "expires_at": None,
-                "updated_at": now,
-            }
             if exists.scalar_one_or_none() is None:
                 await session.execute(
-                    insert(_SESSION_OWNERS).values(session_id=session_id, **values)
+                    insert(_SESSION_OWNERS).values(
+                        session_id=session_id,
+                        identity=identity,
+                    )
                 )
             else:
                 await session.execute(
                     update(_SESSION_OWNERS)
                     .where(_SESSION_OWNERS.c.session_id == session_id)
-                    .values(**values)
+                    .values(identity=identity)
                 )
 
     async def get_pending_claim(self, *, session_id: str) -> str | None:
