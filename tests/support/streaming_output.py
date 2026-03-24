@@ -88,7 +88,7 @@ class DummyStreamingClient:
         ):
             yield {"type": "session.idle", "properties": {"sessionID": "ses-1"}}
 
-    def remember_interrupt_request(
+    async def remember_interrupt_request(
         self,
         *,
         request_id: str,
@@ -102,10 +102,10 @@ class DummyStreamingClient:
         del interrupt_type, identity, task_id, context_id, ttl_seconds
         self._interrupt_sessions[request_id] = session_id
 
-    def resolve_interrupt_session(self, request_id: str) -> str | None:
+    async def resolve_interrupt_session(self, request_id: str) -> str | None:
         return self._interrupt_sessions.get(request_id)
 
-    def discard_interrupt_request(self, request_id: str) -> None:
+    async def discard_interrupt_request(self, request_id: str) -> None:
         self._interrupt_sessions.pop(request_id, None)
 
 

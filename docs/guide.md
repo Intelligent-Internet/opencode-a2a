@@ -57,8 +57,10 @@ Key variables to understand protocol behavior:
   return HTTP `413`.
 - `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`: session cache
   behavior for `(identity, contextId) -> session_id`.
+- `A2A_PENDING_SESSION_CLAIM_TTL_SECONDS`: lease duration for pending preferred
+  session claims before they expire and stop blocking other identities.
 - `A2A_INTERRUPT_REQUEST_TTL_SECONDS`: active retention window for the
-  in-memory interrupt request binding cache used by `a2a.interrupt.*`
+  interrupt request binding registry used by `a2a.interrupt.*`
   callback methods. Default: `10800` seconds (`180` minutes).
 - `A2A_INTERRUPT_REQUEST_TOMBSTONE_TTL_SECONDS`: retention window for expired
   interrupt tombstones after active TTL has elapsed. During this window,
@@ -76,6 +78,13 @@ Key variables to understand protocol behavior:
 - `A2A_CLIENT_BEARER_TOKEN`: optional bearer token attached to outbound peer
   calls made by the embedded A2A client and `a2a_call` tool path.
 - `A2A_CLIENT_SUPPORTED_TRANSPORTS`: ordered outbound transport preference list.
+- `A2A_TASK_STORE_BACKEND`: task store backend. Supported values: `memory`,
+  `database`. Default: `memory`.
+- `A2A_TASK_STORE_DATABASE_URL`: database URL used when
+  `A2A_TASK_STORE_BACKEND=database`. For local persistence, prefer
+  `sqlite+aiosqlite:///./opencode-a2a.db`.
+- `A2A_TASK_STORE_TABLE_NAME` / `A2A_TASK_STORE_CREATE_TABLE`: database task
+  store table name and whether to auto-create database tables on startup.
 - Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
 - The same outbound client flags are also honored by the server-side embedded
   A2A client used for peer calls and `a2a_call` tool execution:
@@ -156,6 +165,26 @@ A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 opencode-a2a
 ```
+
+To persist A2A task records across restarts, switch the task store backend to
+SQLite:
+
+```bash
+OPENCODE_BASE_URL=http://127.0.0.1:4096 \
+A2A_BEARER_TOKEN=dev-token \
+A2A_TASK_STORE_BACKEND=database \
+A2A_TASK_STORE_DATABASE_URL=sqlite+aiosqlite:///./opencode-a2a.db \
+opencode-a2a
+```
+
+When `A2A_TASK_STORE_BACKEND=database`, the service now persists:
+
+- task records
+- session binding / ownership state
+- interrupt request bindings and tombstones
+
+In-flight asyncio locks, outbound A2A client caches, and stream-local
+aggregation buffers remain process-local runtime state.
 
 ## Troubleshooting Provider Auth State
 
@@ -825,8 +854,8 @@ Notes:
 
 - `request_id` must be a live interrupt request observed from stream metadata
   (`metadata.shared.interrupt.request_id`).
-- The server keeps an in-memory interrupt binding cache; callbacks with unknown
-  or expired `request_id` are rejected.
+- The server keeps an interrupt binding registry; callbacks with unknown or
+  expired `request_id` are rejected.
 - The cache retention windows are controlled by
   `A2A_INTERRUPT_REQUEST_TTL_SECONDS` (default: `10800` seconds / `180`
   minutes) and `A2A_INTERRUPT_REQUEST_TOMBSTONE_TTL_SECONDS` (default: `600`

@@ -1,12 +1,24 @@
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from a2a.server.events.event_queue import EventQueue
 
 from opencode_a2a.execution.executor import OpencodeAgentExecutor, _TTLCache
+from opencode_a2a.execution.session_manager import SessionManager
 from opencode_a2a.opencode_upstream_client import OpencodeUpstreamClient
-from tests.support.helpers import configure_mock_client_runtime, make_request_context_mock
+from opencode_a2a.server.state_store import (
+    DatabaseSessionStateRepository,
+    MemorySessionStateRepository,
+    initialize_state_repository,
+)
+from opencode_a2a.server.task_store import build_database_engine
+from tests.support.helpers import (
+    configure_mock_client_runtime,
+    make_request_context_mock,
+    make_settings,
+)
 
 
 @pytest.fixture
@@ -34,6 +46,12 @@ def mock_client():
     return client
 
 
+def _memory_session_repository(manager: SessionManager) -> MemorySessionStateRepository:
+    repository = manager._state_repository
+    assert isinstance(repository, MemorySessionStateRepository)
+    return repository
+
+
 @pytest.mark.asyncio
 async def test_identity_isolation(mock_client):
     executor = OpencodeAgentExecutor(mock_client, streaming_enabled=False)
@@ -49,7 +67,13 @@ async def test_identity_isolation(mock_client):
 
     await executor.execute(context1, event_queue)
     mock_client.create_session.assert_called_once()
-    assert executor._session_manager._sessions.get(("user-1", "context-A")) == "session-1"
+    assert (
+        await executor._session_manager._state_repository.get_session(
+            identity="user-1",
+            context_id="context-A",
+        )
+        == "session-1"
+    )
 
     # User 2, Context A (Same context ID, different user)
     context2 = make_request_context_mock(
@@ -62,9 +86,21 @@ async def test_identity_isolation(mock_client):
     await executor.execute(context2, event_queue)
     # Should create a NEW session for user-2
     assert mock_client.create_session.call_count == 2
-    assert executor._session_manager._sessions.get(("user-2", "context-A")) == "session-2"
+    assert (
+        await executor._session_manager._state_repository.get_session(
+            identity="user-2",
+            context_id="context-A",
+        )
+        == "session-2"
+    )
     # User 1's session should still be there
-    assert executor._session_manager._sessions.get(("user-1", "context-A")) == "session-1"
+    assert (
+        await executor._session_manager._state_repository.get_session(
+            identity="user-1",
+            context_id="context-A",
+        )
+        == "session-1"
+    )
 
 
 @pytest.mark.asyncio
@@ -81,7 +117,10 @@ async def test_session_hijack_prevention(mock_client):
     )
 
     await executor.execute(context1, event_queue)
-    assert executor._session_manager._session_owners.get("session-1") == "user-1"
+    assert (
+        await executor._session_manager._state_repository.get_owner(session_id="session-1")
+        == "user-1"
+    )
 
     # User 2 tries to bind to session-1 via metadata
     context2 = make_request_context_mock(
@@ -168,8 +207,20 @@ async def test_concurrent_session_create_isolated_by_identity():
     )
 
     assert client.create_session.call_count == 2
-    assert executor._session_manager._sessions.get(("user-1", "context-A")) == "session-1"
-    assert executor._session_manager._sessions.get(("user-2", "context-A")) == "session-2"
+    assert (
+        await executor._session_manager._state_repository.get_session(
+            identity="user-1",
+            context_id="context-A",
+        )
+        == "session-1"
+    )
+    assert (
+        await executor._session_manager._state_repository.get_session(
+            identity="user-2",
+            context_id="context-A",
+        )
+        == "session-2"
+    )
 
 
 def test_session_owner_cache_is_bounded():
@@ -179,13 +230,14 @@ def test_session_owner_cache_is_bounded():
         session_cache_ttl_seconds=3600,
         session_cache_maxsize=2,
     )
+    repository = _memory_session_repository(executor._session_manager)
 
-    executor._session_manager._session_owners.set("session-1", "user-1")
-    executor._session_manager._session_owners.set("session-2", "user-2")
-    executor._session_manager._session_owners.set("session-3", "user-3")
+    repository.session_owners.set("session-1", "user-1")
+    repository.session_owners.set("session-2", "user-2")
+    repository.session_owners.set("session-3", "user-3")
 
     # Cache is bounded by maxsize and should not grow unbounded.
-    assert len(executor._session_manager._session_owners._store) <= 2
+    assert len(repository.session_owners._store) <= 2
 
 
 def test_owner_cache_refresh_on_get_extends_ttl():
@@ -257,8 +309,13 @@ async def test_preferred_session_claim_is_released_on_upstream_failure():
 
     await executor.execute(context, event_queue)
 
-    assert executor._session_manager._session_owners.get("session-X") is None
-    assert executor._session_manager._pending_session_claims.get("session-X") is None
+    assert (
+        await executor._session_manager._state_repository.get_owner(session_id="session-X") is None
+    )
+    assert (
+        await executor._session_manager._state_repository.get_pending_claim(session_id="session-X")
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -292,8 +349,13 @@ async def test_preferred_session_claim_is_released_on_upstream_cancellation():
     with pytest.raises(asyncio.CancelledError):
         await executor.execute(context, event_queue)
 
-    assert executor._session_manager._session_owners.get("session-X") is None
-    assert executor._session_manager._pending_session_claims.get("session-X") is None
+    assert (
+        await executor._session_manager._state_repository.get_owner(session_id="session-X") is None
+    )
+    assert (
+        await executor._session_manager._state_repository.get_pending_claim(session_id="session-X")
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -323,3 +385,93 @@ async def test_pending_preferred_session_claim_blocks_other_identity():
         identity="user-1",
         session_id="session-X",
     )
+
+
+@pytest.mark.asyncio
+async def test_owned_preferred_session_rebinds_context_with_database_repository(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(
+        a2a_bearer_token="test-token",
+        a2a_task_store_backend="database",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'preferred-owned.db'}",
+    )
+    engine = build_database_engine(settings)
+    repository = DatabaseSessionStateRepository(
+        engine=engine,
+        ttl_seconds=3600,
+        maxsize=128,
+        pending_claim_ttl_seconds=30.0,
+    )
+    await initialize_state_repository(repository)
+    manager = SessionManager(
+        client=AsyncMock(spec=OpencodeUpstreamClient),
+        state_repository=repository,
+    )
+
+    await manager.finalize_session_claim(identity="user-1", session_id="session-X")
+
+    session_id, pending = await manager.get_or_create_session(
+        "user-1",
+        "context-A",
+        "hello",
+        preferred_session_id="session-X",
+    )
+
+    assert session_id == "session-X"
+    assert pending is False
+    assert await repository.get_session(identity="user-1", context_id="context-A") == "session-X"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_expired_pending_claim_does_not_block_other_identity_with_database_repository(
+    tmp_path: Path,
+) -> None:
+    now = 100.0
+
+    def _now() -> float:
+        return now
+
+    settings = make_settings(
+        a2a_bearer_token="test-token",
+        a2a_task_store_backend="database",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'preferred-expiry.db'}",
+    )
+    engine = build_database_engine(settings)
+    repository = DatabaseSessionStateRepository(
+        engine=engine,
+        ttl_seconds=3600,
+        maxsize=128,
+        pending_claim_ttl_seconds=5.0,
+        clock=_now,
+    )
+    await initialize_state_repository(repository)
+    manager = SessionManager(
+        client=AsyncMock(spec=OpencodeUpstreamClient),
+        state_repository=repository,
+    )
+
+    session_id, pending = await manager.get_or_create_session(
+        "user-1",
+        "context-A",
+        "hello",
+        preferred_session_id="session-X",
+    )
+    assert session_id == "session-X"
+    assert pending is True
+
+    now = 106.0
+    other_session_id, other_pending = await manager.get_or_create_session(
+        "user-2",
+        "context-B",
+        "hello",
+        preferred_session_id="session-X",
+    )
+
+    assert other_session_id == "session-X"
+    assert other_pending is True
+    assert await repository.get_pending_claim(session_id="session-X") == "user-2"
+
+    await engine.dispose()

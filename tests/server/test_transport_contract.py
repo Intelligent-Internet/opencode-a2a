@@ -485,13 +485,17 @@ def test_create_app_propagates_cancel_abort_timeout(monkeypatch) -> None:
             cancel_abort_timeout_seconds: float,
             session_cache_ttl_seconds: int,
             session_cache_maxsize: int,
+            pending_session_claim_ttl_seconds: float,
             a2a_client_manager: object = None,
+            session_state_repository: object = None,
         ) -> None:
             captured["streaming_enabled"] = streaming_enabled
             captured["cancel_abort_timeout_seconds"] = cancel_abort_timeout_seconds
             captured["session_cache_ttl_seconds"] = session_cache_ttl_seconds
             captured["session_cache_maxsize"] = session_cache_maxsize
+            captured["pending_session_claim_ttl_seconds"] = pending_session_claim_ttl_seconds
             captured["a2a_client_manager"] = a2a_client_manager
+            captured["session_state_repository"] = session_state_repository
 
         async def execute(self, _context, _event_queue) -> None:  # noqa: ANN001
             raise NotImplementedError
@@ -515,12 +519,14 @@ def test_create_app_propagates_cancel_abort_timeout(monkeypatch) -> None:
             a2a_cancel_abort_timeout_seconds=0.25,
             a2a_session_cache_ttl_seconds=11,
             a2a_session_cache_maxsize=22,
+            a2a_pending_session_claim_ttl_seconds=33.0,
         )
     )
 
     assert captured["cancel_abort_timeout_seconds"] == 0.25
     assert captured["session_cache_ttl_seconds"] == 11
     assert captured["session_cache_maxsize"] == 22
+    assert captured["pending_session_claim_ttl_seconds"] == 33.0
 
 
 def test_create_app_propagates_outbound_client_settings(monkeypatch) -> None:
@@ -563,14 +569,18 @@ def test_create_app_requires_control_guard_hooks(monkeypatch) -> None:
             cancel_abort_timeout_seconds: float,
             session_cache_ttl_seconds: int,
             session_cache_maxsize: int,
+            pending_session_claim_ttl_seconds: float,
             a2a_client_manager: object = None,
+            session_state_repository: object = None,
         ) -> None:
             del (
                 streaming_enabled,
                 cancel_abort_timeout_seconds,
                 session_cache_ttl_seconds,
                 session_cache_maxsize,
+                pending_session_claim_ttl_seconds,
                 a2a_client_manager,
+                session_state_repository,
             )
             self._session_manager = types.SimpleNamespace(
                 finalize_session_claim=AsyncMock(),
@@ -591,3 +601,36 @@ def test_create_app_requires_control_guard_hooks(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="Control methods require guard hooks"):
         app_module.create_app(make_settings(a2a_bearer_token="test-token"))
+
+
+def test_create_app_builds_configured_task_store(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    captured: dict[str, object] = {}
+
+    def _build_task_store(settings):  # noqa: ANN001
+        captured["backend"] = settings.a2a_task_store_backend
+        captured["database_url"] = settings.a2a_task_store_database_url
+        captured["table_name"] = settings.a2a_task_store_table_name
+        captured["create_table"] = settings.a2a_task_store_create_table
+        return MagicMock()
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    monkeypatch.setattr(app_module, "build_task_store", _build_task_store)
+
+    app_module.create_app(
+        make_settings(
+            a2a_bearer_token="test-token",
+            a2a_task_store_backend="database",
+            a2a_task_store_database_url="sqlite+aiosqlite:///./test.db",
+            a2a_task_store_table_name="a2a_tasks",
+            a2a_task_store_create_table=False,
+        )
+    )
+
+    assert captured == {
+        "backend": "database",
+        "database_url": "sqlite+aiosqlite:///./test.db",
+        "table_name": "a2a_tasks",
+        "create_table": False,
+    }

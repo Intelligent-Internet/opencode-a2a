@@ -39,7 +39,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
     dummy = InterruptClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    dummy.remember_interrupt_request(
+    await dummy.remember_interrupt_request(
         request_id="perm-1",
         session_id="ses-1",
         interrupt_type="permission",
@@ -183,12 +183,12 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
     dummy = InterruptClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    dummy.remember_interrupt_request(
+    await dummy.remember_interrupt_request(
         request_id="q-1",
         session_id="ses-1",
         interrupt_type="question",
     )
-    dummy.remember_interrupt_request(
+    await dummy.remember_interrupt_request(
         request_id="q-2",
         session_id="ses-1",
         interrupt_type="question",
@@ -269,7 +269,7 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
 
     settings = make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     dummy = NotFoundInterruptClient(settings)
-    dummy.remember_interrupt_request(
+    await dummy.remember_interrupt_request(
         request_id="perm-404",
         session_id="ses-1",
         interrupt_type="permission",
@@ -302,7 +302,7 @@ async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch)
     import opencode_a2a.server.application as app_module
 
     class ExpiredInterruptClient(DummyOpencodeUpstreamClient):
-        def resolve_interrupt_request(self, request_id: str):
+        async def resolve_interrupt_request(self, request_id: str):
             del request_id
             return "expired", None
 
@@ -387,7 +387,7 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
     dummy = InterruptClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    dummy.remember_interrupt_request(
+    await dummy.remember_interrupt_request(
         request_id="q-only",
         session_id="ses-1",
         interrupt_type="question",
@@ -425,7 +425,7 @@ async def test_interrupt_callback_extension_rejects_identity_mismatch(monkeypatc
     dummy = InterruptClient(
         make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    dummy.remember_interrupt_request(
+    await dummy.remember_interrupt_request(
         request_id="perm-owned",
         session_id="ses-1",
         interrupt_type="permission",

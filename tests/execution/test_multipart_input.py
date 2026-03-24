@@ -62,14 +62,14 @@ class RecordingMultipartClient:
         for _ in ():
             yield {}
 
-    def remember_interrupt_request(self, **_kwargs) -> None:
+    async def remember_interrupt_request(self, **_kwargs) -> None:
         return None
 
-    def resolve_interrupt_session(self, request_id: str) -> str | None:
+    async def resolve_interrupt_session(self, request_id: str) -> str | None:
         del request_id
         return None
 
-    def discard_interrupt_request(self, request_id: str) -> None:
+    async def discard_interrupt_request(self, request_id: str) -> None:
         del request_id
 
 

@@ -165,7 +165,7 @@ class DummyChatOpencodeUpstreamClient:
         for _ in ():
             yield {}
 
-    def remember_interrupt_request(
+    async def remember_interrupt_request(
         self,
         *,
         request_id: str,
@@ -178,11 +178,11 @@ class DummyChatOpencodeUpstreamClient:
     ) -> None:
         del request_id, session_id, interrupt_type, identity, task_id, context_id, ttl_seconds
 
-    def resolve_interrupt_session(self, request_id: str) -> str | None:
+    async def resolve_interrupt_session(self, request_id: str) -> str | None:
         del request_id
         return None
 
-    def discard_interrupt_request(self, request_id: str) -> None:
+    async def discard_interrupt_request(self, request_id: str) -> None:
         del request_id
 
 
@@ -317,7 +317,7 @@ class DummySessionQueryOpencodeUpstreamClient:
         del directory
         return self.provider_catalog_payload
 
-    def remember_interrupt_request(
+    async def remember_interrupt_request(
         self,
         *,
         request_id: str,
@@ -337,7 +337,7 @@ class DummySessionQueryOpencodeUpstreamClient:
             "context_id": context_id,
         }
 
-    def resolve_interrupt_request(self, request_id: str):
+    async def resolve_interrupt_request(self, request_id: str):
         payload = self._interrupt_requests.get(request_id)
         if payload is None:
             return "missing", None
@@ -352,13 +352,13 @@ class DummySessionQueryOpencodeUpstreamClient:
 
         return "active", _Binding(payload)
 
-    def resolve_interrupt_session(self, request_id: str) -> str | None:
+    async def resolve_interrupt_session(self, request_id: str) -> str | None:
         payload = self._interrupt_requests.get(request_id)
         if payload is None:
             return None
         return payload.get("session_id")
 
-    def discard_interrupt_request(self, request_id: str) -> None:
+    async def discard_interrupt_request(self, request_id: str) -> None:
         self._interrupt_requests.pop(request_id, None)
 
     async def permission_reply(

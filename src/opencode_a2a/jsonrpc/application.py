@@ -776,7 +776,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         )
         resolve_request = getattr(self._upstream_client, "resolve_interrupt_request", None)
         if callable(resolve_request):
-            status, binding = resolve_request(request_id)
+            status, binding = await resolve_request(request_id)
             if status != "active" or binding is None:
                 return self._generate_error_response(
                     base_request.id,
@@ -818,7 +818,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         else:
             resolve_session = getattr(self._upstream_client, "resolve_interrupt_session", None)
             if callable(resolve_session):
-                if not resolve_session(request_id):
+                if not await resolve_session(request_id):
                     return self._generate_error_response(
                         base_request.id,
                         interrupt_not_found_error(
@@ -869,7 +869,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 await self._upstream_client.question_reject(request_id, directory=directory)
             discard_request = getattr(self._upstream_client, "discard_interrupt_request", None)
             if callable(discard_request):
-                discard_request(request_id)
+                await discard_request(request_id)
         except ValueError as exc:
             return self._generate_error_response(
                 base_request.id,
@@ -880,7 +880,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             if upstream_status == 404:
                 discard_request = getattr(self._upstream_client, "discard_interrupt_request", None)
                 if callable(discard_request):
-                    discard_request(request_id)
+                    await discard_request(request_id)
                 return self._generate_error_response(
                     base_request.id,
                     interrupt_not_found_error(

@@ -9,7 +9,14 @@ from a2a.types import TaskState, TaskStatusUpdateEvent
 
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.opencode_upstream_client import OpencodeUpstreamClient
+from opencode_a2a.server.state_store import MemorySessionStateRepository
 from tests.support.helpers import configure_mock_client_runtime, make_request_context_mock
+
+
+def _memory_session_repository(executor: OpencodeAgentExecutor) -> MemorySessionStateRepository:
+    repository = executor._session_manager._state_repository
+    assert isinstance(repository, MemorySessionStateRepository)
+    return repository
 
 
 @pytest.mark.asyncio
@@ -86,7 +93,13 @@ async def test_cancel_interrupts_running_execute_and_keeps_queue_open(caplog):
         "metric=a2a_cancel_abort_success_total" in record.message for record in caplog.records
     )
     assert any("metric=a2a_cancel_duration_ms" in record.message for record in caplog.records)
-    assert executor._session_manager._sessions.get(("user-1", "context-A")) is None
+    assert (
+        await executor._session_manager._state_repository.get_session(
+            identity="user-1",
+            context_id="context-A",
+        )
+        is None
+    )
     assert ("task-1", "context-A") not in executor._running_requests
     assert ("task-1", "context-A") not in executor._running_stop_events
     assert ("task-1", "context-A") not in executor._running_identities
@@ -262,6 +275,7 @@ async def test_cancel_waiting_for_session_lock_does_not_abort_other_generation()
     prelocked_session_lock = asyncio.Lock()
     await prelocked_session_lock.acquire()
     executor._session_manager._session_locks["session-4"] = prelocked_session_lock
+    _memory_session_repository(executor)
 
     execute_context = make_request_context_mock(
         task_id="task-4",
@@ -274,7 +288,13 @@ async def test_cancel_waiting_for_session_lock_does_not_abort_other_generation()
 
     try:
         for _ in range(20):
-            if executor._session_manager._sessions.get(("user-4", "context-D")) == "session-4":
+            if (
+                await executor._session_manager._state_repository.get_session(
+                    identity="user-4",
+                    context_id="context-D",
+                )
+                == "session-4"
+            ):
                 break
             await asyncio.sleep(0.01)
 

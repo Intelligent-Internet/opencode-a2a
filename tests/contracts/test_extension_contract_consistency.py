@@ -301,7 +301,7 @@ async def test_extension_notification_contracts_return_204(
     if interrupt_type is not None:
         request_id = params["request_id"]
         assert isinstance(request_id, str)
-        dummy.remember_interrupt_request(
+        await dummy.remember_interrupt_request(
             request_id=request_id,
             session_id="s-1",
             interrupt_type=interrupt_type,

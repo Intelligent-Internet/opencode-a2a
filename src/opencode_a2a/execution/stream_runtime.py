@@ -429,7 +429,7 @@ class StreamRuntime:
                                         None,
                                     )
                                     if callable(remember_request):
-                                        remember_request(
+                                        await remember_request(
                                             request_id=request_id,
                                             session_id=session_id,
                                             interrupt_type=asked["interrupt_type"],
@@ -456,7 +456,7 @@ class StreamRuntime:
                                     None,
                                 )
                                 if callable(discard_request):
-                                    discard_request(resolved_request_id)
+                                    await discard_request(resolved_request_id)
                                 if cleared_pending:
                                     await _emit_interrupt_status(
                                         state=TaskState.working,

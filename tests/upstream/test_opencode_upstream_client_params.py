@@ -518,7 +518,7 @@ async def test_interrupt_request_binding_expires_after_ttl() -> None:
 
     now = 1000.0
     client._interrupt_request_clock = lambda: now  # type: ignore[method-assign]
-    client.remember_interrupt_request(
+    await client.remember_interrupt_request(
         request_id="perm-1",
         session_id="ses-1",
         interrupt_type="permission",
@@ -528,21 +528,21 @@ async def test_interrupt_request_binding_expires_after_ttl() -> None:
         ttl_seconds=5.0,
     )
 
-    status, binding = client.resolve_interrupt_request("perm-1")
+    status, binding = await client.resolve_interrupt_request("perm-1")
     assert status == "active"
     assert binding is not None
     assert binding.session_id == "ses-1"
     assert binding.interrupt_type == "permission"
 
     now = 1006.0
-    status, binding = client.resolve_interrupt_request("perm-1")
+    status, binding = await client.resolve_interrupt_request("perm-1")
     assert status == "expired"
     assert binding is None
-    assert client.resolve_interrupt_session("perm-1") is None
-    assert client.resolve_interrupt_request("perm-1") == ("expired", None)
+    assert await client.resolve_interrupt_session("perm-1") is None
+    assert await client.resolve_interrupt_request("perm-1") == ("expired", None)
 
     now = 1009.0
-    status, binding = client.resolve_interrupt_request("perm-1")
+    status, binding = await client.resolve_interrupt_request("perm-1")
     assert status == "missing"
     assert binding is None
 
@@ -563,7 +563,7 @@ async def test_interrupt_request_prune_keeps_expired_tombstone() -> None:
 
     now = 100.0
     client._interrupt_request_clock = lambda: now  # type: ignore[method-assign]
-    client.remember_interrupt_request(
+    await client.remember_interrupt_request(
         request_id="perm-1",
         session_id="ses-1",
         interrupt_type="permission",
@@ -571,18 +571,18 @@ async def test_interrupt_request_prune_keeps_expired_tombstone() -> None:
     )
 
     now = 103.0
-    client.remember_interrupt_request(
+    await client.remember_interrupt_request(
         request_id="perm-2",
         session_id="ses-2",
         interrupt_type="permission",
         ttl_seconds=10.0,
     )
 
-    assert client.resolve_interrupt_request("perm-1") == ("expired", None)
-    assert client.resolve_interrupt_request("perm-2")[0] == "active"
+    assert await client.resolve_interrupt_request("perm-1") == ("expired", None)
+    assert (await client.resolve_interrupt_request("perm-2"))[0] == "active"
 
     now = 109.0
-    assert client.resolve_interrupt_request("perm-1") == ("missing", None)
+    assert await client.resolve_interrupt_request("perm-1") == ("missing", None)
 
     await client.close()
 
@@ -851,25 +851,25 @@ async def test_interrupt_request_helpers_ignore_invalid_and_trim_values() -> Non
         )
     )
 
-    client.remember_interrupt_request(
+    await client.remember_interrupt_request(
         request_id="   ",
         session_id="ses-1",
         interrupt_type="permission",
     )
-    client.remember_interrupt_request(
+    await client.remember_interrupt_request(
         request_id="perm-1",
         session_id="   ",
         interrupt_type="permission",
     )
-    client.remember_interrupt_request(
+    await client.remember_interrupt_request(
         request_id="perm-2",
         session_id="ses-2",
         interrupt_type="unsupported",
     )
 
-    assert client.resolve_interrupt_request("perm-1") == ("missing", None)
+    assert await client.resolve_interrupt_request("perm-1") == ("missing", None)
 
-    client.remember_interrupt_request(
+    await client.remember_interrupt_request(
         request_id=" perm-3 ",
         session_id=" ses-3 ",
         interrupt_type=" question ",
@@ -877,7 +877,7 @@ async def test_interrupt_request_helpers_ignore_invalid_and_trim_values() -> Non
         task_id=" task-1 ",
         context_id=" ctx-1 ",
     )
-    status, binding = client.resolve_interrupt_request("perm-3")
+    status, binding = await client.resolve_interrupt_request("perm-3")
     assert status == "active"
     assert binding is not None
     assert binding.request_id == "perm-3"
@@ -886,9 +886,9 @@ async def test_interrupt_request_helpers_ignore_invalid_and_trim_values() -> Non
     assert binding.task_id == "task-1"
     assert binding.context_id == "ctx-1"
 
-    assert client.resolve_interrupt_request("   ") == ("missing", None)
-    client.discard_interrupt_request("   ")
-    client.discard_interrupt_request("perm-3")
-    assert client.resolve_interrupt_session("perm-3") is None
+    assert await client.resolve_interrupt_request("   ") == ("missing", None)
+    await client.discard_interrupt_request("   ")
+    await client.discard_interrupt_request("perm-3")
+    assert await client.resolve_interrupt_session("perm-3") is None
 
     await client.close()
