@@ -60,7 +60,7 @@ Key variables to understand protocol behavior:
 - `A2A_PENDING_SESSION_CLAIM_TTL_SECONDS`: lease duration for pending preferred
   session claims before they expire and stop blocking other identities.
 - `A2A_INTERRUPT_REQUEST_TTL_SECONDS`: active retention window for the
-  in-memory interrupt request binding cache used by `a2a.interrupt.*`
+  interrupt request binding registry used by `a2a.interrupt.*`
   callback methods. Default: `10800` seconds (`180` minutes).
 - `A2A_INTERRUPT_REQUEST_TOMBSTONE_TTL_SECONDS`: retention window for expired
   interrupt tombstones after active TTL has elapsed. During this window,
@@ -854,8 +854,8 @@ Notes:
 
 - `request_id` must be a live interrupt request observed from stream metadata
   (`metadata.shared.interrupt.request_id`).
-- The server keeps an in-memory interrupt binding cache; callbacks with unknown
-  or expired `request_id` are rejected.
+- The server keeps an interrupt binding registry; callbacks with unknown or
+  expired `request_id` are rejected.
 - The cache retention windows are controlled by
   `A2A_INTERRUPT_REQUEST_TTL_SECONDS` (default: `10800` seconds / `180`
   minutes) and `A2A_INTERRUPT_REQUEST_TOMBSTONE_TTL_SECONDS` (default: `600`

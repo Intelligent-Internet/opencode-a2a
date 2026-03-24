@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
 
 from ..server.state_store import MemorySessionStateRepository, SessionStateRepository
 
@@ -22,14 +21,6 @@ class SessionManager:
             maxsize=session_cache_maxsize,
             pending_claim_ttl_seconds=pending_session_claim_ttl_seconds,
         )
-        if isinstance(self._state_repository, MemorySessionStateRepository):
-            self._sessions = self._state_repository.sessions
-            self._session_owners = self._state_repository.session_owners
-            self._pending_session_claims = self._state_repository.pending_session_claims
-        else:
-            self._sessions = cast("Any", None)
-            self._session_owners = cast("Any", None)
-            self._pending_session_claims = cast("Any", None)
         self._lock = asyncio.Lock()
         self._inflight_session_creates: dict[tuple[str, str], asyncio.Task[str]] = {}
         self._session_locks: dict[str, asyncio.Lock] = {}

@@ -450,8 +450,9 @@ def build_session_binding_extension_params(
                 "message to that upstream session."
             ),
             (
-                "Otherwise, the server will create a new upstream session and cache "
-                "the (identity, contextId)->session_id mapping in memory with TTL."
+                "Otherwise, the server will create a new upstream session and retain "
+                "the (identity, contextId)->session_id mapping according to the "
+                "configured task/state store backend and TTL policy."
             ),
         ],
     }
