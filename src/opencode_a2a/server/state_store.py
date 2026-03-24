@@ -131,6 +131,8 @@ class MemorySessionStateRepository(SessionStateRepository):
         *,
         ttl_seconds: int,
         maxsize: int,
+        pending_claim_ttl_seconds: float,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.sessions = _TTLCache(ttl_seconds=ttl_seconds, maxsize=maxsize)
         self.session_owners = _TTLCache(
@@ -139,6 +141,19 @@ class MemorySessionStateRepository(SessionStateRepository):
             refresh_on_get=True,
         )
         self.pending_session_claims: dict[str, str] = {}
+        self._pending_session_claim_expiries: dict[str, float] = {}
+        self._pending_claim_ttl_seconds = float(pending_claim_ttl_seconds)
+        self._clock = clock
+
+    def _prune_pending_claims(self, *, now: float) -> None:
+        expired = [
+            session_id
+            for session_id, expires_at in self._pending_session_claim_expiries.items()
+            if expires_at <= now
+        ]
+        for session_id in expired:
+            self.pending_session_claims.pop(session_id, None)
+            self._pending_session_claim_expiries.pop(session_id, None)
 
     async def get_session(self, *, identity: str, context_id: str) -> str | None:
         return self.sessions.get((identity, context_id))
@@ -156,14 +171,22 @@ class MemorySessionStateRepository(SessionStateRepository):
         self.session_owners.set(session_id, identity)
 
     async def get_pending_claim(self, *, session_id: str) -> str | None:
+        self._prune_pending_claims(now=self._clock())
         return self.pending_session_claims.get(session_id)
 
     async def set_pending_claim(self, *, session_id: str, identity: str) -> None:
+        now = self._clock()
+        self._prune_pending_claims(now=now)
+        if self._pending_claim_ttl_seconds <= 0:
+            await self.clear_pending_claim(session_id=session_id)
+            return
         self.pending_session_claims[session_id] = identity
+        self._pending_session_claim_expiries[session_id] = now + self._pending_claim_ttl_seconds
 
     async def clear_pending_claim(self, *, session_id: str, identity: str | None = None) -> None:
         if identity is None or self.pending_session_claims.get(session_id) == identity:
             self.pending_session_claims.pop(session_id, None)
+            self._pending_session_claim_expiries.pop(session_id, None)
 
 
 class DatabaseSessionStateRepository(SessionStateRepository):
@@ -173,12 +196,14 @@ class DatabaseSessionStateRepository(SessionStateRepository):
         engine: AsyncEngine,
         ttl_seconds: int,
         maxsize: int,
+        pending_claim_ttl_seconds: float,
         create_tables: bool = True,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.engine = engine
         self._ttl_seconds = int(ttl_seconds)
         self._maxsize = int(maxsize)
+        self._pending_claim_ttl_seconds = float(pending_claim_ttl_seconds)
         self._create_tables = bool(create_tables)
         self._clock = clock
         self._initialized = False
@@ -249,6 +274,22 @@ class DatabaseSessionStateRepository(SessionStateRepository):
             await session.execute(
                 delete(_SESSION_OWNERS).where(_SESSION_OWNERS.c.session_id == row.session_id)
             )
+
+    async def _prune_expired_pending_claims(
+        self,
+        session: AsyncSession,
+        *,
+        now: float,
+    ) -> None:
+        if self._pending_claim_ttl_seconds <= 0:
+            await session.execute(delete(_PENDING_SESSION_CLAIMS))
+            return
+        expires_before = now - self._pending_claim_ttl_seconds
+        await session.execute(
+            delete(_PENDING_SESSION_CLAIMS).where(
+                _PENDING_SESSION_CLAIMS.c.updated_at <= expires_before
+            )
+        )
 
     async def get_session(self, *, identity: str, context_id: str) -> str | None:
         await self._ensure_initialized()
@@ -364,7 +405,9 @@ class DatabaseSessionStateRepository(SessionStateRepository):
 
     async def get_pending_claim(self, *, session_id: str) -> str | None:
         await self._ensure_initialized()
+        now = self._clock()
         async with self._session_maker.begin() as session:
+            await self._prune_expired_pending_claims(session, now=now)
             result = await session.execute(
                 select(_PENDING_SESSION_CLAIMS.c.identity).where(
                     _PENDING_SESSION_CLAIMS.c.session_id == session_id
@@ -376,6 +419,14 @@ class DatabaseSessionStateRepository(SessionStateRepository):
         await self._ensure_initialized()
         now = self._clock()
         async with self._session_maker.begin() as session:
+            await self._prune_expired_pending_claims(session, now=now)
+            if self._pending_claim_ttl_seconds <= 0:
+                await session.execute(
+                    delete(_PENDING_SESSION_CLAIMS).where(
+                        _PENDING_SESSION_CLAIMS.c.session_id == session_id
+                    )
+                )
+                return
             exists = await session.execute(
                 select(_PENDING_SESSION_CLAIMS.c.session_id).where(
                     _PENDING_SESSION_CLAIMS.c.session_id == session_id
@@ -664,11 +715,13 @@ def build_session_state_repository(
             engine=cast("AsyncEngine", engine),
             ttl_seconds=settings.a2a_session_cache_ttl_seconds,
             maxsize=settings.a2a_session_cache_maxsize,
+            pending_claim_ttl_seconds=settings.a2a_pending_session_claim_ttl_seconds,
             create_tables=settings.a2a_task_store_create_table,
         )
     return MemorySessionStateRepository(
         ttl_seconds=settings.a2a_session_cache_ttl_seconds,
         maxsize=settings.a2a_session_cache_maxsize,
+        pending_claim_ttl_seconds=settings.a2a_pending_session_claim_ttl_seconds,
     )
 
 

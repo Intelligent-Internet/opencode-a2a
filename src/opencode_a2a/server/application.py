@@ -532,6 +532,7 @@ def create_app(settings: Settings) -> FastAPI:
         cancel_abort_timeout_seconds=settings.a2a_cancel_abort_timeout_seconds,
         session_cache_ttl_seconds=settings.a2a_session_cache_ttl_seconds,
         session_cache_maxsize=settings.a2a_session_cache_maxsize,
+        pending_session_claim_ttl_seconds=settings.a2a_pending_session_claim_ttl_seconds,
         a2a_client_manager=client_manager,
         session_state_repository=session_state_repository,
     )

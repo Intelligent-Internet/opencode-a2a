@@ -13,12 +13,14 @@ class SessionManager:
         client,
         session_cache_ttl_seconds: int = 3600,
         session_cache_maxsize: int = 10_000,
+        pending_session_claim_ttl_seconds: float = 30.0,
         state_repository: SessionStateRepository | None = None,
     ) -> None:
         self._client = client
         self._state_repository = state_repository or MemorySessionStateRepository(
             ttl_seconds=session_cache_ttl_seconds,
             maxsize=session_cache_maxsize,
+            pending_claim_ttl_seconds=pending_session_claim_ttl_seconds,
         )
         if isinstance(self._state_repository, MemorySessionStateRepository):
             self._sessions = self._state_repository.sessions
@@ -47,7 +49,12 @@ class SessionManager:
                 session_id=preferred_session_id,
             )
             if not pending_claim:
-                self._sessions.set((identity, context_id), preferred_session_id)
+                async with self._lock:
+                    await self._state_repository.set_session(
+                        identity=identity,
+                        context_id=context_id,
+                        session_id=preferred_session_id,
+                    )
             return preferred_session_id, pending_claim
 
         task: asyncio.Task[str] | None = None

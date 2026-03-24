@@ -531,6 +531,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         cancel_abort_timeout_seconds: float = 2.0,
         session_cache_ttl_seconds: int = 3600,
         session_cache_maxsize: int = 10_000,
+        pending_session_claim_ttl_seconds: float = 30.0,
         a2a_client_manager: A2AClientManager | None = None,
         session_state_repository: SessionStateRepository | None = None,
     ) -> None:
@@ -546,6 +547,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             client=client,
             session_cache_ttl_seconds=session_cache_ttl_seconds,
             session_cache_maxsize=session_cache_maxsize,
+            pending_session_claim_ttl_seconds=pending_session_claim_ttl_seconds,
             state_repository=session_state_repository,
         )
         self._stream_runtime = StreamRuntime(

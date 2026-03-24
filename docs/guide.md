@@ -57,6 +57,8 @@ Key variables to understand protocol behavior:
   return HTTP `413`.
 - `A2A_SESSION_CACHE_TTL_SECONDS` / `A2A_SESSION_CACHE_MAXSIZE`: session cache
   behavior for `(identity, contextId) -> session_id`.
+- `A2A_PENDING_SESSION_CLAIM_TTL_SECONDS`: lease duration for pending preferred
+  session claims before they expire and stop blocking other identities.
 - `A2A_INTERRUPT_REQUEST_TTL_SECONDS`: active retention window for the
   in-memory interrupt request binding cache used by `a2a.interrupt.*`
   callback methods. Default: `10800` seconds (`180` minutes).

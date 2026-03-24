@@ -1,12 +1,23 @@
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from a2a.server.events.event_queue import EventQueue
 
 from opencode_a2a.execution.executor import OpencodeAgentExecutor, _TTLCache
+from opencode_a2a.execution.session_manager import SessionManager
 from opencode_a2a.opencode_upstream_client import OpencodeUpstreamClient
-from tests.support.helpers import configure_mock_client_runtime, make_request_context_mock
+from opencode_a2a.server.state_store import (
+    DatabaseSessionStateRepository,
+    initialize_state_repository,
+)
+from opencode_a2a.server.task_store import build_database_engine
+from tests.support.helpers import (
+    configure_mock_client_runtime,
+    make_request_context_mock,
+    make_settings,
+)
 
 
 @pytest.fixture
@@ -323,3 +334,93 @@ async def test_pending_preferred_session_claim_blocks_other_identity():
         identity="user-1",
         session_id="session-X",
     )
+
+
+@pytest.mark.asyncio
+async def test_owned_preferred_session_rebinds_context_with_database_repository(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(
+        a2a_bearer_token="test-token",
+        a2a_task_store_backend="database",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'preferred-owned.db'}",
+    )
+    engine = build_database_engine(settings)
+    repository = DatabaseSessionStateRepository(
+        engine=engine,
+        ttl_seconds=3600,
+        maxsize=128,
+        pending_claim_ttl_seconds=30.0,
+    )
+    await initialize_state_repository(repository)
+    manager = SessionManager(
+        client=AsyncMock(spec=OpencodeUpstreamClient),
+        state_repository=repository,
+    )
+
+    await manager.finalize_session_claim(identity="user-1", session_id="session-X")
+
+    session_id, pending = await manager.get_or_create_session(
+        "user-1",
+        "context-A",
+        "hello",
+        preferred_session_id="session-X",
+    )
+
+    assert session_id == "session-X"
+    assert pending is False
+    assert await repository.get_session(identity="user-1", context_id="context-A") == "session-X"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_expired_pending_claim_does_not_block_other_identity_with_database_repository(
+    tmp_path: Path,
+) -> None:
+    now = 100.0
+
+    def _now() -> float:
+        return now
+
+    settings = make_settings(
+        a2a_bearer_token="test-token",
+        a2a_task_store_backend="database",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'preferred-expiry.db'}",
+    )
+    engine = build_database_engine(settings)
+    repository = DatabaseSessionStateRepository(
+        engine=engine,
+        ttl_seconds=3600,
+        maxsize=128,
+        pending_claim_ttl_seconds=5.0,
+        clock=_now,
+    )
+    await initialize_state_repository(repository)
+    manager = SessionManager(
+        client=AsyncMock(spec=OpencodeUpstreamClient),
+        state_repository=repository,
+    )
+
+    session_id, pending = await manager.get_or_create_session(
+        "user-1",
+        "context-A",
+        "hello",
+        preferred_session_id="session-X",
+    )
+    assert session_id == "session-X"
+    assert pending is True
+
+    now = 106.0
+    other_session_id, other_pending = await manager.get_or_create_session(
+        "user-2",
+        "context-B",
+        "hello",
+        preferred_session_id="session-X",
+    )
+
+    assert other_session_id == "session-X"
+    assert other_pending is True
+    assert await repository.get_pending_claim(session_id="session-X") == "user-2"
+
+    await engine.dispose()

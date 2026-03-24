@@ -6,6 +6,8 @@ import pytest
 from sqlalchemy import inspect as sqlalchemy_inspect
 
 from opencode_a2a.server.state_store import (
+    DatabaseSessionStateRepository,
+    MemorySessionStateRepository,
     build_interrupt_request_repository,
     build_session_state_repository,
     initialize_state_repository,
@@ -38,6 +40,59 @@ async def test_database_session_state_repository_persists_bindings(tmp_path: Pat
     assert await reader.get_session(identity="user-1", context_id="ctx-1") == "ses-1"
     assert await reader.get_owner(session_id="ses-1") == "user-1"
     assert await reader.get_pending_claim(session_id="ses-2") == "user-2"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_memory_pending_session_claim_expires() -> None:
+    now = 100.0
+
+    def _now() -> float:
+        return now
+
+    repository = MemorySessionStateRepository(
+        ttl_seconds=3600,
+        maxsize=128,
+        pending_claim_ttl_seconds=5.0,
+        clock=_now,
+    )
+
+    await repository.set_pending_claim(session_id="ses-1", identity="user-1")
+    assert await repository.get_pending_claim(session_id="ses-1") == "user-1"
+
+    now = 106.0
+    assert await repository.get_pending_claim(session_id="ses-1") is None
+
+
+@pytest.mark.asyncio
+async def test_database_pending_session_claim_expires(tmp_path: Path) -> None:
+    now = 100.0
+
+    def _now() -> float:
+        return now
+
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'pending-claim.db'}"
+    settings = make_settings(
+        a2a_bearer_token="test-token",
+        a2a_task_store_backend="database",
+        a2a_task_store_database_url=database_url,
+    )
+    engine = build_database_engine(settings)
+    repository = DatabaseSessionStateRepository(
+        engine=engine,
+        ttl_seconds=3600,
+        maxsize=128,
+        pending_claim_ttl_seconds=5.0,
+        clock=_now,
+    )
+    await initialize_state_repository(repository)
+
+    await repository.set_pending_claim(session_id="ses-1", identity="user-1")
+    assert await repository.get_pending_claim(session_id="ses-1") == "user-1"
+
+    now = 106.0
+    assert await repository.get_pending_claim(session_id="ses-1") is None
 
     await engine.dispose()
 
