@@ -609,7 +609,6 @@ def test_create_app_builds_configured_task_store(monkeypatch) -> None:
     app_module.create_app(
         make_settings(
             a2a_bearer_token="test-token",
-            a2a_task_store_backend="database",
             a2a_task_store_database_url="sqlite+aiosqlite:///./test.db",
             a2a_task_store_table_name="a2a_tasks",
             a2a_task_store_create_table=False,

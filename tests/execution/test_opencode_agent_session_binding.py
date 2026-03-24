@@ -78,12 +78,7 @@ async def test_agent_ignores_partial_shared_model_override() -> None:
 @pytest.mark.asyncio
 async def test_agent_caches_bound_session_id_for_followup_requests() -> None:
     client = DummyChatOpencodeUpstreamClient()
-    executor = OpencodeAgentExecutor(
-        client,
-        streaming_enabled=False,
-        session_cache_ttl_seconds=3600,
-        session_cache_maxsize=100,
-    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
     q = DummyEventQueue()
 
     ctx1 = make_request_context(
@@ -119,12 +114,7 @@ async def test_agent_dedupes_concurrent_session_creates_per_context() -> None:
             return await super().create_session(title=title, directory=directory)
 
     client = SlowCreateClient()
-    executor = OpencodeAgentExecutor(
-        client,
-        streaming_enabled=False,
-        session_cache_ttl_seconds=3600,
-        session_cache_maxsize=100,
-    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
 
     async def run_one(task_id: str) -> None:
         q = DummyEventQueue()

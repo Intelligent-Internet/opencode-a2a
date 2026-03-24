@@ -135,7 +135,6 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'app-state.db'}"
     settings = make_settings(
         a2a_bearer_token="test-token",
-        a2a_task_store_backend="database",
         a2a_task_store_database_url=database_url,
     )
 
