@@ -41,8 +41,13 @@ jobs:
       - name: Enforce coverage policy
         run: uv run python ./scripts/check_coverage.py
 
-      - name: Run dependency vulnerability audit
-        run: uv run pip-audit
+      - name: Export runtime requirements for vulnerability audit
+        run: >
+          uv export --format requirements.txt --no-dev --locked --no-emit-project
+          --output-file /tmp/runtime-requirements.txt >/dev/null
+
+      - name: Run runtime dependency vulnerability audit
+        run: uv run pip-audit --requirement /tmp/runtime-requirements.txt
 
       - name: Clean previous build artifacts
         run: rm -rf build dist
