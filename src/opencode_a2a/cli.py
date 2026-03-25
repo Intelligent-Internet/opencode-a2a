@@ -87,10 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("A2A_CLIENT_BEARER_TOKEN"),
     )
     call_parser.add_argument(
-        "-b",
         "--basic",
-        "--basic-auth",
-        dest="basic",
         help="Basic auth credentials (user:pass or base64) (can also use A2A_CLIENT_BASIC_AUTH env).",
         default=os.environ.get("A2A_CLIENT_BASIC_AUTH"),
     )
