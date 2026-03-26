@@ -599,8 +599,6 @@ def test_create_app_builds_configured_task_store(monkeypatch) -> None:
     def _build_task_store(settings):  # noqa: ANN001
         captured["backend"] = settings.a2a_task_store_backend
         captured["database_url"] = settings.a2a_task_store_database_url
-        captured["table_name"] = settings.a2a_task_store_table_name
-        captured["create_table"] = settings.a2a_task_store_create_table
         return MagicMock()
 
     monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
@@ -610,14 +608,10 @@ def test_create_app_builds_configured_task_store(monkeypatch) -> None:
         make_settings(
             a2a_bearer_token="test-token",
             a2a_task_store_database_url="sqlite+aiosqlite:///./test.db",
-            a2a_task_store_table_name="a2a_tasks",
-            a2a_task_store_create_table=False,
         )
     )
 
     assert captured == {
         "backend": "database",
         "database_url": "sqlite+aiosqlite:///./test.db",
-        "table_name": "a2a_tasks",
-        "create_table": False,
     }

@@ -188,15 +188,6 @@ class Settings(BaseSettings):
         default="sqlite+aiosqlite:///./opencode-a2a.db",
         alias="A2A_TASK_STORE_DATABASE_URL",
     )
-    a2a_task_store_table_name: str = Field(
-        default="tasks",
-        min_length=1,
-        alias="A2A_TASK_STORE_TABLE_NAME",
-    )
-    a2a_task_store_create_table: bool = Field(
-        default=True,
-        alias="A2A_TASK_STORE_CREATE_TABLE",
-    )
 
     @model_validator(mode="after")
     def _validate_sandbox_policy(self) -> Settings:

@@ -80,8 +80,6 @@ Key variables to understand protocol behavior:
   `memory`. Default: `database`.
 - `A2A_TASK_STORE_DATABASE_URL`: database URL used by the default durable
   backend. Default: `sqlite+aiosqlite:///./opencode-a2a.db`.
-- `A2A_TASK_STORE_TABLE_NAME` / `A2A_TASK_STORE_CREATE_TABLE`: database task
-  store table name and whether to auto-create database tables on startup.
 - Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
 - The same outbound client flags are also honored by the server-side embedded
   A2A client used for peer calls and `a2a_call` tool execution:

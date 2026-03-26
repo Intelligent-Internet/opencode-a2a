@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 from a2a.types import Task, TaskState, TaskStatus
-from sqlalchemy.exc import SAWarning
 
 from opencode_a2a.server.task_store import (
     build_task_store,
@@ -49,24 +48,20 @@ async def test_database_task_store_persists_tasks_across_rebuilds(tmp_path: Path
     settings = make_settings(
         a2a_bearer_token="test-token",
         a2a_task_store_database_url=database_url,
-        a2a_task_store_table_name="tasks_test",
     )
 
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         writer = build_task_store(settings)
 
-    assert not any(
-        isinstance(item.message, SAWarning)
-        and "same class name and module name" in str(item.message)
-        for item in caught
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        reader = build_task_store(settings)
 
     await initialize_task_store(writer)
     await writer.save(_task("task-1"))
     await writer.engine.dispose()
 
-    reader = build_task_store(settings)
     await initialize_task_store(reader)
     restored = await reader.get("task-1")
 
@@ -76,3 +71,22 @@ async def test_database_task_store_persists_tasks_across_rebuilds(tmp_path: Path
     assert restored.status.state == TaskState.working
 
     await reader.engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_database_task_store_can_build_multiple_instances_without_warnings(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(
+        a2a_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'warnings.db'}",
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        first = build_task_store(settings)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        second = build_task_store(settings)
+
+    await first.engine.dispose()
+    await second.engine.dispose()

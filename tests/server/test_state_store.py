@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy import inspect as sqlalchemy_inspect
 
 from opencode_a2a.server.state_store import (
     DatabaseSessionStateRepository,
@@ -159,35 +158,5 @@ async def test_database_interrupt_request_repository_persists_active_binding(
     assert binding.identity == "user-1"
     assert binding.task_id == "task-1"
     assert binding.context_id == "ctx-1"
-
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_database_state_repositories_skip_auto_create_when_disabled(
-    tmp_path: Path,
-) -> None:
-    database_url = f"sqlite+aiosqlite:///{tmp_path / 'state-no-create.db'}"
-    settings = make_settings(
-        a2a_bearer_token="test-token",
-        a2a_task_store_database_url=database_url,
-        a2a_task_store_create_table=False,
-    )
-    engine = build_database_engine(settings)
-
-    session_repo = build_session_state_repository(settings, engine=engine)
-    interrupt_repo = build_interrupt_request_repository(settings, engine=engine)
-    await initialize_state_repository(session_repo)
-    await initialize_state_repository(interrupt_repo)
-
-    async with engine.begin() as conn:
-        table_names = await conn.run_sync(
-            lambda sync_conn: set(sqlalchemy_inspect(sync_conn).get_table_names())
-        )
-
-    assert "a2a_session_bindings" not in table_names
-    assert "a2a_session_owners" not in table_names
-    assert "a2a_pending_session_claims" not in table_names
-    assert "a2a_interrupt_requests" not in table_names
 
     await engine.dispose()
