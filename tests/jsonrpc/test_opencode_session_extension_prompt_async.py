@@ -3,7 +3,10 @@ import logging
 import httpx
 import pytest
 
-from opencode_a2a.opencode_upstream_client import UpstreamContractError
+from opencode_a2a.opencode_upstream_client import (
+    UpstreamConcurrencyLimitError,
+    UpstreamContractError,
+)
 from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
@@ -485,6 +488,46 @@ async def test_session_prompt_async_release_failure_does_not_override_response(m
     assert any(
         "Failed to release pending session claim" in record.message for record in caplog.records
     )
+
+
+@pytest.mark.asyncio
+async def test_session_prompt_async_extension_maps_concurrency_limit_to_unreachable(monkeypatch):
+    import opencode_a2a.server.application as app_module
+
+    class BusyPromptAsyncClient(DummyOpencodeUpstreamClient):
+        async def session_prompt_async(self, session_id: str, request: dict, *, directory=None):
+            del session_id, request, directory
+            raise UpstreamConcurrencyLimitError(
+                category="request",
+                operation="/session/{sessionID}/prompt_async",
+                limit=1,
+            )
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", BusyPromptAsyncClient)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 3082,
+                "method": "opencode.sessions.prompt_async",
+                "params": {
+                    "session_id": "s-1",
+                    "request": {"parts": [{"type": "text", "text": "x"}]},
+                },
+            },
+        )
+        payload = resp.json()
+        assert payload["error"]["code"] == -32002
+        assert payload["error"]["data"]["type"] == "UPSTREAM_UNREACHABLE"
+        assert "concurrency limit exceeded" in payload["error"]["data"]["detail"]
 
 
 @pytest.mark.asyncio

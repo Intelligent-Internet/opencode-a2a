@@ -73,6 +73,7 @@ Then start `opencode-a2a` against that upstream:
 ```bash
 A2A_BEARER_TOKEN=dev-token \
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \
+A2A_TASK_STORE_DATABASE_URL=sqlite+aiosqlite:///./opencode-a2a.db \
 A2A_HOST=127.0.0.1 \
 A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \

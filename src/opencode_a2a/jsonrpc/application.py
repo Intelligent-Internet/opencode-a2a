@@ -21,7 +21,11 @@ from ..contracts.extensions import (
     PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES,
     SESSION_QUERY_ERROR_BUSINESS_CODES,
 )
-from ..opencode_upstream_client import OpencodeUpstreamClient, UpstreamContractError
+from ..opencode_upstream_client import (
+    OpencodeUpstreamClient,
+    UpstreamConcurrencyLimitError,
+    UpstreamContractError,
+)
 from .error_responses import (
     interrupt_not_found_error,
     invalid_params_error,
@@ -344,6 +348,14 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 base_request.id,
                 upstream_unreachable_error(ERR_UPSTREAM_UNREACHABLE),
             )
+        except UpstreamConcurrencyLimitError as exc:
+            return self._generate_error_response(
+                base_request.id,
+                upstream_unreachable_error(
+                    ERR_UPSTREAM_UNREACHABLE,
+                    detail=str(exc),
+                ),
+            )
         except Exception as exc:
             logger.exception("OpenCode session query JSON-RPC method failed")
             return self._generate_error_response(
@@ -468,6 +480,15 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 upstream_unreachable_error(
                     ERR_DISCOVERY_UPSTREAM_UNREACHABLE,
                     method=base_request.method,
+                ),
+            )
+        except UpstreamConcurrencyLimitError as exc:
+            return self._generate_error_response(
+                base_request.id,
+                upstream_unreachable_error(
+                    ERR_DISCOVERY_UPSTREAM_UNREACHABLE,
+                    method=base_request.method,
+                    detail=str(exc),
                 ),
             )
         except Exception as exc:
@@ -702,6 +723,17 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                     session_id=session_id,
                 ),
             )
+        except UpstreamConcurrencyLimitError as exc:
+            _log_shell_audit("upstream_backpressure")
+            return self._generate_error_response(
+                base_request.id,
+                upstream_unreachable_error(
+                    ERR_UPSTREAM_UNREACHABLE,
+                    method=base_request.method,
+                    session_id=session_id,
+                    detail=str(exc),
+                ),
+            )
         except UpstreamContractError as exc:
             _log_shell_audit("upstream_payload_error")
             return self._generate_error_response(
@@ -901,6 +933,15 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 upstream_unreachable_error(
                     ERR_UPSTREAM_UNREACHABLE,
                     request_id=request_id,
+                ),
+            )
+        except UpstreamConcurrencyLimitError as exc:
+            return self._generate_error_response(
+                base_request.id,
+                upstream_unreachable_error(
+                    ERR_UPSTREAM_UNREACHABLE,
+                    request_id=request_id,
+                    detail=str(exc),
                 ),
             )
         except Exception as exc:

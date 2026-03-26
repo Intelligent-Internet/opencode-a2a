@@ -93,6 +93,7 @@ def upstream_unreachable_error(
     method: str | None = None,
     session_id: str | None = None,
     request_id: str | None = None,
+    detail: str | None = None,
 ) -> JSONRPCError:
     data: dict[str, Any] = {"type": "UPSTREAM_UNREACHABLE"}
     if method is not None:
@@ -101,6 +102,8 @@ def upstream_unreachable_error(
         data["session_id"] = session_id
     if request_id is not None:
         data["request_id"] = request_id
+    if detail is not None:
+        data["detail"] = detail
     return JSONRPCError(code=code, message="Upstream OpenCode unreachable", data=data)
 
 

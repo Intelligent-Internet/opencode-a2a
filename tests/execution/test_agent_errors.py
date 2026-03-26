@@ -7,7 +7,11 @@ from a2a.server.events.event_queue import EventQueue
 from a2a.types import Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
-from opencode_a2a.opencode_upstream_client import OpencodeMessage, UpstreamContractError
+from opencode_a2a.opencode_upstream_client import (
+    OpencodeMessage,
+    UpstreamConcurrencyLimitError,
+    UpstreamContractError,
+)
 from tests.support.helpers import configure_mock_client_runtime, make_request_context_mock
 
 
@@ -195,6 +199,56 @@ async def test_streaming_execute_http_error_emits_status_update_with_metadata() 
 
 
 @pytest.mark.asyncio
+async def test_streaming_execute_upstream_backpressure_emits_status_update_with_metadata() -> None:
+    client = AsyncMock()
+
+    async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
+        del title, directory
+        return "ses-1"
+
+    client.create_session = create_session
+    client.send_message = AsyncMock(
+        side_effect=UpstreamConcurrencyLimitError(
+            category="request",
+            operation="/session/{sessionID}/message",
+            limit=1,
+        )
+    )
+    configure_mock_client_runtime(client, directory="/tmp/workspace")
+    client.stream_timeout = None
+    client.directory = None
+
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda _context: True  # noqa: E731
+    context = make_request_context_mock(
+        task_id="task-stream-backpressure",
+        context_id="ctx-stream-backpressure",
+        user_input="hello",
+        call_context_enabled=False,
+    )
+    event_queue = AsyncMock(spec=EventQueue)
+
+    await executor.execute(context, event_queue)
+
+    status = None
+    for call in event_queue.enqueue_event.call_args_list:
+        payload = call.args[0]
+        if (
+            isinstance(payload, TaskStatusUpdateEvent)
+            and payload.final
+            and payload.metadata is not None
+            and payload.metadata.get("opencode", {}).get("error", {}).get("type")
+            == "UPSTREAM_BACKPRESSURE"
+        ):
+            status = payload
+            break
+
+    assert status is not None
+    assert status.status.state == TaskState.failed
+    assert status.metadata["opencode"]["error"]["type"] == "UPSTREAM_BACKPRESSURE"
+
+
+@pytest.mark.asyncio
 async def test_execute_upstream_payload_error_maps_to_task_error_type() -> None:
     client = AsyncMock()
 
@@ -234,6 +288,49 @@ async def test_execute_upstream_payload_error_maps_to_task_error_type() -> None:
     assert event.metadata is not None
     assert event.metadata["opencode"]["error"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
     assert "payload mismatch" in event.status.message.parts[0].root.text
+
+
+@pytest.mark.asyncio
+async def test_execute_upstream_backpressure_maps_to_task_error_type() -> None:
+    client = AsyncMock()
+
+    async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
+        del title, directory
+        return "ses-1"
+
+    client.create_session = create_session
+    client.send_message = AsyncMock(
+        side_effect=UpstreamConcurrencyLimitError(
+            category="request",
+            operation="/session/{sessionID}/message",
+            limit=1,
+        )
+    )
+    configure_mock_client_runtime(client, directory="/tmp/workspace")
+
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    context = make_request_context_mock(
+        task_id="task-backpressure",
+        context_id="ctx-backpressure",
+        user_input="hello",
+        call_context_enabled=False,
+    )
+    event_queue = AsyncMock(spec=EventQueue)
+
+    await executor.execute(context, event_queue)
+
+    event = None
+    for call in event_queue.enqueue_event.call_args_list:
+        payload = call.args[0]
+        if isinstance(payload, Task):
+            event = payload
+            break
+
+    assert event is not None
+    assert event.status.state == TaskState.failed
+    assert event.metadata is not None
+    assert event.metadata["opencode"]["error"]["type"] == "UPSTREAM_BACKPRESSURE"
+    assert "concurrency limit exceeded" in event.status.message.parts[0].root.text
 
 
 @pytest.mark.asyncio

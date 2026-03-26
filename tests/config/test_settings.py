@@ -29,6 +29,8 @@ def test_settings_valid():
         "A2A_INTERRUPT_REQUEST_TOMBSTONE_TTL_SECONDS": "120",
         "A2A_CANCEL_ABORT_TIMEOUT_SECONDS": "0.75",
         "A2A_ENABLE_SESSION_SHELL": "true",
+        "OPENCODE_MAX_CONCURRENT_REQUESTS": "12",
+        "OPENCODE_MAX_CONCURRENT_STREAMS": "3",
         "A2A_SANDBOX_MODE": "danger-full-access",
         "A2A_SANDBOX_FILESYSTEM_SCOPE": "unrestricted",
         "A2A_SANDBOX_WRITABLE_ROOTS": "/srv/workspaces/alpha,/tmp/opencode",
@@ -49,6 +51,8 @@ def test_settings_valid():
         assert settings.a2a_interrupt_request_ttl_seconds == 7200.0
         assert settings.a2a_interrupt_request_tombstone_ttl_seconds == 120.0
         assert settings.a2a_cancel_abort_timeout_seconds == 0.75
+        assert settings.opencode_max_concurrent_requests == 12
+        assert settings.opencode_max_concurrent_streams == 3
         assert settings.a2a_enable_session_shell is True
         assert settings.a2a_sandbox_mode == "danger-full-access"
         assert settings.a2a_sandbox_filesystem_scope == "unrestricted"

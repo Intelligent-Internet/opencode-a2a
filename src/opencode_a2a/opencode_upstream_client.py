@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,12 +24,68 @@ class UpstreamContractError(RuntimeError):
     """Raised when upstream returns a shape/status that violates documented contract."""
 
 
+class UpstreamConcurrencyLimitError(RuntimeError):
+    """Raised when the local upstream concurrency budget is exhausted."""
+
+    def __init__(self, *, category: str, operation: str, limit: int) -> None:
+        self.category = category
+        self.operation = operation
+        self.limit = limit
+        super().__init__(
+            f"OpenCode upstream {category} concurrency limit exceeded "
+            f"while calling {operation} (limit={limit})"
+        )
+
+
 @dataclass(frozen=True)
 class OpencodeMessage:
     text: str
     session_id: str
     message_id: str | None
     raw: dict[str, Any]
+
+
+class _FastFailConcurrencyBudget:
+    def __init__(self, *, category: str, limit: int) -> None:
+        self._category = category
+        self._limit = max(0, int(limit))
+        self._inflight = 0
+        self._lock = asyncio.Lock()
+
+    @property
+    def limit(self) -> int:
+        return self._limit
+
+    @asynccontextmanager
+    async def reserve(self, *, operation: str) -> AsyncIterator[None]:
+        if self._limit <= 0:
+            yield
+            return
+
+        async with self._lock:
+            inflight = self._inflight
+            if inflight >= self._limit:
+                logger.warning(
+                    "OpenCode upstream concurrency limit exceeded "
+                    "category=%s operation=%s limit=%s inflight=%s",
+                    self._category,
+                    operation,
+                    self._limit,
+                    inflight,
+                )
+                raise UpstreamConcurrencyLimitError(
+                    category=self._category,
+                    operation=operation,
+                    limit=self._limit,
+                )
+            self._inflight += 1
+
+        try:
+            yield
+        finally:
+            async with self._lock:
+                if self._inflight > 0:
+                    self._inflight -= 1
 
 
 class OpencodeUpstreamClient:
@@ -58,6 +115,14 @@ class OpencodeUpstreamClient:
                 tombstone_ttl_seconds=self._interrupt_request_tombstone_ttl_seconds,
                 clock=self._interrupt_request_clock,
             )
+        )
+        self._request_budget = _FastFailConcurrencyBudget(
+            category="request",
+            limit=settings.opencode_max_concurrent_requests,
+        )
+        self._stream_budget = _FastFailConcurrencyBudget(
+            category="stream",
+            limit=settings.opencode_max_concurrent_streams,
         )
         self._client = self._build_http_client(self._base_url)
 
@@ -113,9 +178,10 @@ class OpencodeUpstreamClient:
         endpoint: str,
         params: Mapping[str, Any] | None = None,
     ) -> Any:
-        response = await self._client.get(path, params=params)
-        response.raise_for_status()
-        return self._decode_json_response(response, endpoint=endpoint)
+        async with self._request_budget.reserve(operation=endpoint):
+            response = await self._client.get(path, params=params)
+            response.raise_for_status()
+            return self._decode_json_response(response, endpoint=endpoint)
 
     async def _post_json(
         self,
@@ -131,13 +197,14 @@ class OpencodeUpstreamClient:
             request_kwargs["json"] = json_body
         if timeout is not _UNSET:
             request_kwargs["timeout"] = timeout
-        response = await self._client.post(
-            path,
-            params=params,
-            **request_kwargs,
-        )
-        response.raise_for_status()
-        return self._decode_json_response(response, endpoint=endpoint)
+        async with self._request_budget.reserve(operation=endpoint):
+            response = await self._client.post(
+                path,
+                params=params,
+                **request_kwargs,
+            )
+            response.raise_for_status()
+            return self._decode_json_response(response, endpoint=endpoint)
 
     async def _post_boolean(
         self,
@@ -263,37 +330,38 @@ class OpencodeUpstreamClient:
         self, stop_event: asyncio.Event | None = None, *, directory: str | None = None
     ) -> AsyncIterator[dict[str, Any]]:
         params = self._query_params(directory=directory)
-        async with self._client.stream(
-            "GET",
-            "/event",
-            params=params,
-            timeout=None,
-            headers={"Accept": "text/event-stream"},
-        ) as response:
-            response.raise_for_status()
-            data_lines: list[str] = []
-            async for line in response.aiter_lines():
-                if stop_event and stop_event.is_set():
-                    break
-                if line.startswith(":"):
-                    continue
-                if line == "":
-                    if not data_lines:
+        async with self._stream_budget.reserve(operation="/event"):
+            async with self._client.stream(
+                "GET",
+                "/event",
+                params=params,
+                timeout=None,
+                headers={"Accept": "text/event-stream"},
+            ) as response:
+                response.raise_for_status()
+                data_lines: list[str] = []
+                async for line in response.aiter_lines():
+                    if stop_event and stop_event.is_set():
+                        break
+                    if line.startswith(":"):
                         continue
-                    payload = "\n".join(data_lines).strip()
-                    data_lines.clear()
-                    if not payload:
+                    if line == "":
+                        if not data_lines:
+                            continue
+                        payload = "\n".join(data_lines).strip()
+                        data_lines.clear()
+                        if not payload:
+                            continue
+                        try:
+                            event = json.loads(payload)
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(event, dict):
+                            yield event
                         continue
-                    try:
-                        event = json.loads(payload)
-                    except json.JSONDecodeError:
+                    if line.startswith("data:"):
+                        data_lines.append(line[5:].lstrip())
                         continue
-                    if isinstance(event, dict):
-                        yield event
-                    continue
-                if line.startswith("data:"):
-                    data_lines.append(line[5:].lstrip())
-                    continue
 
     async def create_session(
         self, title: str | None = None, *, directory: str | None = None
@@ -344,17 +412,18 @@ class OpencodeUpstreamClient:
         *,
         directory: str | None = None,
     ) -> None:
-        response = await self._client.post(
-            f"/session/{session_id}/prompt_async",
-            params=self._query_params(directory=directory),
-            json=request,
-        )
-        response.raise_for_status()
-        if response.status_code != 204:
-            raise UpstreamContractError(
-                "OpenCode /session/{sessionID}/prompt_async must return 204; "
-                f"got {response.status_code}"
+        endpoint = "/session/{sessionID}/prompt_async"
+        async with self._request_budget.reserve(operation=endpoint):
+            response = await self._client.post(
+                f"/session/{session_id}/prompt_async",
+                params=self._query_params(directory=directory),
+                json=request,
             )
+            response.raise_for_status()
+            if response.status_code != 204:
+                raise UpstreamContractError(
+                    f"OpenCode {endpoint} must return 204; got {response.status_code}"
+                )
 
     async def session_command(
         self,

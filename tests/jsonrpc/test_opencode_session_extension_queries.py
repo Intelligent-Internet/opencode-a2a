@@ -8,6 +8,7 @@ from opencode_a2a.contracts.extensions import (
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
 )
+from opencode_a2a.opencode_upstream_client import UpstreamConcurrencyLimitError
 from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
@@ -340,6 +341,43 @@ async def test_provider_discovery_extension_maps_payload_mismatch(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_provider_discovery_extension_maps_concurrency_limit_to_unreachable(monkeypatch):
+    import opencode_a2a.server.application as app_module
+
+    class BusyDiscoveryClient(DummyOpencodeUpstreamClient):
+        async def list_provider_catalog(self, *, directory: str | None = None):
+            del directory
+            raise UpstreamConcurrencyLimitError(
+                category="request",
+                operation="/provider",
+                limit=1,
+            )
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", BusyDiscoveryClient)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 141,
+                "method": "opencode.providers.list",
+                "params": {},
+            },
+        )
+        payload = resp.json()
+        assert payload["error"]["code"] == -32002
+        assert payload["error"]["data"]["type"] == "UPSTREAM_UNREACHABLE"
+        assert "concurrency limit exceeded" in payload["error"]["data"]["detail"]
+
+
+@pytest.mark.asyncio
 async def test_session_query_extension_rejects_non_array_upstream_payload(monkeypatch):
     import opencode_a2a.server.application as app_module
 
@@ -370,6 +408,38 @@ async def test_session_query_extension_rejects_non_array_upstream_payload(monkey
         payload = resp.json()
         assert payload["error"]["code"] == -32005
         assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_session_query_extension_maps_concurrency_limit_to_unreachable(monkeypatch):
+    import opencode_a2a.server.application as app_module
+
+    class BusySessionQueryClient(DummyOpencodeUpstreamClient):
+        async def list_sessions(self, *, params=None):
+            del params
+            raise UpstreamConcurrencyLimitError(
+                category="request",
+                operation="/session",
+                limit=1,
+            )
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", BusySessionQueryClient)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={"jsonrpc": "2.0", "id": 15, "method": "opencode.sessions.list", "params": {}},
+        )
+        payload = resp.json()
+        assert payload["error"]["code"] == -32002
+        assert payload["error"]["data"]["type"] == "UPSTREAM_UNREACHABLE"
+        assert "concurrency limit exceeded" in payload["error"]["data"]["detail"]
 
 
 @pytest.mark.asyncio

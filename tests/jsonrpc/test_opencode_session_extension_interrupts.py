@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from opencode_a2a.config import Settings
+from opencode_a2a.opencode_upstream_client import UpstreamConcurrencyLimitError
 from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
@@ -452,3 +453,55 @@ async def test_interrupt_callback_extension_rejects_identity_mismatch(monkeypatc
         payload = resp.json()
         assert payload["error"]["code"] == -32004
         assert payload["error"]["data"]["type"] == "INTERRUPT_REQUEST_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_interrupt_callback_extension_maps_concurrency_limit_to_unreachable(monkeypatch):
+    import opencode_a2a.server.application as app_module
+
+    class BusyInterruptClient(DummyOpencodeUpstreamClient):
+        async def permission_reply(
+            self,
+            request_id: str,
+            *,
+            reply: str,
+            message: str | None = None,
+            directory: str | None = None,
+        ) -> bool:
+            del request_id, reply, message, directory
+            raise UpstreamConcurrencyLimitError(
+                category="request",
+                operation="/permission/{requestID}/reply",
+                limit=1,
+            )
+
+    dummy = BusyInterruptClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    await dummy.remember_interrupt_request(
+        request_id="perm-busy",
+        session_id="ses-1",
+        interrupt_type="permission",
+    )
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 19,
+                "method": "a2a.interrupt.permission.reply",
+                "params": {"request_id": "perm-busy", "reply": "once"},
+            },
+        )
+        payload = resp.json()
+        assert payload["error"]["code"] == -32002
+        assert payload["error"]["data"]["type"] == "UPSTREAM_UNREACHABLE"
+        assert "concurrency limit exceeded" in payload["error"]["data"]["detail"]

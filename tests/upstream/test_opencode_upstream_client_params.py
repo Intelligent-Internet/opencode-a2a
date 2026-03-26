@@ -1,3 +1,4 @@
+import asyncio
 import json as json_module
 
 import httpx
@@ -6,6 +7,7 @@ import pytest
 from opencode_a2a.opencode_upstream_client import (
     _UNSET,
     OpencodeUpstreamClient,
+    UpstreamConcurrencyLimitError,
     UpstreamContractError,
 )
 from tests.support.helpers import make_settings
@@ -34,6 +36,33 @@ class _DummyResponse:
         if self._json_error is not None:
             raise self._json_error
         return self._payload
+
+
+class _HoldingStreamResponse:
+    def __init__(self, started: asyncio.Event, release: asyncio.Event) -> None:
+        self._started = started
+        self._release = release
+
+    def raise_for_status(self) -> None:
+        return None
+
+    async def aiter_lines(self):
+        self._started.set()
+        await self._release.wait()
+        yield 'data: {"kind": "tick"}'
+        yield ""
+
+
+class _HoldingStreamContext:
+    def __init__(self, started: asyncio.Event, release: asyncio.Event) -> None:
+        self._response = _HoldingStreamResponse(started, release)
+
+    async def __aenter__(self) -> _HoldingStreamResponse:
+        return self._response
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        del exc_type, exc, tb
+        return False
 
 
 @pytest.mark.asyncio
@@ -342,6 +371,45 @@ async def test_send_message_raises_upstream_contract_error_for_non_json_response
 
 
 @pytest.mark.asyncio
+async def test_send_message_raises_concurrency_limit_error_when_request_budget_exhausted(
+    monkeypatch,
+):
+    client = OpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            opencode_max_concurrent_requests=1,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_post(path: str, *, params=None, json=None, **_kwargs):
+        del path, params, json
+        started.set()
+        await release.wait()
+        return _DummyResponse({"info": {"id": "m-1"}, "parts": [{"type": "text", "text": "ok"}]})
+
+    monkeypatch.setattr(client._client, "post", fake_post)
+
+    first_request = asyncio.create_task(client.send_message("ses-1", "hello"))
+    await started.wait()
+
+    with pytest.raises(
+        UpstreamConcurrencyLimitError,
+        match="request concurrency limit exceeded",
+    ):
+        await client.send_message("ses-2", "blocked")
+
+    release.set()
+    await first_request
+    await client.close()
+
+
+@pytest.mark.asyncio
 async def test_permission_reply_raises_on_404_without_legacy_fallback(monkeypatch):
     client = OpencodeUpstreamClient(
         make_settings(
@@ -614,6 +682,45 @@ async def test_interrupt_request_ttl_defaults_to_three_hours_and_is_configurable
     assert configured_client._interrupt_request_ttl_seconds == 90.0
     assert configured_client._interrupt_request_tombstone_ttl_seconds == 15.0
     await configured_client.close()
+
+
+@pytest.mark.asyncio
+async def test_stream_events_raises_concurrency_limit_error_when_stream_budget_exhausted(
+    monkeypatch,
+) -> None:
+    client = OpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            opencode_max_concurrent_streams=1,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    def fake_stream(method: str, path: str, *, params=None, timeout=None, headers=None):
+        del method, path, params, timeout, headers
+        return _HoldingStreamContext(started, release)
+
+    monkeypatch.setattr(client._client, "stream", fake_stream)
+
+    first_stream = client.stream_events()
+    first_event = asyncio.create_task(anext(first_stream))
+    await started.wait()
+
+    with pytest.raises(
+        UpstreamConcurrencyLimitError,
+        match="stream concurrency limit exceeded",
+    ):
+        await anext(client.stream_events())
+
+    release.set()
+    assert await first_event == {"kind": "tick"}
+    await first_stream.aclose()
+    await client.close()
 
 
 def test_response_body_preview_handles_empty_and_long_payloads() -> None:

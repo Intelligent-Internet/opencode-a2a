@@ -28,7 +28,11 @@ from a2a.types import (
     TextPart,
 )
 
-from ..opencode_upstream_client import OpencodeUpstreamClient, UpstreamContractError
+from ..opencode_upstream_client import (
+    OpencodeUpstreamClient,
+    UpstreamConcurrencyLimitError,
+    UpstreamContractError,
+)
 from ..parts.mapping import (
     UnsupportedA2AInputError,
     extract_text_from_a2a_parts,
@@ -272,6 +276,17 @@ class _ExecutionCoordinator:
                 message=f"OpenCode payload mismatch: {exc}",
                 state=TaskState.failed,
                 error_type="UPSTREAM_PAYLOAD_ERROR",
+                streaming_request=self._prepared.streaming_request,
+            )
+        except UpstreamConcurrencyLimitError as exc:
+            logger.warning("OpenCode request rejected by concurrency budget: %s", exc)
+            await self._executor._emit_error(
+                self._event_queue,
+                task_id=self._task_id,
+                context_id=self._context_id,
+                message=str(exc),
+                state=TaskState.failed,
+                error_type="UPSTREAM_BACKPRESSURE",
                 streaming_request=self._prepared.streaming_request,
             )
         except Exception as exc:

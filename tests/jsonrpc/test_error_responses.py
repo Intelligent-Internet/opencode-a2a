@@ -38,6 +38,9 @@ def test_jsonrpc_error_mapping_helpers_preserve_business_contract_fields() -> No
 
 
 def test_jsonrpc_error_mapping_helpers_build_upstream_envelopes() -> None:
+    backpressure_detail = (
+        "OpenCode upstream request concurrency limit exceeded while calling /session (limit=1)"
+    )
     http_error = upstream_http_error(
         -32003,
         upstream_status=503,
@@ -51,10 +54,15 @@ def test_jsonrpc_error_mapping_helpers_build_upstream_envelopes() -> None:
         "session_id": "s-1",
     }
 
-    unreachable = upstream_unreachable_error(-32002, request_id="req-1")
+    unreachable = upstream_unreachable_error(
+        -32002,
+        request_id="req-1",
+        detail=backpressure_detail,
+    )
     assert unreachable.data == {
         "type": "UPSTREAM_UNREACHABLE",
         "request_id": "req-1",
+        "detail": backpressure_detail,
     }
 
     payload_error = upstream_payload_error(

@@ -69,6 +69,10 @@ Key variables to understand protocol behavior:
   `session.abort` in cancel flow.
 - `OPENCODE_TIMEOUT` / `OPENCODE_TIMEOUT_STREAM`: upstream request timeout and
   optional stream timeout override.
+- `OPENCODE_MAX_CONCURRENT_REQUESTS`: optional fast-fail concurrency limit for
+  unary/control upstream calls. `0` disables the limit.
+- `OPENCODE_MAX_CONCURRENT_STREAMS`: optional fast-fail concurrency limit for
+  long-lived upstream `/event` streams. `0` disables the limit.
 - `A2A_CLIENT_TIMEOUT_SECONDS`: outbound client timeout. Default: `30` seconds.
 - `A2A_CLIENT_CARD_FETCH_TIMEOUT_SECONDS`: outbound Agent Card fetch timeout.
   Default: `5` seconds.
@@ -110,10 +114,10 @@ Current client facade API:
 - `A2AClient.cancel_task()`
 - `A2AClient.resubscribe_task()`
 
-Server-side outbound peer calls use bearer auth only for now. Configure
-`A2A_CLIENT_BEARER_TOKEN` when the remote agent protects its runtime surface.
-CLI outbound calls may pass `--token` explicitly or use
-`A2A_CLIENT_BEARER_TOKEN`.
+Server-side outbound peer calls read outbound credentials from environment
+variables. Configure `A2A_CLIENT_BEARER_TOKEN` or `A2A_CLIENT_BASIC_AUTH` when
+the remote agent protects its runtime surface. CLI outbound calls follow the
+same environment-only model.
 
 Execution-boundary metadata is intentionally declarative deployment metadata:
 it is published through `RuntimeProfile`, Agent Card, OpenAPI, and `/health`,
