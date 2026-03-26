@@ -194,12 +194,10 @@ class DatabaseSessionStateRepository(SessionStateRepository):
         *,
         engine: AsyncEngine,
         pending_claim_ttl_seconds: float,
-        create_tables: bool = True,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.engine = engine
         self._pending_claim_ttl_seconds = float(pending_claim_ttl_seconds)
-        self._create_tables = bool(create_tables)
         self._clock = clock
         self._initialized = False
         self._session_maker = async_sessionmaker(
@@ -209,9 +207,8 @@ class DatabaseSessionStateRepository(SessionStateRepository):
     async def initialize(self) -> None:
         if self._initialized:
             return
-        if self._create_tables:
-            async with self.engine.begin() as conn:
-                await conn.run_sync(_STATE_METADATA.create_all)
+        async with self.engine.begin() as conn:
+            await conn.run_sync(_STATE_METADATA.create_all)
         self._initialized = True
 
     async def _ensure_initialized(self) -> None:
@@ -480,13 +477,11 @@ class DatabaseInterruptRequestRepository(InterruptRequestRepository):
         engine: AsyncEngine,
         request_ttl_seconds: float,
         tombstone_ttl_seconds: float,
-        create_tables: bool = True,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.engine = engine
         self._request_ttl_seconds = float(request_ttl_seconds)
         self._tombstone_ttl_seconds = float(tombstone_ttl_seconds)
-        self._create_tables = bool(create_tables)
         self._clock = clock
         self._initialized = False
         self._session_maker = async_sessionmaker(
@@ -496,9 +491,8 @@ class DatabaseInterruptRequestRepository(InterruptRequestRepository):
     async def initialize(self) -> None:
         if self._initialized:
             return
-        if self._create_tables:
-            async with self.engine.begin() as conn:
-                await conn.run_sync(_STATE_METADATA.create_all)
+        async with self.engine.begin() as conn:
+            await conn.run_sync(_STATE_METADATA.create_all)
         self._initialized = True
 
     async def _ensure_initialized(self) -> None:
@@ -631,7 +625,6 @@ def build_session_state_repository(
         return DatabaseSessionStateRepository(
             engine=cast("AsyncEngine", engine),
             pending_claim_ttl_seconds=settings.a2a_pending_session_claim_ttl_seconds,
-            create_tables=settings.a2a_task_store_create_table,
         )
     return MemorySessionStateRepository(
         ttl_seconds=_MEMORY_SESSION_BINDING_TTL_SECONDS,
@@ -650,7 +643,6 @@ def build_interrupt_request_repository(
             engine=cast("AsyncEngine", engine),
             request_ttl_seconds=settings.a2a_interrupt_request_ttl_seconds,
             tombstone_ttl_seconds=settings.a2a_interrupt_request_tombstone_ttl_seconds,
-            create_tables=settings.a2a_task_store_create_table,
         )
     return MemoryInterruptRequestRepository(
         request_ttl_seconds=settings.a2a_interrupt_request_ttl_seconds,

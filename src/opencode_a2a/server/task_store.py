@@ -24,7 +24,6 @@ def build_task_store(
     resolved_engine = engine or build_database_engine(settings)
     return DatabaseTaskStore(
         engine=resolved_engine,
-        create_table=settings.a2a_task_store_create_table,
     )
 
 
