@@ -5,7 +5,6 @@ import asyncio
 import os
 import sys
 from collections.abc import Sequence
-from typing import Any
 
 from a2a.types import Message, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 
@@ -14,23 +13,12 @@ from .client import A2AClient, load_settings
 from .server.application import main as serve_main
 
 
-async def run_call(
-    agent_url: str,
-    text: str,
-    token: str | None = None,
-    basic: str | None = None,
-) -> int:
-    settings = load_settings(
-        {
-            "A2A_CLIENT_BEARER_TOKEN": token,
-            "A2A_CLIENT_BASIC_AUTH": basic,
-        }
-    )
+async def run_call(agent_url: str, text: str) -> int:
+    settings = load_settings(os.environ)
     client = A2AClient(agent_url, settings=settings)
-    metadata: dict[str, Any] = {}
 
     try:
-        async for event in client.send_message(text, metadata=metadata):
+        async for event in client.send_message(text):
             if isinstance(event, tuple):
                 _, update = event
                 if isinstance(update, TaskArtifactUpdateEvent):
@@ -81,16 +69,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     call_parser.add_argument("agent_url", help="URL of the agent to call.")
     call_parser.add_argument("text", help="Text message to send.")
-    call_parser.add_argument(
-        "--token",
-        help="Bearer token for authentication (can also use A2A_CLIENT_BEARER_TOKEN env).",
-        default=os.environ.get("A2A_CLIENT_BEARER_TOKEN"),
-    )
-    call_parser.add_argument(
-        "--basic",
-        help="Basic auth (user:pass or base64) (can also use A2A_CLIENT_BASIC_AUTH env).",
-        default=os.environ.get("A2A_CLIENT_BASIC_AUTH"),
-    )
 
     return parser
 
@@ -105,14 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     namespace = parser.parse_args(args)
     if namespace.command == "call":
-        return asyncio.run(
-            run_call(
-                namespace.agent_url,
-                namespace.text,
-                namespace.token,
-                namespace.basic,
-            )
-        )
+        return asyncio.run(run_call(namespace.agent_url, namespace.text))
 
     if namespace.command is None:
         serve_main()

@@ -36,6 +36,11 @@ def test_build_default_headers_accepts_pre_encoded_basic_auth() -> None:
     assert build_default_headers(None, encoded) == {"Authorization": f"Basic {encoded}"}
 
 
+def test_build_default_headers_rejects_invalid_basic_auth() -> None:
+    with pytest.raises(ValueError, match="username:password"):
+        build_default_headers(None, "not-basic-auth")
+
+
 def test_build_default_headers_prefers_bearer_over_basic_auth() -> None:
     assert build_default_headers("peer-token", "user:pass") == {
         "Authorization": "Bearer peer-token"

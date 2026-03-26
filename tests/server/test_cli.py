@@ -49,27 +49,19 @@ def test_cli_defaults_to_serve_when_no_subcommand() -> None:
     serve_mock.assert_called_once_with()
 
 
-def test_cli_call_uses_outbound_bearer_env_default() -> None:
-    with mock.patch.dict(
-        "os.environ",
-        {"A2A_CLIENT_BEARER_TOKEN": "peer-token"},
-        clear=False,
-    ):
-        parser = cli.build_parser()
+def test_cli_call_rejects_bearer_flag() -> None:
+    parser = cli.build_parser()
 
-    namespace = parser.parse_args(["call", "http://agent.example.com", "hello"])
+    with pytest.raises(SystemExit) as excinfo:
+        parser.parse_args(["call", "http://agent.example.com", "hello", "--token", "peer-token"])
 
-    assert namespace.token == "peer-token"
+    assert excinfo.value.code == 2
 
 
-def test_cli_call_does_not_fall_back_to_inbound_bearer_env() -> None:
-    with mock.patch.dict(
-        "os.environ",
-        {"A2A_BEARER_TOKEN": "inbound-token"},
-        clear=True,
-    ):
-        parser = cli.build_parser()
+def test_cli_call_rejects_basic_flag() -> None:
+    parser = cli.build_parser()
 
-    namespace = parser.parse_args(["call", "http://agent.example.com", "hello"])
+    with pytest.raises(SystemExit) as excinfo:
+        parser.parse_args(["call", "http://agent.example.com", "hello", "--basic", "user:pass"])
 
-    assert namespace.token is None
+    assert excinfo.value.code == 2

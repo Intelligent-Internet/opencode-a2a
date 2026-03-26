@@ -6,6 +6,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from .auth import validate_basic_auth
+
 
 def _read_setting(
     source: Any,
@@ -162,6 +164,8 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
             default=None,
         ),
     )
+    if basic_auth is not None:
+        validate_basic_auth(basic_auth)
     supported_transports = _parse_transports(
         _read_setting(
             raw_settings,

@@ -7,6 +7,8 @@ from typing import Any
 
 from a2a.client.middleware import ClientCallContext, ClientCallInterceptor
 
+from .auth import encode_basic_auth
+
 
 class HeaderInterceptor(ClientCallInterceptor):
     def __init__(self, default_headers: Mapping[str, str] | None = None) -> None:
@@ -43,13 +45,7 @@ def build_default_headers(
     if bearer_token:
         return {"Authorization": f"Bearer {bearer_token}"}
     if basic_auth:
-        from base64 import b64encode
-
-        if ":" in basic_auth:
-            encoded = b64encode(basic_auth.encode()).decode()
-            return {"Authorization": f"Basic {encoded}"}
-        # Assume already encoded if no colon
-        return {"Authorization": f"Basic {basic_auth}"}
+        return {"Authorization": f"Basic {encode_basic_auth(basic_auth)}"}
     return {}
 
 
