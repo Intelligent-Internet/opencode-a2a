@@ -6,6 +6,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from .auth import validate_basic_auth
+
 
 def _read_setting(
     source: Any,
@@ -106,6 +108,7 @@ class A2AClientSettings:
     use_client_preference: bool = False
     card_fetch_timeout: float = 5.0
     bearer_token: str | None = None
+    basic_auth: str | None = None
     supported_transports: tuple[str, ...] = (
         "JSONRPC",
         "HTTP+JSON",
@@ -153,6 +156,16 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
             default=None,
         ),
     )
+    basic_auth = _coerce_optional_str(
+        "A2A_CLIENT_BASIC_AUTH",
+        _read_setting(
+            raw_settings,
+            keys=("A2A_CLIENT_BASIC_AUTH", "a2a_client_basic_auth"),
+            default=None,
+        ),
+    )
+    if basic_auth is not None:
+        validate_basic_auth(basic_auth)
     supported_transports = _parse_transports(
         _read_setting(
             raw_settings,
@@ -170,6 +183,7 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
         use_client_preference=use_client_preference,
         card_fetch_timeout=card_fetch_timeout,
         bearer_token=bearer_token,
+        basic_auth=basic_auth,
         supported_transports=supported_transports,
     )
 

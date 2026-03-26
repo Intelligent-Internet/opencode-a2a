@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from base64 import b64encode
 from unittest.mock import AsyncMock
 
 import httpx
@@ -58,6 +59,19 @@ def test_build_resolver_http_kwargs_uses_bearer_token() -> None:
     assert build_resolver_http_kwargs(bearer_token="peer-token", timeout=7) == {
         "timeout": 7,
         "headers": {"Authorization": "Bearer peer-token"},
+    }
+
+
+def test_build_resolver_http_kwargs_uses_basic_auth() -> None:
+    encoded = b64encode(b"user:pass").decode()
+
+    assert build_resolver_http_kwargs(
+        bearer_token=None,
+        basic_auth="user:pass",
+        timeout=7,
+    ) == {
+        "timeout": 7,
+        "headers": {"Authorization": f"Basic {encoded}"},
     }
 
 

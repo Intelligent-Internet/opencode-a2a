@@ -66,9 +66,10 @@ def build_resolver_http_kwargs(
     *,
     bearer_token: str | None,
     timeout: float,
+    basic_auth: str | None = None,
 ) -> dict[str, Any]:
     http_kwargs: dict[str, Any] = {"timeout": timeout}
-    default_headers = build_default_headers(bearer_token)
+    default_headers = build_default_headers(bearer_token, basic_auth)
     if default_headers:
         http_kwargs["headers"] = default_headers
     return http_kwargs

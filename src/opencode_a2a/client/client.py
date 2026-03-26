@@ -83,6 +83,7 @@ class A2AClient:
                 http_kwargs=build_resolver_http_kwargs(
                     bearer_token=self._settings.bearer_token,
                     timeout=self._settings.card_fetch_timeout,
+                    basic_auth=self._settings.basic_auth,
                 )
             )
         except (
@@ -121,7 +122,9 @@ class A2AClient:
             try:
                 async for event in client.send_message(
                     request,
-                    context=build_call_context(self._settings.bearer_token, extra_headers),
+                    context=build_call_context(
+                        self._settings.bearer_token, extra_headers, self._settings.basic_auth
+                    ),
                     request_metadata=request_metadata,
                     extensions=extensions,
                 ):
@@ -180,7 +183,9 @@ class A2AClient:
                         history_length=history_length,
                         metadata=request_metadata or {},
                     ),
-                    context=build_call_context(self._settings.bearer_token, extra_headers),
+                    context=build_call_context(
+                        self._settings.bearer_token, extra_headers, self._settings.basic_auth
+                    ),
                 )
             except (
                 A2AClientHTTPError,
@@ -206,7 +211,9 @@ class A2AClient:
             try:
                 return await client.cancel_task(
                     TaskIdParams(id=task_id, metadata=request_metadata or {}),
-                    context=build_call_context(self._settings.bearer_token, extra_headers),
+                    context=build_call_context(
+                        self._settings.bearer_token, extra_headers, self._settings.basic_auth
+                    ),
                 )
             except (
                 A2AClientHTTPError,
@@ -232,7 +239,9 @@ class A2AClient:
             try:
                 async for event in client.resubscribe(
                     TaskIdParams(id=task_id, metadata=request_metadata or {}),
-                    context=build_call_context(self._settings.bearer_token, extra_headers),
+                    context=build_call_context(
+                        self._settings.bearer_token, extra_headers, self._settings.basic_auth
+                    ),
                 ):
                     yield event
             except (
@@ -264,7 +273,9 @@ class A2AClient:
             factory = ClientFactory(config, consumers=None)
             client = factory.create(
                 card,
-                interceptors=build_client_interceptors(self._settings.bearer_token),
+                interceptors=build_client_interceptors(
+                    self._settings.bearer_token, self._settings.basic_auth
+                ),
             )
         except ValueError as exc:
             raise A2AUnsupportedBindingError(

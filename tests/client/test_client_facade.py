@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from base64 import b64encode
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock
 
@@ -167,6 +168,28 @@ async def test_send_message_adds_bearer_token_from_settings(
 
 
 @pytest.mark.asyncio
+async def test_send_message_adds_basic_auth_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = A2AClient(
+        "http://agent.example.com",
+        settings=A2AClientSettings(basic_auth="user:pass"),
+    )
+    fake_client = _FakeClient(events=["ok"])
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+
+    result = [event async for event in client.send_message("hello")]
+
+    assert result == ["ok"]
+    _, _, kwargs = fake_client.send_message_inputs[0]
+    assert kwargs["request_metadata"] is None
+    assert kwargs["context"] is not None
+    assert kwargs["context"].state["headers"]["Authorization"] == (
+        f"Basic {b64encode(b'user:pass').decode()}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_send_message_preserves_explicit_authorization_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -246,6 +269,38 @@ async def test_get_agent_card_maps_json_error(monkeypatch: pytest.MonkeyPatch) -
 
     with pytest.raises(A2APeerProtocolError, match="invalid agent card payload"):
         await client.get_agent_card()
+
+
+@pytest.mark.asyncio
+async def test_get_agent_card_passes_basic_auth_to_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolver_http_kwargs: dict[str, object] = {}
+
+    class _ResolverWithCapturedKwargs:
+        async def get_agent_card(self, **kwargs: object) -> object:
+            resolver_http_kwargs.update(kwargs)
+            return "agent-card"
+
+    client = A2AClient(
+        "http://agent.example.com",
+        settings=A2AClientSettings(card_fetch_timeout=7, basic_auth="user:pass"),
+    )
+    monkeypatch.setattr(
+        client_module,
+        "build_agent_card_resolver",
+        lambda *_args: _ResolverWithCapturedKwargs(),
+    )
+
+    card = await client.get_agent_card()
+
+    assert card == "agent-card"
+    assert resolver_http_kwargs == {
+        "http_kwargs": {
+            "timeout": 7,
+            "headers": {"Authorization": f"Basic {b64encode(b'user:pass').decode()}"},
+        }
+    }
 
 
 @pytest.mark.asyncio

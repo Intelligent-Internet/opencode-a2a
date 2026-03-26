@@ -6,23 +6,19 @@ import os
 import sys
 from collections.abc import Sequence
 
+from a2a.types import Message, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+
 from . import __version__
+from .client import A2AClient, load_settings
 from .server.application import main as serve_main
 
 
-async def run_call(agent_url: str, text: str, token: str | None = None) -> int:
-    from a2a.types import Message, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-
-    from .client import A2AClient
-
-    client = A2AClient(agent_url)
-    metadata = {}
-    if token:
-        # Use Authorization header for bearer auth.
-        metadata["authorization"] = f"Bearer {token}"
+async def run_call(agent_url: str, text: str) -> int:
+    settings = load_settings(os.environ)
+    client = A2AClient(agent_url, settings=settings)
 
     try:
-        async for event in client.send_message(text, metadata=metadata):
+        async for event in client.send_message(text):
             if isinstance(event, tuple):
                 _, update = event
                 if isinstance(update, TaskArtifactUpdateEvent):
@@ -73,11 +69,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     call_parser.add_argument("agent_url", help="URL of the agent to call.")
     call_parser.add_argument("text", help="Text message to send.")
-    call_parser.add_argument(
-        "--token",
-        help="Bearer token for authentication (can also use A2A_CLIENT_BEARER_TOKEN env).",
-        default=os.environ.get("A2A_CLIENT_BEARER_TOKEN"),
-    )
 
     return parser
 
@@ -92,7 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     namespace = parser.parse_args(args)
     if namespace.command == "call":
-        return asyncio.run(run_call(namespace.agent_url, namespace.text, namespace.token))
+        return asyncio.run(run_call(namespace.agent_url, namespace.text))
 
     if namespace.command is None:
         serve_main()

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from base64 import b64encode
+
 import pytest
 
 from opencode_a2a.client.request_context import (
@@ -20,6 +22,29 @@ def test_split_request_metadata_and_default_headers() -> None:
     assert request_metadata == {"trace_id": "trace-1"}
     assert extra_headers == {"Authorization": "Bearer explicit-token"}
     assert build_default_headers("peer-token") == {"Authorization": "Bearer peer-token"}
+
+
+def test_build_default_headers_encodes_basic_auth_credentials() -> None:
+    encoded = b64encode(b"user:pass").decode()
+
+    assert build_default_headers(None, "user:pass") == {"Authorization": f"Basic {encoded}"}
+
+
+def test_build_default_headers_accepts_pre_encoded_basic_auth() -> None:
+    encoded = b64encode(b"user:pass").decode()
+
+    assert build_default_headers(None, encoded) == {"Authorization": f"Basic {encoded}"}
+
+
+def test_build_default_headers_rejects_invalid_basic_auth() -> None:
+    with pytest.raises(ValueError, match="username:password"):
+        build_default_headers(None, "not-basic-auth")
+
+
+def test_build_default_headers_prefers_bearer_over_basic_auth() -> None:
+    assert build_default_headers("peer-token", "user:pass") == {
+        "Authorization": "Bearer peer-token"
+    }
 
 
 def test_build_call_context_without_headers_returns_none() -> None:
