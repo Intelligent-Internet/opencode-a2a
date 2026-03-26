@@ -8,7 +8,14 @@ import httpx
 import pytest
 from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.events import EventConsumer
-from a2a.types import Task, TaskIdParams, TaskNotCancelableError, TaskState, TaskStatus
+from a2a.types import (
+    Task,
+    TaskIdParams,
+    TaskNotCancelableError,
+    TaskQueryParams,
+    TaskState,
+    TaskStatus,
+)
 from a2a.utils.errors import ServerError
 from fastapi import Request
 
@@ -38,6 +45,7 @@ from opencode_a2a.server.application import (
     build_agent_card,
     create_app,
 )
+from opencode_a2a.server.task_store import TaskStoreOperationError
 from tests.support.helpers import DummyChatOpencodeUpstreamClient, make_settings
 
 
@@ -401,6 +409,118 @@ async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> N
     )
     events = [item async for item in handler.on_resubscribe_to_task(params)]
     assert events == ["evt-1"]
+
+
+@pytest.mark.asyncio
+async def test_task_store_failures_map_to_stable_handler_errors() -> None:
+    task_store = MagicMock()
+    handler = OpencodeRequestHandler(agent_executor=MagicMock(), task_store=task_store)
+
+    task_store.get = AsyncMock(side_effect=TaskStoreOperationError("get", "task-1"))
+    with pytest.raises(ServerError, match="Task store unavailable while loading task state."):
+        await handler.on_get_task(TaskQueryParams(id="task-1"))
+
+    with pytest.raises(ServerError, match="Task store unavailable while loading task state."):
+        events = [item async for item in handler.on_resubscribe_to_task(TaskIdParams(id="task-1"))]
+        assert events == []
+
+
+@pytest.mark.asyncio
+async def test_on_message_send_returns_stable_failure_task_for_task_store_error() -> None:
+    class _Aggregator:
+        async def consume_and_break_on_interrupt(self, _consumer, *, blocking, event_callback):
+            del _consumer, blocking, event_callback
+            raise TaskStoreOperationError("save", "task-1")
+
+    class _Handler(OpencodeRequestHandler):
+        def __init__(self) -> None:
+            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            self.queue = AsyncMock()
+            self.producer = MagicMock()
+
+        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
+            del params, context
+            return (
+                MagicMock(spec=EventConsumer),
+                "task-1",
+                self.queue,
+                _Aggregator(),
+                self.producer,
+            )
+
+        async def _cleanup_producer(self, producer_task, task_id):  # noqa: ANN001
+            del producer_task, task_id
+
+        async def _send_push_notification_if_needed(self, task_id, result_aggregator):  # noqa: ANN001
+            del task_id, result_aggregator
+
+        def _track_background_task(self, task):  # noqa: ANN001
+            task.cancel()
+
+    params = types.SimpleNamespace(
+        message=types.SimpleNamespace(contextId="ctx-1"), configuration=None
+    )
+    result = await _Handler().on_message_send(params)
+    assert result.status.state == TaskState.failed
+    assert result.metadata == {
+        "opencode": {
+            "error": {
+                "type": app_module.TASK_STORE_ERROR_TYPE,
+                "operation": "save",
+            }
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_on_message_send_stream_emits_stable_failure_events_for_task_store_error() -> None:
+    class _Aggregator:
+        async def consume_and_emit(self, _consumer):
+            del _consumer
+            raise TaskStoreOperationError("save", "task-1")
+            yield  # pragma: no cover
+
+    class _Handler(OpencodeRequestHandler):
+        def __init__(self) -> None:
+            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            self.queue = AsyncMock()
+            self.producer = MagicMock()
+            self.background_tasks: list[asyncio.Task] = []
+
+        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
+            del params, context
+            return (
+                MagicMock(spec=EventConsumer),
+                "task-1",
+                self.queue,
+                _Aggregator(),
+                self.producer,
+            )
+
+        async def _cleanup_producer(self, producer_task, task_id):  # noqa: ANN001
+            del producer_task, task_id
+
+        async def _send_push_notification_if_needed(self, task_id, result_aggregator):  # noqa: ANN001
+            del task_id, result_aggregator
+
+        def _track_background_task(self, task):  # noqa: ANN001
+            self.background_tasks.append(task)
+
+    params = types.SimpleNamespace(
+        message=types.SimpleNamespace(contextId="ctx-1"), configuration=None
+    )
+    events = [event async for event in _Handler().on_message_send_stream(params)]
+
+    assert len(events) == 2
+    assert events[-1].status.state == TaskState.failed
+    assert events[-1].metadata == {
+        "opencode": {
+            "error": {
+                "type": app_module.TASK_STORE_ERROR_TYPE,
+                "operation": "save",
+            }
+        }
+    }
 
 
 @pytest.mark.asyncio
