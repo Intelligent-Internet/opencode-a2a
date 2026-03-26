@@ -21,6 +21,11 @@ def test_load_settings_from_mapping() -> None:
         "A2A_CLIENT_BEARER_TOKEN": "peer-token",
         "A2A_CLIENT_BASIC_AUTH": "user:pass",
         "A2A_CLIENT_SUPPORTED_TRANSPORTS": "json-rpc,http-json",
+        "A2A_CLIENT_POLLING_FALLBACK_ENABLED": "true",
+        "A2A_CLIENT_POLLING_FALLBACK_INITIAL_INTERVAL_SECONDS": "0.75",
+        "A2A_CLIENT_POLLING_FALLBACK_MAX_INTERVAL_SECONDS": "3",
+        "A2A_CLIENT_POLLING_FALLBACK_BACKOFF_MULTIPLIER": "1.5",
+        "A2A_CLIENT_POLLING_FALLBACK_TIMEOUT_SECONDS": "12",
     }
 
     settings = load_settings(raw)
@@ -31,6 +36,11 @@ def test_load_settings_from_mapping() -> None:
     assert settings.bearer_token == "peer-token"
     assert settings.basic_auth == "user:pass"
     assert settings.supported_transports == ("JSONRPC", "HTTP+JSON")
+    assert settings.polling_fallback_enabled is True
+    assert settings.polling_fallback_initial_interval_seconds == 0.75
+    assert settings.polling_fallback_max_interval_seconds == 3.0
+    assert settings.polling_fallback_backoff_multiplier == 1.5
+    assert settings.polling_fallback_timeout_seconds == 12.0
 
 
 def test_load_settings_invalid_transport_raises() -> None:
@@ -59,3 +69,13 @@ def test_load_settings_accepts_base64_basic_auth() -> None:
 def test_load_settings_invalid_basic_auth_raises() -> None:
     with pytest.raises(ValueError, match="username:password"):
         load_settings({"A2A_CLIENT_BASIC_AUTH": "not-basic-auth"})
+
+
+def test_load_settings_invalid_polling_fallback_interval_raises() -> None:
+    with pytest.raises(ValueError, match="INITIAL_INTERVAL_SECONDS must be positive"):
+        load_settings({"A2A_CLIENT_POLLING_FALLBACK_INITIAL_INTERVAL_SECONDS": "0"})
+
+
+def test_load_settings_invalid_polling_fallback_backoff_raises() -> None:
+    with pytest.raises(ValueError, match="BACKOFF_MULTIPLIER must be greater than or equal to 1"):
+        load_settings({"A2A_CLIENT_POLLING_FALLBACK_BACKOFF_MULTIPLIER": "0.5"})

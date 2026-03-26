@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .auth import validate_basic_auth
+from .polling import PollingFallbackPolicy, validate_polling_fallback_policy
 
 
 def _read_setting(
@@ -113,6 +114,11 @@ class A2AClientSettings:
         "JSONRPC",
         "HTTP+JSON",
     )
+    polling_fallback_enabled: bool = False
+    polling_fallback_initial_interval_seconds: float = 0.5
+    polling_fallback_max_interval_seconds: float = 2.0
+    polling_fallback_backoff_multiplier: float = 2.0
+    polling_fallback_timeout_seconds: float = 10.0
 
 
 def load_settings(raw_settings: Any) -> A2AClientSettings:
@@ -177,6 +183,76 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
         ),
         default=("JSONRPC", "HTTP+JSON"),
     )
+    polling_fallback_enabled = _coerce_bool(
+        "A2A_CLIENT_POLLING_FALLBACK_ENABLED",
+        _read_setting(
+            raw_settings,
+            keys=(
+                "A2A_CLIENT_POLLING_FALLBACK_ENABLED",
+                "a2a_client_polling_fallback_enabled",
+            ),
+            default=False,
+        ),
+        default=False,
+    )
+    polling_fallback_initial_interval_seconds = _coerce_float(
+        "A2A_CLIENT_POLLING_FALLBACK_INITIAL_INTERVAL_SECONDS",
+        _read_setting(
+            raw_settings,
+            keys=(
+                "A2A_CLIENT_POLLING_FALLBACK_INITIAL_INTERVAL_SECONDS",
+                "a2a_client_polling_fallback_initial_interval_seconds",
+            ),
+            default=0.5,
+        ),
+        default=0.5,
+    )
+    polling_fallback_max_interval_seconds = _coerce_float(
+        "A2A_CLIENT_POLLING_FALLBACK_MAX_INTERVAL_SECONDS",
+        _read_setting(
+            raw_settings,
+            keys=(
+                "A2A_CLIENT_POLLING_FALLBACK_MAX_INTERVAL_SECONDS",
+                "a2a_client_polling_fallback_max_interval_seconds",
+            ),
+            default=2.0,
+        ),
+        default=2.0,
+    )
+    polling_fallback_backoff_multiplier = _coerce_float(
+        "A2A_CLIENT_POLLING_FALLBACK_BACKOFF_MULTIPLIER",
+        _read_setting(
+            raw_settings,
+            keys=(
+                "A2A_CLIENT_POLLING_FALLBACK_BACKOFF_MULTIPLIER",
+                "a2a_client_polling_fallback_backoff_multiplier",
+            ),
+            default=2.0,
+        ),
+        default=2.0,
+    )
+    polling_fallback_timeout_seconds = _coerce_float(
+        "A2A_CLIENT_POLLING_FALLBACK_TIMEOUT_SECONDS",
+        _read_setting(
+            raw_settings,
+            keys=(
+                "A2A_CLIENT_POLLING_FALLBACK_TIMEOUT_SECONDS",
+                "a2a_client_polling_fallback_timeout_seconds",
+            ),
+            default=10.0,
+        ),
+        default=10.0,
+    )
+
+    validate_polling_fallback_policy(
+        PollingFallbackPolicy(
+            enabled=polling_fallback_enabled,
+            initial_interval_seconds=polling_fallback_initial_interval_seconds,
+            max_interval_seconds=polling_fallback_max_interval_seconds,
+            backoff_multiplier=polling_fallback_backoff_multiplier,
+            timeout_seconds=polling_fallback_timeout_seconds,
+        )
+    )
 
     return A2AClientSettings(
         default_timeout=default_timeout,
@@ -185,6 +261,11 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
         bearer_token=bearer_token,
         basic_auth=basic_auth,
         supported_transports=supported_transports,
+        polling_fallback_enabled=polling_fallback_enabled,
+        polling_fallback_initial_interval_seconds=polling_fallback_initial_interval_seconds,
+        polling_fallback_max_interval_seconds=polling_fallback_max_interval_seconds,
+        polling_fallback_backoff_multiplier=polling_fallback_backoff_multiplier,
+        polling_fallback_timeout_seconds=polling_fallback_timeout_seconds,
     )
 
 

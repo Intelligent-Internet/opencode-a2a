@@ -32,8 +32,9 @@ from .error_mapping import (
     map_agent_card_error,
     map_operation_error,
 )
-from .errors import A2AUnsupportedBindingError
+from .errors import A2ATimeoutError, A2AUnsupportedBindingError
 from .payload_text import extract_text as extract_text_from_payload
+from .polling import PollingFallbackPolicy
 from .request_context import build_call_context, build_client_interceptors, split_request_metadata
 
 
@@ -58,6 +59,13 @@ class A2AClient:
         self._lock = asyncio.Lock()
         self._request_lock = asyncio.Lock()
         self._active_requests = 0
+        self._polling_fallback_policy = PollingFallbackPolicy(
+            enabled=self._settings.polling_fallback_enabled,
+            initial_interval_seconds=self._settings.polling_fallback_initial_interval_seconds,
+            max_interval_seconds=self._settings.polling_fallback_max_interval_seconds,
+            backoff_multiplier=self._settings.polling_fallback_backoff_multiplier,
+            timeout_seconds=self._settings.polling_fallback_timeout_seconds,
+        )
 
     async def close(self) -> None:
         """Close cached client resources and owned HTTP transport."""
@@ -149,7 +157,12 @@ class A2AClient:
         metadata: Mapping[str, Any] | None = None,
         extensions: list[str] | None = None,
     ) -> Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None:
-        """Send a message and return the terminal response/event."""
+        """Send a message and return the latest response event.
+
+        When polling fallback is enabled, a non-terminal `(Task, None)` result may
+        be followed by bounded `tasks/get` polling until a terminal task snapshot
+        is observed.
+        """
         last_event: (
             Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None
         ) = None
@@ -162,7 +175,13 @@ class A2AClient:
             extensions=extensions,
         ):
             last_event = event
-        return last_event
+        if not self._should_poll_after_send(last_event):
+            return last_event
+        terminal_task = await self._poll_task_until_terminal(
+            self._extract_task_from_client_event(last_event),
+            metadata=metadata,
+        )
+        return (terminal_task, None)
 
     async def get_task(
         self,
@@ -298,6 +317,62 @@ class A2AClient:
         async with self._request_lock:
             if self._active_requests > 0:
                 self._active_requests -= 1
+
+    def _should_poll_after_send(
+        self,
+        event: Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None,
+    ) -> bool:
+        if not self._polling_fallback_policy.enabled:
+            return False
+        if event is None or isinstance(event, Message) or not isinstance(event, tuple):
+            return False
+        task, update = event
+        if update is not None:
+            return False
+        return self._polling_fallback_policy.should_poll_state(task.status.state)
+
+    def _extract_task_from_client_event(
+        self,
+        event: Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None,
+    ) -> Task:
+        task, _update = cast(
+            tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None],
+            event,
+        )
+        return task
+
+    async def _poll_task_until_terminal(
+        self,
+        task: Task,
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> Task:
+        deadline = self._current_time() + self._polling_fallback_policy.timeout_seconds
+        interval = self._polling_fallback_policy.initial_interval_seconds
+        current_task = task
+
+        while True:
+            if self._polling_fallback_policy.is_terminal_state(current_task.status.state):
+                return current_task
+            if not self._polling_fallback_policy.should_poll_state(current_task.status.state):
+                return current_task
+
+            remaining = deadline - self._current_time()
+            if remaining <= 0:
+                raise A2ATimeoutError(
+                    "Remote A2A peer did not reach a terminal task state "
+                    "before polling fallback timed out"
+                )
+
+            await self._sleep(min(interval, remaining))
+            current_task = await self.get_task(current_task.id, metadata=metadata)
+            interval = self._polling_fallback_policy.next_interval_seconds(interval)
+
+    def _current_time(self) -> float:
+        return asyncio.get_running_loop().time()
+
+    async def _sleep(self, delay_seconds: float) -> None:
+        await asyncio.sleep(delay_seconds)
 
     def _build_user_message(
         self,

@@ -8,13 +8,14 @@ import httpx
 import pytest
 from a2a.client import ClientConfig
 from a2a.client.errors import A2AClientHTTPError, A2AClientJSONError, A2AClientJSONRPCError
-from a2a.types import JSONRPCError, JSONRPCErrorResponse
+from a2a.types import JSONRPCError, JSONRPCErrorResponse, Task, TaskState, TaskStatus
 
 from opencode_a2a.client import A2AClient
 from opencode_a2a.client import client as client_module
 from opencode_a2a.client.config import A2AClientSettings
 from opencode_a2a.client.errors import (
     A2APeerProtocolError,
+    A2ATimeoutError,
     A2AUnsupportedOperationError,
 )
 
@@ -35,9 +36,13 @@ class _FakeClient:
         events: list[object] | None = None,
         *,
         fail: BaseException | None = None,
+        task_results: list[object] | None = None,
+        task_fail: BaseException | None = None,
     ):
         self._events = list(events or [])
         self._fail = fail
+        self._task_results = list(task_results or [])
+        self._task_fail = task_fail
         self.send_message_inputs: list[tuple[object, object, object]] = []
         self.task_inputs: list[tuple[object, object]] = []
         self.cancel_inputs: list[tuple[object, object]] = []
@@ -52,8 +57,12 @@ class _FakeClient:
 
     async def get_task(self, params, *args: object, **kwargs: object) -> object:
         self.task_inputs.append((params, kwargs))
+        if self._task_fail:
+            raise self._task_fail
         if self._fail:
             raise self._fail
+        if self._task_results:
+            return self._task_results.pop(0)
         return {"task_id": params.id}
 
     async def cancel_task(self, params, *args: object, **kwargs: object) -> object:
@@ -68,6 +77,14 @@ class _FakeClient:
             raise self._fail
         for event in self._events:
             yield event
+
+
+def _task(task_id: str, state: TaskState) -> Task:
+    return Task(
+        id=task_id,
+        context_id="ctx-1",
+        status=TaskStatus(state=state),
+    )
 
 
 @pytest.mark.asyncio
@@ -145,6 +162,114 @@ async def test_send_returns_last_event(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
     response = await client.send("hello")
     assert response == "last"
+
+
+@pytest.mark.asyncio
+async def test_send_polling_fallback_returns_terminal_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = A2AClient(
+        "http://agent.example.com",
+        settings=A2AClientSettings(
+            polling_fallback_enabled=True,
+            polling_fallback_initial_interval_seconds=0.1,
+            polling_fallback_max_interval_seconds=0.2,
+            polling_fallback_backoff_multiplier=2.0,
+            polling_fallback_timeout_seconds=5.0,
+        ),
+    )
+    fake_client = _FakeClient(
+        events=[(_task("task-1", TaskState.working), None)],
+        task_results=[
+            _task("task-1", TaskState.working),
+            _task("task-1", TaskState.completed),
+        ],
+    )
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+    monkeypatch.setattr(client, "_sleep", _fake_sleep)
+
+    response = await client.send("hello")
+
+    assert response == (_task("task-1", TaskState.completed), None)
+    assert [params.id for params, _kwargs in fake_client.task_inputs] == ["task-1", "task-1"]
+    assert sleep_calls == [0.1, 0.2]
+
+
+@pytest.mark.asyncio
+async def test_send_polling_fallback_skips_input_required(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = A2AClient(
+        "http://agent.example.com",
+        settings=A2AClientSettings(polling_fallback_enabled=True),
+    )
+    event = (_task("task-1", TaskState.input_required), None)
+    fake_client = _FakeClient(events=[event])
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+
+    response = await client.send("hello")
+
+    assert response == event
+    assert fake_client.task_inputs == []
+
+
+@pytest.mark.asyncio
+async def test_send_polling_fallback_timeout_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = A2AClient(
+        "http://agent.example.com",
+        settings=A2AClientSettings(
+            polling_fallback_enabled=True,
+            polling_fallback_initial_interval_seconds=0.1,
+            polling_fallback_max_interval_seconds=0.2,
+            polling_fallback_backoff_multiplier=2.0,
+            polling_fallback_timeout_seconds=0.2,
+        ),
+    )
+    fake_client = _FakeClient(
+        events=[(_task("task-1", TaskState.working), None)],
+        task_results=[_task("task-1", TaskState.working)],
+    )
+    now_values = iter([0.0, 0.0, 0.3])
+
+    async def _fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+    monkeypatch.setattr(client, "_sleep", _fake_sleep)
+    monkeypatch.setattr(client, "_current_time", lambda: next(now_values))
+
+    with pytest.raises(A2ATimeoutError, match="polling fallback timed out"):
+        await client.send("hello")
+
+
+@pytest.mark.asyncio
+async def test_send_polling_fallback_maps_get_task_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = A2AClient(
+        "http://agent.example.com",
+        settings=A2AClientSettings(
+            polling_fallback_enabled=True,
+            polling_fallback_initial_interval_seconds=0.1,
+            polling_fallback_max_interval_seconds=0.2,
+            polling_fallback_backoff_multiplier=2.0,
+            polling_fallback_timeout_seconds=5.0,
+        ),
+    )
+    fake_client = _FakeClient(
+        events=[(_task("task-1", TaskState.working), None)],
+        task_fail=A2AClientHTTPError(404, "gone"),
+    )
+
+    async def _fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+    monkeypatch.setattr(client, "_sleep", _fake_sleep)
+
+    with pytest.raises(A2AUnsupportedOperationError, match="does not support tasks/get"):
+        await client.send("hello")
 
 
 @pytest.mark.asyncio

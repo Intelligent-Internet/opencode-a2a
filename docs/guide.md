@@ -119,6 +119,21 @@ variables. Configure `A2A_CLIENT_BEARER_TOKEN` or `A2A_CLIENT_BASIC_AUTH` when
 the remote agent protects its runtime surface. CLI outbound calls follow the
 same environment-only model.
 
+`A2AClient.send()` returns the latest response event and keeps the default
+stream-first behavior. If a peer returns a non-terminal task snapshot and
+expects follow-up `tasks/get` polling, enable the optional facade fallback
+with:
+
+- `A2A_CLIENT_POLLING_FALLBACK_ENABLED=true`
+- `A2A_CLIENT_POLLING_FALLBACK_INITIAL_INTERVAL_SECONDS`
+- `A2A_CLIENT_POLLING_FALLBACK_MAX_INTERVAL_SECONDS`
+- `A2A_CLIENT_POLLING_FALLBACK_BACKOFF_MULTIPLIER`
+- `A2A_CLIENT_POLLING_FALLBACK_TIMEOUT_SECONDS`
+
+The fallback only applies to `send()`, keeps `send_message()` as a thin event
+stream wrapper, and stops polling once the task reaches a terminal state or a
+caller-intervention state such as `input-required` or `auth-required`.
+
 Execution-boundary metadata is intentionally declarative deployment metadata:
 it is published through `RuntimeProfile`, Agent Card, OpenAPI, and `/health`,
 and should not be interpreted as a live per-request privilege snapshot or a
