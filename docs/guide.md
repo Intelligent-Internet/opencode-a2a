@@ -82,9 +82,6 @@ Key variables to understand protocol behavior:
   backend. Default: `sqlite+aiosqlite:///./opencode-a2a.db`.
 - `A2A_TASK_STORE_CREATE_TABLE`: whether to auto-create database tables on
   startup.
-- Database-backed task records always use the fixed `tasks` table. If
-  deployment isolation is required, use a separate database, schema, or SQLite
-  file instead of a custom task table name.
 - Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
 - The same outbound client flags are also honored by the server-side embedded
   A2A client used for peer calls and `a2a_call` tool execution:
