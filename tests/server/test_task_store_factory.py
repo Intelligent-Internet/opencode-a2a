@@ -7,8 +7,13 @@ import pytest
 from a2a.types import Task, TaskState, TaskStatus
 
 from opencode_a2a.server.task_store import (
+    FirstTerminalStateWinsPolicy,
     GuardedTaskStore,
+    PolicyAwareTaskStore,
+    TaskPersistenceDecision,
     TaskStoreOperationError,
+    TaskStoreOperationWrappingDecorator,
+    TaskWritePolicy,
     build_task_store,
     initialize_task_store,
 )
@@ -42,7 +47,8 @@ def test_build_task_store_allows_explicit_memory_backend() -> None:
     )
 
     assert isinstance(store, GuardedTaskStore)
-    assert isinstance(store._inner, InMemoryTaskStore)
+    assert isinstance(store._inner, TaskStoreOperationWrappingDecorator)
+    assert isinstance(store._inner._inner, InMemoryTaskStore)
 
 
 @pytest.mark.asyncio
@@ -189,15 +195,67 @@ async def test_task_store_wraps_backend_failures() -> None:
             del task_id, context
             raise RuntimeError("boom")
 
-    store = GuardedTaskStore(_BrokenGetStore())
+    store = TaskStoreOperationWrappingDecorator(_BrokenGetStore())
 
     with pytest.raises(TaskStoreOperationError, match="Task store get failed"):
         await store.get("task-1")
 
-    store = GuardedTaskStore(_BrokenSaveStore())
+    store = TaskStoreOperationWrappingDecorator(_BrokenSaveStore())
     with pytest.raises(TaskStoreOperationError, match="Task store save failed"):
         await store.save(_task("task-1"))
 
-    store = GuardedTaskStore(_BrokenDeleteStore())
+    store = TaskStoreOperationWrappingDecorator(_BrokenDeleteStore())
     with pytest.raises(TaskStoreOperationError, match="Task store delete failed"):
         await store.delete("task-1")
+
+
+def test_first_terminal_state_wins_policy_returns_explicit_decisions() -> None:
+    policy = FirstTerminalStateWinsPolicy()
+
+    completed = _task("task-1")
+    completed.status = TaskStatus(state=TaskState.completed)
+
+    assert policy.evaluate(existing=None, incoming=completed) == TaskPersistenceDecision(
+        persist=True
+    )
+
+    failed = _task("task-1")
+    failed.status = TaskStatus(state=TaskState.failed)
+    assert policy.evaluate(existing=completed, incoming=failed) == TaskPersistenceDecision(
+        persist=False,
+        reason="state_overwrite_after_terminal_persistence",
+    )
+
+    late_completed = _task("task-1")
+    late_completed.status = TaskStatus(state=TaskState.completed)
+    late_completed.metadata = {"opencode": {"note": "late"}}
+    assert policy.evaluate(existing=completed, incoming=late_completed) == TaskPersistenceDecision(
+        persist=False,
+        reason="late_mutation_after_terminal_persistence",
+    )
+
+
+@pytest.mark.asyncio
+async def test_policy_aware_task_store_uses_custom_write_policy() -> None:
+    class _DenyAllPolicy(TaskWritePolicy):
+        def evaluate(self, *, existing, incoming) -> TaskPersistenceDecision:  # noqa: ANN001
+            del existing, incoming
+            return TaskPersistenceDecision(persist=False, reason="deny_all")
+
+    class _RecordingStore:
+        def __init__(self) -> None:
+            self.saved: list[Task] = []
+
+        async def get(self, task_id, context=None):  # noqa: ANN001
+            del task_id, context
+            return None
+
+        async def save(self, task, context=None):  # noqa: ANN001
+            del context
+            self.saved.append(task)
+
+    inner = _RecordingStore()
+    store = PolicyAwareTaskStore(inner, write_policy=_DenyAllPolicy())
+    await store.save(_task("task-1"))
+
+    assert inner.saved == []
