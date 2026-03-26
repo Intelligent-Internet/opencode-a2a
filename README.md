@@ -106,11 +106,12 @@ curl http://127.0.0.1:8000/.well-known/agent-card.json
 Interact with other A2A agents directly from the command line:
 
 ```bash
-# Using Bearer token via environment injection
+# Using the target peer agent's Bearer token via environment injection
 A2A_CLIENT_BEARER_TOKEN=your-outbound-token \
 opencode-a2a call http://other-agent:8000 "How are you?"
 
-# Using Basic auth via environment injection (raw user:pass or base64)
+# Using the target peer agent's Basic auth via environment injection
+# Accepts raw user:pass or its base64-encoded value
 A2A_CLIENT_BASIC_AUTH="user:pass" \
 opencode-a2a call http://other-agent:8000 "How are you?"
 ```
@@ -118,8 +119,11 @@ opencode-a2a call http://other-agent:8000 "How are you?"
 ### Outbound Agent Calls (Tools)
 The server can autonomously execute `a2a_call(url, message)` tool calls emitted by the OpenCode runtime. Results are fetched via A2A and returned to the model as tool results, enabling multi-agent orchestration.
 
-When the target peer requires bearer auth, configure `A2A_CLIENT_BEARER_TOKEN`
-for server-side outbound calls. For Basic auth, use `A2A_CLIENT_BASIC_AUTH`.
+When the target peer agent requires bearer auth, configure
+`A2A_CLIENT_BEARER_TOKEN` for server-side outbound calls. When the target peer
+agent requires Basic auth, use `A2A_CLIENT_BASIC_AUTH`.
+These outbound credentials apply to the peer specified by `opencode-a2a call`
+or `a2a_call(url, message)`, not to this service's inbound `A2A_BEARER_TOKEN`.
 The CLI intentionally reads outbound credentials from environment variables only,
 so secrets do not appear in shell history or process arguments.
 
