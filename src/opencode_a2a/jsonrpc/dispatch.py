@@ -37,6 +37,15 @@ class ExtensionHandlerContext:
     method_shell: str | None
     method_list_providers: str
     method_list_models: str
+    method_list_projects: str
+    method_get_current_project: str
+    method_list_workspaces: str
+    method_create_workspace: str
+    method_remove_workspace: str
+    method_list_worktrees: str
+    method_create_worktree: str
+    method_remove_worktree: str
+    method_reset_worktree: str
     method_list_permissions: str
     method_list_questions: str
     method_reply_permission: str
@@ -95,6 +104,7 @@ def build_extension_method_registry(
     from .handlers.provider_discovery import handle_provider_discovery_request
     from .handlers.session_control import handle_session_control_request
     from .handlers.session_queries import handle_session_query_request
+    from .handlers.workspace_control import handle_workspace_control_request
 
     session_control_methods = {context.method_prompt_async, context.method_command}
     if context.method_shell is not None:
@@ -131,6 +141,23 @@ def build_extension_method_registry(
                     }
                 ),
                 handler=handle_interrupt_query_request,
+            ),
+            ExtensionMethodSpec(
+                name="workspace_control",
+                methods=frozenset(
+                    {
+                        context.method_list_projects,
+                        context.method_get_current_project,
+                        context.method_list_workspaces,
+                        context.method_create_workspace,
+                        context.method_remove_workspace,
+                        context.method_list_worktrees,
+                        context.method_create_worktree,
+                        context.method_remove_worktree,
+                        context.method_reset_worktree,
+                    }
+                ),
+                handler=handle_workspace_control_request,
             ),
             ExtensionMethodSpec(
                 name="session_control",

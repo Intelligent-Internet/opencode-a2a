@@ -9,6 +9,7 @@ from ..contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
     INTERRUPT_RECOVERY_METHODS,
     SESSION_QUERY_METHODS,
+    WORKSPACE_CONTROL_METHODS,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ def _detect_sensitive_extension_method(payload: dict | None) -> str | None:
         set(SESSION_QUERY_METHODS.values())
         | set(INTERRUPT_CALLBACK_METHODS.values())
         | set(INTERRUPT_RECOVERY_METHODS.values())
+        | set(WORKSPACE_CONTROL_METHODS.values())
     )
     if method in sensitive_methods:
         return method

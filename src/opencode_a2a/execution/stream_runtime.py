@@ -17,6 +17,7 @@ from a2a.types import (
     TextPart,
 )
 
+from ..invocation import call_with_supported_kwargs
 from .event_helpers import _enqueue_artifact_update
 from .stream_events import (
     BlockType,
@@ -75,6 +76,7 @@ class StreamRuntime:
         stop_event: asyncio.Event,
         terminal_signal: asyncio.Future[_StreamTerminalSignal],
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> None:
         part_states: dict[str, _StreamPartState] = {}
         pending_deltas: defaultdict[str, list[_PendingDelta]] = defaultdict(list)
@@ -372,9 +374,11 @@ class StreamRuntime:
         try:
             while not stop_event.is_set():
                 try:
-                    async for event in self._client.stream_events(
+                    async for event in call_with_supported_kwargs(
+                        self._client.stream_events,
                         stop_event=stop_event,
                         directory=directory,
+                        workspace_id=workspace_id,
                     ):
                         if stop_event.is_set():
                             break

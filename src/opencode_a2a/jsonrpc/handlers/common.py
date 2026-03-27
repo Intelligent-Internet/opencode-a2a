@@ -107,6 +107,106 @@ def extract_directory_from_metadata(
     return directory, None
 
 
+def extract_workspace_id_from_metadata(
+    context: ExtensionHandlerContext,
+    *,
+    request_id: str | int | None,
+    params: dict[str, Any],
+) -> tuple[str | None, Response | None]:
+    metadata = params.get("metadata")
+    if metadata is None:
+        return None, None
+    if not isinstance(metadata, dict):
+        return None, context.error_response(
+            request_id,
+            invalid_params_error(
+                "metadata must be an object",
+                data={"type": "INVALID_FIELD", "field": "metadata"},
+            ),
+        )
+
+    raw_opencode_metadata = metadata.get("opencode")
+    if raw_opencode_metadata is None:
+        return None, None
+    if not isinstance(raw_opencode_metadata, dict):
+        return None, context.error_response(
+            request_id,
+            invalid_params_error(
+                "metadata.opencode must be an object",
+                data={"type": "INVALID_FIELD", "field": "metadata.opencode"},
+            ),
+        )
+
+    raw_workspace = raw_opencode_metadata.get("workspace")
+    if raw_workspace is None:
+        return None, None
+    if not isinstance(raw_workspace, dict):
+        return None, context.error_response(
+            request_id,
+            invalid_params_error(
+                "metadata.opencode.workspace must be an object",
+                data={"type": "INVALID_FIELD", "field": "metadata.opencode.workspace"},
+            ),
+        )
+
+    raw_workspace_id = raw_workspace.get("id")
+    if raw_workspace_id is None:
+        return None, None
+    if not isinstance(raw_workspace_id, str):
+        return None, context.error_response(
+            request_id,
+            invalid_params_error(
+                "metadata.opencode.workspace.id must be a string",
+                data={"type": "INVALID_FIELD", "field": "metadata.opencode.workspace.id"},
+            ),
+        )
+    workspace_id = raw_workspace_id.strip()
+    return workspace_id or None, None
+
+
+def resolve_routing_context(
+    context: ExtensionHandlerContext,
+    *,
+    request_id: str | int | None,
+    params: dict[str, Any],
+    requested_directory: str | None = None,
+) -> tuple[str | None, str | None, Response | None]:
+    workspace_id, workspace_error = extract_workspace_id_from_metadata(
+        context,
+        request_id=request_id,
+        params=params,
+    )
+    if workspace_error is not None:
+        return None, None, workspace_error
+    if workspace_id is not None:
+        return None, workspace_id, None
+
+    if requested_directory is not None:
+        try:
+            return context.directory_resolver(requested_directory), None, None
+        except ValueError as exc:
+            return (
+                None,
+                None,
+                context.error_response(
+                    request_id,
+                    invalid_params_error(
+                        str(exc),
+                        data={"type": "INVALID_FIELD", "field": "directory"},
+                    ),
+                ),
+            )
+
+    directory, directory_error = resolve_directory(
+        context,
+        request_id=request_id,
+        params=params,
+    )
+    if directory_error is not None:
+        return None, None, directory_error
+    return directory, None, None
+
+
 def resolve_directory(
     context: ExtensionHandlerContext,
     *,

@@ -67,6 +67,45 @@ async def test_session_prompt_async_extension_success(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_session_prompt_async_extension_prefers_workspace_metadata(monkeypatch):
+    import opencode_a2a.server.application as app_module
+
+    dummy = DummyOpencodeUpstreamClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers={"Authorization": "Bearer t-1"},
+            json={
+                "jsonrpc": "2.0",
+                "id": 3011,
+                "method": "opencode.sessions.prompt_async",
+                "params": {
+                    "session_id": "s-1",
+                    "request": {"parts": [{"type": "text", "text": "Continue the task"}]},
+                    "metadata": {
+                        "opencode": {
+                            "directory": "/workspace",
+                            "workspace": {"id": "wrk-1"},
+                        }
+                    },
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    assert dummy.prompt_async_calls[0]["directory"] is None
+    assert dummy.prompt_async_calls[0]["workspace_id"] == "wrk-1"
+
+
+@pytest.mark.asyncio
 async def test_session_prompt_async_extension_rejects_invalid_params(monkeypatch):
     import opencode_a2a.server.application as app_module
 

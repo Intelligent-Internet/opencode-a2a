@@ -28,6 +28,7 @@ from a2a.types import (
     TextPart,
 )
 
+from ..invocation import call_with_supported_kwargs
 from ..opencode_upstream_client import (
     OpencodeUpstreamClient,
     UpstreamConcurrencyLimitError,
@@ -44,6 +45,7 @@ from .event_helpers import _enqueue_artifact_update
 from .request_context import (
     _build_history,
     _extract_opencode_directory,
+    _extract_opencode_workspace_id,
     _extract_shared_model,
     _extract_shared_session_id,
 )
@@ -144,6 +146,22 @@ class _PreparedExecution:
     bound_session_id: str | None
     model_override: dict[str, str] | None
     directory: str | None
+    workspace_id: str | None
+    session_binding_context_id: str
+
+
+def _build_session_binding_context_id(
+    *,
+    context_id: str,
+    directory: str | None,
+    workspace_id: str | None,
+    use_directory_binding: bool,
+) -> str:
+    if isinstance(workspace_id, str) and workspace_id.strip():
+        return f"{context_id}::workspace:{workspace_id.strip()}"
+    if use_directory_binding and isinstance(directory, str) and directory.strip():
+        return f"{context_id}::directory:{directory.strip()}"
+    return context_id
 
 
 class _ExecutionCoordinator:
@@ -192,19 +210,22 @@ class _ExecutionCoordinator:
             while True:
                 send_kwargs: dict[str, Any] = {
                     "directory": self._prepared.directory,
+                    "workspace_id": self._prepared.workspace_id,
                     "model_override": self._prepared.model_override,
                 }
                 if self._prepared.streaming_request:
                     send_kwargs["timeout_override"] = self._executor._client.stream_timeout
 
                 if not self._prepared.use_structured_parts and not turn_request_parts:
-                    response = await self._executor._client.send_message(
+                    response = await call_with_supported_kwargs(
+                        self._executor._client.send_message,
                         self._session_id,
                         user_text,
                         **send_kwargs,
                     )
                 else:
-                    response = await self._executor._client.send_message(
+                    response = await call_with_supported_kwargs(
+                        self._executor._client.send_message,
                         self._session_id,
                         user_text or None,
                         parts=turn_request_parts,
@@ -214,7 +235,7 @@ class _ExecutionCoordinator:
                 if self._pending_preferred_claim:
                     await self._executor._session_manager.finalize_preferred_session_binding(
                         identity=self._prepared.identity,
-                        context_id=self._context_id,
+                        context_id=self._prepared.session_binding_context_id,
                         session_id=self._session_id,
                     )
                     self._pending_preferred_claim = False
@@ -314,10 +335,11 @@ class _ExecutionCoordinator:
             self._pending_preferred_claim,
         ) = await self._executor._session_manager.get_or_create_session(
             self._prepared.identity,
-            self._context_id,
+            self._prepared.session_binding_context_id,
             self._prepared.session_title or self._prepared.user_text,
             preferred_session_id=self._prepared.bound_session_id,
             directory=self._prepared.directory,
+            workspace_id=self._prepared.workspace_id,
         )
         self._session_lock = await self._executor._session_manager.get_session_lock(
             self._session_id
@@ -326,6 +348,10 @@ class _ExecutionCoordinator:
         async with self._executor._lock:
             self._executor._running_session_ids[self._execution_key] = self._session_id
             self._executor._running_directories[self._execution_key] = self._prepared.directory
+            self._executor._running_workspace_ids[self._execution_key] = self._prepared.workspace_id
+            self._executor._running_binding_context_ids[self._execution_key] = (
+                self._prepared.session_binding_context_id
+            )
 
         if self._prepared.streaming_request:
             self._stream_terminal_signal = asyncio.get_running_loop().create_future()
@@ -340,6 +366,7 @@ class _ExecutionCoordinator:
                     event_queue=self._event_queue,
                     stop_event=self._stop_event,
                     directory=self._prepared.directory,
+                    workspace_id=self._prepared.workspace_id,
                     terminal_signal=self._stream_terminal_signal,
                 )
             )
@@ -535,6 +562,8 @@ class _ExecutionCoordinator:
             self._executor._running_identities.pop(self._execution_key, None)
             self._executor._running_session_ids.pop(self._execution_key, None)
             self._executor._running_directories.pop(self._execution_key, None)
+            self._executor._running_workspace_ids.pop(self._execution_key, None)
+            self._executor._running_binding_context_ids.pop(self._execution_key, None)
 
 
 class OpencodeAgentExecutor(AgentExecutor):
@@ -576,6 +605,8 @@ class OpencodeAgentExecutor(AgentExecutor):
         self._running_identities: dict[tuple[str, str], str] = {}
         self._running_session_ids: dict[tuple[str, str], str] = {}
         self._running_directories: dict[tuple[str, str], str | None] = {}
+        self._running_workspace_ids: dict[tuple[str, str], str | None] = {}
+        self._running_binding_context_ids: dict[tuple[str, str], str] = {}
 
     @staticmethod
     def _emit_metric(
@@ -782,24 +813,34 @@ class OpencodeAgentExecutor(AgentExecutor):
                 streaming_request=streaming_request,
             )
             return
+        workspace_id = _extract_opencode_workspace_id(context)
         requested_dir = _extract_opencode_directory(context)
 
-        try:
-            directory = self._sandbox_policy.resolve_directory(
-                requested_dir,
-                default_directory=self._client.directory,
-            )
-        except ValueError as e:
-            logger.warning("Directory validation failed: %s", e)
-            await self._emit_error(
-                event_queue,
-                task_id=task_id,
-                context_id=context_id,
-                message=str(e),
-                state=TaskState.failed,
-                streaming_request=streaming_request,
-            )
-            return
+        directory: str | None = None
+        if workspace_id is None:
+            try:
+                directory = self._sandbox_policy.resolve_directory(
+                    requested_dir,
+                    default_directory=self._client.directory,
+                )
+            except ValueError as e:
+                logger.warning("Directory validation failed: %s", e)
+                await self._emit_error(
+                    event_queue,
+                    task_id=task_id,
+                    context_id=context_id,
+                    message=str(e),
+                    state=TaskState.failed,
+                    streaming_request=streaming_request,
+                )
+                return
+
+        session_binding_context_id = _build_session_binding_context_id(
+            context_id=context_id,
+            directory=directory,
+            workspace_id=workspace_id,
+            use_directory_binding=requested_dir is not None,
+        )
 
         if not user_text and not request_parts:
             await self._emit_error(
@@ -834,6 +875,8 @@ class OpencodeAgentExecutor(AgentExecutor):
             bound_session_id=bound_session_id,
             model_override=model_override,
             directory=directory,
+            workspace_id=workspace_id,
+            session_binding_context_id=session_binding_context_id,
         )
         coordinator = _ExecutionCoordinator(
             self,
@@ -882,9 +925,14 @@ class OpencodeAgentExecutor(AgentExecutor):
                 stop_event = self._running_stop_events.get(execution_key)
                 running_session_id = self._running_session_ids.get(execution_key)
                 running_directory = self._running_directories.get(execution_key)
+                running_workspace_id = self._running_workspace_ids.get(execution_key)
+                running_binding_context_id = self._running_binding_context_ids.get(
+                    execution_key,
+                    context_id,
+                )
             inflight = await self._session_manager.pop_cached_session(
                 identity=running_identity,
-                context_id=context_id,
+                context_id=running_binding_context_id,
             )
             if stop_event:
                 stop_event.set()
@@ -896,10 +944,14 @@ class OpencodeAgentExecutor(AgentExecutor):
             if running_session_id and should_cancel_running_task:
                 self._emit_metric("a2a_cancel_abort_attempt_total")
                 try:
+                    abort_kwargs: dict[str, Any] = {"directory": running_directory}
+                    if running_workspace_id is not None:
+                        abort_kwargs["workspace_id"] = running_workspace_id
                     await asyncio.wait_for(
-                        self._client.abort_session(
+                        call_with_supported_kwargs(
+                            self._client.abort_session,
                             running_session_id,
-                            directory=running_directory,
+                            **abort_kwargs,
                         ),
                         timeout=self._cancel_abort_timeout_seconds,
                     )
@@ -1044,6 +1096,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         stop_event: asyncio.Event,
         terminal_signal: asyncio.Future[_StreamTerminalSignal],
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> None:
         await self._stream_runtime.consume(
             session_id=session_id,
@@ -1056,6 +1109,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             stop_event=stop_event,
             terminal_signal=terminal_signal,
             directory=directory,
+            workspace_id=workspace_id,
         )
 
 

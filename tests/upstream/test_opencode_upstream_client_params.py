@@ -814,10 +814,16 @@ def test_merge_params_keeps_empty_directory_out_of_query() -> None:
     )
 
     assert client._query_params() == {}
+    assert client._query_params(workspace_id="wrk-1") == {"workspace": "wrk-1"}
     assert client._merge_params({"limit": 5, "enabled": False}, directory=None) == {
         "limit": "5",
         "enabled": "False",
     }
+    assert client._merge_params(
+        {"limit": 5, "workspace": "ignored"},
+        directory="/safe",
+        workspace_id="wrk-1",
+    ) == {"workspace": "wrk-1", "limit": "5"}
 
 
 @pytest.mark.asyncio
@@ -891,6 +897,35 @@ async def test_list_provider_catalog_uses_directory_query(monkeypatch) -> None:
 
     assert seen["path"] == "/provider"
     assert seen["params"] == {"directory": "/safe"}
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_list_provider_catalog_prefers_workspace_query(monkeypatch) -> None:
+    client = OpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_workspace_root="/safe",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    seen = {}
+
+    async def fake_get(path: str, *, params=None, **_kwargs):
+        seen["path"] = path
+        seen["params"] = params
+        return _DummyResponse({"all": [], "default": {}, "connected": []})
+
+    monkeypatch.setattr(client._client, "get", fake_get)
+
+    await client.list_provider_catalog(directory="/safe/nested", workspace_id="wrk-1")
+
+    assert seen["path"] == "/provider"
+    assert seen["params"] == {"workspace": "wrk-1"}
 
     await client.close()
 

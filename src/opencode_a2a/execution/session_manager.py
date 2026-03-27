@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+from ..invocation import call_with_supported_kwargs
 from ..server.state_store import MemorySessionStateRepository, SessionStateRepository
 
 
@@ -33,6 +34,7 @@ class SessionManager:
         *,
         preferred_session_id: str | None = None,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> tuple[str, bool]:
         if preferred_session_id:
             pending_claim = await self.claim_preferred_session(
@@ -60,7 +62,12 @@ class SessionManager:
             task = self._inflight_session_creates.get(cache_key)
             if task is None:
                 task = asyncio.create_task(
-                    self._client.create_session(title=title, directory=directory)
+                    call_with_supported_kwargs(
+                        self._client.create_session,
+                        title=title,
+                        directory=directory,
+                        workspace_id=workspace_id,
+                    )
                 )
                 self._inflight_session_creates[cache_key] = task
 

@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ...contracts.extensions import INTERRUPT_ERROR_BUSINESS_CODES
+from ...invocation import call_with_supported_kwargs
 from ...opencode_upstream_client import UpstreamConcurrencyLimitError
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import (
@@ -24,6 +25,7 @@ from .common import (
     build_upstream_http_error_response,
     build_upstream_unreachable_error_response,
     extract_interrupt_callback_directory_hint,
+    extract_workspace_id_from_metadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,6 +62,13 @@ async def handle_interrupt_callback_request(
     )
     if directory_error is not None:
         return directory_error
+    workspace_id, workspace_error = extract_workspace_id_from_metadata(
+        context,
+        request_id=base_request.id,
+        params=params,
+    )
+    if workspace_error is not None:
+        return workspace_error
 
     expected_interrupt_type = (
         "permission" if base_request.method == context.method_reply_permission else "question"
@@ -136,21 +145,30 @@ async def handle_interrupt_callback_request(
             message = params.get("message")
             if message is not None and not isinstance(message, str):
                 raise ValueError("message must be a string")
-            await context.upstream_client.permission_reply(
+            await call_with_supported_kwargs(
+                context.upstream_client.permission_reply,
                 request_id,
                 reply=reply,
                 message=message,
                 directory=directory,
+                workspace_id=workspace_id,
             )
         elif base_request.method == context.method_reply_question:
             answers = _parse_question_answers(params.get("answers"))
-            await context.upstream_client.question_reply(
+            await call_with_supported_kwargs(
+                context.upstream_client.question_reply,
                 request_id,
                 answers=answers,
                 directory=directory,
+                workspace_id=workspace_id,
             )
         else:
-            await context.upstream_client.question_reject(request_id, directory=directory)
+            await call_with_supported_kwargs(
+                context.upstream_client.question_reject,
+                request_id,
+                directory=directory,
+                workspace_id=workspace_id,
+            )
         discard_request = getattr(context.upstream_client, "discard_interrupt_request", None)
         if callable(discard_request):
             await discard_request(request_id)

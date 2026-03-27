@@ -109,9 +109,14 @@ async def test_agent_dedupes_concurrent_session_creates_per_context() -> None:
             title: str | None = None,
             *,
             directory: str | None = None,
+            workspace_id: str | None = None,
         ) -> str:
             await asyncio.sleep(0.05)
-            return await super().create_session(title=title, directory=directory)
+            return await super().create_session(
+                title=title,
+                directory=directory,
+                workspace_id=workspace_id,
+            )
 
     client = SlowCreateClient()
     executor = OpencodeAgentExecutor(client, streaming_enabled=False)
@@ -124,6 +129,49 @@ async def test_agent_dedupes_concurrent_session_creates_per_context() -> None:
     await asyncio.gather(run_one("t-1"), run_one("t-2"), run_one("t-3"))
 
     assert client.created_sessions == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_passes_opencode_workspace_metadata_to_upstream() -> None:
+    client = DummyChatOpencodeUpstreamClient()
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    q = DummyEventQueue()
+
+    ctx = make_request_context(
+        task_id="t-workspace",
+        context_id="c-workspace",
+        text="hello",
+        metadata={"opencode": {"workspace": {"id": "wrk-1"}}},
+    )
+    await executor.execute(ctx, q)
+
+    assert client.created_workspace_ids == ["wrk-1"]
+    assert client.sent_workspace_ids == ["wrk-1"]
+
+
+@pytest.mark.asyncio
+async def test_agent_scopes_cached_sessions_by_workspace_binding() -> None:
+    client = DummyChatOpencodeUpstreamClient()
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+
+    ctx1 = make_request_context(
+        task_id="t-workspace-1",
+        context_id="c-shared",
+        text="hello",
+        metadata={"opencode": {"workspace": {"id": "wrk-1"}}},
+    )
+    ctx2 = make_request_context(
+        task_id="t-workspace-2",
+        context_id="c-shared",
+        text="hello again",
+        metadata={"opencode": {"workspace": {"id": "wrk-2"}}},
+    )
+
+    await executor.execute(ctx1, DummyEventQueue())
+    await executor.execute(ctx2, DummyEventQueue())
+
+    assert client.created_sessions == 2
+    assert client.created_workspace_ids == ["wrk-1", "wrk-2"]
 
 
 @pytest.mark.asyncio

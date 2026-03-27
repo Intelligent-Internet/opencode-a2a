@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ...contracts.extensions import PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES
+from ...invocation import call_with_supported_kwargs
 from ...opencode_upstream_client import UpstreamConcurrencyLimitError
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import invalid_params_error
@@ -24,7 +25,7 @@ from .common import (
     build_upstream_http_error_response,
     build_upstream_payload_error_response,
     build_upstream_unreachable_error_response,
-    resolve_directory,
+    resolve_routing_context,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,16 +72,20 @@ async def handle_provider_discovery_request(
                 )
             provider_id = raw_provider_id.strip()
 
-    directory, directory_error = resolve_directory(
+    directory, workspace_id, routing_error = resolve_routing_context(
         context,
         request_id=base_request.id,
         params=params,
     )
-    if directory_error is not None:
-        return directory_error
+    if routing_error is not None:
+        return routing_error
 
     try:
-        raw_result = await context.upstream_client.list_provider_catalog(directory=directory)
+        raw_result = await call_with_supported_kwargs(
+            context.upstream_client.list_provider_catalog,
+            directory=directory,
+            workspace_id=workspace_id,
+        )
     except httpx.HTTPStatusError as exc:
         upstream_status = exc.response.status_code
         return build_upstream_http_error_response(

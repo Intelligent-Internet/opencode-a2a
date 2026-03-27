@@ -10,6 +10,7 @@ PROFILE_ID = "opencode-a2a-single-tenant-coding-v1"
 DEPLOYMENT_ID = "single_tenant_shared_workspace"
 SESSION_SHELL_TOGGLE = "A2A_ENABLE_SESSION_SHELL"
 DIRECTORY_OVERRIDE_METADATA_FIELD = "metadata.opencode.directory"
+WORKSPACE_OVERRIDE_METADATA_FIELD = "metadata.opencode.workspace.id"
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,22 @@ class DirectoryBindingProfile:
             "allow_override": self.allow_override,
             "scope": self.scope,
             "metadata_field": self.metadata_field,
+        }
+
+
+@dataclass(frozen=True)
+class WorkspaceBindingProfile:
+    enabled: bool
+    metadata_field: str = WORKSPACE_OVERRIDE_METADATA_FIELD
+    upstream_query_param: str = "workspace"
+    precedence: str = "prefer_workspace_else_directory"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "metadata_field": self.metadata_field,
+            "upstream_query_param": self.upstream_query_param,
+            "precedence": self.precedence,
         }
 
 
@@ -161,6 +178,7 @@ class RuntimeProfile:
     profile_id: str
     deployment: DeploymentProfile
     directory_binding: DirectoryBindingProfile
+    workspace_binding: WorkspaceBindingProfile
     session_shell: SessionShellProfile
     execution_environment: ExecutionEnvironmentProfile
     service_features: ServiceFeaturesProfile
@@ -169,6 +187,7 @@ class RuntimeProfile:
     def runtime_features_dict(self) -> dict[str, Any]:
         return {
             "directory_binding": self.directory_binding.as_dict(),
+            "workspace_binding": self.workspace_binding.as_dict(),
             "session_shell": self.session_shell.as_dict(),
             "execution_environment": self.execution_environment.as_dict(),
             "service_features": self.service_features.as_dict(),
@@ -218,6 +237,9 @@ def build_runtime_profile(settings: Settings) -> RuntimeProfile:
         directory_binding=DirectoryBindingProfile(
             allow_override=settings.a2a_allow_directory_override,
             scope=directory_scope,
+        ),
+        workspace_binding=WorkspaceBindingProfile(
+            enabled=True,
         ),
         session_shell=SessionShellProfile(
             enabled=shell_enabled,

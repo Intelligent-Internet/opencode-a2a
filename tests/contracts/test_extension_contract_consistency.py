@@ -5,6 +5,7 @@ from opencode_a2a.contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
+    WORKSPACE_CONTROL_METHODS,
     build_capability_snapshot,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
@@ -15,6 +16,7 @@ from opencode_a2a.contracts.extensions import (
     build_session_query_extension_params,
     build_streaming_extension_params,
     build_wire_contract_params,
+    build_workspace_control_extension_params,
 )
 from opencode_a2a.jsonrpc.application import SESSION_CONTEXT_PREFIX
 from opencode_a2a.profile.runtime import build_runtime_profile
@@ -28,6 +30,7 @@ from opencode_a2a.server.application import (
     SESSION_QUERY_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
     WIRE_CONTRACT_EXTENSION_URI,
+    WORKSPACE_CONTROL_EXTENSION_URI,
     build_agent_card,
     create_app,
 )
@@ -46,6 +49,7 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
     streaming = ext_by_uri[STREAMING_EXTENSION_URI]
     session_query = ext_by_uri[SESSION_QUERY_EXTENSION_URI]
     provider_discovery = ext_by_uri[PROVIDER_DISCOVERY_EXTENSION_URI]
+    workspace_control = ext_by_uri[WORKSPACE_CONTROL_EXTENSION_URI]
     interrupt_recovery = ext_by_uri[INTERRUPT_RECOVERY_EXTENSION_URI]
     interrupt_callback = ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI]
     compatibility_profile = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
@@ -64,6 +68,9 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
         context_id_prefix=SESSION_CONTEXT_PREFIX,
     )
     expected_provider_discovery = build_provider_discovery_extension_params(
+        runtime_profile=runtime_profile,
+    )
+    expected_workspace_control = build_workspace_control_extension_params(
         runtime_profile=runtime_profile,
     )
     expected_interrupt_recovery = build_interrupt_recovery_extension_params(
@@ -98,6 +105,9 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
     assert provider_discovery.params == expected_provider_discovery, (
         "Provider discovery extension drifted from contracts.extensions SSOT."
     )
+    assert workspace_control.params == expected_workspace_control, (
+        "Workspace control extension drifted from contracts.extensions SSOT."
+    )
     assert interrupt_recovery.params == expected_interrupt_recovery, (
         "Interrupt recovery extension drifted from contracts.extensions SSOT."
     )
@@ -127,6 +137,7 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     streaming = contract["streaming"]
     session_query = contract["session_query"]
     provider_discovery = contract["provider_discovery"]
+    workspace_control = contract["workspace_control"]
     interrupt_recovery = contract["interrupt_recovery"]
     interrupt_callback = contract["interrupt_callback"]
     compatibility_profile = contract["compatibility_profile"]
@@ -145,6 +156,9 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
         context_id_prefix=SESSION_CONTEXT_PREFIX,
     )
     expected_provider_discovery = build_provider_discovery_extension_params(
+        runtime_profile=runtime_profile,
+    )
+    expected_workspace_control = build_workspace_control_extension_params(
         runtime_profile=runtime_profile,
     )
     expected_interrupt_recovery = build_interrupt_recovery_extension_params(
@@ -176,6 +190,9 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     )
     assert provider_discovery == expected_provider_discovery, (
         "OpenAPI provider discovery contract drifted from contracts.extensions SSOT."
+    )
+    assert workspace_control == expected_workspace_control, (
+        "OpenAPI workspace control contract drifted from contracts.extensions SSOT."
     )
     assert interrupt_recovery == expected_interrupt_recovery, (
         "OpenAPI interrupt recovery contract drifted from contracts.extensions SSOT."
@@ -213,6 +230,7 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     expected_methods |= {
         "opencode.providers.list",
         "opencode.models.list",
+        *WORKSPACE_CONTROL_METHODS.values(),
         "opencode.permissions.list",
         "opencode.questions.list",
     }
@@ -295,6 +313,15 @@ async def test_runtime_supported_methods_align_with_capability_snapshot(
         ),
         ("opencode.providers.list", {}, None),
         ("opencode.models.list", {"provider_id": "openai"}, None),
+        ("opencode.projects.list", {}, None),
+        ("opencode.projects.current", {}, None),
+        ("opencode.workspaces.list", {}, None),
+        ("opencode.workspaces.create", {"request": {"type": "git"}}, None),
+        ("opencode.workspaces.remove", {"workspace_id": "wrk-1"}, None),
+        ("opencode.worktrees.list", {}, None),
+        ("opencode.worktrees.create", {"request": {"name": "feature-branch"}}, None),
+        ("opencode.worktrees.remove", {"request": {"directory": "/tmp/worktree"}}, None),
+        ("opencode.worktrees.reset", {"request": {"directory": "/tmp/worktree"}}, None),
         ("opencode.permissions.list", {}, None),
         ("opencode.questions.list", {}, None),
         (

@@ -125,6 +125,8 @@ class DummyChatOpencodeUpstreamClient:
         self.created_sessions = 0
         self.sent_session_ids: list[str] = []
         self.sent_model_overrides: list[dict[str, str] | None] = []
+        self.sent_workspace_ids: list[str | None] = []
+        self.created_workspace_ids: list[str | None] = []
         self.stream_timeout = None
         self.directory = None
         self.settings = settings or make_settings(
@@ -140,9 +142,11 @@ class DummyChatOpencodeUpstreamClient:
         title: str | None = None,
         *,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> str:
         del title, directory
         self.created_sessions += 1
+        self.created_workspace_ids.append(workspace_id)
         return f"ses-created-{self.created_sessions}"
 
     async def send_message(
@@ -152,12 +156,14 @@ class DummyChatOpencodeUpstreamClient:
         *,
         parts: list[dict[str, Any]] | None = None,
         directory: str | None = None,
+        workspace_id: str | None = None,
         model_override: dict[str, str] | None = None,
         timeout_override=None,  # noqa: ANN001
     ) -> OpencodeMessage:
         del directory, timeout_override, parts
         self.sent_session_ids.append(session_id)
         self.sent_model_overrides.append(model_override)
+        self.sent_workspace_ids.append(workspace_id)
         return OpencodeMessage(
             text=f"echo:{text or ''}",
             session_id=session_id,
@@ -165,8 +171,14 @@ class DummyChatOpencodeUpstreamClient:
             raw={},
         )
 
-    async def stream_events(self, stop_event=None, *, directory: str | None = None):  # noqa: ANN001
-        del stop_event, directory
+    async def stream_events(  # noqa: ANN001
+        self,
+        stop_event=None,
+        *,
+        directory: str | None = None,
+        workspace_id: str | None = None,
+    ):
+        del stop_event, directory, workspace_id
         for _ in ():
             yield {}
 
@@ -215,10 +227,13 @@ class DummySessionQueryOpencodeUpstreamClient:
         self._messages_next_cursor: str | None = None
         self.last_sessions_params = None
         self.last_sessions_directory: str | None = None
+        self.last_sessions_workspace_id: str | None = None
         self.last_messages_params = None
+        self.last_messages_workspace_id: str | None = None
         self.prompt_async_calls: list[dict[str, Any]] = []
         self.command_calls: list[dict[str, Any]] = []
         self.shell_calls: list[dict[str, Any]] = []
+        self.workspace_control_calls: list[dict[str, Any]] = []
         self.provider_catalog_payload: dict[str, Any] = {
             "all": [
                 {
@@ -268,14 +283,22 @@ class DummySessionQueryOpencodeUpstreamClient:
     async def close(self) -> None:
         return None
 
-    async def list_sessions(self, *, params=None, directory: str | None = None):
+    async def list_sessions(
+        self,
+        *,
+        params=None,
+        directory: str | None = None,
+        workspace_id: str | None = None,
+    ):
         self.last_sessions_directory = directory
+        self.last_sessions_workspace_id = workspace_id
         self.last_sessions_params = params
         return self._sessions_payload
 
-    async def list_messages(self, session_id: str, *, params=None):
+    async def list_messages(self, session_id: str, *, params=None, workspace_id: str | None = None):
         assert session_id
         self.last_messages_params = params
+        self.last_messages_workspace_id = workspace_id
         return OpencodeMessagePage(
             payload=self._messages_payload,
             next_cursor=self._messages_next_cursor,
@@ -287,12 +310,14 @@ class DummySessionQueryOpencodeUpstreamClient:
         request: dict[str, Any],
         *,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> None:
         self.prompt_async_calls.append(
             {
                 "session_id": session_id,
                 "request": request,
                 "directory": directory,
+                "workspace_id": workspace_id,
             }
         )
 
@@ -302,12 +327,14 @@ class DummySessionQueryOpencodeUpstreamClient:
         request: dict[str, Any],
         *,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> dict[str, Any]:
         self.command_calls.append(
             {
                 "session_id": session_id,
                 "request": request,
                 "directory": directory,
+                "workspace_id": workspace_id,
             }
         )
         return {
@@ -321,12 +348,14 @@ class DummySessionQueryOpencodeUpstreamClient:
         request: dict[str, Any],
         *,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> dict[str, Any]:
         self.shell_calls.append(
             {
                 "session_id": session_id,
                 "request": request,
                 "directory": directory,
+                "workspace_id": workspace_id,
             }
         )
         return {
@@ -335,9 +364,62 @@ class DummySessionQueryOpencodeUpstreamClient:
             "parts": [{"type": "text", "text": "Shell command executed."}],
         }
 
-    async def list_provider_catalog(self, *, directory: str | None = None):
-        del directory
+    async def list_provider_catalog(
+        self,
+        *,
+        directory: str | None = None,
+        workspace_id: str | None = None,
+    ):
+        self.workspace_control_calls.append(
+            {
+                "method": "provider_catalog",
+                "directory": directory,
+                "workspace_id": workspace_id,
+            }
+        )
         return self.provider_catalog_payload
+
+    async def list_projects(self):
+        self.workspace_control_calls.append({"method": "list_projects"})
+        return [{"id": "proj-1", "name": "Alpha", "directory": "/workspace"}]
+
+    async def get_current_project(self):
+        self.workspace_control_calls.append({"method": "get_current_project"})
+        return {"id": "proj-1", "name": "Alpha", "directory": "/workspace"}
+
+    async def list_workspaces(self):
+        self.workspace_control_calls.append({"method": "list_workspaces"})
+        return [{"id": "wrk-1", "type": "git", "branch": "main", "directory": None}]
+
+    async def create_workspace(self, request: dict[str, Any]):
+        self.workspace_control_calls.append({"method": "create_workspace", "request": request})
+        return {"id": "wrk-2", **request}
+
+    async def remove_workspace(self, workspace_id: str):
+        self.workspace_control_calls.append(
+            {"method": "remove_workspace", "workspace_id": workspace_id}
+        )
+        return {"id": workspace_id, "type": "git", "branch": "main", "directory": None}
+
+    async def list_worktrees(self):
+        self.workspace_control_calls.append({"method": "list_worktrees"})
+        return ["/tmp/worktrees/alpha"]
+
+    async def create_worktree(self, request: dict[str, Any]):
+        self.workspace_control_calls.append({"method": "create_worktree", "request": request})
+        return {
+            "name": request.get("name") or "feature-branch",
+            "branch": "opencode/feature-branch",
+            "directory": "/tmp/worktrees/feature-branch",
+        }
+
+    async def remove_worktree(self, request: dict[str, Any]) -> bool:
+        self.workspace_control_calls.append({"method": "remove_worktree", "request": request})
+        return True
+
+    async def reset_worktree(self, request: dict[str, Any]) -> bool:
+        self.workspace_control_calls.append({"method": "reset_worktree", "request": request})
+        return True
 
     async def remember_interrupt_request(
         self,
@@ -443,8 +525,9 @@ class DummySessionQueryOpencodeUpstreamClient:
         reply: str,
         message: str | None = None,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> bool:
-        del request_id, reply, message, directory
+        del request_id, reply, message, directory, workspace_id
         return True
 
     async def question_reply(
@@ -453,8 +536,9 @@ class DummySessionQueryOpencodeUpstreamClient:
         *,
         answers: list[list[str]],
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> bool:
-        del request_id, answers, directory
+        del request_id, answers, directory, workspace_id
         return True
 
     async def question_reject(
@@ -462,6 +546,7 @@ class DummySessionQueryOpencodeUpstreamClient:
         request_id: str,
         *,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> bool:
-        del request_id, directory
+        del request_id, directory, workspace_id
         return True

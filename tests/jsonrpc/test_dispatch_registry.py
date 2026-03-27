@@ -26,6 +26,7 @@ async def test_extension_registry_tracks_configured_methods(monkeypatch) -> None
     registry_methods = _jsonrpc_app(app)._extension_method_registry.methods()  # noqa: SLF001
     assert "opencode.sessions.list" in registry_methods
     assert "opencode.providers.list" in registry_methods
+    assert "opencode.projects.list" in registry_methods
     assert "opencode.permissions.list" in registry_methods
     assert "a2a.interrupt.permission.reply" in registry_methods
     assert "opencode.sessions.shell" not in registry_methods

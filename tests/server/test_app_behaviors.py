@@ -153,6 +153,12 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
                 "scope": "workspace_root_only",
                 "metadata_field": "metadata.opencode.directory",
             },
+            "workspace_binding": {
+                "enabled": True,
+                "metadata_field": "metadata.opencode.workspace.id",
+                "upstream_query_param": "workspace",
+                "precedence": "prefer_workspace_else_directory",
+            },
             "session_shell": {
                 "enabled": True,
                 "availability": "enabled",
@@ -264,6 +270,12 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch) -> None:
                         "allow_override": True,
                         "scope": "workspace_root_or_descendant",
                         "metadata_field": "metadata.opencode.directory",
+                    },
+                    "workspace_binding": {
+                        "enabled": True,
+                        "metadata_field": "metadata.opencode.workspace.id",
+                        "upstream_query_param": "workspace",
+                        "precedence": "prefer_workspace_else_directory",
                     },
                     "session_shell": {
                         "enabled": True,

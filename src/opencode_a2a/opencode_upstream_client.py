@@ -333,32 +333,51 @@ class OpencodeUpstreamClient:
             "modelID": model_id,
         }
 
-    def _query_params(self, directory: str | None = None) -> dict[str, str]:
+    def _query_params(
+        self,
+        directory: str | None = None,
+        *,
+        workspace_id: str | None = None,
+    ) -> dict[str, str]:
+        if isinstance(workspace_id, str):
+            normalized_workspace_id = workspace_id.strip()
+            if normalized_workspace_id:
+                return {"workspace": normalized_workspace_id}
         d = directory or self._directory
         if not d:
             return {}
         return {"directory": d}
 
     def _merge_params(
-        self, extra: dict[str, Any] | None, *, directory: str | None = None
+        self,
+        extra: dict[str, Any] | None,
+        *,
+        directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = dict(self._query_params(directory=directory))
+        params: dict[str, Any] = dict(
+            self._query_params(directory=directory, workspace_id=workspace_id)
+        )
         if not extra:
             return params
         for key, value in extra.items():
             if value is None:
                 continue
             # "directory" is server-controlled. Client overrides are handled via explicit parameter.
-            if key == "directory":
+            if key in {"directory", "workspace"}:
                 continue
             # FastAPI query params are strings; keep them as-is. Coerce other primitives to str.
             params[key] = value if isinstance(value, str) else str(value)
         return params
 
     async def stream_events(
-        self, stop_event: asyncio.Event | None = None, *, directory: str | None = None
+        self,
+        stop_event: asyncio.Event | None = None,
+        *,
+        directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        params = self._query_params(directory=directory)
+        params = self._query_params(directory=directory, workspace_id=workspace_id)
         async with self._stream_budget.reserve(operation="/event"):
             async with self._client.stream(
                 "GET",
@@ -393,7 +412,11 @@ class OpencodeUpstreamClient:
                         continue
 
     async def create_session(
-        self, title: str | None = None, *, directory: str | None = None
+        self,
+        title: str | None = None,
+        *,
+        directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> str:
         payload: dict[str, Any] = {}
         if title:
@@ -401,7 +424,7 @@ class OpencodeUpstreamClient:
         data = await self._post_json(
             "/session",
             endpoint="/session",
-            params=self._query_params(directory=directory),
+            params=self._query_params(directory=directory, workspace_id=workspace_id),
             json_body=payload,
         )
         session_id = data.get("id")
@@ -409,11 +432,17 @@ class OpencodeUpstreamClient:
             raise RuntimeError("OpenCode session response missing id")
         return session_id
 
-    async def abort_session(self, session_id: str, *, directory: str | None = None) -> bool:
+    async def abort_session(
+        self,
+        session_id: str,
+        *,
+        directory: str | None = None,
+        workspace_id: str | None = None,
+    ) -> bool:
         return await self._post_boolean(
             f"/session/{session_id}/abort",
             endpoint="/session/{sessionID}/abort",
-            params=self._query_params(directory=directory),
+            params=self._query_params(directory=directory, workspace_id=workspace_id),
         )
 
     async def list_sessions(
@@ -421,12 +450,13 @@ class OpencodeUpstreamClient:
         *,
         params: dict[str, Any] | None = None,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> Any:
         """List sessions from OpenCode."""
         return await self._get_json(
             "/session",
             endpoint="/session",
-            params=self._merge_params(params, directory=directory),
+            params=self._merge_params(params, directory=directory, workspace_id=workspace_id),
         )
 
     async def list_messages(
@@ -434,13 +464,14 @@ class OpencodeUpstreamClient:
         session_id: str,
         *,
         params: dict[str, Any] | None = None,
+        workspace_id: str | None = None,
     ) -> OpencodeMessagePage:
         """List messages for a session from OpenCode."""
         endpoint = "/session/{sessionID}/message"
         async with self._request_budget.reserve(operation=endpoint):
             response = await self._client.get(
                 f"/session/{session_id}/message",
-                params=self._merge_params(params),
+                params=self._merge_params(params, workspace_id=workspace_id),
             )
             response.raise_for_status()
             payload = self._decode_json_response(response, endpoint=endpoint)
@@ -458,12 +489,13 @@ class OpencodeUpstreamClient:
         request: dict[str, Any],
         *,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> None:
         endpoint = "/session/{sessionID}/prompt_async"
         async with self._request_budget.reserve(operation=endpoint):
             response = await self._client.post(
                 f"/session/{session_id}/prompt_async",
-                params=self._query_params(directory=directory),
+                params=self._query_params(directory=directory, workspace_id=workspace_id),
                 json=request,
             )
             response.raise_for_status()
@@ -478,11 +510,12 @@ class OpencodeUpstreamClient:
         request: dict[str, Any],
         *,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> Any:
         return await self._post_json(
             f"/session/{session_id}/command",
             endpoint="/session/{sessionID}/command",
-            params=self._query_params(directory=directory),
+            params=self._query_params(directory=directory, workspace_id=workspace_id),
             json_body=request,
         )
 
@@ -492,19 +525,87 @@ class OpencodeUpstreamClient:
         request: dict[str, Any],
         *,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> Any:
         return await self._post_json(
             f"/session/{session_id}/shell",
             endpoint="/session/{sessionID}/shell",
-            params=self._query_params(directory=directory),
+            params=self._query_params(directory=directory, workspace_id=workspace_id),
             json_body=request,
         )
 
-    async def list_provider_catalog(self, *, directory: str | None = None) -> Any:
+    async def list_provider_catalog(
+        self,
+        *,
+        directory: str | None = None,
+        workspace_id: str | None = None,
+    ) -> Any:
         return await self._get_json(
             "/provider",
             endpoint="/provider",
-            params=self._query_params(directory=directory),
+            params=self._query_params(directory=directory, workspace_id=workspace_id),
+        )
+
+    async def list_projects(self) -> Any:
+        return await self._get_json("/project", endpoint="/project")
+
+    async def get_current_project(self) -> Any:
+        return await self._get_json("/project/current", endpoint="/project/current")
+
+    async def list_workspaces(self) -> Any:
+        return await self._get_json(
+            "/experimental/workspace",
+            endpoint="/experimental/workspace",
+        )
+
+    async def create_workspace(self, request: dict[str, Any]) -> Any:
+        return await self._post_json(
+            "/experimental/workspace",
+            endpoint="/experimental/workspace",
+            json_body=request,
+        )
+
+    async def remove_workspace(self, workspace_id: str) -> Any:
+        async with self._request_budget.reserve(operation="/experimental/workspace/{id}"):
+            response = await self._client.delete(f"/experimental/workspace/{workspace_id}")
+            response.raise_for_status()
+            return self._decode_json_response(
+                response,
+                endpoint="/experimental/workspace/{id}",
+            )
+
+    async def list_worktrees(self) -> Any:
+        return await self._get_json(
+            "/experimental/worktree",
+            endpoint="/experimental/worktree",
+        )
+
+    async def create_worktree(self, request: dict[str, Any]) -> Any:
+        return await self._post_json(
+            "/experimental/worktree",
+            endpoint="/experimental/worktree",
+            json_body=request,
+        )
+
+    async def remove_worktree(self, request: dict[str, Any]) -> bool:
+        async with self._request_budget.reserve(operation="/experimental/worktree"):
+            response = await self._client.request(
+                "DELETE",
+                "/experimental/worktree",
+                json=request,
+            )
+            response.raise_for_status()
+            payload = self._decode_json_response(response, endpoint="/experimental/worktree")
+            return self._require_boolean_response(
+                endpoint="/experimental/worktree",
+                payload=payload,
+            )
+
+    async def reset_worktree(self, request: dict[str, Any]) -> bool:
+        return await self._post_boolean(
+            "/experimental/worktree/reset",
+            endpoint="/experimental/worktree/reset",
+            json_body=request,
         )
 
     async def send_message(
@@ -514,6 +615,7 @@ class OpencodeUpstreamClient:
         *,
         parts: Sequence[Mapping[str, Any]] | None = None,
         directory: str | None = None,
+        workspace_id: str | None = None,
         model_override: Mapping[str, Any] | None = None,
         timeout_override: float | None | object = _UNSET,
     ) -> OpencodeMessage:
@@ -550,7 +652,7 @@ class OpencodeUpstreamClient:
         data = await self._post_json(
             f"/session/{session_id}/message",
             endpoint="/session/{sessionID}/message",
-            params=self._query_params(directory=directory),
+            params=self._query_params(directory=directory, workspace_id=workspace_id),
             json_body=payload,
             timeout=timeout_override,
         )
@@ -575,6 +677,7 @@ class OpencodeUpstreamClient:
         reply: str,
         message: str | None = None,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> bool:
         payload: dict[str, Any] = {"reply": reply}
         if message:
@@ -582,7 +685,7 @@ class OpencodeUpstreamClient:
         return await self._post_boolean(
             f"/permission/{request_id}/reply",
             endpoint="/permission/{requestID}/reply",
-            params=self._query_params(directory=directory),
+            params=self._query_params(directory=directory, workspace_id=workspace_id),
             json_body=payload,
         )
 
@@ -592,11 +695,12 @@ class OpencodeUpstreamClient:
         *,
         answers: list[list[str]],
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> bool:
         return await self._post_boolean(
             f"/question/{request_id}/reply",
             endpoint="/question/{requestID}/reply",
-            params=self._query_params(directory=directory),
+            params=self._query_params(directory=directory, workspace_id=workspace_id),
             json_body={"answers": answers},
         )
 
@@ -605,9 +709,10 @@ class OpencodeUpstreamClient:
         request_id: str,
         *,
         directory: str | None = None,
+        workspace_id: str | None = None,
     ) -> bool:
         return await self._post_boolean(
             f"/question/{request_id}/reject",
             endpoint="/question/{requestID}/reject",
-            params=self._query_params(directory=directory),
+            params=self._query_params(directory=directory, workspace_id=workspace_id),
         )

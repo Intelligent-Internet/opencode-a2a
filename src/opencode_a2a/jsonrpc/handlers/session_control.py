@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ...contracts.extensions import SESSION_QUERY_ERROR_BUSINESS_CODES
+from ...invocation import call_with_supported_kwargs
 from ...opencode_upstream_client import UpstreamConcurrencyLimitError, UpstreamContractError
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import invalid_params_error, session_not_found_error
@@ -27,7 +28,7 @@ from .common import (
     build_upstream_http_error_response,
     build_upstream_payload_error_response,
     build_upstream_unreachable_error_response,
-    resolve_directory,
+    resolve_routing_context,
 )
 
 logger = logging.getLogger(__name__)
@@ -121,13 +122,13 @@ async def handle_session_control_request(
             invalid_params_error(str(exc), data={"type": "INVALID_FIELD", "field": exc.field}),
         )
 
-    directory, directory_error = resolve_directory(
+    directory, workspace_id, routing_error = resolve_routing_context(
         context,
         request_id=base_request.id,
         params=params,
     )
-    if directory_error is not None:
-        return directory_error
+    if routing_error is not None:
+        return routing_error
 
     pending_claim = False
     claim_finalized = False
@@ -148,17 +149,21 @@ async def handle_session_control_request(
     try:
         result: dict[str, Any]
         if base_request.method == context.method_prompt_async:
-            await context.upstream_client.session_prompt_async(
+            await call_with_supported_kwargs(
+                context.upstream_client.session_prompt_async,
                 session_id,
                 request=dict(raw_request),
                 directory=directory,
+                workspace_id=workspace_id,
             )
             result = {"ok": True, "session_id": session_id}
         elif base_request.method == context.method_command:
-            raw_result = await context.upstream_client.session_command(
+            raw_result = await call_with_supported_kwargs(
+                context.upstream_client.session_command,
                 session_id,
                 request=dict(raw_request),
                 directory=directory,
+                workspace_id=workspace_id,
             )
             item = _as_a2a_message(session_id, raw_result)
             if item is None:
@@ -168,10 +173,12 @@ async def handle_session_control_request(
                 )
             result = {"item": item}
         else:
-            raw_result = await context.upstream_client.session_shell(
+            raw_result = await call_with_supported_kwargs(
+                context.upstream_client.session_shell,
                 session_id,
                 request=dict(raw_request),
                 directory=directory,
+                workspace_id=workspace_id,
             )
             item = _as_a2a_message(session_id, raw_result)
             if item is None:

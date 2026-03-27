@@ -89,3 +89,11 @@ def _extract_opencode_directory(context: RequestContext) -> str | None:
         namespace="opencode",
         path=("directory",),
     )
+
+
+def _extract_opencode_workspace_id(context: RequestContext) -> str | None:
+    return _extract_namespaced_string_metadata(
+        context,
+        namespace="opencode",
+        path=("workspace", "id"),
+    )

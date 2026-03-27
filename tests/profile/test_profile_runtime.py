@@ -39,6 +39,12 @@ def test_profile_runtime_splits_deployment_runtime_features_and_health_payload()
                 "scope": "workspace_root_only",
                 "metadata_field": "metadata.opencode.directory",
             },
+            "workspace_binding": {
+                "enabled": True,
+                "metadata_field": "metadata.opencode.workspace.id",
+                "upstream_query_param": "workspace",
+                "precedence": "prefer_workspace_else_directory",
+            },
             "session_shell": {
                 "enabled": False,
                 "availability": "disabled",

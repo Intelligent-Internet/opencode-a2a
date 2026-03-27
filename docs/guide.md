@@ -657,10 +657,14 @@ No extra custom REST endpoint is introduced.
   - session title is available at `metadata.shared.session.title`
 - Session list filters:
   - optional `directory`, `roots`, `start`, `search`, `limit`
+  - optional `metadata.opencode.workspace.id`
   - `directory` is normalized through the same workspace-boundary rules used by
     other OpenCode directory overrides before reaching upstream
+  - when `metadata.opencode.workspace.id` is present, the adapter routes by
+    workspace and ignores `directory`
 - Session message history filters:
   - optional `limit`, `before`
+  - optional `metadata.opencode.workspace.id`
   - `before` is an opaque cursor for loading older messages and is only
     supported on `opencode.sessions.messages.list`
 
@@ -752,6 +756,9 @@ Validation notes:
 
 - `metadata.opencode.directory` follows the same normalization and boundary rules
   as message send (`realpath` + workspace boundary check).
+- `metadata.opencode.workspace.id` is a provider-private routing hint. When it
+  is present, the adapter routes the request to that workspace and does not
+  apply directory override resolution for the same call.
 - `request.model` uses the same shape as `metadata.shared.model` and is scoped
   only to the current session-control request.
 - Control methods enforce session owner guard based on request identity.
@@ -847,6 +854,9 @@ curl -sS http://127.0.0.1:8000/ \
 Response:
 
 - success => `{"items": [...], "default_by_provider": {...}, "connected": [...]}` (JSON-RPC result)
+- optional `metadata.opencode.workspace.id` routes discovery against a specific
+  OpenCode workspace; otherwise the adapter falls back to directory routing
+  when `metadata.opencode.directory` is provided
 
 ### Model List (`opencode.models.list`)
 
@@ -871,6 +881,100 @@ curl -sS http://127.0.0.1:8000/ \
 Response:
 
 - success => `{"items": [...], "default_by_provider": {...}, "connected": [...]}` (JSON-RPC result)
+
+## Workspace Control (Provider-Private Extension)
+
+The runtime also exposes the OpenCode project/workspace/worktree control plane
+through provider-private JSON-RPC methods:
+
+- `opencode.projects.list`
+- `opencode.projects.current`
+- `opencode.workspaces.list`
+- `opencode.workspaces.create`
+- `opencode.workspaces.remove`
+- `opencode.worktrees.list`
+- `opencode.worktrees.create`
+- `opencode.worktrees.remove`
+- `opencode.worktrees.reset`
+
+Behavior notes:
+
+- These methods target the active OpenCode deployment project. They are not
+  routed through per-request workspace forwarding.
+- `metadata.opencode.workspace.id` is declared consistently across the adapter,
+  but current workspace-control methods do not use it to change the target
+  project.
+- Mutating methods should be treated as operator-only control-plane actions.
+
+### Project Discovery (`opencode.projects.list`, `opencode.projects.current`)
+
+```bash
+curl -sS http://127.0.0.1:8000/ \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 31,
+    "method": "opencode.projects.current",
+    "params": {}
+  }'
+```
+
+Response:
+
+- `opencode.projects.list` => `{"items": [...]}`
+- `opencode.projects.current` => `{"item": {...}}`
+
+### Workspace Discovery and Mutation
+
+```bash
+curl -sS http://127.0.0.1:8000/ \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 32,
+    "method": "opencode.workspaces.create",
+    "params": {
+      "request": {
+        "id": "wrk-api",
+        "type": "git",
+        "branch": "main"
+      }
+    }
+  }'
+```
+
+Response:
+
+- `opencode.workspaces.list` => `{"items": [...]}`
+- `opencode.workspaces.create` => `{"item": {...}}`
+- `opencode.workspaces.remove` => `{"item": {...}}`
+
+### Worktree Discovery and Mutation
+
+```bash
+curl -sS http://127.0.0.1:8000/ \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 33,
+    "method": "opencode.worktrees.reset",
+    "params": {
+      "request": {
+        "directory": "/repo/services/api"
+      }
+    }
+  }'
+```
+
+Response:
+
+- `opencode.worktrees.list` => `{"items": [...]}`
+- `opencode.worktrees.create` => `{"item": {...}}`
+- `opencode.worktrees.remove` => `{"ok": true|false}`
+- `opencode.worktrees.reset` => `{"ok": true|false}`
 
 ## Interrupt Recovery (Provider-Private Extension)
 

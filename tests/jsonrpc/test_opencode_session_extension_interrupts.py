@@ -26,6 +26,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
             reply: str,
             message: str | None = None,
             directory: str | None = None,
+            workspace_id: str | None = None,
         ) -> bool:
             self.permission_reply_calls.append(
                 {
@@ -33,6 +34,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
                     "reply": reply,
                     "message": message,
                     "directory": directory,
+                    "workspace_id": workspace_id,
                 }
             )
             return True
@@ -69,6 +71,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
                     "metadata": {
                         "opencode": {
                             "directory": "/workspace",
+                            "workspace": {"id": "wrk-1"},
                         }
                     },
                 },
@@ -83,6 +86,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
         assert dummy.permission_reply_calls[0]["request_id"] == "perm-1"
         assert dummy.permission_reply_calls[0]["reply"] == "once"
         assert dummy.permission_reply_calls[0]["directory"] == "/workspace"
+        assert dummy.permission_reply_calls[0]["workspace_id"] == "wrk-1"
 
 
 @pytest.mark.asyncio
@@ -166,9 +170,15 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
             *,
             answers: list[list[str]],
             directory: str | None = None,
+            workspace_id: str | None = None,
         ) -> bool:
             self.question_reply_calls.append(
-                {"request_id": request_id, "answers": answers, "directory": directory}
+                {
+                    "request_id": request_id,
+                    "answers": answers,
+                    "directory": directory,
+                    "workspace_id": workspace_id,
+                }
             )
             return True
 
@@ -177,8 +187,15 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
             request_id: str,
             *,
             directory: str | None = None,
+            workspace_id: str | None = None,
         ) -> bool:
-            self.question_reject_calls.append({"request_id": request_id, "directory": directory})
+            self.question_reject_calls.append(
+                {
+                    "request_id": request_id,
+                    "directory": directory,
+                    "workspace_id": workspace_id,
+                }
+            )
             return True
 
     dummy = InterruptClient(
@@ -262,8 +279,9 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
             reply: str,
             message: str | None = None,
             directory: str | None = None,
+            workspace_id: str | None = None,
         ) -> bool:
-            del request_id, reply, message, directory
+            del request_id, reply, message, directory, workspace_id
             request = httpx.Request("POST", "http://opencode/permission/x/reply")
             response = httpx.Response(404, request=request)
             raise httpx.HTTPStatusError("Not Found", request=request, response=response)
@@ -346,8 +364,9 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
             reply: str,
             message: str | None = None,
             directory: str | None = None,
+            workspace_id: str | None = None,
         ) -> bool:
-            del reply, message, directory
+            del reply, message, directory, workspace_id
             self.permission_reply_calls.append(request_id)
             return True
 
@@ -469,8 +488,9 @@ async def test_interrupt_callback_extension_maps_concurrency_limit_to_unreachabl
             reply: str,
             message: str | None = None,
             directory: str | None = None,
+            workspace_id: str | None = None,
         ) -> bool:
-            del request_id, reply, message, directory
+            del request_id, reply, message, directory, workspace_id
             raise UpstreamConcurrencyLimitError(
                 category="request",
                 operation="/permission/{requestID}/reply",

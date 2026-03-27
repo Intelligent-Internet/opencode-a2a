@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ...contracts.extensions import SESSION_QUERY_ERROR_BUSINESS_CODES
+from ...invocation import call_with_supported_kwargs
 from ...opencode_upstream_client import UpstreamConcurrencyLimitError
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import invalid_params_error, session_not_found_error
@@ -30,6 +31,7 @@ from .common import (
     build_upstream_http_error_response,
     build_upstream_payload_error_response,
     build_upstream_unreachable_error_response,
+    resolve_routing_context,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,6 +62,7 @@ async def handle_session_query_request(
 
     limit = int(query["limit"])
     directory = None
+    workspace_id = None
     if base_request.method == context.method_list_sessions:
         requested_directory = query.pop("directory", None)
         if requested_directory is not None and not isinstance(requested_directory, str):
@@ -70,25 +73,38 @@ async def handle_session_query_request(
                     data={"type": "INVALID_FIELD", "field": "directory"},
                 ),
             )
-        try:
-            directory = context.directory_resolver(requested_directory)
-        except ValueError as exc:
-            return context.error_response(
-                base_request.id,
-                invalid_params_error(
-                    str(exc),
-                    data={"type": "INVALID_FIELD", "field": "directory"},
-                ),
-            )
+        directory, workspace_id, routing_error = resolve_routing_context(
+            context,
+            request_id=base_request.id,
+            params=params,
+            requested_directory=requested_directory,
+        )
+        if routing_error is not None:
+            return routing_error
+    else:
+        directory, workspace_id, routing_error = resolve_routing_context(
+            context,
+            request_id=base_request.id,
+            params=params,
+        )
+        if routing_error is not None:
+            return routing_error
     try:
         if base_request.method == context.method_list_sessions:
-            raw_result = await context.upstream_client.list_sessions(
+            raw_result = await call_with_supported_kwargs(
+                context.upstream_client.list_sessions,
                 params=query,
                 directory=directory,
+                workspace_id=workspace_id,
             )
         else:
             assert session_id is not None
-            raw_result = await context.upstream_client.list_messages(session_id, params=query)
+            raw_result = await call_with_supported_kwargs(
+                context.upstream_client.list_messages,
+                session_id,
+                params=query,
+                workspace_id=workspace_id,
+            )
     except httpx.HTTPStatusError as exc:
         upstream_status = exc.response.status_code
         if upstream_status == 404 and base_request.method == context.method_get_session_messages:

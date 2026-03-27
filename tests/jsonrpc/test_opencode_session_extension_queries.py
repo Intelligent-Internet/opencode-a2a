@@ -196,6 +196,65 @@ async def test_session_query_extension_supports_session_filters_and_message_curs
 
 
 @pytest.mark.asyncio
+async def test_session_query_extension_prefers_workspace_metadata_for_routing(monkeypatch):
+    import opencode_a2a.server.application as app_module
+
+    dummy = DummyOpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            a2a_log_payloads=False,
+            opencode_workspace_root="/workspace",
+            **_BASE_SETTINGS,
+        )
+    )
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(
+            a2a_bearer_token="t-1",
+            a2a_log_payloads=False,
+            opencode_workspace_root="/workspace",
+            **_BASE_SETTINGS,
+        )
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "opencode.sessions.list",
+                "params": {
+                    "directory": "services/api",
+                    "limit": 2,
+                    "metadata": {"opencode": {"workspace": {"id": "wrk-1"}}},
+                },
+            },
+        )
+        await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "opencode.sessions.messages.list",
+                "params": {
+                    "session_id": "s-1",
+                    "limit": 2,
+                    "metadata": {"opencode": {"workspace": {"id": "wrk-1"}}},
+                },
+            },
+        )
+
+    assert dummy.last_sessions_workspace_id == "wrk-1"
+    assert dummy.last_sessions_directory is None
+    assert dummy.last_messages_workspace_id == "wrk-1"
+
+
+@pytest.mark.asyncio
 async def test_session_query_extension_rejects_directory_outside_workspace(monkeypatch):
     import opencode_a2a.server.application as app_module
 
@@ -368,7 +427,7 @@ async def test_provider_discovery_extension_returns_normalized_catalog(monkeypat
                 "jsonrpc": "2.0",
                 "id": 11,
                 "method": "opencode.providers.list",
-                "params": {},
+                "params": {"metadata": {"opencode": {"workspace": {"id": "wrk-1"}}}},
             },
         )
         assert providers_resp.status_code == 200
@@ -377,6 +436,7 @@ async def test_provider_discovery_extension_returns_normalized_catalog(monkeypat
         assert providers_payload["connected"] == ["openai"]
         assert providers_payload["items"][0]["provider_id"] == "openai"
         assert providers_payload["items"][0]["default_model_id"] == "gpt-5"
+        assert dummy.workspace_control_calls[0]["workspace_id"] == "wrk-1"
 
         models_resp = await client.post(
             "/",

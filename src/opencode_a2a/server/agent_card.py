@@ -23,6 +23,7 @@ from ..contracts.extensions import (
     SESSION_QUERY_METHODS,
     STREAMING_EXTENSION_URI,
     WIRE_CONTRACT_EXTENSION_URI,
+    WORKSPACE_CONTROL_EXTENSION_URI,
     JsonRpcCapabilitySnapshot,
     build_capability_snapshot,
     build_compatibility_profile_params,
@@ -34,6 +35,7 @@ from ..contracts.extensions import (
     build_session_query_extension_params,
     build_streaming_extension_params,
     build_wire_contract_params,
+    build_workspace_control_extension_params,
 )
 from ..jsonrpc.application import SESSION_CONTEXT_PREFIX
 from ..profile.runtime import RuntimeProfile, build_runtime_profile
@@ -46,8 +48,8 @@ def _build_agent_card_description(settings: Settings, runtime_profile: RuntimePr
         "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
         "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), shared "
         "session-binding/model-selection/streaming contracts, provider-private "
-        "OpenCode session/provider/model/interrupt recovery extensions, and "
-        "shared interrupt callback extensions."
+        "OpenCode session/provider/model/workspace-control/interrupt recovery "
+        "extensions, and shared interrupt callback extensions."
     )
     parts: list[str] = [base, summary]
     parts.append(
@@ -101,6 +103,14 @@ def _build_interrupt_recovery_skill_examples() -> list[str]:
     ]
 
 
+def _build_workspace_control_skill_examples() -> list[str]:
+    return [
+        "List OpenCode projects (method opencode.projects.list).",
+        "List workspaces for the active project (method opencode.workspaces.list).",
+        "Create a worktree (method opencode.worktrees.create).",
+    ]
+
+
 def build_agent_card(settings: Settings) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     base_url = public_url
@@ -129,6 +139,9 @@ def build_agent_card(settings: Settings) -> AgentCard:
         context_id_prefix=SESSION_CONTEXT_PREFIX,
     )
     provider_discovery_extension_params = build_provider_discovery_extension_params(
+        runtime_profile=runtime_profile,
+    )
+    workspace_control_extension_params = build_workspace_control_extension_params(
         runtime_profile=runtime_profile,
     )
     interrupt_recovery_extension_params = build_interrupt_recovery_extension_params(
@@ -209,6 +222,15 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     params=provider_discovery_extension_params,
                 ),
                 AgentExtension(
+                    uri=WORKSPACE_CONTROL_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Expose OpenCode-specific project/workspace/worktree control-plane "
+                        "methods through JSON-RPC extensions."
+                    ),
+                    params=workspace_control_extension_params,
+                ),
+                AgentExtension(
                     uri=INTERRUPT_RECOVERY_EXTENSION_URI,
                     required=False,
                     description=(
@@ -284,6 +306,16 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     "List available providers (method opencode.providers.list).",
                     "List available models for a provider (method opencode.models.list).",
                 ],
+            ),
+            AgentSkill(
+                id="opencode.workspace.control",
+                name="OpenCode Workspace Control",
+                description=(
+                    "provider-private OpenCode project/workspace/worktree control surface "
+                    "exposed through JSON-RPC extensions."
+                ),
+                tags=["opencode", "project", "workspace", "worktree", "provider-private"],
+                examples=_build_workspace_control_skill_examples(),
             ),
             AgentSkill(
                 id="opencode.interrupt.recovery",

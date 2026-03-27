@@ -59,6 +59,8 @@ from ..contracts.extensions import (
     SESSION_QUERY_METHODS,
     STREAMING_EXTENSION_URI,
     WIRE_CONTRACT_EXTENSION_URI,
+    WORKSPACE_CONTROL_EXTENSION_URI,
+    WORKSPACE_CONTROL_METHODS,
     build_capability_snapshot,
 )
 from ..execution.executor import OpencodeAgentExecutor, _emit_metric
@@ -122,6 +124,8 @@ __all__ = [
     "SESSION_QUERY_METHODS",
     "STREAMING_EXTENSION_URI",
     "WIRE_CONTRACT_EXTENSION_URI",
+    "WORKSPACE_CONTROL_EXTENSION_URI",
+    "WORKSPACE_CONTROL_METHODS",
     "_build_agent_card_description",
     "_build_chat_examples",
     "_build_jsonrpc_extension_openapi_description",
@@ -695,6 +699,7 @@ def create_app(settings: Settings) -> FastAPI:
     jsonrpc_methods = {
         **capability_snapshot.session_query_methods(),
         **capability_snapshot.provider_discovery_methods(),
+        **capability_snapshot.workspace_control_methods(),
         **capability_snapshot.interrupt_recovery_methods(),
         **capability_snapshot.interrupt_callback_methods(),
     }

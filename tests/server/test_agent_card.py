@@ -14,6 +14,7 @@ from opencode_a2a.server.application import (
     SESSION_QUERY_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
     WIRE_CONTRACT_EXTENSION_URI,
+    WORKSPACE_CONTROL_EXTENSION_URI,
     build_agent_card,
 )
 from tests.support.helpers import make_settings
@@ -63,8 +64,12 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert binding.params["supported_metadata"] == [
         "shared.session.id",
         "opencode.directory",
+        "opencode.workspace.id",
     ]
-    assert binding.params["provider_private_metadata"] == ["opencode.directory"]
+    assert binding.params["provider_private_metadata"] == [
+        "opencode.directory",
+        "opencode.workspace.id",
+    ]
     assert profile["profile_id"] == "opencode-a2a-single-tenant-coding-v1"
     assert profile["deployment"] == {
         "id": "single_tenant_shared_workspace",
@@ -82,6 +87,12 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "allow_override": False,
         "scope": "workspace_root_only",
         "metadata_field": "metadata.opencode.directory",
+    }
+    assert profile["runtime_features"]["workspace_binding"] == {
+        "enabled": True,
+        "metadata_field": "metadata.opencode.workspace.id",
+        "upstream_query_param": "workspace",
+        "precedence": "prefer_workspace_else_directory",
     }
     assert profile["runtime_features"]["execution_environment"] == {
         "sandbox": {
@@ -205,6 +216,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert list_contract["params"]["optional"] == [
         "limit",
         "directory",
+        "metadata.opencode.workspace.id",
         "roots",
         "start",
         "search",
@@ -217,6 +229,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert messages_contract["params"]["optional"] == [
         "limit",
         "before",
+        "metadata.opencode.workspace.id",
         "query.limit",
         "query.before",
     ]
@@ -261,6 +274,10 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "list_providers": "opencode.providers.list",
         "list_models": "opencode.models.list",
     }
+    assert provider_discovery.params["supported_metadata"] == [
+        "opencode.directory",
+        "opencode.workspace.id",
+    ]
     assert "result_envelope" not in provider_discovery.params
     assert provider_discovery.params["method_contracts"]["opencode.providers.list"]["result"] == {
         "fields": ["items", "default_by_provider", "connected"],
@@ -277,6 +294,35 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "UPSTREAM_UNREACHABLE": -32002,
         "UPSTREAM_HTTP_ERROR": -32003,
         "UPSTREAM_PAYLOAD_ERROR": -32005,
+    }
+
+    workspace_control = ext_by_uri[WORKSPACE_CONTROL_EXTENSION_URI]
+    assert workspace_control.params["profile"]["runtime_context"]["project"] == "alpha"
+    assert workspace_control.params["methods"] == {
+        "list_projects": "opencode.projects.list",
+        "get_current_project": "opencode.projects.current",
+        "list_workspaces": "opencode.workspaces.list",
+        "create_workspace": "opencode.workspaces.create",
+        "remove_workspace": "opencode.workspaces.remove",
+        "list_worktrees": "opencode.worktrees.list",
+        "create_worktree": "opencode.worktrees.create",
+        "remove_worktree": "opencode.worktrees.remove",
+        "reset_worktree": "opencode.worktrees.reset",
+    }
+    assert workspace_control.params["routing_fields"]["workspace_id"] == (
+        "metadata.opencode.workspace.id"
+    )
+    assert workspace_control.params["method_contracts"]["opencode.projects.list"]["result"] == {
+        "fields": ["items"],
+        "items_type": "Project[]",
+    }
+    assert workspace_control.params["method_contracts"]["opencode.workspaces.create"]["params"] == {
+        "required": ["request.type"],
+        "optional": ["request.id", "request.branch", "request.extra"],
+    }
+    assert workspace_control.params["method_contracts"]["opencode.worktrees.reset"]["result"] == {
+        "fields": ["ok"],
+        "items_type": "boolean",
     }
 
     interrupt_recovery = ext_by_uri[INTERRUPT_RECOVERY_EXTENSION_URI]
@@ -299,9 +345,16 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     interrupt = ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI]
     assert interrupt.params["profile"]["runtime_context"]["project"] == "alpha"
     assert interrupt.params["request_id_field"] == "metadata.shared.interrupt.request_id"
-    assert interrupt.params["supported_metadata"] == ["opencode.directory"]
-    assert interrupt.params["provider_private_metadata"] == ["opencode.directory"]
+    assert interrupt.params["supported_metadata"] == [
+        "opencode.directory",
+        "opencode.workspace.id",
+    ]
+    assert interrupt.params["provider_private_metadata"] == [
+        "opencode.directory",
+        "opencode.workspace.id",
+    ]
     assert interrupt.params["context_fields"]["directory"] == "metadata.opencode.directory"
+    assert interrupt.params["context_fields"]["workspace_id"] == "metadata.opencode.workspace.id"
     assert interrupt.params["errors"]["business_codes"] == {
         "INTERRUPT_REQUEST_NOT_FOUND": -32004,
         "INTERRUPT_REQUEST_EXPIRED": -32007,
@@ -381,6 +434,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert wire_contract.params["profile"]["profile_id"] == "opencode-a2a-single-tenant-coding-v1"
     assert MODEL_SELECTION_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert PROVIDER_DISCOVERY_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
+    assert WORKSPACE_CONTROL_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert INTERRUPT_RECOVERY_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert "opencode.sessions.shell" not in wire_contract.params["all_jsonrpc_methods"]
     assert wire_contract.params["service_behaviors"] == expected_service_behaviors
@@ -435,12 +489,16 @@ def test_agent_card_skills_hide_shell_when_disabled_by_default() -> None:
 
     session_skill = next(skill for skill in card.skills if skill.id == "opencode.sessions.query")
     provider_skill = next(skill for skill in card.skills if skill.id == "opencode.providers.query")
+    workspace_skill = next(
+        skill for skill in card.skills if skill.id == "opencode.workspace.control"
+    )
 
     assert "provider-private" in session_skill.tags
     assert "provider-private" in session_skill.description
     assert all("opencode.sessions.shell" not in example for example in session_skill.examples)
     assert "provider-private" in provider_skill.tags
     assert any("opencode.providers.list" in example for example in provider_skill.examples)
+    assert any("opencode.projects.list" in example for example in workspace_skill.examples)
     interrupt_recovery_skill = next(
         skill for skill in card.skills if skill.id == "opencode.interrupt.recovery"
     )

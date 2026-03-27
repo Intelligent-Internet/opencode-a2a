@@ -13,6 +13,7 @@ SHARED_PROGRESS_METADATA_FIELD = "metadata.shared.progress"
 SHARED_INTERRUPT_METADATA_FIELD = "metadata.shared.interrupt"
 SHARED_USAGE_METADATA_FIELD = "metadata.shared.usage"
 OPENCODE_DIRECTORY_METADATA_FIELD = "metadata.opencode.directory"
+OPENCODE_WORKSPACE_METADATA_FIELD = "metadata.opencode.workspace.id"
 
 SESSION_BINDING_EXTENSION_URI = "urn:a2a:session-binding/v1"
 MODEL_SELECTION_EXTENSION_URI = "urn:a2a:model-selection/v1"
@@ -21,6 +22,7 @@ SESSION_QUERY_EXTENSION_URI = "urn:opencode-a2a:session-query/v1"
 PROVIDER_DISCOVERY_EXTENSION_URI = "urn:opencode-a2a:provider-discovery/v1"
 INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
 INTERRUPT_RECOVERY_EXTENSION_URI = "urn:opencode-a2a:interrupt-recovery/v1"
+WORKSPACE_CONTROL_EXTENSION_URI = "urn:opencode-a2a:workspace-control/v1"
 COMPATIBILITY_PROFILE_EXTENSION_URI = "urn:a2a:compatibility-profile/v1"
 WIRE_CONTRACT_EXTENSION_URI = "urn:a2a:wire-contract/v1"
 SERVICE_BEHAVIOR_CLASSIFICATION = "service-level-semantic-enhancement"
@@ -60,6 +62,16 @@ class ProviderDiscoveryMethodContract:
 
 @dataclass(frozen=True)
 class InterruptRecoveryMethodContract:
+    method: str
+    required_params: tuple[str, ...] = ()
+    optional_params: tuple[str, ...] = ()
+    result_fields: tuple[str, ...] = ()
+    items_type: str | None = None
+    notification_response_status: int | None = None
+
+
+@dataclass(frozen=True)
+class WorkspaceControlMethodContract:
     method: str
     required_params: tuple[str, ...] = ()
     optional_params: tuple[str, ...] = ()
@@ -115,6 +127,7 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
         optional_params=(
             "limit",
             "directory",
+            OPENCODE_WORKSPACE_METADATA_FIELD,
             "roots",
             "start",
             "search",
@@ -133,7 +146,13 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
     "get_session_messages": SessionQueryMethodContract(
         method="opencode.sessions.messages.list",
         required_params=("session_id",),
-        optional_params=("limit", "before", "query.limit", "query.before"),
+        optional_params=(
+            "limit",
+            "before",
+            OPENCODE_WORKSPACE_METADATA_FIELD,
+            "query.limit",
+            "query.before",
+        ),
         unsupported_params=SESSION_QUERY_PAGINATION_UNSUPPORTED,
         result_fields=("items", "next_cursor"),
         items_type="Message[]",
@@ -153,6 +172,7 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
             "request.system",
             "request.variant",
             OPENCODE_DIRECTORY_METADATA_FIELD,
+            OPENCODE_WORKSPACE_METADATA_FIELD,
         ),
         result_fields=("ok", "session_id"),
         notification_response_status=204,
@@ -167,6 +187,7 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
             "request.variant",
             "request.parts",
             OPENCODE_DIRECTORY_METADATA_FIELD,
+            OPENCODE_WORKSPACE_METADATA_FIELD,
         ),
         result_fields=("item",),
         notification_response_status=204,
@@ -174,7 +195,11 @@ SESSION_QUERY_METHOD_CONTRACTS: dict[str, SessionQueryMethodContract] = {
     "shell": SessionQueryMethodContract(
         method="opencode.sessions.shell",
         required_params=("session_id", "request.agent", "request.command"),
-        optional_params=("request.model", OPENCODE_DIRECTORY_METADATA_FIELD),
+        optional_params=(
+            "request.model",
+            OPENCODE_DIRECTORY_METADATA_FIELD,
+            OPENCODE_WORKSPACE_METADATA_FIELD,
+        ),
         result_fields=("item",),
         notification_response_status=204,
     ),
@@ -295,6 +320,73 @@ INTERRUPT_RECOVERY_METHODS: dict[str, str] = {
     key: contract.method for key, contract in INTERRUPT_RECOVERY_METHOD_CONTRACTS.items()
 }
 
+WORKSPACE_CONTROL_METHOD_CONTRACTS: dict[str, WorkspaceControlMethodContract] = {
+    "list_projects": WorkspaceControlMethodContract(
+        method="opencode.projects.list",
+        result_fields=("items",),
+        items_type="Project[]",
+        notification_response_status=204,
+    ),
+    "get_current_project": WorkspaceControlMethodContract(
+        method="opencode.projects.current",
+        result_fields=("item",),
+        items_type="Project",
+        notification_response_status=204,
+    ),
+    "list_workspaces": WorkspaceControlMethodContract(
+        method="opencode.workspaces.list",
+        result_fields=("items",),
+        items_type="Workspace[]",
+        notification_response_status=204,
+    ),
+    "create_workspace": WorkspaceControlMethodContract(
+        method="opencode.workspaces.create",
+        required_params=("request.type",),
+        optional_params=("request.id", "request.branch", "request.extra"),
+        result_fields=("item",),
+        items_type="Workspace",
+        notification_response_status=204,
+    ),
+    "remove_workspace": WorkspaceControlMethodContract(
+        method="opencode.workspaces.remove",
+        required_params=("workspace_id",),
+        result_fields=("item",),
+        items_type="Workspace|null",
+        notification_response_status=204,
+    ),
+    "list_worktrees": WorkspaceControlMethodContract(
+        method="opencode.worktrees.list",
+        result_fields=("items",),
+        items_type="string[]",
+        notification_response_status=204,
+    ),
+    "create_worktree": WorkspaceControlMethodContract(
+        method="opencode.worktrees.create",
+        optional_params=("request.name", "request.startCommand"),
+        result_fields=("item",),
+        items_type="Worktree",
+        notification_response_status=204,
+    ),
+    "remove_worktree": WorkspaceControlMethodContract(
+        method="opencode.worktrees.remove",
+        required_params=("request.directory",),
+        result_fields=("ok",),
+        items_type="boolean",
+        notification_response_status=204,
+    ),
+    "reset_worktree": WorkspaceControlMethodContract(
+        method="opencode.worktrees.reset",
+        required_params=("request.directory",),
+        result_fields=("ok",),
+        items_type="boolean",
+        notification_response_status=204,
+    ),
+}
+
+WORKSPACE_CONTROL_METHODS: dict[str, str] = {
+    key: contract.method for key, contract in WORKSPACE_CONTROL_METHOD_CONTRACTS.items()
+}
+
 INTERRUPT_SUCCESS_RESULT_FIELDS: tuple[str, ...] = ("ok", "request_id")
 INTERRUPT_ERROR_BUSINESS_CODES: dict[str, int] = {
     "INTERRUPT_REQUEST_NOT_FOUND": -32004,
@@ -341,6 +433,22 @@ PROVIDER_DISCOVERY_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
     "fields",
 )
 INTERRUPT_RECOVERY_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
+    "type",
+    "field",
+    "fields",
+)
+WORKSPACE_CONTROL_ERROR_BUSINESS_CODES: dict[str, int] = {
+    "UPSTREAM_UNREACHABLE": -32002,
+    "UPSTREAM_HTTP_ERROR": -32003,
+    "UPSTREAM_PAYLOAD_ERROR": -32005,
+}
+WORKSPACE_CONTROL_ERROR_DATA_FIELDS: tuple[str, ...] = (
+    "type",
+    "method",
+    "upstream_status",
+    "detail",
+)
+WORKSPACE_CONTROL_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
     "type",
     "field",
     "fields",
@@ -410,6 +518,9 @@ class JsonRpcCapabilitySnapshot:
     def interrupt_callback_methods(self) -> dict[str, str]:
         return dict(INTERRUPT_CALLBACK_METHODS)
 
+    def workspace_control_methods(self) -> dict[str, str]:
+        return dict(WORKSPACE_CONTROL_METHODS)
+
     def supported_jsonrpc_methods(self) -> list[str]:
         methods = [
             *CORE_JSONRPC_METHODS,
@@ -418,6 +529,7 @@ class JsonRpcCapabilitySnapshot:
             SESSION_CONTROL_METHODS["prompt_async"],
             SESSION_CONTROL_METHODS["command"],
             *PROVIDER_DISCOVERY_METHODS.values(),
+            *WORKSPACE_CONTROL_METHODS.values(),
             *INTERRUPT_RECOVERY_METHODS.values(),
             *INTERRUPT_CALLBACK_METHODS.values(),
         ]
@@ -432,6 +544,7 @@ class JsonRpcCapabilitySnapshot:
             SESSION_CONTROL_METHODS["prompt_async"],
             SESSION_CONTROL_METHODS["command"],
             *PROVIDER_DISCOVERY_METHODS.values(),
+            *WORKSPACE_CONTROL_METHODS.values(),
             *INTERRUPT_RECOVERY_METHODS.values(),
             *INTERRUPT_CALLBACK_METHODS.values(),
         ]
@@ -499,8 +612,9 @@ def build_session_binding_extension_params(
         "supported_metadata": [
             "shared.session.id",
             "opencode.directory",
+            "opencode.workspace.id",
         ],
-        "provider_private_metadata": ["opencode.directory"],
+        "provider_private_metadata": ["opencode.directory", "opencode.workspace.id"],
         "profile": runtime_profile.summary_dict(),
         "notes": [
             (
@@ -511,6 +625,11 @@ def build_session_binding_extension_params(
                 "Otherwise, the server will create a new upstream session and retain "
                 "the (identity, contextId)->session_id mapping according to the "
                 "configured task/state store backend and TTL policy."
+            ),
+            (
+                "If metadata.opencode.workspace.id is provided, the server routes the "
+                "request with workspace precedence and falls back to directory binding only "
+                "when workspace metadata is absent."
             ),
         ],
     }
@@ -722,10 +841,11 @@ def build_interrupt_callback_extension_params(
             "answers": "array of answer arrays (same order as asked questions)"
         },
         "request_id_field": f"{SHARED_INTERRUPT_METADATA_FIELD}.request_id",
-        "supported_metadata": ["opencode.directory"],
-        "provider_private_metadata": ["opencode.directory"],
+        "supported_metadata": ["opencode.directory", "opencode.workspace.id"],
+        "provider_private_metadata": ["opencode.directory", "opencode.workspace.id"],
         "context_fields": {
             "directory": OPENCODE_DIRECTORY_METADATA_FIELD,
+            "workspace_id": OPENCODE_WORKSPACE_METADATA_FIELD,
         },
         "success_result_fields": list(INTERRUPT_SUCCESS_RESULT_FIELDS),
         "errors": {
@@ -827,10 +947,11 @@ def build_provider_discovery_extension_params(
     return {
         "methods": dict(PROVIDER_DISCOVERY_METHODS),
         "method_contracts": method_contracts,
-        "supported_metadata": ["opencode.directory"],
-        "provider_private_metadata": ["opencode.directory"],
+        "supported_metadata": ["opencode.directory", "opencode.workspace.id"],
+        "provider_private_metadata": ["opencode.directory", "opencode.workspace.id"],
         "context_fields": {
             "directory": OPENCODE_DIRECTORY_METADATA_FIELD,
+            "workspace_id": OPENCODE_WORKSPACE_METADATA_FIELD,
         },
         "provider_item_fields": {
             "provider_id": "items[].provider_id",
@@ -866,6 +987,65 @@ def build_provider_discovery_extension_params(
             (
                 "The server normalizes upstream provider catalogs into summary records so "
                 "downstream callers do not need to parse raw OpenCode payloads."
+            ),
+            (
+                "If metadata.opencode.workspace.id is present, provider/model discovery is "
+                "routed to that workspace; otherwise the adapter falls back to directory "
+                "routing when metadata.opencode.directory is provided."
+            ),
+        ],
+    }
+
+
+def build_workspace_control_extension_params(
+    *,
+    runtime_profile: RuntimeProfile,
+) -> dict[str, Any]:
+    method_contracts: dict[str, Any] = {}
+
+    for method_contract in WORKSPACE_CONTROL_METHOD_CONTRACTS.values():
+        params_contract = _build_method_contract_params(
+            required=method_contract.required_params,
+            optional=method_contract.optional_params,
+            unsupported=(),
+        )
+        result_contract: dict[str, Any] = {"fields": list(method_contract.result_fields)}
+        if method_contract.items_type:
+            result_contract["items_type"] = method_contract.items_type
+        contract_doc: dict[str, Any] = {
+            "params": params_contract,
+            "result": result_contract,
+        }
+        if method_contract.notification_response_status is not None:
+            contract_doc["notification_response_status"] = (
+                method_contract.notification_response_status
+            )
+        method_contracts[method_contract.method] = contract_doc
+
+    return {
+        "methods": dict(WORKSPACE_CONTROL_METHODS),
+        "method_contracts": method_contracts,
+        "supported_metadata": ["opencode.workspace.id", "opencode.directory"],
+        "provider_private_metadata": ["opencode.workspace.id", "opencode.directory"],
+        "routing_fields": {
+            "workspace_id": OPENCODE_WORKSPACE_METADATA_FIELD,
+            "directory": OPENCODE_DIRECTORY_METADATA_FIELD,
+        },
+        "errors": {
+            "business_codes": dict(WORKSPACE_CONTROL_ERROR_BUSINESS_CODES),
+            "error_data_fields": list(WORKSPACE_CONTROL_ERROR_DATA_FIELDS),
+            "invalid_params_data_fields": list(WORKSPACE_CONTROL_INVALID_PARAMS_DATA_FIELDS),
+        },
+        "profile": runtime_profile.summary_dict(),
+        "notes": [
+            (
+                "Workspace control methods expose the OpenCode project/workspace/worktree "
+                "control plane through provider-private JSON-RPC methods."
+            ),
+            (
+                "Workspace routing metadata is declared for consistency, but the current "
+                "control-plane methods operate on the active deployment project rather than "
+                "per-request workspace forwarding."
             ),
         ],
     }
@@ -912,6 +1092,17 @@ def build_compatibility_profile_params(
                 "extension_uri": PROVIDER_DISCOVERY_EXTENSION_URI,
             }
             for method in PROVIDER_DISCOVERY_METHODS.values()
+        }
+    )
+    method_retention.update(
+        {
+            method: {
+                "surface": "extension",
+                "availability": "always",
+                "retention": "stable",
+                "extension_uri": WORKSPACE_CONTROL_EXTENSION_URI,
+            }
+            for method in WORKSPACE_CONTROL_METHODS.values()
         }
     )
     method_retention.update(
@@ -968,6 +1159,11 @@ def build_compatibility_profile_params(
                 "availability": "always",
                 "retention": "stable",
             },
+            WORKSPACE_CONTROL_EXTENSION_URI: {
+                "surface": "jsonrpc-extension",
+                "availability": "always",
+                "retention": "stable",
+            },
             INTERRUPT_RECOVERY_EXTENSION_URI: {
                 "surface": "jsonrpc-extension",
                 "availability": "always",
@@ -993,6 +1189,7 @@ def build_compatibility_profile_params(
             ),
             (
                 "Treat opencode.sessions.*, opencode.providers.*, opencode.models.*, "
+                "opencode.projects.*, opencode.workspaces.*, opencode.worktrees.*, "
                 "opencode.permissions.list, and opencode.questions.list as provider-private "
                 "operational surfaces rather than portable A2A baseline capabilities."
             ),
@@ -1041,6 +1238,7 @@ def build_wire_contract_params(
                 STREAMING_EXTENSION_URI,
                 SESSION_QUERY_EXTENSION_URI,
                 PROVIDER_DISCOVERY_EXTENSION_URI,
+                WORKSPACE_CONTROL_EXTENSION_URI,
                 INTERRUPT_RECOVERY_EXTENSION_URI,
                 INTERRUPT_CALLBACK_EXTENSION_URI,
             ],

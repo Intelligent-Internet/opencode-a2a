@@ -11,6 +11,7 @@ from ..contracts.extensions import (
     PROVIDER_DISCOVERY_METHODS,
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_METHODS,
+    WORKSPACE_CONTROL_METHODS,
     JsonRpcCapabilitySnapshot,
     build_capability_snapshot,
     build_compatibility_profile_params,
@@ -22,6 +23,7 @@ from ..contracts.extensions import (
     build_session_query_extension_params,
     build_streaming_extension_params,
     build_wire_contract_params,
+    build_workspace_control_extension_params,
 )
 from ..jsonrpc.application import SESSION_CONTEXT_PREFIX
 from ..profile.runtime import RuntimeProfile
@@ -33,6 +35,7 @@ def _build_jsonrpc_extension_openapi_description(
 ) -> str:
     session_methods = list(capability_snapshot.session_query_methods().values())
     provider_methods = ", ".join(sorted(PROVIDER_DISCOVERY_METHODS.values()))
+    workspace_methods = ", ".join(sorted(WORKSPACE_CONTROL_METHODS.values()))
     interrupt_recovery_methods = ", ".join(sorted(INTERRUPT_RECOVERY_METHODS.values()))
     interrupt_methods = ", ".join(sorted(INTERRUPT_CALLBACK_METHODS.values()))
     return (
@@ -42,6 +45,7 @@ def _build_jsonrpc_extension_openapi_description(
         "interrupt recovery extensions, and shared interrupt callback methods.\n\n"
         f"OpenCode session query/control methods: {', '.join(session_methods)}.\n"
         f"OpenCode provider/model discovery methods: {provider_methods}.\n"
+        f"OpenCode project/workspace/worktree control methods: {workspace_methods}.\n"
         f"OpenCode interrupt recovery methods: {interrupt_recovery_methods}.\n"
         f"Shared interrupt callback methods: {interrupt_methods}.\n\n"
         "Notification semantics: extension requests without JSON-RPC id return HTTP 204."
@@ -213,6 +217,92 @@ def _build_jsonrpc_extension_openapi_examples(
                 "params": {"provider_id": "openai"},
             },
         },
+        "projects_list": {
+            "summary": "List OpenCode projects",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 28,
+                "method": WORKSPACE_CONTROL_METHODS["list_projects"],
+                "params": {},
+            },
+        },
+        "projects_current": {
+            "summary": "Get the current OpenCode project",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 281,
+                "method": WORKSPACE_CONTROL_METHODS["get_current_project"],
+                "params": {},
+            },
+        },
+        "workspaces_list": {
+            "summary": "List workspaces for the active project",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 29,
+                "method": WORKSPACE_CONTROL_METHODS["list_workspaces"],
+                "params": {},
+            },
+        },
+        "workspaces_create": {
+            "summary": "Create a workspace for the active project",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 291,
+                "method": WORKSPACE_CONTROL_METHODS["create_workspace"],
+                "params": {"request": {"type": "git", "branch": "main"}},
+            },
+        },
+        "workspaces_remove": {
+            "summary": "Remove a workspace",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 292,
+                "method": WORKSPACE_CONTROL_METHODS["remove_workspace"],
+                "params": {"workspace_id": "wrk-1"},
+            },
+        },
+        "worktrees_list": {
+            "summary": "List worktrees for the active project",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 293,
+                "method": WORKSPACE_CONTROL_METHODS["list_worktrees"],
+                "params": {},
+            },
+        },
+        "worktrees_create": {
+            "summary": "Create a new worktree",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 30,
+                "method": WORKSPACE_CONTROL_METHODS["create_worktree"],
+                "params": {
+                    "request": {
+                        "name": "feature-branch",
+                        "startCommand": "pnpm install",
+                    }
+                },
+            },
+        },
+        "worktrees_remove": {
+            "summary": "Remove a worktree",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 301,
+                "method": WORKSPACE_CONTROL_METHODS["remove_worktree"],
+                "params": {"request": {"directory": "/tmp/worktrees/feature-branch"}},
+            },
+        },
+        "worktrees_reset": {
+            "summary": "Reset a worktree branch",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 302,
+                "method": WORKSPACE_CONTROL_METHODS["reset_worktree"],
+                "params": {"request": {"directory": "/tmp/worktrees/feature-branch"}},
+            },
+        },
         "permissions_list": {
             "summary": "List pending permission interrupts for the current caller",
             "value": {
@@ -365,6 +455,9 @@ def _patch_jsonrpc_openapi_contract(
     provider_discovery = build_provider_discovery_extension_params(
         runtime_profile=runtime_profile,
     )
+    workspace_control = build_workspace_control_extension_params(
+        runtime_profile=runtime_profile,
+    )
     interrupt_recovery = build_interrupt_recovery_extension_params(
         runtime_profile=runtime_profile,
     )
@@ -403,6 +496,7 @@ def _patch_jsonrpc_openapi_contract(
                         "streaming": streaming,
                         "session_query": session_query,
                         "provider_discovery": provider_discovery,
+                        "workspace_control": workspace_control,
                         "interrupt_recovery": interrupt_recovery,
                         "interrupt_callback": interrupt_callback,
                         "compatibility_profile": compatibility_profile,
