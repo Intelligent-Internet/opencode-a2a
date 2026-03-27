@@ -22,6 +22,7 @@ from ..contracts.extensions import (
     SESSION_QUERY_EXTENSION_URI,
     SESSION_QUERY_METHODS,
     STREAMING_EXTENSION_URI,
+    SUBTASK_CAPABILITY_EXTENSION_URI,
     WIRE_CONTRACT_EXTENSION_URI,
     JsonRpcCapabilitySnapshot,
     build_capability_snapshot,
@@ -33,6 +34,7 @@ from ..contracts.extensions import (
     build_session_binding_extension_params,
     build_session_query_extension_params,
     build_streaming_extension_params,
+    build_subtask_capability_extension_params,
     build_wire_contract_params,
 )
 from ..jsonrpc.application import SESSION_CONTEXT_PREFIX
@@ -101,6 +103,13 @@ def _build_interrupt_recovery_skill_examples() -> list[str]:
     ]
 
 
+def _build_subtask_capability_skill_examples() -> list[str]:
+    return [
+        "Send opencode.sessions.prompt_async with request.parts[].type=subtask to run one subtask.",
+        "Observe tool_call stream blocks where artifact.parts[].data.tool=task.",
+    ]
+
+
 def build_agent_card(settings: Settings) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     base_url = public_url
@@ -127,6 +136,9 @@ def build_agent_card(settings: Settings) -> AgentCard:
     session_query_extension_params = build_session_query_extension_params(
         runtime_profile=runtime_profile,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
+    )
+    subtask_capability_extension_params = build_subtask_capability_extension_params(
+        runtime_profile=runtime_profile,
     )
     provider_discovery_extension_params = build_provider_discovery_extension_params(
         runtime_profile=runtime_profile,
@@ -200,6 +212,16 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     params=session_query_extension_params,
                 ),
                 AgentExtension(
+                    uri=SUBTASK_CAPABILITY_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Declare provider-private OpenCode subtask capability, including "
+                        "the request.parts[].type=subtask input contract and the task tool "
+                        "stream observation model."
+                    ),
+                    params=subtask_capability_extension_params,
+                ),
+                AgentExtension(
                     uri=PROVIDER_DISCOVERY_EXTENSION_URI,
                     required=False,
                     description=(
@@ -271,6 +293,16 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 examples=_build_session_query_skill_examples(
                     capability_snapshot=capability_snapshot,
                 ),
+            ),
+            AgentSkill(
+                id="opencode.subtask.capability",
+                name="OpenCode Subtask Capability",
+                description=(
+                    "provider-private OpenCode subtask capability exposed through the "
+                    "session prompt_async surface and normal streaming tool_call blocks."
+                ),
+                tags=["opencode", "subtask", "subagent", "provider-private"],
+                examples=_build_subtask_capability_skill_examples(),
             ),
             AgentSkill(
                 id="opencode.providers.query",

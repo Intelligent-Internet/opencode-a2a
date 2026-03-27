@@ -755,6 +755,52 @@ Validation notes:
 - `request.model` uses the same shape as `metadata.shared.model` and is scoped
   only to the current session-control request.
 - Control methods enforce session owner guard based on request identity.
+- `request.parts[]` also accepts provider-private `subtask` parts. Each subtask
+  part requires `prompt`, `description`, and `agent`, and may include
+  `model` plus optional `command`.
+
+Subtask example:
+
+```bash
+curl -sS http://127.0.0.1:8000/ \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <your-token>' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 21,
+    "method": "opencode.sessions.prompt_async",
+    "params": {
+      "session_id": "<session_id>",
+      "request": {
+        "parts": [
+          {
+            "type": "subtask",
+            "prompt": "Search for the highest-risk auth changes.",
+            "description": "Inspect auth-related diffs and summarize the main risks.",
+            "agent": "general",
+            "command": "/review",
+            "model": {
+              "providerID": "google",
+              "modelID": "gemini-2.5-flash"
+            }
+          }
+        ]
+      }
+    }
+  }'
+```
+
+Subtask stream observation:
+
+- Subtasks are observed through normal `tool_call` stream blocks.
+- When upstream executes the OpenCode task tool, the emitted data part uses
+  `artifact.parts[].data.tool = "task"`.
+- Stable subtask-related fields are exposed under
+  `artifact.parts[].data.input.prompt`,
+  `artifact.parts[].data.input.description`,
+  `artifact.parts[].data.input.subagent_type`, and
+  `artifact.parts[].data.input.command`.
+- This runtime does not yet declare a standalone subagent discovery method.
 
 ### Session Command (`opencode.sessions.command`)
 

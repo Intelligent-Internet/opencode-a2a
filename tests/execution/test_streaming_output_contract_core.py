@@ -120,6 +120,36 @@ def test_extract_tool_part_payload_normalizes_structured_state() -> None:
     assert _extract_tool_part_payload({"callID": " ", "tool": None, "state": {}}) is None
 
 
+def test_extract_tool_part_payload_preserves_task_tool_subtask_fields() -> None:
+    assert _extract_tool_part_payload(
+        {
+            "callID": "call-task-1",
+            "tool": "task",
+            "state": {
+                "status": "completed",
+                "input": {
+                    "prompt": "search auth diffs",
+                    "description": "inspect auth changes",
+                    "subagent_type": "general",
+                    "command": "/review",
+                },
+                "output": {"summary": "done"},
+            },
+        }
+    ) == {
+        "call_id": "call-task-1",
+        "tool": "task",
+        "status": "completed",
+        "input": {
+            "prompt": "search auth diffs",
+            "description": "inspect auth changes",
+            "subagent_type": "general",
+            "command": "/review",
+        },
+        "output": {"summary": "done"},
+    }
+
+
 def test_extract_token_usage_ignores_non_step_finish_part_payload() -> None:
     assert (
         _extract_token_usage(

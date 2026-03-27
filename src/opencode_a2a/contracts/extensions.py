@@ -18,6 +18,7 @@ SESSION_BINDING_EXTENSION_URI = "urn:a2a:session-binding/v1"
 MODEL_SELECTION_EXTENSION_URI = "urn:a2a:model-selection/v1"
 STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
 SESSION_QUERY_EXTENSION_URI = "urn:opencode-a2a:session-query/v1"
+SUBTASK_CAPABILITY_EXTENSION_URI = "urn:opencode-a2a:subtask-capability/v1"
 PROVIDER_DISCOVERY_EXTENSION_URI = "urn:opencode-a2a:provider-discovery/v1"
 INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
 INTERRUPT_RECOVERY_EXTENSION_URI = "urn:opencode-a2a:interrupt-recovery/v1"
@@ -690,6 +691,81 @@ def build_session_query_extension_params(
     }
 
 
+def build_subtask_capability_extension_params(
+    *,
+    runtime_profile: RuntimeProfile,
+) -> dict[str, Any]:
+    return {
+        "submit_surface": {
+            "method": SESSION_QUERY_METHODS["prompt_async"],
+            "request_parts_field": "request.parts[]",
+            "part_type": "subtask",
+        },
+        "execution_model": {
+            "kind": "upstream_task_tool_subtask",
+            "upstream_tool_name": "task",
+            "session_scope": "existing_upstream_session",
+            "workspace_scope": "shared_current_workspace",
+            "agent_resolution": "upstream_runtime",
+            "parallel_submission_contract": "not_declared",
+        },
+        "supported_part_types": ["subtask"],
+        "subtask_part_fields": {
+            "type": "request.parts[].type",
+            "prompt": "request.parts[].prompt",
+            "description": "request.parts[].description",
+            "agent": "request.parts[].agent",
+            "model.providerID": "request.parts[].model.providerID",
+            "model.modelID": "request.parts[].model.modelID",
+            "command": "request.parts[].command",
+        },
+        "supported_metadata": ["opencode.directory"],
+        "provider_private_metadata": ["opencode.directory"],
+        "context_fields": {
+            "directory": OPENCODE_DIRECTORY_METADATA_FIELD,
+        },
+        "stream_observation": {
+            "block_type": "tool_call",
+            "payload_field": "artifact.parts[].data",
+            "tool_name_field": "artifact.parts[].data.tool",
+            "task_tool_name": "task",
+            "payload_fields": {
+                "call_id": "artifact.parts[].data.call_id",
+                "tool": "artifact.parts[].data.tool",
+                "status": "artifact.parts[].data.status",
+                "title": "artifact.parts[].data.title",
+                "subtitle": "artifact.parts[].data.subtitle",
+                "input.prompt": "artifact.parts[].data.input.prompt",
+                "input.description": "artifact.parts[].data.input.description",
+                "input.subagent_type": "artifact.parts[].data.input.subagent_type",
+                "input.command": "artifact.parts[].data.input.command",
+                "output": "artifact.parts[].data.output",
+                "error": "artifact.parts[].data.error",
+            },
+        },
+        "profile": runtime_profile.summary_dict(),
+        "notes": [
+            (
+                "Submit a single subtask through opencode.sessions.prompt_async by placing "
+                "a provider-private part with type=subtask inside request.parts."
+            ),
+            (
+                "The runtime forwards subtask payloads to OpenCode and exposes the "
+                "resulting task tool execution through normal streaming tool_call blocks."
+            ),
+            (
+                "Available subagent names are resolved by upstream OpenCode. This extension "
+                "does not declare a standalone subagent discovery method."
+            ),
+            (
+                "Parallel fan-out may still happen inside upstream OpenCode, but this "
+                "extension does not declare a stable client-visible batch or parallel "
+                "submission contract."
+            ),
+        ],
+    }
+
+
 def build_interrupt_callback_extension_params(
     *,
     runtime_profile: RuntimeProfile,
@@ -963,6 +1039,11 @@ def build_compatibility_profile_params(
                 "availability": "always",
                 "retention": "stable",
             },
+            SUBTASK_CAPABILITY_EXTENSION_URI: {
+                "surface": "jsonrpc-extension",
+                "availability": "always",
+                "retention": "stable",
+            },
             PROVIDER_DISCOVERY_EXTENSION_URI: {
                 "surface": "jsonrpc-extension",
                 "availability": "always",
@@ -1040,6 +1121,7 @@ def build_wire_contract_params(
                 MODEL_SELECTION_EXTENSION_URI,
                 STREAMING_EXTENSION_URI,
                 SESSION_QUERY_EXTENSION_URI,
+                SUBTASK_CAPABILITY_EXTENSION_URI,
                 PROVIDER_DISCOVERY_EXTENSION_URI,
                 INTERRUPT_RECOVERY_EXTENSION_URI,
                 INTERRUPT_CALLBACK_EXTENSION_URI,

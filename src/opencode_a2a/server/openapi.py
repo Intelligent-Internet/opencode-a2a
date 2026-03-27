@@ -21,6 +21,7 @@ from ..contracts.extensions import (
     build_session_binding_extension_params,
     build_session_query_extension_params,
     build_streaming_extension_params,
+    build_subtask_capability_extension_params,
     build_wire_contract_params,
 )
 from ..jsonrpc.application import SESSION_CONTEXT_PREFIX
@@ -39,7 +40,8 @@ def _build_jsonrpc_extension_openapi_description(
         "A2A JSON-RPC entrypoint. Supports core A2A methods "
         "(message/send, message/stream, tasks/get, tasks/cancel, tasks/resubscribe) "
         "plus shared model-selection metadata, OpenCode session/provider extensions, "
-        "interrupt recovery extensions, and shared interrupt callback methods.\n\n"
+        "OpenCode subtask capability contracts, interrupt recovery extensions, and "
+        "shared interrupt callback methods.\n\n"
         f"OpenCode session query/control methods: {', '.join(session_methods)}.\n"
         f"OpenCode provider/model discovery methods: {provider_methods}.\n"
         f"OpenCode interrupt recovery methods: {interrupt_recovery_methods}.\n"
@@ -176,6 +178,32 @@ def _build_jsonrpc_extension_openapi_examples(
                     "session_id": "s-1",
                     "request": {
                         "parts": [{"type": "text", "text": "Continue and summarize next steps."}]
+                    },
+                },
+            },
+        },
+        "session_prompt_async_subtask": {
+            "summary": "Send one subtask through prompt_async",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 23,
+                "method": SESSION_QUERY_METHODS["prompt_async"],
+                "params": {
+                    "session_id": "s-1",
+                    "request": {
+                        "parts": [
+                            {
+                                "type": "subtask",
+                                "prompt": "Search for the highest-risk auth changes.",
+                                "description": "Inspect auth-related diffs and summarize risks.",
+                                "agent": "general",
+                                "command": "/review",
+                                "model": {
+                                    "providerID": "google",
+                                    "modelID": "gemini-2.5-flash",
+                                },
+                            }
+                        ]
                     },
                 },
             },
@@ -362,6 +390,9 @@ def _patch_jsonrpc_openapi_contract(
         runtime_profile=runtime_profile,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
     )
+    subtask_capability = build_subtask_capability_extension_params(
+        runtime_profile=runtime_profile,
+    )
     provider_discovery = build_provider_discovery_extension_params(
         runtime_profile=runtime_profile,
     )
@@ -402,6 +433,7 @@ def _patch_jsonrpc_openapi_contract(
                         "model_selection": model_selection,
                         "streaming": streaming,
                         "session_query": session_query,
+                        "subtask_capability": subtask_capability,
                         "provider_discovery": provider_discovery,
                         "interrupt_recovery": interrupt_recovery,
                         "interrupt_callback": interrupt_callback,

@@ -58,6 +58,7 @@ from ..contracts.extensions import (
     SESSION_QUERY_EXTENSION_URI,
     SESSION_QUERY_METHODS,
     STREAMING_EXTENSION_URI,
+    SUBTASK_CAPABILITY_EXTENSION_URI,
     WIRE_CONTRACT_EXTENSION_URI,
     build_capability_snapshot,
 )
@@ -121,6 +122,7 @@ __all__ = [
     "SESSION_QUERY_EXTENSION_URI",
     "SESSION_QUERY_METHODS",
     "STREAMING_EXTENSION_URI",
+    "SUBTASK_CAPABILITY_EXTENSION_URI",
     "WIRE_CONTRACT_EXTENSION_URI",
     "_build_agent_card_description",
     "_build_chat_examples",
