@@ -1,11 +1,25 @@
 import asyncio
+from base64 import b64encode
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 from a2a.client.errors import A2AClientHTTPError, A2AClientJSONRPCError
-from a2a.types import JSONRPCError, JSONRPCErrorResponse, Task
+from a2a.types import (
+    Artifact,
+    JSONRPCError,
+    JSONRPCErrorResponse,
+    Part,
+    Task,
+    TaskArtifactUpdateEvent,
+    TaskState,
+    TaskStatus,
+    TextPart,
+)
 
+from opencode_a2a.client import A2AClient
 from opencode_a2a.client.errors import (
     A2AClientResetRequiredError,
     A2APeerProtocolError,
@@ -16,6 +30,7 @@ from opencode_a2a.client.errors import (
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.execution.tool_error_mapping import map_a2a_tool_exception
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
+from opencode_a2a.server import application as app_module
 from tests.support.helpers import (
     DummyChatOpencodeUpstreamClient,
     DummyEventQueue,
@@ -534,6 +549,77 @@ async def test_agent_maps_a2a_call_tool_auth_errors_to_stable_payload() -> None:
     assert results[0]["error_meta"]["http_status"] == 401
 
 
+@pytest.mark.asyncio
+async def test_agent_a2a_call_uses_server_side_basic_auth_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_sdk_client = _FakeOutboundClient(
+        events=[
+            (
+                Task(
+                    id="remote-task",
+                    context_id="remote-ctx",
+                    status=TaskStatus(state=TaskState.working),
+                ),
+                TaskArtifactUpdateEvent(
+                    task_id="remote-task",
+                    context_id="remote-ctx",
+                    artifact=Artifact(
+                        artifact_id="artifact-1",
+                        name="response",
+                        parts=[Part(root=TextPart(text="remote response"))],
+                    ),
+                ),
+            )
+        ]
+    )
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_sdk_client))
+
+    manager = app_module.A2AClientManager(
+        SimpleNamespace(
+            a2a_client_timeout_seconds=30.0,
+            a2a_client_card_fetch_timeout_seconds=5.0,
+            a2a_client_use_client_preference=False,
+            a2a_client_bearer_token=None,
+            a2a_client_basic_auth="user:pass",
+            a2a_client_supported_transports=("JSONRPC", "HTTP+JSON"),
+            a2a_client_cache_ttl_seconds=60.0,
+            a2a_client_cache_maxsize=1,
+        )
+    )
+    executor = OpencodeAgentExecutor(
+        DummyChatOpencodeUpstreamClient(),
+        streaming_enabled=False,
+        a2a_client_manager=manager,
+    )
+
+    results = await executor._maybe_handle_tools(
+        {
+            "parts": [
+                {
+                    "type": "tool",
+                    "tool": "a2a_call",
+                    "callID": "c-basic",
+                    "state": {
+                        "status": "calling",
+                        "input": {"url": "http://remote", "message": "hello"},
+                    },
+                }
+            ]
+        }
+    )
+
+    assert results is not None
+    assert results[0]["output"] == "remote response"
+    _, _, kwargs = fake_sdk_client.send_message_inputs[0]
+    assert kwargs["context"] is not None
+    assert kwargs["context"].state["headers"]["Authorization"] == (
+        f"Basic {b64encode(b'user:pass').decode()}"
+    )
+
+    await manager.close_all()
+
+
 def test_map_a2a_tool_exception_protocol_and_unavailable_variants() -> None:
     rpc_error = A2AClientJSONRPCError(
         JSONRPCErrorResponse(
@@ -568,3 +654,14 @@ def test_map_a2a_tool_exception_additional_variants() -> None:
     assert unsupported_payload["error_code"] == "a2a_unsupported_operation"
     assert reset_payload["error_code"] == "a2a_retryable_unavailable"
     assert generic_payload["error_code"] == "a2a_call_failed"
+
+
+class _FakeOutboundClient:
+    def __init__(self, events: list[object]) -> None:
+        self._events = list(events)
+        self.send_message_inputs: list[tuple[object, object, object]] = []
+
+    async def send_message(self, message, *args: object, **kwargs: object):
+        self.send_message_inputs.append((message, args, kwargs))
+        for event in self._events:
+            yield event

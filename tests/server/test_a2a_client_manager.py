@@ -13,6 +13,7 @@ def _make_settings(**overrides: object) -> SimpleNamespace:
         "a2a_client_card_fetch_timeout_seconds": 5.0,
         "a2a_client_use_client_preference": False,
         "a2a_client_bearer_token": None,
+        "a2a_client_basic_auth": None,
         "a2a_client_supported_transports": ("JSONRPC", "HTTP+JSON"),
         "a2a_client_cache_ttl_seconds": 60.0,
         "a2a_client_cache_maxsize": 2,
@@ -197,3 +198,9 @@ async def test_client_manager_rebuilds_expired_entry_for_same_url(
     assert first_client is not second_client
     assert created[0].closed is True
     assert created[1].closed is False
+
+
+def test_client_manager_loads_basic_auth_into_client_settings() -> None:
+    manager = app_module.A2AClientManager(_make_settings(a2a_client_basic_auth="user:pass"))
+
+    assert manager.client_settings.basic_auth == "user:pass"

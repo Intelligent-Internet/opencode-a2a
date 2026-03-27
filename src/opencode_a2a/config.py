@@ -174,6 +174,7 @@ class Settings(BaseSettings):
         default=False, alias="A2A_CLIENT_USE_CLIENT_PREFERENCE"
     )
     a2a_client_bearer_token: str | None = Field(default=None, alias="A2A_CLIENT_BEARER_TOKEN")
+    a2a_client_basic_auth: str | None = Field(default=None, alias="A2A_CLIENT_BASIC_AUTH")
     a2a_client_cache_ttl_seconds: float = Field(
         default=900.0,
         ge=0.0,

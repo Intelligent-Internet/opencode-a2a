@@ -79,18 +79,23 @@ Key variables to understand protocol behavior:
 - `A2A_CLIENT_USE_CLIENT_PREFERENCE`: whether the outbound client prefers its own transport choices.
 - `A2A_CLIENT_BEARER_TOKEN`: optional bearer token attached to outbound peer
   calls made by the embedded A2A client and `a2a_call` tool path.
+- `A2A_CLIENT_BASIC_AUTH`: optional Basic auth credential attached to outbound
+  peer calls made by the embedded A2A client and `a2a_call` tool path.
 - `A2A_CLIENT_SUPPORTED_TRANSPORTS`: ordered outbound transport preference list.
 - `A2A_TASK_STORE_BACKEND`: runtime state backend. Supported values: `database`,
   `memory`. Default: `database`.
 - `A2A_TASK_STORE_DATABASE_URL`: database URL used by the default durable
   backend. Default: `sqlite+aiosqlite:///./opencode-a2a.db`.
 - Runtime authentication is bearer-token only via `A2A_BEARER_TOKEN`.
+- Runtime authentication also applies to `/health`; the public unauthenticated
+  discovery surface remains `/.well-known/agent-card.json` and `/.well-known/agent.json`.
 - The same outbound client flags are also honored by the server-side embedded
   A2A client used for peer calls and `a2a_call` tool execution:
   - `A2A_CLIENT_TIMEOUT_SECONDS`
   - `A2A_CLIENT_CARD_FETCH_TIMEOUT_SECONDS`
   - `A2A_CLIENT_USE_CLIENT_PREFERENCE`
   - `A2A_CLIENT_BEARER_TOKEN`
+  - `A2A_CLIENT_BASIC_AUTH`
   - `A2A_CLIENT_SUPPORTED_TRANSPORTS`
 
 ## Client Initialization Facade (Preview)
@@ -333,6 +338,10 @@ Current behavior:
 - Shared metadata extension URIs such as session binding and streaming are
   listed under `extensions.extension_uris`.
 - `all_jsonrpc_methods` is the runtime truth for the current deployment.
+- The current SDK-owned core JSON-RPC surface includes
+  `agent/getAuthenticatedExtendedCard` and `tasks/pushNotificationConfig/*`.
+- The current SDK-owned REST surface also includes `GET /v1/tasks` and the
+  task push notification config routes.
 
 When `A2A_ENABLE_SESSION_SHELL=false`, `opencode.sessions.shell` is omitted from
 `all_jsonrpc_methods` and exposed only through
@@ -642,6 +651,9 @@ No extra custom REST endpoint is introduced.
   suppressed for `method=opencode.sessions.*`
 - Endpoint discovery: prefer `additional_interfaces[]` with
   `transport=jsonrpc` from Agent Card
+- The runtime still delegates SDK-owned JSON-RPC methods such as
+  `agent/getAuthenticatedExtendedCard` and `tasks/pushNotificationConfig/*`
+  to the base A2A implementation; they are not OpenCode-specific extensions.
 - Notification behavior: for `opencode.sessions.*`, requests without `id`
   return HTTP `204 No Content`
 - Result format (query methods):

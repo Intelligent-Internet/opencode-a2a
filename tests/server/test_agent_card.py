@@ -410,6 +410,16 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert shell_policy["availability"] == "disabled"
     assert shell_policy["retention"] == "deployment-conditional"
     assert shell_policy["toggle"] == "A2A_ENABLE_SESSION_SHELL"
+    assert compatibility.params["method_retention"]["agent/getAuthenticatedExtendedCard"] == {
+        "surface": "core",
+        "availability": "always",
+        "retention": "required",
+    }
+    assert compatibility.params["method_retention"]["tasks/pushNotificationConfig/get"] == {
+        "surface": "core",
+        "availability": "always",
+        "retention": "required",
+    }
     assert compatibility.params["service_behaviors"] == expected_service_behaviors
     assert compatibility.params["service_behaviors"]["classification"] == (
         "service-level-semantic-enhancement"
@@ -436,6 +446,13 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert PROVIDER_DISCOVERY_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert WORKSPACE_CONTROL_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert INTERRUPT_RECOVERY_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
+    assert "agent/getAuthenticatedExtendedCard" in wire_contract.params["all_jsonrpc_methods"]
+    assert "tasks/pushNotificationConfig/get" in wire_contract.params["all_jsonrpc_methods"]
+    assert "GET /v1/tasks" in wire_contract.params["core"]["http_endpoints"]
+    assert (
+        "GET /v1/tasks/{id}/pushNotificationConfigs"
+        in wire_contract.params["core"]["http_endpoints"]
+    )
     assert "opencode.sessions.shell" not in wire_contract.params["all_jsonrpc_methods"]
     assert wire_contract.params["service_behaviors"] == expected_service_behaviors
     assert wire_contract.params["extensions"]["conditionally_available_methods"] == {
