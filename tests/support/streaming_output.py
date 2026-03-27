@@ -36,6 +36,7 @@ class DummyStreamingClient:
         self.stream_timeout = None
         self.directory = None
         self._interrupt_sessions: dict[str, str] = {}
+        self._interrupt_requests: dict[str, dict] = {}
         self.settings = make_settings(
             a2a_bearer_token="test",
             opencode_base_url="http://localhost",
@@ -97,16 +98,26 @@ class DummyStreamingClient:
         identity: str | None = None,
         task_id: str | None = None,
         context_id: str | None = None,
+        details: dict | None = None,
         ttl_seconds: float | None = None,
     ) -> None:
-        del interrupt_type, identity, task_id, context_id, ttl_seconds
+        del ttl_seconds
         self._interrupt_sessions[request_id] = session_id
+        self._interrupt_requests[request_id] = {
+            "session_id": session_id,
+            "interrupt_type": interrupt_type,
+            "identity": identity,
+            "task_id": task_id,
+            "context_id": context_id,
+            "details": details,
+        }
 
     async def resolve_interrupt_session(self, request_id: str) -> str | None:
         return self._interrupt_sessions.get(request_id)
 
     async def discard_interrupt_request(self, request_id: str) -> None:
         self._interrupt_sessions.pop(request_id, None)
+        self._interrupt_requests.pop(request_id, None)
 
 
 def _event(

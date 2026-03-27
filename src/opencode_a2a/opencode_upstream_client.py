@@ -233,6 +233,7 @@ class OpencodeUpstreamClient:
         identity: str | None = None,
         task_id: str | None = None,
         context_id: str | None = None,
+        details: dict[str, Any] | None = None,
         ttl_seconds: float | None = None,
     ) -> None:
         request = request_id.strip()
@@ -250,6 +251,7 @@ class OpencodeUpstreamClient:
             context_id=(
                 context_id.strip() if isinstance(context_id, str) and context_id.strip() else None
             ),
+            details=dict(details) if isinstance(details, dict) else None,
             ttl_seconds=ttl_seconds,
         )
 
@@ -274,6 +276,27 @@ class OpencodeUpstreamClient:
         if not request:
             return
         await self._interrupt_request_repository.discard(request_id=request)
+
+    async def list_interrupt_requests(
+        self,
+        *,
+        identity: str,
+        interrupt_type: str | None = None,
+    ) -> list[InterruptRequestBinding]:
+        normalized_identity = identity.strip()
+        if not normalized_identity:
+            return []
+        self._sync_interrupt_clock()
+        return await self._interrupt_request_repository.list_pending(
+            identity=normalized_identity,
+            interrupt_type=interrupt_type,
+        )
+
+    async def list_permission_requests(self, *, identity: str) -> list[InterruptRequestBinding]:
+        return await self.list_interrupt_requests(identity=identity, interrupt_type="permission")
+
+    async def list_question_requests(self, *, identity: str) -> list[InterruptRequestBinding]:
+        return await self.list_interrupt_requests(identity=identity, interrupt_type="question")
 
     @property
     def stream_timeout(self) -> float | None:

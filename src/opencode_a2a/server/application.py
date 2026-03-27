@@ -48,6 +48,8 @@ from ..contracts.extensions import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
+    INTERRUPT_RECOVERY_EXTENSION_URI,
+    INTERRUPT_RECOVERY_METHODS,
     MODEL_SELECTION_EXTENSION_URI,
     PROVIDER_DISCOVERY_EXTENSION_URI,
     PROVIDER_DISCOVERY_METHODS,
@@ -109,6 +111,8 @@ __all__ = [
     "COMPATIBILITY_PROFILE_EXTENSION_URI",
     "INTERRUPT_CALLBACK_EXTENSION_URI",
     "INTERRUPT_CALLBACK_METHODS",
+    "INTERRUPT_RECOVERY_EXTENSION_URI",
+    "INTERRUPT_RECOVERY_METHODS",
     "MODEL_SELECTION_EXTENSION_URI",
     "PROVIDER_DISCOVERY_EXTENSION_URI",
     "PROVIDER_DISCOVERY_METHODS",
@@ -691,6 +695,7 @@ def create_app(settings: Settings) -> FastAPI:
     jsonrpc_methods = {
         **capability_snapshot.session_query_methods(),
         **capability_snapshot.provider_discovery_methods(),
+        **capability_snapshot.interrupt_recovery_methods(),
         **capability_snapshot.interrupt_callback_methods(),
     }
 

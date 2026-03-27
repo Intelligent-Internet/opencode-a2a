@@ -5,7 +5,11 @@ import logging
 
 from fastapi.responses import JSONResponse
 
-from ..contracts.extensions import INTERRUPT_CALLBACK_METHODS, SESSION_QUERY_METHODS
+from ..contracts.extensions import (
+    INTERRUPT_CALLBACK_METHODS,
+    INTERRUPT_RECOVERY_METHODS,
+    SESSION_QUERY_METHODS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +28,10 @@ def _detect_sensitive_extension_method(payload: dict | None) -> str | None:
     method = payload.get("method")
     if not isinstance(method, str):
         return None
-    sensitive_methods = set(SESSION_QUERY_METHODS.values()) | set(
-        INTERRUPT_CALLBACK_METHODS.values()
+    sensitive_methods = (
+        set(SESSION_QUERY_METHODS.values())
+        | set(INTERRUPT_CALLBACK_METHODS.values())
+        | set(INTERRUPT_RECOVERY_METHODS.values())
     )
     if method in sensitive_methods:
         return method

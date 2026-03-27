@@ -142,6 +142,7 @@ async def test_database_interrupt_request_repository_persists_active_binding(
         identity="user-1",
         task_id="task-1",
         context_id="ctx-1",
+        details={"permission": "read", "patterns": ["/tmp/config.yml"]},
         ttl_seconds=30.0,
     )
     await engine.dispose()
@@ -158,5 +159,67 @@ async def test_database_interrupt_request_repository_persists_active_binding(
     assert binding.identity == "user-1"
     assert binding.task_id == "task-1"
     assert binding.context_id == "ctx-1"
+    assert binding.details == {"permission": "read", "patterns": ["/tmp/config.yml"]}
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_request_repository_lists_pending_items_by_identity_and_type(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'interrupt-list.db'}"
+    settings = make_settings(
+        a2a_bearer_token="test-token",
+        a2a_task_store_database_url=database_url,
+    )
+    engine = build_database_engine(settings)
+    repository = build_interrupt_request_repository(settings, engine=engine)
+    await initialize_state_repository(repository)
+
+    await repository.remember(
+        request_id="perm-1",
+        session_id="ses-1",
+        interrupt_type="permission",
+        identity="user-1",
+        task_id="task-1",
+        context_id="ctx-1",
+        details={"permission": "read"},
+        ttl_seconds=60.0,
+    )
+    await repository.remember(
+        request_id="q-1",
+        session_id="ses-2",
+        interrupt_type="question",
+        identity="user-1",
+        task_id="task-2",
+        context_id="ctx-2",
+        details={"questions": [{"question": "Proceed?"}]},
+        ttl_seconds=60.0,
+    )
+    await repository.remember(
+        request_id="perm-other",
+        session_id="ses-3",
+        interrupt_type="permission",
+        identity="user-2",
+        task_id="task-3",
+        context_id="ctx-3",
+        details={"permission": "write"},
+        ttl_seconds=60.0,
+    )
+
+    permission_items = await repository.list_pending(
+        identity="user-1",
+        interrupt_type="permission",
+    )
+    question_items = await repository.list_pending(
+        identity="user-1",
+        interrupt_type="question",
+    )
+
+    assert [item.request_id for item in permission_items] == ["perm-1"]
+    assert permission_items[0].details == {"permission": "read"}
+    assert [item.request_id for item in question_items] == ["q-1"]
+    assert question_items[0].details == {"questions": [{"question": "Proceed?"}]}
 
     await engine.dispose()

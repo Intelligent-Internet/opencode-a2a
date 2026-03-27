@@ -436,6 +436,7 @@ class StreamRuntime:
                                             identity=identity,
                                             task_id=task_id,
                                             context_id=context_id,
+                                            details=asked["details"],
                                         )
                                     await _emit_interrupt_status(
                                         state=TaskState.input_required,

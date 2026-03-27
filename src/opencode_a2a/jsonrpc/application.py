@@ -84,6 +84,8 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
         self._method_shell = methods.get("shell")
         self._method_list_providers = methods["list_providers"]
         self._method_list_models = methods["list_models"]
+        self._method_list_permissions = methods["list_permissions"]
+        self._method_list_questions = methods["list_questions"]
         self._method_reply_permission = methods["reply_permission"]
         self._method_reply_question = methods["reply_question"]
         self._method_reject_question = methods["reject_question"]
@@ -116,6 +118,8 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             method_shell=self._method_shell,
             method_list_providers=self._method_list_providers,
             method_list_models=self._method_list_models,
+            method_list_permissions=self._method_list_permissions,
+            method_list_questions=self._method_list_questions,
             method_reply_permission=self._method_reply_permission,
             method_reply_question=self._method_reply_question,
             method_reject_question=self._method_reject_question,

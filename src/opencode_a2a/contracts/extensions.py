@@ -20,6 +20,7 @@ STREAMING_EXTENSION_URI = "urn:a2a:stream-hints/v1"
 SESSION_QUERY_EXTENSION_URI = "urn:opencode-a2a:session-query/v1"
 PROVIDER_DISCOVERY_EXTENSION_URI = "urn:opencode-a2a:provider-discovery/v1"
 INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:interactive-interrupt/v1"
+INTERRUPT_RECOVERY_EXTENSION_URI = "urn:opencode-a2a:interrupt-recovery/v1"
 COMPATIBILITY_PROFILE_EXTENSION_URI = "urn:a2a:compatibility-profile/v1"
 WIRE_CONTRACT_EXTENSION_URI = "urn:a2a:wire-contract/v1"
 SERVICE_BEHAVIOR_CLASSIFICATION = "service-level-semantic-enhancement"
@@ -49,6 +50,16 @@ class InterruptMethodContract:
 
 @dataclass(frozen=True)
 class ProviderDiscoveryMethodContract:
+    method: str
+    required_params: tuple[str, ...] = ()
+    optional_params: tuple[str, ...] = ()
+    result_fields: tuple[str, ...] = ()
+    items_type: str | None = None
+    notification_response_status: int | None = None
+
+
+@dataclass(frozen=True)
+class InterruptRecoveryMethodContract:
     method: str
     required_params: tuple[str, ...] = ()
     optional_params: tuple[str, ...] = ()
@@ -254,6 +265,25 @@ PROVIDER_DISCOVERY_METHODS: dict[str, str] = {
     key: contract.method for key, contract in PROVIDER_DISCOVERY_METHOD_CONTRACTS.items()
 }
 
+INTERRUPT_RECOVERY_METHOD_CONTRACTS: dict[str, InterruptRecoveryMethodContract] = {
+    "list_permissions": InterruptRecoveryMethodContract(
+        method="opencode.permissions.list",
+        result_fields=("items",),
+        items_type="InterruptRequest[]",
+        notification_response_status=204,
+    ),
+    "list_questions": InterruptRecoveryMethodContract(
+        method="opencode.questions.list",
+        result_fields=("items",),
+        items_type="InterruptRequest[]",
+        notification_response_status=204,
+    ),
+}
+
+INTERRUPT_RECOVERY_METHODS: dict[str, str] = {
+    key: contract.method for key, contract in INTERRUPT_RECOVERY_METHOD_CONTRACTS.items()
+}
+
 INTERRUPT_SUCCESS_RESULT_FIELDS: tuple[str, ...] = ("ok", "request_id")
 INTERRUPT_ERROR_BUSINESS_CODES: dict[str, int] = {
     "INTERRUPT_REQUEST_NOT_FOUND": -32004,
@@ -295,6 +325,11 @@ PROVIDER_DISCOVERY_ERROR_DATA_FIELDS: tuple[str, ...] = (
     "detail",
 )
 PROVIDER_DISCOVERY_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
+    "type",
+    "field",
+    "fields",
+)
+INTERRUPT_RECOVERY_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
     "type",
     "field",
     "fields",
@@ -358,6 +393,9 @@ class JsonRpcCapabilitySnapshot:
     def provider_discovery_methods(self) -> dict[str, str]:
         return dict(PROVIDER_DISCOVERY_METHODS)
 
+    def interrupt_recovery_methods(self) -> dict[str, str]:
+        return dict(INTERRUPT_RECOVERY_METHODS)
+
     def interrupt_callback_methods(self) -> dict[str, str]:
         return dict(INTERRUPT_CALLBACK_METHODS)
 
@@ -369,6 +407,7 @@ class JsonRpcCapabilitySnapshot:
             SESSION_CONTROL_METHODS["prompt_async"],
             SESSION_CONTROL_METHODS["command"],
             *PROVIDER_DISCOVERY_METHODS.values(),
+            *INTERRUPT_RECOVERY_METHODS.values(),
             *INTERRUPT_CALLBACK_METHODS.values(),
         ]
         if self.is_method_enabled(SESSION_CONTROL_METHODS["shell"]):
@@ -382,6 +421,7 @@ class JsonRpcCapabilitySnapshot:
             SESSION_CONTROL_METHODS["prompt_async"],
             SESSION_CONTROL_METHODS["command"],
             *PROVIDER_DISCOVERY_METHODS.values(),
+            *INTERRUPT_RECOVERY_METHODS.values(),
             *INTERRUPT_CALLBACK_METHODS.values(),
         ]
         if self.is_method_enabled(SESSION_CONTROL_METHODS["shell"]):
@@ -684,6 +724,66 @@ def build_interrupt_callback_extension_params(
     }
 
 
+def build_interrupt_recovery_extension_params(
+    *,
+    runtime_profile: RuntimeProfile,
+) -> dict[str, Any]:
+    method_contracts: dict[str, Any] = {}
+
+    for method_contract in INTERRUPT_RECOVERY_METHOD_CONTRACTS.values():
+        params_contract = _build_method_contract_params(
+            required=method_contract.required_params,
+            optional=method_contract.optional_params,
+            unsupported=(),
+        )
+        result_contract: dict[str, Any] = {"fields": list(method_contract.result_fields)}
+        if method_contract.items_type:
+            result_contract["items_type"] = method_contract.items_type
+        contract_doc: dict[str, Any] = {
+            "params": params_contract,
+            "result": result_contract,
+        }
+        if method_contract.notification_response_status is not None:
+            contract_doc["notification_response_status"] = (
+                method_contract.notification_response_status
+            )
+        method_contracts[method_contract.method] = contract_doc
+
+    return {
+        "methods": dict(INTERRUPT_RECOVERY_METHODS),
+        "method_contracts": method_contracts,
+        "supported_metadata": [],
+        "provider_private_metadata": [],
+        "item_fields": {
+            "request_id": "items[].request_id",
+            "session_id": "items[].session_id",
+            "interrupt_type": "items[].interrupt_type",
+            "task_id": "items[].task_id",
+            "context_id": "items[].context_id",
+            "details": "items[].details",
+            "expires_at": "items[].expires_at",
+        },
+        "errors": {
+            "invalid_params_data_fields": list(INTERRUPT_RECOVERY_INVALID_PARAMS_DATA_FIELDS),
+        },
+        "profile": runtime_profile.summary_dict(),
+        "notes": [
+            (
+                "Interrupt recovery methods read from the local interrupt binding registry "
+                "instead of directly proxying upstream global pending lists."
+            ),
+            (
+                "Results are scoped to the current authenticated caller identity when the "
+                "runtime can resolve one."
+            ),
+            (
+                "Use a2a.interrupt.* methods to resolve requests; opencode.permissions.list "
+                "and opencode.questions.list are recovery surfaces only."
+            ),
+        ],
+    }
+
+
 def build_provider_discovery_extension_params(
     *,
     runtime_profile: RuntimeProfile,
@@ -806,6 +906,17 @@ def build_compatibility_profile_params(
                 "surface": "extension",
                 "availability": "always",
                 "retention": "stable",
+                "extension_uri": INTERRUPT_RECOVERY_EXTENSION_URI,
+            }
+            for method in INTERRUPT_RECOVERY_METHODS.values()
+        }
+    )
+    method_retention.update(
+        {
+            method: {
+                "surface": "extension",
+                "availability": "always",
+                "retention": "stable",
                 "extension_uri": INTERRUPT_CALLBACK_EXTENSION_URI,
             }
             for method in INTERRUPT_CALLBACK_METHODS.values()
@@ -843,6 +954,11 @@ def build_compatibility_profile_params(
                 "availability": "always",
                 "retention": "stable",
             },
+            INTERRUPT_RECOVERY_EXTENSION_URI: {
+                "surface": "jsonrpc-extension",
+                "availability": "always",
+                "retention": "stable",
+            },
             INTERRUPT_CALLBACK_EXTENSION_URI: {
                 "surface": "jsonrpc-extension",
                 "availability": "always",
@@ -862,9 +978,9 @@ def build_compatibility_profile_params(
                 "surface for the main chat path; provider defaults still belong to OpenCode."
             ),
             (
-                "Treat opencode.sessions.*, opencode.providers.*, and opencode.models.* as "
-                "provider-private operational surfaces rather than portable A2A baseline "
-                "capabilities."
+                "Treat opencode.sessions.*, opencode.providers.*, opencode.models.*, "
+                "opencode.permissions.list, and opencode.questions.list as provider-private "
+                "operational surfaces rather than portable A2A baseline capabilities."
             ),
             (
                 "Treat a2a.interrupt.* methods as declared shared extensions and opencode.* "
@@ -911,6 +1027,7 @@ def build_wire_contract_params(
                 STREAMING_EXTENSION_URI,
                 SESSION_QUERY_EXTENSION_URI,
                 PROVIDER_DISCOVERY_EXTENSION_URI,
+                INTERRUPT_RECOVERY_EXTENSION_URI,
                 INTERRUPT_CALLBACK_EXTENSION_URI,
             ],
         },

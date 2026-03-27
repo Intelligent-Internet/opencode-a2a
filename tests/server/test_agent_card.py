@@ -7,6 +7,7 @@ from opencode_a2a.jsonrpc.application import SESSION_CONTEXT_PREFIX
 from opencode_a2a.server.application import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
+    INTERRUPT_RECOVERY_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
     PROVIDER_DISCOVERY_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
@@ -254,6 +255,23 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "UPSTREAM_PAYLOAD_ERROR": -32005,
     }
 
+    interrupt_recovery = ext_by_uri[INTERRUPT_RECOVERY_EXTENSION_URI]
+    assert interrupt_recovery.params["profile"]["runtime_context"]["project"] == "alpha"
+    assert interrupt_recovery.params["methods"] == {
+        "list_permissions": "opencode.permissions.list",
+        "list_questions": "opencode.questions.list",
+    }
+    assert interrupt_recovery.params["method_contracts"]["opencode.permissions.list"]["result"] == {
+        "fields": ["items"],
+        "items_type": "InterruptRequest[]",
+    }
+    assert interrupt_recovery.params["item_fields"]["details"] == "items[].details"
+    assert interrupt_recovery.params["errors"]["invalid_params_data_fields"] == [
+        "type",
+        "field",
+        "fields",
+    ]
+
     interrupt = ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI]
     assert interrupt.params["profile"]["runtime_context"]["project"] == "alpha"
     assert interrupt.params["request_id_field"] == "metadata.shared.interrupt.request_id"
@@ -339,6 +357,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert wire_contract.params["profile"]["profile_id"] == "opencode-a2a-single-tenant-coding-v1"
     assert MODEL_SELECTION_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert PROVIDER_DISCOVERY_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
+    assert INTERRUPT_RECOVERY_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert "opencode.sessions.shell" not in wire_contract.params["all_jsonrpc_methods"]
     assert wire_contract.params["service_behaviors"] == expected_service_behaviors
     assert wire_contract.params["extensions"]["conditionally_available_methods"] == {
@@ -398,6 +417,12 @@ def test_agent_card_skills_hide_shell_when_disabled_by_default() -> None:
     assert all("opencode.sessions.shell" not in example for example in session_skill.examples)
     assert "provider-private" in provider_skill.tags
     assert any("opencode.providers.list" in example for example in provider_skill.examples)
+    interrupt_recovery_skill = next(
+        skill for skill in card.skills if skill.id == "opencode.interrupt.recovery"
+    )
+    assert any(
+        "opencode.permissions.list" in example for example in interrupt_recovery_skill.examples
+    )
 
 
 def test_agent_card_hides_shell_when_policy_disables_it() -> None:

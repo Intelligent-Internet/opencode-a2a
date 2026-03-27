@@ -120,9 +120,10 @@ async def test_streaming_metrics_capture_tool_call_and_interrupt_events(caplog) 
             identity: str | None = None,
             task_id: str | None = None,
             context_id: str | None = None,
+            details: dict | None = None,
             ttl_seconds: float | None = None,
         ) -> None:
-            del interrupt_type, identity, task_id, context_id, ttl_seconds
+            del interrupt_type, identity, task_id, context_id, details, ttl_seconds
             self._interrupt_requests[request_id] = session_id
 
         async def discard_interrupt_request(self, request_id: str) -> None:

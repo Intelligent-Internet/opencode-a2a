@@ -593,6 +593,7 @@ async def test_interrupt_request_binding_expires_after_ttl() -> None:
         task_id="task-1",
         context_id="ctx-1",
         identity="user-1",
+        details={"permission": "read"},
         ttl_seconds=5.0,
     )
 
@@ -601,6 +602,7 @@ async def test_interrupt_request_binding_expires_after_ttl() -> None:
     assert binding is not None
     assert binding.session_id == "ses-1"
     assert binding.interrupt_type == "permission"
+    assert binding.details == {"permission": "read"}
 
     now = 1006.0
     status, binding = await client.resolve_interrupt_request("perm-1")
@@ -983,6 +985,7 @@ async def test_interrupt_request_helpers_ignore_invalid_and_trim_values() -> Non
         identity=" user-1 ",
         task_id=" task-1 ",
         context_id=" ctx-1 ",
+        details={"questions": [{"question": "Proceed?"}]},
     )
     status, binding = await client.resolve_interrupt_request("perm-3")
     assert status == "active"
@@ -992,10 +995,55 @@ async def test_interrupt_request_helpers_ignore_invalid_and_trim_values() -> Non
     assert binding.identity == "user-1"
     assert binding.task_id == "task-1"
     assert binding.context_id == "ctx-1"
+    assert binding.details == {"questions": [{"question": "Proceed?"}]}
 
     assert await client.resolve_interrupt_request("   ") == ("missing", None)
     await client.discard_interrupt_request("   ")
     await client.discard_interrupt_request("perm-3")
     assert await client.resolve_interrupt_session("perm-3") is None
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_request_helpers_list_pending_by_identity_and_type() -> None:
+    client = OpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+
+    await client.remember_interrupt_request(
+        request_id="perm-1",
+        session_id="ses-1",
+        interrupt_type="permission",
+        identity="user-1",
+        details={"permission": "read"},
+    )
+    await client.remember_interrupt_request(
+        request_id="q-1",
+        session_id="ses-2",
+        interrupt_type="question",
+        identity="user-1",
+        details={"questions": [{"question": "Proceed?"}]},
+    )
+    await client.remember_interrupt_request(
+        request_id="perm-2",
+        session_id="ses-3",
+        interrupt_type="permission",
+        identity="user-2",
+        details={"permission": "write"},
+    )
+
+    permissions = await client.list_permission_requests(identity="user-1")
+    questions = await client.list_question_requests(identity="user-1")
+
+    assert [item.request_id for item in permissions] == ["perm-1"]
+    assert permissions[0].details == {"permission": "read"}
+    assert [item.request_id for item in questions] == ["q-1"]
+    assert questions[0].details == {"questions": [{"question": "Proceed?"}]}
 
     await client.close()

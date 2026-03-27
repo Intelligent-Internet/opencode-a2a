@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import (
     Column,
@@ -60,6 +61,7 @@ _INTERRUPT_REQUESTS = Table(
     Column("identity", String, nullable=True),
     Column("task_id", String, nullable=True),
     Column("context_id", String, nullable=True),
+    Column("details_json", String, nullable=True),
     Column("expires_at", Float, nullable=True),
     Column("tombstone_expires_at", Float, nullable=True),
 )
@@ -110,6 +112,7 @@ class InterruptRequestRepository(ABC):
         identity: str | None,
         task_id: str | None,
         context_id: str | None,
+        details: dict[str, Any] | None,
         ttl_seconds: float | None,
     ) -> None: ...
 
@@ -122,6 +125,14 @@ class InterruptRequestRepository(ABC):
 
     @abstractmethod
     async def discard(self, *, request_id: str) -> None: ...
+
+    @abstractmethod
+    async def list_pending(
+        self,
+        *,
+        identity: str,
+        interrupt_type: str | None = None,
+    ) -> list[InterruptRequestBinding]: ...
 
 
 class MemorySessionStateRepository(SessionStateRepository):
@@ -426,6 +437,7 @@ class MemoryInterruptRequestRepository(InterruptRequestRepository):
         identity: str | None,
         task_id: str | None,
         context_id: str | None,
+        details: dict[str, Any] | None,
         ttl_seconds: float | None,
     ) -> None:
         now = self._clock()
@@ -439,6 +451,7 @@ class MemoryInterruptRequestRepository(InterruptRequestRepository):
             identity=identity,
             task_id=task_id,
             context_id=context_id,
+            details=dict(details) if isinstance(details, dict) else None,
             expires_at=now + max(0.0, float(ttl)),
         )
         self._interrupt_request_tombstones.pop(request_id, None)
@@ -469,8 +482,43 @@ class MemoryInterruptRequestRepository(InterruptRequestRepository):
         self._interrupt_requests.pop(request_id, None)
         self._interrupt_request_tombstones.pop(request_id, None)
 
+    async def list_pending(
+        self,
+        *,
+        identity: str,
+        interrupt_type: str | None = None,
+    ) -> list[InterruptRequestBinding]:
+        now = self._clock()
+        self._prune_interrupt_requests(now=now)
+        self._prune_interrupt_request_tombstones(now=now)
+        normalized_type = interrupt_type.strip() if isinstance(interrupt_type, str) else None
+        items = [
+            binding
+            for binding in self._interrupt_requests.values()
+            if binding.identity == identity
+            and (normalized_type is None or binding.interrupt_type == normalized_type)
+            and binding.expires_at > now
+        ]
+        return sorted(items, key=lambda item: (item.expires_at, item.request_id))
+
 
 class DatabaseInterruptRequestRepository(InterruptRequestRepository):
+    @staticmethod
+    def _encode_details(details: dict[str, Any] | None) -> str | None:
+        if not isinstance(details, dict):
+            return None
+        return json.dumps(details, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    @staticmethod
+    def _decode_details(value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return decoded if isinstance(decoded, dict) else None
+
     def __init__(
         self,
         *,
@@ -522,6 +570,7 @@ class DatabaseInterruptRequestRepository(InterruptRequestRepository):
                 identity=None,
                 task_id=None,
                 context_id=None,
+                details_json=None,
                 expires_at=None,
                 tombstone_expires_at=tombstone_expires_at,
             )
@@ -536,6 +585,7 @@ class DatabaseInterruptRequestRepository(InterruptRequestRepository):
         identity: str | None,
         task_id: str | None,
         context_id: str | None,
+        details: dict[str, Any] | None,
         ttl_seconds: float | None,
     ) -> None:
         await self._ensure_initialized()
@@ -555,6 +605,7 @@ class DatabaseInterruptRequestRepository(InterruptRequestRepository):
                 "identity": identity,
                 "task_id": task_id,
                 "context_id": context_id,
+                "details_json": self._encode_details(details),
                 "expires_at": expires_at,
                 "tombstone_expires_at": None,
             }
@@ -604,6 +655,7 @@ class DatabaseInterruptRequestRepository(InterruptRequestRepository):
                     identity=cast("str | None", row["identity"]),
                     task_id=cast("str | None", row["task_id"]),
                     context_id=cast("str | None", row["context_id"]),
+                    details=self._decode_details(row.get("details_json")),
                     expires_at=cast("float", expires_at),
                 ),
             )
@@ -614,6 +666,49 @@ class DatabaseInterruptRequestRepository(InterruptRequestRepository):
             await session.execute(
                 delete(_INTERRUPT_REQUESTS).where(_INTERRUPT_REQUESTS.c.request_id == request_id)
             )
+
+    async def list_pending(
+        self,
+        *,
+        identity: str,
+        interrupt_type: str | None = None,
+    ) -> list[InterruptRequestBinding]:
+        await self._ensure_initialized()
+        now = self._clock()
+        normalized_type = interrupt_type.strip() if isinstance(interrupt_type, str) else None
+        async with self._session_maker.begin() as session:
+            await self._prune_tombstones(session, now=now)
+            stmt = (
+                select(_INTERRUPT_REQUESTS)
+                .where(
+                    and_(
+                        _INTERRUPT_REQUESTS.c.identity == identity,
+                        _INTERRUPT_REQUESTS.c.expires_at.is_not(None),
+                        _INTERRUPT_REQUESTS.c.expires_at > now,
+                    )
+                )
+                .order_by(
+                    _INTERRUPT_REQUESTS.c.expires_at.asc(),
+                    _INTERRUPT_REQUESTS.c.request_id.asc(),
+                )
+            )
+            if normalized_type is not None:
+                stmt = stmt.where(_INTERRUPT_REQUESTS.c.interrupt_type == normalized_type)
+            result = await session.execute(stmt)
+            rows = result.mappings().all()
+            return [
+                InterruptRequestBinding(
+                    request_id=cast("str", row["request_id"]),
+                    session_id=cast("str", row["session_id"]),
+                    interrupt_type=cast("str", row["interrupt_type"]),
+                    identity=cast("str | None", row["identity"]),
+                    task_id=cast("str | None", row["task_id"]),
+                    context_id=cast("str | None", row["context_id"]),
+                    details=self._decode_details(row.get("details_json")),
+                    expires_at=cast("float", row["expires_at"]),
+                )
+                for row in rows
+            ]
 
 
 def build_session_state_repository(

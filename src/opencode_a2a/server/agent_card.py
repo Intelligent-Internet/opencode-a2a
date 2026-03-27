@@ -15,6 +15,7 @@ from ..config import Settings
 from ..contracts.extensions import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
+    INTERRUPT_RECOVERY_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
     PROVIDER_DISCOVERY_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
@@ -26,6 +27,7 @@ from ..contracts.extensions import (
     build_capability_snapshot,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
+    build_interrupt_recovery_extension_params,
     build_model_selection_extension_params,
     build_provider_discovery_extension_params,
     build_session_binding_extension_params,
@@ -44,8 +46,8 @@ def _build_agent_card_description(settings: Settings, runtime_profile: RuntimePr
         "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
         "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), shared "
         "session-binding/model-selection/streaming contracts, provider-private "
-        "OpenCode session/provider/model extensions, and shared interrupt "
-        "callback extensions."
+        "OpenCode session/provider/model/interrupt recovery extensions, and "
+        "shared interrupt callback extensions."
     )
     parts: list[str] = [base, summary]
     parts.append(
@@ -92,6 +94,13 @@ def _build_session_query_skill_examples(
     return examples
 
 
+def _build_interrupt_recovery_skill_examples() -> list[str]:
+    return [
+        "List pending permission interrupts (method opencode.permissions.list).",
+        "List pending question interrupts (method opencode.questions.list).",
+    ]
+
+
 def build_agent_card(settings: Settings) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     base_url = public_url
@@ -120,6 +129,9 @@ def build_agent_card(settings: Settings) -> AgentCard:
         context_id_prefix=SESSION_CONTEXT_PREFIX,
     )
     provider_discovery_extension_params = build_provider_discovery_extension_params(
+        runtime_profile=runtime_profile,
+    )
+    interrupt_recovery_extension_params = build_interrupt_recovery_extension_params(
         runtime_profile=runtime_profile,
     )
     interrupt_callback_extension_params = build_interrupt_callback_extension_params(
@@ -197,6 +209,15 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     params=provider_discovery_extension_params,
                 ),
                 AgentExtension(
+                    uri=INTERRUPT_RECOVERY_EXTENSION_URI,
+                    required=False,
+                    description=(
+                        "Expose provider-private interrupt recovery methods so clients can "
+                        "list pending permission/question requests after reconnecting."
+                    ),
+                    params=interrupt_recovery_extension_params,
+                ),
+                AgentExtension(
                     uri=INTERRUPT_CALLBACK_EXTENSION_URI,
                     required=False,
                     description=(
@@ -263,6 +284,16 @@ def build_agent_card(settings: Settings) -> AgentCard:
                     "List available providers (method opencode.providers.list).",
                     "List available models for a provider (method opencode.models.list).",
                 ],
+            ),
+            AgentSkill(
+                id="opencode.interrupt.recovery",
+                name="OpenCode Interrupt Recovery",
+                description=(
+                    "provider-private OpenCode interrupt recovery surface exposed through "
+                    "JSON-RPC extensions."
+                ),
+                tags=["interrupt", "permission", "question", "provider-private"],
+                examples=_build_interrupt_recovery_skill_examples(),
             ),
             AgentSkill(
                 id="opencode.interrupt.callback",

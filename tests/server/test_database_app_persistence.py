@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import httpx
@@ -83,6 +84,7 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
             identity: str | None = None,
             task_id: str | None = None,
             context_id: str | None = None,
+            details: dict | None = None,
             ttl_seconds: float | None = None,
         ) -> None:
             assert self._interrupt_request_repository is not None
@@ -93,6 +95,7 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
                 identity=identity,
                 task_id=task_id,
                 context_id=context_id,
+                details=details,
                 ttl_seconds=ttl_seconds,
             )
 
@@ -105,6 +108,20 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
             if status != "active" or binding is None:
                 return None
             return binding.session_id
+
+        async def list_permission_requests(self, *, identity: str):
+            assert self._interrupt_request_repository is not None
+            return await self._interrupt_request_repository.list_pending(
+                identity=identity,
+                interrupt_type="permission",
+            )
+
+        async def list_question_requests(self, *, identity: str):
+            assert self._interrupt_request_repository is not None
+            return await self._interrupt_request_repository.list_pending(
+                identity=identity,
+                interrupt_type="question",
+            )
 
         async def discard_interrupt_request(self, request_id: str) -> None:
             assert self._interrupt_request_repository is not None
@@ -156,9 +173,10 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
             request_id="perm-1",
             session_id=session_id,
             interrupt_type="permission",
-            identity=None,
+            identity=f"bearer:{hashlib.sha256(b'test-token').hexdigest()[:12]}",
             task_id="task-1",
             context_id="ctx-1",
+            details={"permission": "read", "patterns": ["/tmp/config.yml"]},
             ttl_seconds=60.0,
         )
 
@@ -182,6 +200,16 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
 
         transport = httpx.ASGITransport(app=app2)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            query_response = await client.post(
+                "/",
+                headers={"Authorization": "Bearer test-token"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 0,
+                    "method": "opencode.permissions.list",
+                    "params": {},
+                },
+            )
             response = await client.post(
                 "/",
                 headers={"Authorization": "Bearer test-token"},
@@ -195,6 +223,19 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
                     },
                 },
             )
+
+        query_payload = query_response.json()
+        assert query_payload["result"]["items"] == [
+            {
+                "request_id": "perm-1",
+                "session_id": "ses-1",
+                "interrupt_type": "permission",
+                "task_id": "task-1",
+                "context_id": "ctx-1",
+                "details": {"permission": "read", "patterns": ["/tmp/config.yml"]},
+                "expires_at": query_payload["result"]["items"][0]["expires_at"],
+            }
+        ]
 
         payload = response.json()
         assert payload.get("error") is None

@@ -37,6 +37,8 @@ class ExtensionHandlerContext:
     method_shell: str | None
     method_list_providers: str
     method_list_models: str
+    method_list_permissions: str
+    method_list_questions: str
     method_reply_permission: str
     method_reply_question: str
     method_reject_question: str
@@ -89,6 +91,7 @@ def build_extension_method_registry(
     context: ExtensionHandlerContext,
 ) -> ExtensionMethodRegistry:
     from .handlers.interrupt_callbacks import handle_interrupt_callback_request
+    from .handlers.interrupt_queries import handle_interrupt_query_request
     from .handlers.provider_discovery import handle_provider_discovery_request
     from .handlers.session_control import handle_session_control_request
     from .handlers.session_queries import handle_session_query_request
@@ -118,6 +121,16 @@ def build_extension_method_registry(
                     }
                 ),
                 handler=handle_provider_discovery_request,
+            ),
+            ExtensionMethodSpec(
+                name="interrupt_query",
+                methods=frozenset(
+                    {
+                        context.method_list_permissions,
+                        context.method_list_questions,
+                    }
+                ),
+                handler=handle_interrupt_query_request,
             ),
             ExtensionMethodSpec(
                 name="session_control",

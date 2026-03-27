@@ -1,3 +1,4 @@
+import hashlib
 import logging
 
 import httpx
@@ -14,6 +15,10 @@ from tests.support.helpers import (
 )
 from tests.support.helpers import make_settings
 from tests.support.session_extensions import _BASE_SETTINGS, _session_meta
+
+
+def _identity_for_token(token: str) -> str:
+    return f"bearer:{hashlib.sha256(token.encode()).hexdigest()[:12]}"
 
 
 @pytest.mark.asyncio
@@ -440,6 +445,146 @@ async def test_session_query_extension_maps_concurrency_limit_to_unreachable(mon
         assert payload["error"]["code"] == -32002
         assert payload["error"]["data"]["type"] == "UPSTREAM_UNREACHABLE"
         assert "concurrency limit exceeded" in payload["error"]["data"]["detail"]
+
+
+@pytest.mark.asyncio
+async def test_interrupt_recovery_extension_returns_identity_scoped_items(monkeypatch):
+    import opencode_a2a.server.application as app_module
+
+    token = "t-1"
+    identity = _identity_for_token(token)
+    dummy = DummyOpencodeUpstreamClient(
+        make_settings(
+            a2a_bearer_token=token,
+            a2a_log_payloads=False,
+            opencode_workspace_root="/workspace",
+            **_BASE_SETTINGS,
+        )
+    )
+    await dummy.remember_interrupt_request(
+        request_id="perm-1",
+        session_id="ses-1",
+        interrupt_type="permission",
+        identity=identity,
+        task_id="task-1",
+        context_id="ctx-1",
+        details={"permission": "read", "patterns": ["/tmp/config.yml"]},
+    )
+    await dummy.remember_interrupt_request(
+        request_id="q-1",
+        session_id="ses-2",
+        interrupt_type="question",
+        identity=identity,
+        task_id="task-2",
+        context_id="ctx-2",
+        details={"questions": [{"question": "Proceed?"}]},
+    )
+    await dummy.remember_interrupt_request(
+        request_id="perm-other",
+        session_id="ses-3",
+        interrupt_type="permission",
+        identity="bearer:other-user",
+        task_id="task-3",
+        context_id="ctx-3",
+        details={"permission": "write"},
+    )
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(
+            a2a_bearer_token=token,
+            a2a_log_payloads=False,
+            opencode_workspace_root="/workspace",
+            **_BASE_SETTINGS,
+        )
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": f"Bearer {token}"}
+        permission_resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 201,
+                "method": "opencode.permissions.list",
+                "params": {},
+            },
+        )
+        question_resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 202,
+                "method": "opencode.questions.list",
+                "params": {},
+            },
+        )
+
+    permission_items = permission_resp.json()["result"]["items"]
+    question_items = question_resp.json()["result"]["items"]
+    assert [item["request_id"] for item in permission_items] == ["perm-1"]
+    assert permission_items[0]["details"] == {
+        "permission": "read",
+        "patterns": ["/tmp/config.yml"],
+    }
+    assert [item["request_id"] for item in question_items] == ["q-1"]
+    assert question_items[0]["details"] == {"questions": [{"question": "Proceed?"}]}
+
+
+@pytest.mark.asyncio
+async def test_interrupt_recovery_extension_rejects_unsupported_fields(monkeypatch):
+    import opencode_a2a.server.application as app_module
+
+    dummy = DummyOpencodeUpstreamClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer t-1"}
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 203,
+                "method": "opencode.permissions.list",
+                "params": {"session_id": "ses-1"},
+            },
+        )
+
+    payload = resp.json()
+    assert payload["error"]["code"] == -32602
+    assert payload["error"]["data"]["fields"] == ["session_id"]
+
+
+@pytest.mark.asyncio
+async def test_interrupt_recovery_extension_notification_returns_204(monkeypatch):
+    import opencode_a2a.server.application as app_module
+
+    dummy = DummyOpencodeUpstreamClient(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    app = app_module.create_app(
+        make_settings(a2a_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers={"Authorization": "Bearer t-1"},
+            json={"jsonrpc": "2.0", "method": "opencode.questions.list", "params": {}},
+        )
+
+    assert response.status_code == 204
 
 
 @pytest.mark.asyncio

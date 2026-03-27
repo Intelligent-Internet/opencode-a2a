@@ -850,6 +850,33 @@ Response:
 
 - success => `{"items": [...], "default_by_provider": {...}, "connected": [...]}` (JSON-RPC result)
 
+## Interrupt Recovery (Provider-Private Extension)
+
+The runtime also exposes provider-private recovery queries for pending
+interactive interrupts:
+
+- `opencode.permissions.list`
+- `opencode.questions.list`
+
+These methods return recovery views over the local interrupt binding registry.
+They do not replace the shared `a2a.interrupt.*` callback methods.
+
+Response shape:
+
+- success => `{"items": [{"request_id", "session_id", "interrupt_type", "task_id", "context_id", "details", "expires_at"}]}` (JSON-RPC result)
+
+Notes:
+
+- Recovery results are scoped to the current authenticated caller identity when
+  the runtime can resolve one.
+- The runtime stores normalized interrupt `details` alongside request bindings,
+  so recovery results match the shape emitted in
+  `metadata.shared.interrupt.details`.
+- The first implementation stage reads from the local interrupt registry rather
+  than proxying upstream global `/permission` or `/question` pending lists.
+- Use recovery queries to rediscover pending requests after reconnecting; use
+  `a2a.interrupt.*` methods to resolve them.
+
 ## Shared Interrupt Callback (A2A Extension)
 
 When stream metadata reports an interrupt request at `metadata.shared.interrupt`,
@@ -871,7 +898,8 @@ clients can reply through JSON-RPC extension methods:
 Notes:
 
 - `request_id` must be a live interrupt request observed from stream metadata
-  (`metadata.shared.interrupt.request_id`).
+  (`metadata.shared.interrupt.request_id`) or rediscovered through
+  `opencode.permissions.list` / `opencode.questions.list`.
 - The server keeps an interrupt binding registry; callbacks with unknown or
   expired `request_id` are rejected.
 - The cache retention windows are controlled by

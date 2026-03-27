@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from ..config import Settings
 from ..contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
+    INTERRUPT_RECOVERY_METHODS,
     PROVIDER_DISCOVERY_METHODS,
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_METHODS,
@@ -14,6 +15,7 @@ from ..contracts.extensions import (
     build_capability_snapshot,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
+    build_interrupt_recovery_extension_params,
     build_model_selection_extension_params,
     build_provider_discovery_extension_params,
     build_session_binding_extension_params,
@@ -31,14 +33,16 @@ def _build_jsonrpc_extension_openapi_description(
 ) -> str:
     session_methods = list(capability_snapshot.session_query_methods().values())
     provider_methods = ", ".join(sorted(PROVIDER_DISCOVERY_METHODS.values()))
+    interrupt_recovery_methods = ", ".join(sorted(INTERRUPT_RECOVERY_METHODS.values()))
     interrupt_methods = ", ".join(sorted(INTERRUPT_CALLBACK_METHODS.values()))
     return (
         "A2A JSON-RPC entrypoint. Supports core A2A methods "
         "(message/send, message/stream, tasks/get, tasks/cancel, tasks/resubscribe) "
         "plus shared model-selection metadata, OpenCode session/provider extensions, "
-        "and shared interrupt callback methods.\n\n"
+        "interrupt recovery extensions, and shared interrupt callback methods.\n\n"
         f"OpenCode session query/control methods: {', '.join(session_methods)}.\n"
         f"OpenCode provider/model discovery methods: {provider_methods}.\n"
+        f"OpenCode interrupt recovery methods: {interrupt_recovery_methods}.\n"
         f"Shared interrupt callback methods: {interrupt_methods}.\n\n"
         "Notification semantics: extension requests without JSON-RPC id return HTTP 204."
     )
@@ -200,6 +204,24 @@ def _build_jsonrpc_extension_openapi_examples(
                 "params": {"provider_id": "openai"},
             },
         },
+        "permissions_list": {
+            "summary": "List pending permission interrupts for the current caller",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 26,
+                "method": INTERRUPT_RECOVERY_METHODS["list_permissions"],
+                "params": {},
+            },
+        },
+        "questions_list": {
+            "summary": "List pending question interrupts for the current caller",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 27,
+                "method": INTERRUPT_RECOVERY_METHODS["list_questions"],
+                "params": {},
+            },
+        },
         "permission_reply": {
             "summary": "Reply to permission interrupt request",
             "value": {
@@ -334,6 +356,9 @@ def _patch_jsonrpc_openapi_contract(
     provider_discovery = build_provider_discovery_extension_params(
         runtime_profile=runtime_profile,
     )
+    interrupt_recovery = build_interrupt_recovery_extension_params(
+        runtime_profile=runtime_profile,
+    )
     interrupt_callback = build_interrupt_callback_extension_params(
         runtime_profile=runtime_profile,
     )
@@ -369,6 +394,7 @@ def _patch_jsonrpc_openapi_contract(
                         "streaming": streaming,
                         "session_query": session_query,
                         "provider_discovery": provider_discovery,
+                        "interrupt_recovery": interrupt_recovery,
                         "interrupt_callback": interrupt_callback,
                         "compatibility_profile": compatibility_profile,
                         "wire_contract": wire_contract,

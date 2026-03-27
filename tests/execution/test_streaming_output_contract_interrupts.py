@@ -57,6 +57,10 @@ async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> 
     assert "metadata" not in interrupt["details"]
     assert "tool" not in interrupt["details"]
     assert interrupt_statuses[0].status.state == TaskState.input_required
+    assert client._interrupt_requests["perm-req-1"]["details"] == {
+        "permission": "read",
+        "patterns": ["/data/project/.env.secret"],
+    }
 
 
 @pytest.mark.asyncio
@@ -97,6 +101,15 @@ async def test_streaming_emits_interrupt_status_for_question_asked_event() -> No
     ]
     assert "tool" not in interrupt["details"]
     assert interrupt_statuses[0].status.state == TaskState.input_required
+    assert client._interrupt_requests["q-req-1"]["details"] == {
+        "questions": [
+            {
+                "header": "Confirm",
+                "question": "Proceed?",
+                "options": [{"label": "Yes", "value": "yes"}],
+            }
+        ]
+    }
 
 
 @pytest.mark.asyncio
