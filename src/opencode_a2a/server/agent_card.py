@@ -45,8 +45,10 @@ def _build_agent_card_description(settings: Settings, runtime_profile: RuntimePr
     base = (settings.a2a_description or "").strip() or "OpenCode A2A runtime."
     summary = (
         "Supports HTTP+JSON and JSON-RPC transports, streaming-first A2A messaging "
-        "(message/send, message/stream), task APIs (tasks/get, tasks/cancel, "
-        "tasks/resubscribe; REST mapping: GET /v1/tasks/{id}:subscribe), shared "
+        "(message/send, message/stream), authenticated extended Agent Card "
+        "(agent/getAuthenticatedExtendedCard), task APIs (tasks/get, tasks/cancel, "
+        "tasks/resubscribe, push notification config methods; REST mappings "
+        "include GET /v1/tasks and GET /v1/tasks/{id}:subscribe), shared "
         "session-binding/model-selection/streaming contracts, provider-private "
         "OpenCode session/provider/model/workspace-control/interrupt recovery "
         "extensions, and shared interrupt callback extensions."

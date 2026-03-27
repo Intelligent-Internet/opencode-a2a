@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [
-    { name = "liujuanjuan1984@Intelligent-Internet" },
+    { name = "Intelligent Internet" },
 ]
 keywords = ["a2a", "opencode", "fastapi", "json-rpc", "sse"]
 classifiers = [

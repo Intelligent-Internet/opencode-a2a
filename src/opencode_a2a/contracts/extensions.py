@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from a2a.server.apps.jsonrpc.jsonrpc_app import JSONRPCApplication
+
 from ..profile.runtime import SESSION_SHELL_TOGGLE, RuntimeProfile
 
 SHARED_SESSION_BINDING_FIELD = "metadata.shared.session.id"
@@ -213,19 +215,17 @@ SESSION_CONTROL_METHODS: dict[str, str] = {
     key: SESSION_QUERY_METHODS[key] for key in SESSION_CONTROL_METHOD_KEYS
 }
 
-CORE_JSONRPC_METHODS: tuple[str, ...] = (
-    "message/send",
-    "message/stream",
-    "tasks/get",
-    "tasks/cancel",
-    "tasks/resubscribe",
-)
+CORE_JSONRPC_METHODS: tuple[str, ...] = tuple(JSONRPCApplication.METHOD_TO_MODEL)
 CORE_HTTP_ENDPOINTS: tuple[str, ...] = (
     "POST /v1/message:send",
     "POST /v1/message:stream",
+    "GET /v1/tasks",
     "GET /v1/tasks/{id}",
     "POST /v1/tasks/{id}:cancel",
     "GET /v1/tasks/{id}:subscribe",
+    "GET /v1/tasks/{id}/pushNotificationConfigs",
+    "POST /v1/tasks/{id}/pushNotificationConfigs",
+    "GET /v1/tasks/{id}/pushNotificationConfigs/{push_id}",
 )
 WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS: tuple[str, ...] = (
     "type",

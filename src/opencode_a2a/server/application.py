@@ -507,6 +507,7 @@ class A2AClientManager:
                 ),
                 "A2A_CLIENT_USE_CLIENT_PREFERENCE": settings.a2a_client_use_client_preference,
                 "A2A_CLIENT_BEARER_TOKEN": settings.a2a_client_bearer_token,
+                "A2A_CLIENT_BASIC_AUTH": settings.a2a_client_basic_auth,
                 "A2A_CLIENT_SUPPORTED_TRANSPORTS": settings.a2a_client_supported_transports,
             }
         )

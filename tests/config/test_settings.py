@@ -31,6 +31,7 @@ def test_settings_valid():
         "A2A_ENABLE_SESSION_SHELL": "true",
         "OPENCODE_MAX_CONCURRENT_REQUESTS": "12",
         "OPENCODE_MAX_CONCURRENT_STREAMS": "3",
+        "A2A_CLIENT_BASIC_AUTH": "user:pass",
         "A2A_SANDBOX_MODE": "danger-full-access",
         "A2A_SANDBOX_FILESYSTEM_SCOPE": "unrestricted",
         "A2A_SANDBOX_WRITABLE_ROOTS": "/srv/workspaces/alpha,/tmp/opencode",
@@ -54,6 +55,7 @@ def test_settings_valid():
         assert settings.opencode_max_concurrent_requests == 12
         assert settings.opencode_max_concurrent_streams == 3
         assert settings.a2a_enable_session_shell is True
+        assert settings.a2a_client_basic_auth == "user:pass"
         assert settings.a2a_sandbox_mode == "danger-full-access"
         assert settings.a2a_sandbox_filesystem_scope == "unrestricted"
         assert settings.a2a_sandbox_writable_roots == ("/srv/workspaces/alpha", "/tmp/opencode")
