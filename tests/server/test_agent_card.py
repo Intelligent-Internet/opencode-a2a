@@ -262,6 +262,8 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert interrupt.params["context_fields"]["directory"] == "metadata.opencode.directory"
     assert interrupt.params["errors"]["business_codes"] == {
         "INTERRUPT_REQUEST_NOT_FOUND": -32004,
+        "INTERRUPT_REQUEST_EXPIRED": -32007,
+        "INTERRUPT_TYPE_MISMATCH": -32008,
         "UPSTREAM_UNREACHABLE": -32002,
         "UPSTREAM_HTTP_ERROR": -32003,
     }
@@ -272,13 +274,19 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "UPSTREAM_UNREACHABLE",
         "UPSTREAM_HTTP_ERROR",
     ]
+    assert interrupt.params["errors"]["error_data_fields"] == [
+        "type",
+        "request_id",
+        "expected_interrupt_type",
+        "actual_interrupt_type",
+        "upstream_status",
+        "detail",
+    ]
     assert interrupt.params["errors"]["invalid_params_data_fields"] == [
         "type",
         "field",
         "fields",
         "request_id",
-        "expected",
-        "actual",
     ]
     for method_name in (
         "a2a.interrupt.permission.reply",

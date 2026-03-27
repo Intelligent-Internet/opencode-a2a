@@ -4,6 +4,7 @@ from a2a.types import InvalidParamsError
 
 from opencode_a2a.jsonrpc.error_responses import (
     interrupt_not_found_error,
+    interrupt_type_mismatch_error,
     invalid_params_error,
     method_not_supported_error,
     session_forbidden_error,
@@ -34,6 +35,19 @@ def test_jsonrpc_error_mapping_helpers_preserve_business_contract_fields() -> No
     assert expired_interrupt.data == {
         "type": "INTERRUPT_REQUEST_EXPIRED",
         "request_id": "req-1",
+    }
+
+    mismatch_interrupt = interrupt_type_mismatch_error(
+        -32008,
+        request_id="req-2",
+        expected_interrupt_type="permission",
+        actual_interrupt_type="question",
+    )
+    assert mismatch_interrupt.data == {
+        "type": "INTERRUPT_TYPE_MISMATCH",
+        "request_id": "req-2",
+        "expected_interrupt_type": "permission",
+        "actual_interrupt_type": "question",
     }
 
 

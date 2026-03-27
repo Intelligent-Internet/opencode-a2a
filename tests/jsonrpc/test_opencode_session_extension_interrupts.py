@@ -326,7 +326,7 @@ async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch)
             },
         )
         payload = resp.json()
-        assert payload["error"]["code"] == -32004
+        assert payload["error"]["code"] == -32007
         assert payload["error"]["data"]["type"] == "INTERRUPT_REQUEST_EXPIRED"
 
 
@@ -412,8 +412,10 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
             },
         )
         payload = resp.json()
-        assert payload["error"]["code"] == -32602
+        assert payload["error"]["code"] == -32008
         assert payload["error"]["data"]["type"] == "INTERRUPT_TYPE_MISMATCH"
+        assert payload["error"]["data"]["expected_interrupt_type"] == "permission"
+        assert payload["error"]["data"]["actual_interrupt_type"] == "question"
 
 
 @pytest.mark.asyncio

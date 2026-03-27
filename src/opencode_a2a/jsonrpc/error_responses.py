@@ -63,6 +63,25 @@ def interrupt_not_found_error(
     )
 
 
+def interrupt_type_mismatch_error(
+    code: int,
+    *,
+    request_id: str,
+    expected_interrupt_type: str,
+    actual_interrupt_type: str,
+) -> JSONRPCError:
+    return JSONRPCError(
+        code=code,
+        message="Interrupt callback type mismatch",
+        data={
+            "type": "INTERRUPT_TYPE_MISMATCH",
+            "request_id": request_id,
+            "expected_interrupt_type": expected_interrupt_type,
+            "actual_interrupt_type": actual_interrupt_type,
+        },
+    )
+
+
 def upstream_http_error(
     code: int,
     *,
@@ -130,6 +149,7 @@ def upstream_payload_error(
 
 __all__ = [
     "interrupt_not_found_error",
+    "interrupt_type_mismatch_error",
     "invalid_params_error",
     "method_not_supported_error",
     "session_forbidden_error",

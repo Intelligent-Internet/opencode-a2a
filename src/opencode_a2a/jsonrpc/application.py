@@ -28,6 +28,7 @@ from ..opencode_upstream_client import (
 )
 from .error_responses import (
     interrupt_not_found_error,
+    interrupt_type_mismatch_error,
     invalid_params_error,
     method_not_supported_error,
     session_forbidden_error,
@@ -81,6 +82,8 @@ ERR_SESSION_FORBIDDEN = SESSION_QUERY_ERROR_BUSINESS_CODES["SESSION_FORBIDDEN"]
 ERR_UPSTREAM_UNREACHABLE = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_UNREACHABLE"]
 ERR_UPSTREAM_HTTP_ERROR = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_HTTP_ERROR"]
 ERR_INTERRUPT_NOT_FOUND = INTERRUPT_ERROR_BUSINESS_CODES["INTERRUPT_REQUEST_NOT_FOUND"]
+ERR_INTERRUPT_EXPIRED = INTERRUPT_ERROR_BUSINESS_CODES["INTERRUPT_REQUEST_EXPIRED"]
+ERR_INTERRUPT_TYPE_MISMATCH = INTERRUPT_ERROR_BUSINESS_CODES["INTERRUPT_TYPE_MISMATCH"]
 ERR_UPSTREAM_PAYLOAD_ERROR = SESSION_QUERY_ERROR_BUSINESS_CODES["UPSTREAM_PAYLOAD_ERROR"]
 ERR_DISCOVERY_UPSTREAM_UNREACHABLE = PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES["UPSTREAM_UNREACHABLE"]
 ERR_DISCOVERY_UPSTREAM_HTTP_ERROR = PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES["UPSTREAM_HTTP_ERROR"]
@@ -812,7 +815,7 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
                 return self._generate_error_response(
                     base_request.id,
                     interrupt_not_found_error(
-                        ERR_INTERRUPT_NOT_FOUND,
+                        ERR_INTERRUPT_EXPIRED if status == "expired" else ERR_INTERRUPT_NOT_FOUND,
                         request_id=request_id,
                         expired=status == "expired",
                     ),
@@ -820,17 +823,11 @@ class OpencodeSessionQueryJSONRPCApplication(A2AFastAPIApplication):
             if binding.interrupt_type != expected_interrupt_type:
                 return self._generate_error_response(
                     base_request.id,
-                    invalid_params_error(
-                        (
-                            "Interrupt type mismatch: "
-                            f"expected {expected_interrupt_type}, got {binding.interrupt_type}"
-                        ),
-                        data={
-                            "type": "INTERRUPT_TYPE_MISMATCH",
-                            "request_id": request_id,
-                            "expected": expected_interrupt_type,
-                            "actual": binding.interrupt_type,
-                        },
+                    interrupt_type_mismatch_error(
+                        ERR_INTERRUPT_TYPE_MISMATCH,
+                        request_id=request_id,
+                        expected_interrupt_type=expected_interrupt_type,
+                        actual_interrupt_type=binding.interrupt_type,
                     ),
                 )
             if (
