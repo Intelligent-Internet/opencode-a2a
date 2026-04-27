@@ -29,6 +29,10 @@ from opencode_a2a.client.errors import (
 from opencode_a2a.client.payload_text import extract_text
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.execution.tool_error_mapping import map_a2a_tool_exception
+from opencode_a2a.execution.tool_orchestration import (
+    maybe_handle_tools,
+    merge_streamed_tool_output,
+)
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from opencode_a2a.server.client_manager import A2AClientManager
 from opencode_a2a.trace_context import TraceContext, bind_trace_context
@@ -325,10 +329,7 @@ async def test_agent_handles_a2a_call_tool(monkeypatch) -> None:
             del url
             return self._BorrowedClient()
 
-    client = DummyChatOpencodeUpstreamClient()
     manager = MockManager()
-    executor = OpencodeAgentExecutor(client, streaming_enabled=False, a2a_client_manager=manager)
-
     raw_response = {
         "parts": [
             {
@@ -343,7 +344,7 @@ async def test_agent_handles_a2a_call_tool(monkeypatch) -> None:
         ]
     }
 
-    results = await executor._maybe_handle_tools(raw_response)
+    results = await maybe_handle_tools(raw_response, a2a_client_manager=manager)
     assert results is not None
     assert len(results) == 1
     assert results[0]["call_id"] == "call-1"
@@ -405,7 +406,6 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
                     )
 
                 mock_client.send_message = _send_message
-                mock_client.extract_text = extract_text
                 return mock_client
 
             async def __aexit__(self, exc_type, exc, tb):
@@ -443,9 +443,9 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_merges_streamed_a2a_tool_output() -> None:
-    merged = OpencodeAgentExecutor._merge_streamed_tool_output("hello", "hello world")
-    distinct = OpencodeAgentExecutor._merge_streamed_tool_output("hello world", "from peer")
-    duplicate = OpencodeAgentExecutor._merge_streamed_tool_output("hello world", "world")
+    merged = merge_streamed_tool_output("hello", "hello world")
+    distinct = merge_streamed_tool_output("hello world", "from peer")
+    duplicate = merge_streamed_tool_output("hello world", "world")
 
     assert merged == "hello world"
     assert distinct == "hello world\nfrom peer"
@@ -455,10 +455,6 @@ async def test_agent_merges_streamed_a2a_tool_output() -> None:
 @pytest.mark.asyncio
 async def test_agent_handles_a2a_call_tool_errors() -> None:
     from unittest.mock import MagicMock
-
-    client = DummyChatOpencodeUpstreamClient()
-    # No manager
-    executor = OpencodeAgentExecutor(client, streaming_enabled=False, a2a_client_manager=None)
 
     raw_response = {
         "parts": [
@@ -470,24 +466,21 @@ async def test_agent_handles_a2a_call_tool_errors() -> None:
             }
         ]
     }
-    results = await executor._maybe_handle_tools(raw_response)
+    results = await maybe_handle_tools(raw_response, a2a_client_manager=None)
     assert results is not None
     assert results[0]["error_code"] == "a2a_client_manager_unavailable"
     assert "not available" in results[0]["error"]
 
     # Invalid input
-    executor = OpencodeAgentExecutor(
-        client, streaming_enabled=False, a2a_client_manager=MagicMock()
-    )
     raw_response["parts"][0]["state"]["input"] = "invalid"
-    results = await executor._maybe_handle_tools(raw_response)
+    results = await maybe_handle_tools(raw_response, a2a_client_manager=MagicMock())
     assert results is not None
     assert results[0]["error_code"] == "a2a_invalid_input"
     assert "Invalid a2a_call input" in results[0]["error"]
 
     # Missing message
     raw_response["parts"][0]["state"]["input"] = {"url": "http://x"}
-    results = await executor._maybe_handle_tools(raw_response)
+    results = await maybe_handle_tools(raw_response, a2a_client_manager=MagicMock())
     assert results is not None
     assert results[0]["error_code"] == "a2a_missing_required_input"
     assert "Missing required a2a_call" in results[0]["error"]
@@ -520,14 +513,7 @@ async def test_agent_maps_a2a_call_tool_auth_errors_to_stable_payload() -> None:
             del url
             return self._BorrowedClient()
 
-    client = DummyChatOpencodeUpstreamClient()
-    executor = OpencodeAgentExecutor(
-        client,
-        streaming_enabled=False,
-        a2a_client_manager=MockManager(),
-    )
-
-    results = await executor._maybe_handle_tools(
+    results = await maybe_handle_tools(
         {
             "parts": [
                 {
@@ -540,7 +526,8 @@ async def test_agent_maps_a2a_call_tool_auth_errors_to_stable_payload() -> None:
                     },
                 }
             ]
-        }
+        },
+        a2a_client_manager=MockManager(),
     )
 
     assert results is not None
@@ -589,13 +576,7 @@ async def test_agent_a2a_call_uses_server_side_basic_auth_headers(
             a2a_client_cache_maxsize=1,
         )
     )
-    executor = OpencodeAgentExecutor(
-        DummyChatOpencodeUpstreamClient(),
-        streaming_enabled=False,
-        a2a_client_manager=manager,
-    )
-
-    results = await executor._maybe_handle_tools(
+    results = await maybe_handle_tools(
         {
             "parts": [
                 {
@@ -608,7 +589,8 @@ async def test_agent_a2a_call_uses_server_side_basic_auth_headers(
                     },
                 }
             ]
-        }
+        },
+        a2a_client_manager=manager,
     )
 
     assert results is not None
@@ -662,12 +644,6 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
             a2a_client_cache_maxsize=1,
         )
     )
-    executor = OpencodeAgentExecutor(
-        DummyChatOpencodeUpstreamClient(),
-        streaming_enabled=False,
-        a2a_client_manager=manager,
-    )
-
     with bind_trace_context(
         TraceContext(
             traceparent="00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
@@ -675,7 +651,7 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
             tracestate="vendor=value",
         )
     ):
-        results = await executor._maybe_handle_tools(
+        results = await maybe_handle_tools(
             {
                 "parts": [
                     {
@@ -688,7 +664,8 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
                         },
                     }
                 ]
-            }
+            },
+            a2a_client_manager=manager,
         )
 
     assert results is not None

@@ -72,7 +72,6 @@ from .stream_state import (
     _StreamOutputState,
     _TTLCache,
 )
-from .tool_orchestration import maybe_handle_tools, merge_streamed_tool_output
 from .upstream_error_translator import (
     _await_stream_terminal_signal,
     _extract_upstream_error_detail,
@@ -176,18 +175,6 @@ class OpencodeAgentExecutor(AgentExecutor):
         **labels: str | int | float | bool,
     ) -> None:
         _emit_metric(name, value, **labels)
-
-    async def _maybe_handle_tools(
-        self, raw_response: dict[str, Any]
-    ) -> list[dict[str, Any]] | None:
-        return await maybe_handle_tools(
-            raw_response,
-            a2a_client_manager=self._a2a_client_manager,
-        )
-
-    @staticmethod
-    def _merge_streamed_tool_output(current: str, incoming: str) -> str:
-        return merge_streamed_tool_output(current, incoming)
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id
