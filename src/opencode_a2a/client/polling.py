@@ -10,9 +10,9 @@ from ..task_states import TERMINAL_TASK_STATES
 
 _AUTO_POLLING_TASK_STATES = frozenset(
     {
-        TaskState.submitted,
-        TaskState.working,
-        TaskState.unknown,
+        TaskState.TASK_STATE_SUBMITTED,
+        TaskState.TASK_STATE_WORKING,
+        TaskState.TASK_STATE_UNSPECIFIED,
     }
 )
 

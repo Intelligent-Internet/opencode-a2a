@@ -75,10 +75,10 @@ async def test_cancel_interrupts_running_execute_and_keeps_queue_open(caplog):
 
     cancel_events = [call.args[0] for call in cancel_queue.enqueue_event.call_args_list]
     assert any(
-        isinstance(event, TaskStatusUpdateEvent) and event.status.state == TaskState.canceled
+        isinstance(event, TaskStatusUpdateEvent)
+        and event.status.state == TaskState.TASK_STATE_CANCELED
         for event in cancel_events
     )
-    cancel_queue.close.assert_not_called()
 
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(execute_task, timeout=1.0)
@@ -176,7 +176,8 @@ async def test_cancel_keeps_canceled_status_when_abort_session_fails() -> None:
 
     cancel_events = [call.args[0] for call in cancel_queue.enqueue_event.call_args_list]
     assert any(
-        isinstance(event, TaskStatusUpdateEvent) and event.status.state == TaskState.canceled
+        isinstance(event, TaskStatusUpdateEvent)
+        and event.status.state == TaskState.TASK_STATE_CANCELED
         for event in cancel_events
     )
     with pytest.raises(asyncio.CancelledError):
@@ -251,7 +252,8 @@ async def test_cancel_remains_responsive_when_abort_session_hangs(caplog) -> Non
 
     cancel_events = [call.args[0] for call in cancel_queue.enqueue_event.call_args_list]
     assert any(
-        isinstance(event, TaskStatusUpdateEvent) and event.status.state == TaskState.canceled
+        isinstance(event, TaskStatusUpdateEvent)
+        and event.status.state == TaskState.TASK_STATE_CANCELED
         for event in cancel_events
     )
     with pytest.raises(asyncio.CancelledError):

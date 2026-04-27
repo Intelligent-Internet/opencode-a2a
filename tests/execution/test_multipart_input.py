@@ -1,5 +1,5 @@
 import pytest
-from a2a.types import DataPart, FilePart, FileWithBytes, FileWithUri, TextPart
+from a2a.types import DataPart, FilePart, FileWithBytes, FileWithUri, TaskState, TextPart
 
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
@@ -114,7 +114,7 @@ async def test_execute_forwards_text_and_file_parts() -> None:
         }
     ]
     assert client.created_titles == ["Describe this file"]
-    assert queue.events[-1].status.state.name == "completed"
+    assert queue.events[-1].status.state == TaskState.TASK_STATE_COMPLETED
 
 
 @pytest.mark.asyncio
@@ -148,7 +148,7 @@ async def test_execute_accepts_file_only_input() -> None:
         }
     ]
     assert client.created_titles == ["report.pdf"]
-    assert queue.events[-1].status.state.name == "completed"
+    assert queue.events[-1].status.state == TaskState.TASK_STATE_COMPLETED
 
 
 @pytest.mark.asyncio
@@ -166,5 +166,8 @@ async def test_execute_rejects_data_parts() -> None:
 
     assert client.sent_calls == []
     task = queue.events[-1]
-    assert task.status.state.name == "failed"
-    assert "DataPart input is not supported" in task.status.message.parts[0].root.text
+    assert task.status.state == TaskState.TASK_STATE_FAILED
+    assert "DataPart input is not supported" in (
+        getattr(task.status.message.parts[0], "text", None)
+        or getattr(getattr(task.status.message.parts[0], "root", None), "text", "")
+    )

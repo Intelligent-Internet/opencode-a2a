@@ -5,6 +5,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
+from opencode_a2a.a2a_utils import part_data_to_python, proto_to_dict
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from tests.support.helpers import (
     DummyEventQueue,
@@ -255,28 +256,30 @@ def _artifact_updates(queue: DummyEventQueue) -> list[TaskArtifactUpdateEvent]:
 
 def _part_text(event: TaskArtifactUpdateEvent) -> str:
     part = event.artifact.parts[0]
-    return getattr(part, "text", None) or getattr(part.root, "text", "")
+    return getattr(part, "text", None) or getattr(getattr(part, "root", None), "text", "")
 
 
 def _part_data(event: TaskArtifactUpdateEvent) -> dict:
     part = event.artifact.parts[0]
-    return getattr(part, "data", None) or getattr(part.root, "data", {})
+    if hasattr(part, "HasField") and part.HasField("data"):
+        return part_data_to_python(part) or {}
+    return getattr(part, "data", None) or getattr(getattr(part, "root", None), "data", {})
 
 
 def _artifact_stream_meta(event: TaskArtifactUpdateEvent) -> dict:
-    return event.artifact.metadata["shared"]["stream"]
+    return proto_to_dict(event.artifact.metadata).get("shared", {}).get("stream", {})
 
 
 def _status_shared_meta(event: TaskStatusUpdateEvent) -> dict:
-    return (event.metadata or {})["shared"]
+    return proto_to_dict(event.metadata).get("shared", {})
 
 
 def _interrupt_meta(event: TaskStatusUpdateEvent) -> dict:
-    return _status_shared_meta(event)["interrupt"]
+    return _status_shared_meta(event).get("interrupt", {})
 
 
 def _progress_meta(event: TaskStatusUpdateEvent) -> dict:
-    return _status_shared_meta(event)["progress"]
+    return _status_shared_meta(event).get("progress", {})
 
 
 def _unique(items: list[str]) -> list[str]:

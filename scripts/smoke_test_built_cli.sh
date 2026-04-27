@@ -108,13 +108,27 @@ A2A_HOST="127.0.0.1" \
 server_pid="$!"
 
 health_url="http://127.0.0.1:${port}/health"
-for _ in $(seq 1 50); do
-  if curl -fsS -H "Authorization: Bearer ${bearer_token}" "${health_url}" >/dev/null; then
-    exit 0
-  fi
-  sleep 0.2
-done
+wait_for_health() {
+  local attempt
+  for attempt in $(seq 1 50); do
+    if ! kill -0 "${server_pid}" >/dev/null 2>&1; then
+      echo "CLI smoke test failed; server exited before becoming healthy at ${health_url}" >&2
+      cat "${server_log}" >&2
+      return 1
+    fi
 
-echo "CLI smoke test failed; server did not become healthy at ${health_url}" >&2
-cat "${server_log}" >&2
-exit 1
+    if curl --silent --fail --output /dev/null \
+      -H "Authorization: Bearer ${bearer_token}" \
+      "${health_url}" 2>/dev/null; then
+      return 0
+    fi
+
+    sleep 0.2
+  done
+
+  echo "CLI smoke test failed; server did not become healthy at ${health_url}" >&2
+  cat "${server_log}" >&2
+  return 1
+}
+
+wait_for_health

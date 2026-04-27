@@ -16,27 +16,27 @@ class UpstreamHTTPErrorProfile:
 _UPSTREAM_HTTP_ERROR_PROFILE_BY_STATUS: dict[int, UpstreamHTTPErrorProfile] = {
     400: UpstreamHTTPErrorProfile(
         "UPSTREAM_BAD_REQUEST",
-        TaskState.failed,
+        TaskState.TASK_STATE_FAILED,
         "OpenCode rejected the request due to invalid input",
     ),
     401: UpstreamHTTPErrorProfile(
         "UPSTREAM_UNAUTHORIZED",
-        TaskState.auth_required,
+        TaskState.TASK_STATE_AUTH_REQUIRED,
         "OpenCode rejected the request due to authentication failure",
     ),
     403: UpstreamHTTPErrorProfile(
         "UPSTREAM_PERMISSION_DENIED",
-        TaskState.failed,
+        TaskState.TASK_STATE_FAILED,
         "OpenCode rejected the request due to insufficient permissions",
     ),
     404: UpstreamHTTPErrorProfile(
         "UPSTREAM_RESOURCE_NOT_FOUND",
-        TaskState.failed,
+        TaskState.TASK_STATE_FAILED,
         "OpenCode rejected the request because the target resource was not found",
     ),
     429: UpstreamHTTPErrorProfile(
         "UPSTREAM_QUOTA_EXCEEDED",
-        TaskState.failed,
+        TaskState.TASK_STATE_FAILED,
         "OpenCode rejected the request due to quota limits",
     ),
 }
@@ -48,18 +48,18 @@ def resolve_upstream_http_error_profile(status: int) -> UpstreamHTTPErrorProfile
     if 400 <= status < 500:
         return UpstreamHTTPErrorProfile(
             "UPSTREAM_CLIENT_ERROR",
-            TaskState.failed,
+            TaskState.TASK_STATE_FAILED,
             f"OpenCode rejected the request with client error {status}",
         )
     if status >= 500:
         return UpstreamHTTPErrorProfile(
             "UPSTREAM_SERVER_ERROR",
-            TaskState.failed,
+            TaskState.TASK_STATE_FAILED,
             f"OpenCode rejected the request with server error {status}",
         )
     return UpstreamHTTPErrorProfile(
         "UPSTREAM_HTTP_ERROR",
-        TaskState.failed,
+        TaskState.TASK_STATE_FAILED,
         f"OpenCode rejected the request with HTTP status {status}",
     )
 

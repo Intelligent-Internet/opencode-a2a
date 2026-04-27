@@ -3,14 +3,13 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 import pytest
+from a2a.server.context import ServerCallContext
 from a2a.server.events import EventConsumer, EventQueue
 from a2a.server.tasks import TaskManager
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
     Artifact,
-    DataPart,
     Message,
-    Part,
     Role,
     Task,
     TaskArtifactUpdateEvent,
@@ -19,9 +18,9 @@ from a2a.types import (
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
 )
 
+from opencode_a2a.a2a_utils import make_data_part, make_text_part, part_text
 from opencode_a2a.output_modes import (
     NegotiatingResultAggregator,
     apply_accepted_output_modes,
@@ -33,11 +32,15 @@ from opencode_a2a.output_modes import (
 from opencode_a2a.server.application import OpencodeRequestHandler
 
 
+def _store() -> InMemoryTaskStore:
+    return InMemoryTaskStore(owner_resolver=lambda _context: "test-owner")
+
+
 def _message(*, message_id: str, text: str, task_id: str, context_id: str) -> Message:
     return Message(
         message_id=message_id,
-        role=Role.agent,
-        parts=[Part(root=TextPart(text=text))],
+        role=Role.ROLE_AGENT,
+        parts=[make_text_part(text)],
         task_id=task_id,
         context_id=context_id,
     )
@@ -50,7 +53,7 @@ def _task_with_negotiated_outputs(*, task_id: str, context_id: str) -> Task:
         id=task_id,
         context_id=context_id,
         status=TaskStatus(
-            state=TaskState.completed,
+            state=TaskState.TASK_STATE_COMPLETED,
             message=_message(
                 message_id=f"{task_id}:status",
                 text="done",
@@ -69,11 +72,11 @@ def _task_with_negotiated_outputs(*, task_id: str, context_id: str) -> Task:
         artifacts=[
             Artifact(
                 artifact_id=f"{task_id}:text",
-                parts=[Part(root=TextPart(text="plain result"))],
+                parts=[make_text_part("plain result")],
             ),
             Artifact(
                 artifact_id=f"{task_id}:json",
-                parts=[Part(root=DataPart(data={"tool": "bash", "status": "completed"}))],
+                parts=[make_data_part({"tool": "bash", "status": "completed"})],
             ),
         ],
         metadata=metadata,
@@ -90,7 +93,7 @@ def test_normalize_accepted_output_modes_treats_wildcards_as_unrestricted() -> N
 
 
 def test_part_text_fallback_serializes_data_parts_as_stable_json() -> None:
-    assert part_text_fallback(DataPart(data={"tool": "bash", "status": "running"})) == (
+    assert part_text_fallback(make_data_part({"tool": "bash", "status": "running"})) == (
         '{"status":"running","tool":"bash"}'
     )
 
@@ -100,11 +103,11 @@ def test_apply_accepted_output_modes_downgrades_task_data_parts_to_text() -> Non
         id="task-send",
         context_id="ctx-send",
         status=TaskStatus(
-            state=TaskState.completed,
+            state=TaskState.TASK_STATE_COMPLETED,
             message=Message(
                 message_id="msg-send",
-                role=Role.agent,
-                parts=[Part(root=DataPart(data={"tool": "bash", "status": "running"}))],
+                role=Role.ROLE_AGENT,
+                parts=[make_data_part({"tool": "bash", "status": "running"})],
                 task_id="task-send",
                 context_id="ctx-send",
             ),
@@ -112,7 +115,7 @@ def test_apply_accepted_output_modes_downgrades_task_data_parts_to_text() -> Non
         artifacts=[
             Artifact(
                 artifact_id="artifact-send",
-                parts=[Part(root=DataPart(data={"tool": "bash", "status": "running"}))],
+                parts=[make_data_part({"tool": "bash", "status": "running"})],
             )
         ],
     )
@@ -121,15 +124,16 @@ def test_apply_accepted_output_modes_downgrades_task_data_parts_to_text() -> Non
 
     assert isinstance(downgraded, Task)
     assert downgraded.status.message is not None
-    assert downgraded.status.message.parts[0].root.text == '{"status":"running","tool":"bash"}'
+    assert part_text(downgraded.status.message.parts[0]) == '{"status":"running","tool":"bash"}'
     assert downgraded.artifacts is not None
-    assert downgraded.artifacts[0].parts[0].root.text == '{"status":"running","tool":"bash"}'
+    assert part_text(downgraded.artifacts[0].parts[0]) == '{"status":"running","tool":"bash"}'
 
 
 @pytest.mark.asyncio
 async def test_negotiating_result_aggregator_persists_metadata_for_artifact_first_flow() -> None:
-    store = InMemoryTaskStore()
+    store = _store()
     task_manager = TaskManager(
+        context=ServerCallContext(),
         task_id="task-artifact-first",
         context_id="ctx-artifact-first",
         task_store=store,
@@ -144,7 +148,7 @@ async def test_negotiating_result_aggregator_persists_metadata_for_artifact_firs
             context_id="ctx-artifact-first",
             artifact=Artifact(
                 artifact_id="artifact-1",
-                parts=[Part(root=TextPart(text="hello"))],
+                parts=[make_text_part("hello")],
             ),
             append=False,
             last_chunk=False,
@@ -154,8 +158,7 @@ async def test_negotiating_result_aggregator_persists_metadata_for_artifact_firs
         TaskStatusUpdateEvent(
             task_id="task-artifact-first",
             context_id="ctx-artifact-first",
-            status=TaskStatus(state=TaskState.completed),
-            final=True,
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
         )
     )
 
@@ -172,16 +175,16 @@ async def test_negotiating_result_aggregator_persists_metadata_for_artifact_firs
     assert [artifact.artifact_id for artifact in result.artifacts] == ["artifact-1"]
 
     await bg_task
-    stored = await store.get("task-artifact-first")
+    stored = await store.get("task-artifact-first", ServerCallContext())
     assert stored is not None
     assert extract_accepted_output_modes_from_metadata(stored.metadata) == ("text/plain",)
 
 
 @pytest.mark.asyncio
 async def test_on_get_task_applies_persisted_output_negotiation() -> None:
-    store = InMemoryTaskStore()
+    store = _store()
     task = _task_with_negotiated_outputs(task_id="task-get", context_id="ctx-get")
-    await store.save(task)
+    await store.save(task, ServerCallContext())
     handler = OpencodeRequestHandler(agent_executor=AsyncMock(), task_store=store)
 
     result = await handler.on_get_task(TaskQueryParams(id="task-get"))
@@ -193,14 +196,14 @@ async def test_on_get_task_applies_persisted_output_negotiation() -> None:
         "task-get:text",
         "task-get:json",
     ]
-    assert result.artifacts[1].parts[0].root.text == '{"status":"completed","tool":"bash"}'
+    assert part_text(result.artifacts[1].parts[0]) == '{"status":"completed","tool":"bash"}'
 
 
 @pytest.mark.asyncio
 async def test_resubscribe_terminal_task_applies_persisted_output_negotiation() -> None:
-    store = InMemoryTaskStore()
+    store = _store()
     task = _task_with_negotiated_outputs(task_id="task-resub", context_id="ctx-resub")
-    await store.save(task)
+    await store.save(task, ServerCallContext())
     handler = OpencodeRequestHandler(agent_executor=AsyncMock(), task_store=store)
 
     events = []
@@ -214,4 +217,4 @@ async def test_resubscribe_terminal_task_applies_persisted_output_negotiation() 
         "task-resub:text",
         "task-resub:json",
     ]
-    assert events[0].artifacts[1].parts[0].root.text == '{"status":"completed","tool":"bash"}'
+    assert part_text(events[0].artifacts[1].parts[0]) == '{"status":"completed","tool":"bash"}'

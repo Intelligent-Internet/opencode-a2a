@@ -7,17 +7,36 @@ import pytest
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
+from opencode_a2a.a2a_utils import proto_to_dict
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.opencode_upstream_client import (
     OpencodeMessage,
     UpstreamConcurrencyLimitError,
     UpstreamContractError,
 )
+from opencode_a2a.task_states import TERMINAL_TASK_STATES
 from tests.support.helpers import (
     configure_mock_client_runtime,
     make_request_context,
     make_request_context_mock,
 )
+
+
+def _part_text(part) -> str:  # noqa: ANN001
+    return getattr(part, "text", None) or getattr(getattr(part, "root", None), "text", "")
+
+
+def _is_terminal_status_event(event: TaskStatusUpdateEvent) -> bool:
+    return (
+        event.status.state in TERMINAL_TASK_STATES
+        or event.status.state == TaskState.TASK_STATE_AUTH_REQUIRED
+    )
+
+
+def _metadata_dict(metadata) -> dict:  # noqa: ANN001
+    if metadata is None:
+        return {}
+    return proto_to_dict(metadata)
 
 
 @pytest.mark.asyncio
@@ -45,7 +64,7 @@ async def test_execute_missing_ids():
 
     assert isinstance(args[0], Task)
     assert args[0].id == "unknown"
-    assert args[0].status.state.name == "failed"
+    assert args[0].status.state == TaskState.TASK_STATE_FAILED
 
 
 @pytest.mark.asyncio
@@ -64,9 +83,8 @@ async def test_cancel_missing_ids():
     # This should no longer raise RuntimeError
     await executor.cancel(context, event_queue)
 
-    # Verify that an event was enqueued and queue is not force-closed by executor.cancel
+    # Verify that cancel emits an event through the current EventQueue interface.
     event_queue.enqueue_event.assert_called()
-    event_queue.close.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -90,7 +108,7 @@ async def test_execute_invalid_metadata_type():
 
     event = event_queue.enqueue_event.call_args[0][0]
     assert isinstance(event, Task)
-    assert event.status.state.name == "failed"
+    assert event.status.state == TaskState.TASK_STATE_FAILED
     assert "Invalid metadata" in str(event.status.message)
 
 
@@ -112,8 +130,10 @@ async def test_execute_rejects_output_modes_without_text_plain() -> None:
 
     event = event_queue.enqueue_event.call_args[0][0]
     assert isinstance(event, Task)
-    assert event.status.state.name == "failed"
-    assert "acceptedOutputModes must include text/plain" in event.status.message.parts[0].root.text
+    assert event.status.state == TaskState.TASK_STATE_FAILED
+    assert "acceptedOutputModes must include text/plain" in _part_text(
+        event.status.message.parts[0]
+    )
     assert not client.create_session.called
 
 
@@ -121,11 +141,11 @@ async def test_execute_rejects_output_modes_without_text_plain() -> None:
 @pytest.mark.parametrize(
     ("status", "expected_type", "expected_state"),
     [
-        (400, "UPSTREAM_BAD_REQUEST", TaskState.failed),
-        (401, "UPSTREAM_UNAUTHORIZED", TaskState.auth_required),
-        (403, "UPSTREAM_PERMISSION_DENIED", TaskState.failed),
-        (429, "UPSTREAM_QUOTA_EXCEEDED", TaskState.failed),
-        (500, "UPSTREAM_SERVER_ERROR", TaskState.failed),
+        (400, "UPSTREAM_BAD_REQUEST", TaskState.TASK_STATE_FAILED),
+        (401, "UPSTREAM_UNAUTHORIZED", TaskState.TASK_STATE_AUTH_REQUIRED),
+        (403, "UPSTREAM_PERMISSION_DENIED", TaskState.TASK_STATE_FAILED),
+        (429, "UPSTREAM_QUOTA_EXCEEDED", TaskState.TASK_STATE_FAILED),
+        (500, "UPSTREAM_SERVER_ERROR", TaskState.TASK_STATE_FAILED),
     ],
 )
 async def test_execute_http_error_maps_to_task_error_type_and_state(
@@ -168,9 +188,9 @@ async def test_execute_http_error_maps_to_task_error_type_and_state(
             break
     assert event is not None
     assert event.status.state == expected_state
-    assert event.metadata is not None
-    assert event.metadata["opencode"]["error"]["type"] == expected_type
-    assert event.metadata["opencode"]["error"]["upstream_status"] == status
+    metadata = _metadata_dict(event.metadata)
+    assert metadata["opencode"]["error"]["type"] == expected_type
+    assert metadata["opencode"]["error"]["upstream_status"] == status
 
 
 @pytest.mark.asyncio
@@ -213,18 +233,18 @@ async def test_streaming_execute_http_error_emits_status_update_with_metadata(ca
         payload = call.args[0]
         if (
             isinstance(payload, TaskStatusUpdateEvent)
-            and payload.final
-            and payload.metadata is not None
-            and payload.metadata.get("opencode", {}).get("error", {}).get("type")
+            and _is_terminal_status_event(payload)
+            and _metadata_dict(payload.metadata).get("opencode", {}).get("error", {}).get("type")
             == "UPSTREAM_QUOTA_EXCEEDED"
         ):
             status = payload
             break
 
     assert status is not None
-    assert status.status.state == TaskState.failed
-    assert status.metadata["opencode"]["error"]["type"] == "UPSTREAM_QUOTA_EXCEEDED"
-    assert status.metadata["opencode"]["error"]["upstream_status"] == 429
+    assert status.status.state == TaskState.TASK_STATE_FAILED
+    metadata = _metadata_dict(status.metadata)
+    assert metadata["opencode"]["error"]["type"] == "UPSTREAM_QUOTA_EXCEEDED"
+    assert metadata["opencode"]["error"]["upstream_status"] == 429
     http_logs = [
         record
         for record in caplog.records
@@ -275,17 +295,17 @@ async def test_streaming_execute_upstream_backpressure_emits_status_update_with_
         payload = call.args[0]
         if (
             isinstance(payload, TaskStatusUpdateEvent)
-            and payload.final
-            and payload.metadata is not None
-            and payload.metadata.get("opencode", {}).get("error", {}).get("type")
+            and _is_terminal_status_event(payload)
+            and _metadata_dict(payload.metadata).get("opencode", {}).get("error", {}).get("type")
             == "UPSTREAM_BACKPRESSURE"
         ):
             status = payload
             break
 
     assert status is not None
-    assert status.status.state == TaskState.failed
-    assert status.metadata["opencode"]["error"]["type"] == "UPSTREAM_BACKPRESSURE"
+    assert status.status.state == TaskState.TASK_STATE_FAILED
+    metadata = _metadata_dict(status.metadata)
+    assert metadata["opencode"]["error"]["type"] == "UPSTREAM_BACKPRESSURE"
     backpressure_logs = [
         record
         for record in caplog.records
@@ -331,10 +351,10 @@ async def test_execute_upstream_payload_error_maps_to_task_error_type() -> None:
             break
 
     assert event is not None
-    assert event.status.state == TaskState.failed
-    assert event.metadata is not None
-    assert event.metadata["opencode"]["error"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
-    assert "payload mismatch" in event.status.message.parts[0].root.text
+    assert event.status.state == TaskState.TASK_STATE_FAILED
+    metadata = _metadata_dict(event.metadata)
+    assert metadata["opencode"]["error"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+    assert "payload mismatch" in _part_text(event.status.message.parts[0])
 
 
 @pytest.mark.asyncio
@@ -374,10 +394,10 @@ async def test_execute_upstream_backpressure_maps_to_task_error_type() -> None:
             break
 
     assert event is not None
-    assert event.status.state == TaskState.failed
-    assert event.metadata is not None
-    assert event.metadata["opencode"]["error"]["type"] == "UPSTREAM_BACKPRESSURE"
-    assert "concurrency limit exceeded" in event.status.message.parts[0].root.text
+    assert event.status.state == TaskState.TASK_STATE_FAILED
+    metadata = _metadata_dict(event.metadata)
+    assert metadata["opencode"]["error"]["type"] == "UPSTREAM_BACKPRESSURE"
+    assert "concurrency limit exceeded" in _part_text(event.status.message.parts[0])
 
 
 @pytest.mark.asyncio
@@ -431,11 +451,11 @@ async def test_execute_response_info_error_maps_to_task_failed_state() -> None:
             break
 
     assert event is not None
-    assert event.status.state == TaskState.failed
-    assert event.metadata is not None
-    assert event.metadata["opencode"]["error"]["type"] == "UPSTREAM_BAD_REQUEST"
-    assert event.metadata["opencode"]["error"]["upstream_status"] == 400
-    assert "API key expired" in event.status.message.parts[0].root.text
+    assert event.status.state == TaskState.TASK_STATE_FAILED
+    metadata = _metadata_dict(event.metadata)
+    assert metadata["opencode"]["error"]["type"] == "UPSTREAM_BAD_REQUEST"
+    assert metadata["opencode"]["error"]["upstream_status"] == 400
+    assert "API key expired" in _part_text(event.status.message.parts[0])
 
 
 @pytest.mark.asyncio
@@ -497,16 +517,16 @@ async def test_streaming_execute_response_info_error_emits_failed_status_and_err
         payload = call.args[0]
         if isinstance(payload, TaskArtifactUpdateEvent):
             error_artifact = payload
-        if isinstance(payload, TaskStatusUpdateEvent) and payload.final:
+        if isinstance(payload, TaskStatusUpdateEvent) and _is_terminal_status_event(payload):
             final_status = payload
 
     assert error_artifact is not None
-    assert "API key expired" in error_artifact.artifact.parts[0].root.text
+    assert "API key expired" in _part_text(error_artifact.artifact.parts[0])
     assert final_status is not None
-    assert final_status.status.state == TaskState.failed
-    assert final_status.metadata is not None
-    assert final_status.metadata["opencode"]["error"]["type"] == "UPSTREAM_BAD_REQUEST"
-    assert final_status.metadata["opencode"]["error"]["upstream_status"] == 400
+    assert final_status.status.state == TaskState.TASK_STATE_FAILED
+    metadata = _metadata_dict(final_status.metadata)
+    assert metadata["opencode"]["error"]["type"] == "UPSTREAM_BAD_REQUEST"
+    assert metadata["opencode"]["error"]["upstream_status"] == 400
 
 
 @pytest.mark.asyncio
@@ -573,14 +593,14 @@ async def test_streaming_execute_session_error_emits_failed_status() -> None:
     final_status = None
     for call in event_queue.enqueue_event.call_args_list:
         payload = call.args[0]
-        if isinstance(payload, TaskStatusUpdateEvent) and payload.final:
+        if isinstance(payload, TaskStatusUpdateEvent) and _is_terminal_status_event(payload):
             final_status = payload
 
     assert final_status is not None
-    assert final_status.status.state == TaskState.failed
-    assert final_status.metadata is not None
-    assert final_status.metadata["opencode"]["error"]["type"] == "UPSTREAM_BAD_REQUEST"
-    assert final_status.metadata["opencode"]["error"]["upstream_status"] == 400
+    assert final_status.status.state == TaskState.TASK_STATE_FAILED
+    metadata = _metadata_dict(final_status.metadata)
+    assert metadata["opencode"]["error"]["type"] == "UPSTREAM_BAD_REQUEST"
+    assert metadata["opencode"]["error"]["upstream_status"] == 400
 
 
 @pytest.mark.asyncio
@@ -650,11 +670,11 @@ async def test_streaming_execute_message_updated_info_error_emits_failed_status(
     final_status = None
     for call in event_queue.enqueue_event.call_args_list:
         payload = call.args[0]
-        if isinstance(payload, TaskStatusUpdateEvent) and payload.final:
+        if isinstance(payload, TaskStatusUpdateEvent) and _is_terminal_status_event(payload):
             final_status = payload
 
     assert final_status is not None
-    assert final_status.status.state == TaskState.failed
-    assert final_status.metadata is not None
-    assert final_status.metadata["opencode"]["error"]["type"] == "UPSTREAM_BAD_REQUEST"
-    assert final_status.metadata["opencode"]["error"]["upstream_status"] == 400
+    assert final_status.status.state == TaskState.TASK_STATE_FAILED
+    metadata = _metadata_dict(final_status.metadata)
+    assert metadata["opencode"]["error"]["type"] == "UPSTREAM_BAD_REQUEST"
+    assert metadata["opencode"]["error"]["upstream_status"] == 400

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from a2a.client.middleware import ClientCallContext
+from a2a.client.client import ClientCallContext
 
 from ..protocol_versions import normalize_protocol_version
 from ..trace_context import current_trace_headers

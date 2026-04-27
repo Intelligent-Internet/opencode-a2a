@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from a2a.types import (
     AgentCapabilities,
@@ -9,8 +9,8 @@ from a2a.types import (
     AgentInterface,
     AgentSkill,
     HTTPAuthSecurityScheme,
+    SecurityRequirement,
     SecurityScheme,
-    TransportProtocol,
 )
 
 from ..auth import has_configured_auth_scheme
@@ -572,24 +572,24 @@ def _build_agent_card(
     public_url = settings.a2a_public_url.rstrip("/")
     runtime_profile = build_runtime_profile(settings)
     security_schemes: dict[str, SecurityScheme] = {}
-    security: list[dict[str, list[str]]] = []
+    security_requirements: list[SecurityRequirement] = []
     if has_configured_auth_scheme(settings, "bearer"):
         security_schemes["bearerAuth"] = SecurityScheme(
-            root=HTTPAuthSecurityScheme(
+            http_auth_security_scheme=HTTPAuthSecurityScheme(
                 description="Bearer token authentication",
                 scheme="bearer",
                 bearer_format="opaque",
             )
         )
-        security.append({"bearerAuth": []})
+        security_requirements.append(SecurityRequirement(schemes=cast(Any, {"bearerAuth": {}})))
     if has_configured_auth_scheme(settings, "basic"):
         security_schemes["basicAuth"] = SecurityScheme(
-            root=HTTPAuthSecurityScheme(
+            http_auth_security_scheme=HTTPAuthSecurityScheme(
                 description="Basic authentication",
                 scheme="basic",
             )
         )
-        security.append({"basicAuth": []})
+        security_requirements.append(SecurityRequirement(schemes=cast(Any, {"basicAuth": {}})))
     capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
 
     return AgentCard(
@@ -599,15 +599,25 @@ def _build_agent_card(
             runtime_profile,
             include_detailed_contracts=include_detailed_contracts,
         ),
-        url=public_url,
         documentation_url=settings.a2a_documentation_url,
         version=settings.a2a_version,
-        protocol_version=settings.a2a_protocol_version,
-        preferred_transport=TransportProtocol.http_json,
+        supported_interfaces=[
+            AgentInterface(
+                url=public_url,
+                protocol_binding="HTTP+JSON",
+                protocol_version=settings.a2a_protocol_version,
+            ),
+            AgentInterface(
+                url=public_url,
+                protocol_binding="JSONRPC",
+                protocol_version=settings.a2a_protocol_version,
+            ),
+        ],
         default_input_modes=list(_CHAT_INPUT_MODES),
         default_output_modes=list(_CHAT_OUTPUT_MODES),
         capabilities=AgentCapabilities(
             streaming=True,
+            extended_agent_card=True,
             extensions=_build_agent_extensions(
                 settings=settings,
                 runtime_profile=runtime_profile,
@@ -619,13 +629,8 @@ def _build_agent_card(
             capability_snapshot=capability_snapshot,
             include_detailed_contracts=include_detailed_contracts,
         ),
-        supports_authenticated_extended_card=True,
-        additional_interfaces=[
-            AgentInterface(transport=TransportProtocol.http_json, url=public_url),
-            AgentInterface(transport=TransportProtocol.jsonrpc, url=public_url),
-        ],
         security_schemes=security_schemes,
-        security=security,
+        security_requirements=security_requirements,
     )
 
 

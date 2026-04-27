@@ -17,15 +17,14 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
     Message,
-    Part,
     Role,
     Task,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
 )
 
+from ..a2a_utils import make_text_part
 from ..invocation import call_with_supported_kwargs
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..output_modes import accepts_output_mode, normalize_accepted_output_modes
@@ -73,7 +72,6 @@ from .stream_state import (
     _StreamOutputState,
     _TTLCache,
 )
-from .tool_orchestration import maybe_handle_tools, merge_streamed_tool_output
 from .upstream_error_translator import (
     _await_stream_terminal_signal,
     _extract_upstream_error_detail,
@@ -178,18 +176,6 @@ class OpencodeAgentExecutor(AgentExecutor):
     ) -> None:
         _emit_metric(name, value, **labels)
 
-    async def _maybe_handle_tools(
-        self, raw_response: dict[str, Any]
-    ) -> list[dict[str, Any]] | None:
-        return await maybe_handle_tools(
-            raw_response,
-            a2a_client_manager=self._a2a_client_manager,
-        )
-
-    @staticmethod
-    def _merge_streamed_tool_output(current: str, incoming: str) -> str:
-        return merge_streamed_tool_output(current, incoming)
-
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id
         context_id = context.context_id
@@ -199,7 +185,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id or "unknown",
                 context_id=context_id or "unknown",
                 message="Missing task_id or context_id in request context",
-                state=TaskState.failed,
+                state=TaskState.TASK_STATE_FAILED,
                 streaming_request=self._should_stream(context),
             )
             return
@@ -223,7 +209,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 message=str(exc),
-                state=TaskState.failed,
+                state=TaskState.TASK_STATE_FAILED,
                 streaming_request=streaming_request,
             )
             return
@@ -246,7 +232,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 message="Invalid metadata: expected an object/map.",
-                state=TaskState.failed,
+                state=TaskState.TASK_STATE_FAILED,
                 streaming_request=streaming_request,
             )
             return
@@ -267,7 +253,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     task_id=task_id,
                     context_id=context_id,
                     message=str(e),
-                    state=TaskState.failed,
+                    state=TaskState.TASK_STATE_FAILED,
                     streaming_request=streaming_request,
                 )
                 return
@@ -285,7 +271,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 message="Only text and file input are supported.",
-                state=TaskState.failed,
+                state=TaskState.TASK_STATE_FAILED,
                 streaming_request=streaming_request,
             )
             return
@@ -296,7 +282,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 message="acceptedOutputModes must include text/plain for OpenCode chat responses.",
-                state=TaskState.failed,
+                state=TaskState.TASK_STATE_FAILED,
                 streaming_request=streaming_request,
             )
             return
@@ -360,7 +346,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     task_id=task_id or "unknown",
                     context_id=context_id or "unknown",
                     message="Missing task_id or context_id in request context",
-                    state=TaskState.failed,
+                    state=TaskState.TASK_STATE_FAILED,
                     streaming_request=False,
                 )
                 return
@@ -371,8 +357,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             event = TaskStatusUpdateEvent(
                 task_id=task_id,
                 context_id=context_id,
-                status=TaskStatus(state=TaskState.canceled),
-                final=True,
+                status=TaskStatus(state=TaskState.TASK_STATE_CANCELED),
             )
             await event_queue.enqueue_event(event)
 
@@ -463,7 +448,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                         task_id=task_id,
                         context_id=context_id,
                         message=f"Cancel failed: {exc}",
-                        state=TaskState.failed,
+                        state=TaskState.TASK_STATE_FAILED,
                         streaming_request=False,
                     )
         finally:
@@ -487,8 +472,8 @@ class OpencodeAgentExecutor(AgentExecutor):
     ) -> None:
         error_message = Message(
             message_id=str(uuid.uuid4()),
-            role=Role.agent,
-            parts=[Part(root=TextPart(text=message))],
+            role=Role.ROLE_AGENT,
+            parts=[make_text_part(message)],
             task_id=task_id,
             context_id=context_id,
         )
@@ -506,7 +491,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 artifact_id=f"{task_id}:error",
-                part=Part(root=TextPart(text=message)),
+                part=make_text_part(message),
                 append=False,
                 last_chunk=True,
             )
@@ -516,7 +501,6 @@ class OpencodeAgentExecutor(AgentExecutor):
                     context_id=context_id,
                     status=TaskStatus(state=state),
                     metadata=error_metadata,
-                    final=True,
                 )
             )
             return

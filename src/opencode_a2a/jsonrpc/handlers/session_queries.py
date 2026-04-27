@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from a2a.types import JSONRPCRequest
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -17,6 +16,7 @@ from ..methods import (
     _as_a2a_session_task,
     _extract_raw_items,
 )
+from ..models import JSONRPCRequest
 from ..params import (
     JsonRpcParamsValidationError,
     parse_get_session_messages_params,

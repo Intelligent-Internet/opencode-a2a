@@ -209,20 +209,20 @@ def _extract_event_session_id(event: Mapping[str, Any]) -> str | None:
 def _extract_stream_terminal_signal(event: Mapping[str, Any]) -> _StreamTerminalSignal | None:
     event_type = event.get("type")
     if event_type == "session.idle":
-        return _StreamTerminalSignal(state=TaskState.completed)
+        return _StreamTerminalSignal(state=TaskState.TASK_STATE_COMPLETED)
     if event_type != "session.error":
         return None
     props = event.get("properties")
     if not isinstance(props, Mapping):
         return _StreamTerminalSignal(
-            state=TaskState.failed,
+            state=TaskState.TASK_STATE_FAILED,
             error_type="UPSTREAM_EXECUTION_ERROR",
             message="OpenCode execution failed (session.error).",
         )
     error = props.get("error")
     if not isinstance(error, Mapping):
         return _StreamTerminalSignal(
-            state=TaskState.failed,
+            state=TaskState.TASK_STATE_FAILED,
             error_type="UPSTREAM_EXECUTION_ERROR",
             message="OpenCode execution failed (session.error).",
         )

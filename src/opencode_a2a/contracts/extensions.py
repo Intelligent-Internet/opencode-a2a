@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from a2a.server.apps.jsonrpc.jsonrpc_app import JSONRPCApplication
+from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 
+from ..a2a_protocol import V1_JSONRPC_METHOD_TO_LEGACY_METHOD
 from ..profile.runtime import (
     SESSION_SHELL_TOGGLE,
     WORKSPACE_MUTATIONS_TOGGLE,
@@ -420,7 +421,10 @@ SESSION_MUTATION_METHODS: dict[str, str] = {
     key: SESSION_METHODS[key] for key in SESSION_MUTATION_METHOD_KEYS
 }
 
-CORE_JSONRPC_METHODS: tuple[str, ...] = tuple(JSONRPCApplication.METHOD_TO_MODEL)
+CORE_JSONRPC_METHODS: tuple[str, ...] = tuple(
+    V1_JSONRPC_METHOD_TO_LEGACY_METHOD.get(method, method)
+    for method in JsonRpcDispatcher.METHOD_TO_MODEL
+)
 CORE_HTTP_ENDPOINTS: tuple[str, ...] = (
     "POST /v1/message:send",
     "POST /v1/message:stream",

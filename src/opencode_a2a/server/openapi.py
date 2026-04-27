@@ -26,6 +26,7 @@ from ..contracts.extensions import (
     build_workspace_control_extension_params,
 )
 from ..jsonrpc.application import SESSION_CONTEXT_PREFIX
+from ..jsonrpc.models import JSONRPCRequest
 from ..profile.runtime import RuntimeProfile
 
 
@@ -632,6 +633,13 @@ def _patch_jsonrpc_openapi_contract(
             return app.openapi_schema
 
         schema = original_openapi()
+        components = schema.setdefault("components", {})
+        if isinstance(components, dict):
+            schemas = components.setdefault("schemas", {})
+            if isinstance(schemas, dict):
+                jsonrpc_request_schema = JSONRPCRequest.model_json_schema()
+                jsonrpc_request_schema["title"] = "A2ARequest"
+                schemas.setdefault("A2ARequest", jsonrpc_request_schema)
         paths = schema.get("paths")
         if isinstance(paths, dict):
             root_path = paths.get("/")
@@ -657,10 +665,12 @@ def _patch_jsonrpc_openapi_contract(
 
                     request_body = post.setdefault("requestBody", {})
                     if isinstance(request_body, dict):
+                        request_body.setdefault("required", True)
                         content = request_body.setdefault("content", {})
                         if isinstance(content, dict):
                             app_json = content.setdefault("application/json", {})
                             if isinstance(app_json, dict):
+                                app_json["schema"] = {"$ref": "#/components/schemas/A2ARequest"}
                                 app_json["examples"] = _build_jsonrpc_extension_openapi_examples(
                                     capability_snapshot=capability_snapshot,
                                 )

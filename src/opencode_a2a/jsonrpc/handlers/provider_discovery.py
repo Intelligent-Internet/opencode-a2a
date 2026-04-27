@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from a2a.types import JSONRPCRequest
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -16,6 +15,7 @@ from ..methods import (
     _normalize_model_summaries,
     _normalize_provider_summaries,
 )
+from ..models import JSONRPCRequest
 from .common import (
     build_success_response,
     build_upstream_payload_error_response,

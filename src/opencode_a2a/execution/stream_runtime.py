@@ -9,16 +9,13 @@ from typing import Any
 
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
-    DataPart,
-    Part,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
 )
 
+from ..a2a_utils import make_data_part, make_text_part, part_kind, part_text, part_text_fallback
 from ..invocation import call_with_supported_kwargs
-from ..output_modes import part_text_fallback
 from .event_helpers import _enqueue_artifact_update
 from .stream_events import (
     BlockType,
@@ -87,12 +84,12 @@ class StreamRuntime:
 
         async def _emit_chunks(chunks: list[_NormalizedStreamChunk]) -> None:
             for chunk in chunks:
-                if not allow_structured_output and getattr(chunk.part.root, "kind", None) == "data":
-                    fallback_text = part_text_fallback(chunk.part.root)
+                if not allow_structured_output and part_kind(chunk.part) == "data":
+                    fallback_text = part_text_fallback(chunk.part)
                     if fallback_text is None:
                         continue
                     chunk = _NormalizedStreamChunk(
-                        part=Part(root=TextPart(text=fallback_text)),
+                        part=make_text_part(fallback_text),
                         content_key=fallback_text,
                         accumulate_content=False,
                         append=chunk.append,
@@ -103,7 +100,7 @@ class StreamRuntime:
                         role=chunk.role,
                     )
                 resolved_message_id = stream_state.resolve_message_id(chunk.message_id)
-                chunk_text = getattr(chunk.part.root, "text", "")
+                chunk_text = part_text(chunk.part) or ""
                 if stream_state.should_drop_initial_user_echo(
                     chunk_text,
                     block_type=chunk.block_type,
@@ -174,7 +171,6 @@ class StreamRuntime:
                     task_id=task_id,
                     context_id=context_id,
                     status=TaskStatus(state=state),
-                    final=False,
                     metadata=_build_output_metadata(
                         session_id=session_id,
                         stream={
@@ -202,8 +198,7 @@ class StreamRuntime:
                 TaskStatusUpdateEvent(
                     task_id=task_id,
                     context_id=context_id,
-                    status=TaskStatus(state=TaskState.working),
-                    final=False,
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
                     metadata=_build_output_metadata(
                         session_id=session_id,
                         stream={
@@ -228,7 +223,7 @@ class StreamRuntime:
             role: str | None,
         ) -> _NormalizedStreamChunk:
             return _NormalizedStreamChunk(
-                part=Part(root=TextPart(text=text)),
+                part=make_text_part(text),
                 content_key=text,
                 accumulate_content=True,
                 append=append,
@@ -251,7 +246,7 @@ class StreamRuntime:
             role: str | None,
         ) -> _NormalizedStreamChunk:
             return _NormalizedStreamChunk(
-                part=Part(root=DataPart(data=dict(data))),
+                part=make_data_part(dict(data)),
                 content_key=content_key,
                 accumulate_content=False,
                 append=append,
@@ -460,7 +455,7 @@ class StreamRuntime:
                                             details=asked["details"],
                                         )
                                     await _emit_interrupt_status(
-                                        state=TaskState.input_required,
+                                        state=TaskState.TASK_STATE_INPUT_REQUIRED,
                                         request_id=request_id,
                                         interrupt_type=asked["interrupt_type"],
                                         phase="asked",
@@ -481,7 +476,7 @@ class StreamRuntime:
                                     await discard_request(resolved_request_id)
                                 if cleared_pending:
                                     await _emit_interrupt_status(
-                                        state=TaskState.working,
+                                        state=TaskState.TASK_STATE_WORKING,
                                         request_id=resolved_request_id,
                                         interrupt_type=resolved["interrupt_type"],
                                         phase="resolved",

@@ -4,7 +4,6 @@ import logging
 from typing import Any
 
 import httpx
-from a2a.types import JSONRPCRequest
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -18,6 +17,7 @@ from ..error_responses import (
     invalid_params_error,
 )
 from ..methods import _normalize_permission_reply, _parse_question_answers
+from ..models import JSONRPCRequest
 from .common import (
     build_internal_error_response,
     build_success_response,

@@ -1,23 +1,21 @@
 import asyncio
+import types
 from unittest.mock import AsyncMock
 
 import pytest
-from a2a.server.request_handlers.default_request_handler import DefaultRequestHandler
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
-    MessageSendParams,
-    Part,
-    Role,
+    AgentCapabilities,
+    AgentCard,
     Task,
     TaskIdParams,
     TaskNotCancelableError,
     TaskNotFoundError,
     TaskState,
     TaskStatus,
-    TextPart,
 )
-from a2a.utils.errors import ServerError
 
+from opencode_a2a.a2a_utils import make_text_part
 from opencode_a2a.server.application import OpencodeRequestHandler
 
 
@@ -29,43 +27,43 @@ def _task(*, task_id: str, context_id: str, state: TaskState) -> Task:
     )
 
 
-def _message_send_params(*, text: str = "hello") -> MessageSendParams:
-    return MessageSendParams(
-        message={
-            "messageId": "msg-1",
-            "role": Role.user,
-            "parts": [Part(root=TextPart(text=text))],
-        }
+def _store() -> InMemoryTaskStore:
+    return InMemoryTaskStore(owner_resolver=lambda _context: "test-owner")
+
+
+def _message_send_params(*, text: str = "hello") -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        configuration=None,
+        message=types.SimpleNamespace(parts=[make_text_part(text)]),
     )
 
 
 @pytest.mark.asyncio
 async def test_cancel_is_idempotent_for_already_canceled_task() -> None:
     executor = AsyncMock()
-    store = InMemoryTaskStore()
+    store = _store()
     handler = OpencodeRequestHandler(agent_executor=executor, task_store=store)
-    task = _task(task_id="task-1", context_id="ctx-1", state=TaskState.canceled)
-    await store.save(task)
+    task = _task(task_id="task-1", context_id="ctx-1", state=TaskState.TASK_STATE_CANCELED)
+    await store.save(task, None)
 
     result = await handler.on_cancel_task(TaskIdParams(id="task-1"))
 
     assert result is not None
-    assert result.status.state == TaskState.canceled
+    assert result.status.state == TaskState.TASK_STATE_CANCELED
     executor.cancel.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_cancel_rejects_completed_task() -> None:
     executor = AsyncMock()
-    store = InMemoryTaskStore()
+    store = _store()
     handler = OpencodeRequestHandler(agent_executor=executor, task_store=store)
-    task = _task(task_id="task-2", context_id="ctx-2", state=TaskState.completed)
-    await store.save(task)
+    task = _task(task_id="task-2", context_id="ctx-2", state=TaskState.TASK_STATE_COMPLETED)
+    await store.save(task, None)
 
-    with pytest.raises(ServerError) as exc:
+    with pytest.raises(TaskNotCancelableError):
         await handler.on_cancel_task(TaskIdParams(id="task-2"))
 
-    assert isinstance(exc.value.error, TaskNotCancelableError)
     executor.cancel.assert_not_awaited()
 
 
@@ -74,30 +72,44 @@ async def test_cancel_is_race_safe_when_task_becomes_canceled_during_super_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     executor = AsyncMock()
-    store = InMemoryTaskStore()
+    store = _store()
     handler = OpencodeRequestHandler(agent_executor=executor, task_store=store)
-    task = _task(task_id="task-race", context_id="ctx-race", state=TaskState.working)
-    await store.save(task)
+    task = _task(task_id="task-race", context_id="ctx-race", state=TaskState.TASK_STATE_WORKING)
+    await store.save(task, None)
 
-    async def _fake_super_cancel(_self, params: TaskIdParams, context=None):  # noqa: ANN001
-        await store.save(_task(task_id=params.id, context_id="ctx-race", state=TaskState.canceled))
-        raise ServerError(error=TaskNotCancelableError(message="task already canceled"))
+    async def _mark_task_canceled(_request_context, _queue):  # noqa: ANN001
+        await store.save(
+            _task(task_id="task-race", context_id="ctx-race", state=TaskState.TASK_STATE_CANCELED),
+            None,
+        )
 
-    monkeypatch.setattr(DefaultRequestHandler, "on_cancel_task", _fake_super_cancel)
+    async def _consume_non_canceled(_self, _consumer):  # noqa: ANN001
+        return task
+
+    executor.cancel.side_effect = _mark_task_canceled
+    monkeypatch.setattr(handler._queue_manager, "tap", AsyncMock(return_value=object()))  # noqa: SLF001
+    monkeypatch.setattr(
+        "opencode_a2a.server.application.ResultAggregator.consume_all",
+        _consume_non_canceled,
+    )
 
     result = await handler.on_cancel_task(TaskIdParams(id="task-race"))
 
     assert result is not None
-    assert result.status.state == TaskState.canceled
+    assert result.status.state == TaskState.TASK_STATE_CANCELED
 
 
 @pytest.mark.asyncio
 async def test_resubscribe_terminal_task_replays_final_snapshot_once() -> None:
     executor = AsyncMock()
-    store = InMemoryTaskStore()
-    handler = OpencodeRequestHandler(agent_executor=executor, task_store=store)
-    task = _task(task_id="task-3", context_id="ctx-3", state=TaskState.canceled)
-    await store.save(task)
+    store = _store()
+    handler = OpencodeRequestHandler(
+        agent_executor=executor,
+        task_store=store,
+        agent_card=AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True)),
+    )
+    task = _task(task_id="task-3", context_id="ctx-3", state=TaskState.TASK_STATE_CANCELED)
+    await store.save(task, None)
 
     events = []
     async for event in handler.on_resubscribe_to_task(TaskIdParams(id="task-3")):
@@ -105,22 +117,24 @@ async def test_resubscribe_terminal_task_replays_final_snapshot_once() -> None:
 
     assert len(events) == 1
     assert isinstance(events[0], Task)
-    assert events[0].status.state == TaskState.canceled
+    assert events[0].status.state == TaskState.TASK_STATE_CANCELED
 
 
 @pytest.mark.asyncio
 async def test_resubscribe_non_terminal_without_queue_keeps_not_found_behavior() -> None:
     executor = AsyncMock()
-    store = InMemoryTaskStore()
-    handler = OpencodeRequestHandler(agent_executor=executor, task_store=store)
-    task = _task(task_id="task-4", context_id="ctx-4", state=TaskState.working)
-    await store.save(task)
+    store = _store()
+    handler = OpencodeRequestHandler(
+        agent_executor=executor,
+        task_store=store,
+        agent_card=AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True)),
+    )
+    task = _task(task_id="task-4", context_id="ctx-4", state=TaskState.TASK_STATE_WORKING)
+    await store.save(task, None)
 
-    with pytest.raises(ServerError) as exc:
+    with pytest.raises(TaskNotFoundError):
         async for _event in handler.on_resubscribe_to_task(TaskIdParams(id="task-4")):
             pass
-
-    assert isinstance(exc.value.error, TaskNotFoundError)
 
 
 @pytest.mark.asyncio
@@ -128,10 +142,12 @@ async def test_message_send_tracks_background_consumer_from_sdk_interrupt_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     executor = AsyncMock()
-    store = InMemoryTaskStore()
+    store = _store()
     handler = OpencodeRequestHandler(agent_executor=executor, task_store=store)
 
-    result_task = _task(task_id="task-5", context_id="ctx-5", state=TaskState.input_required)
+    result_task = _task(
+        task_id="task-5", context_id="ctx-5", state=TaskState.TASK_STATE_INPUT_REQUIRED
+    )
     producer_task = asyncio.create_task(asyncio.sleep(0))
     bg_task = asyncio.create_task(asyncio.sleep(0))
 

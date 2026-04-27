@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from a2a.types import Message, TextPart
+from a2a.types import Message, Part
+from google.protobuf.message import Message as ProtoMessage
+
+from ..a2a_utils import part_text, proto_to_dict
 
 
 def extract_text(payload: Any) -> str | None:
@@ -23,28 +26,21 @@ def extract_text(payload: Any) -> str | None:
             return None
         collected: list[str] = []
         for part in parts:
-            text_part = None
-            if isinstance(part, TextPart):
-                text_part = part
-            else:
-                root = getattr(part, "root", None)
-                if isinstance(root, TextPart):
-                    text_part = root
-                elif isinstance(part, Mapping):
-                    text_value = part.get("text")
-                    if isinstance(text_value, str) and text_value.strip():
-                        collected.append(text_value)
+            if isinstance(part, Part):
+                text_value = part_text(part)
+                if text_value:
+                    collected.append(text_value)
+                continue
+            if isinstance(part, Mapping):
+                text_value = part.get("text")
+                if isinstance(text_value, str) and text_value.strip():
+                    collected.append(text_value)
+                    continue
+                if isinstance(part.get("role"), str):
+                    nested = extract_text(part)
+                    if nested:
+                        collected.append(nested)
                         continue
-                    mapped_root = part.get("root")
-                    if isinstance(mapped_root, TextPart):
-                        text_part = mapped_root
-                    elif isinstance(part.get("role"), str):
-                        nested = extract_text(part)
-                        if nested:
-                            collected.append(nested)
-                            continue
-            if text_part and getattr(text_part, "text", None):
-                collected.append(text_part.text)
         if collected:
             return "\n".join(collected)
         return None
@@ -157,8 +153,12 @@ def extract_text(payload: Any) -> str | None:
         if mapped_text:
             return mapped_text
 
-    mapping_payload = None
-    if hasattr(payload, "model_dump") and callable(payload.model_dump):
+    mapping_payload: Mapping[str, Any] | None = None
+    if isinstance(payload, ProtoMessage):
+        payload_dict = proto_to_dict(payload)
+        if isinstance(payload_dict, Mapping):
+            mapping_payload = payload_dict
+    elif hasattr(payload, "model_dump") and callable(payload.model_dump):
         payload_dict = payload.model_dump()
         if isinstance(payload_dict, Mapping):
             mapping_payload = payload_dict

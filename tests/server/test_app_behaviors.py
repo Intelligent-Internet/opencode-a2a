@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import types
 from unittest.mock import AsyncMock, MagicMock
@@ -10,16 +11,20 @@ import pytest
 from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.events import EventConsumer
 from a2a.types import (
+    InternalError,
+    Message,
     Task,
     TaskIdParams,
     TaskNotCancelableError,
+    TaskNotFoundError,
     TaskQueryParams,
     TaskState,
     TaskStatus,
     UnsupportedOperationError,
 )
-from a2a.utils.errors import ServerError
+from a2a.utils.errors import InvalidRequestError
 from fastapi import Request
+from google.protobuf.json_format import MessageToDict, ParseError
 
 import opencode_a2a.server.application as app_module
 from opencode_a2a.contracts.extensions import build_capability_snapshot
@@ -30,6 +35,7 @@ from opencode_a2a.server.application import (
     _build_chat_examples,
     _build_jsonrpc_extension_openapi_description,
     _build_jsonrpc_extension_openapi_examples,
+    _build_rest_legacy_error_payload,
     _build_rest_message_openapi_examples,
     _build_session_management_skill_examples,
     _configure_logging,
@@ -40,11 +46,15 @@ from opencode_a2a.server.application import (
     _looks_like_jsonrpc_message_payload,
     _normalize_content_type,
     _normalize_log_level,
+    _normalize_rest_content_part,
+    _normalize_rest_send_message_payload,
     _normalize_v1_jsonrpc_method_alias,
     _parse_content_length,
     _parse_json_body,
+    _parse_rest_send_message_request,
     _request_body_too_large_response,
     _RequestBodyTooLargeError,
+    _rest_error_response,
     build_agent_card,
     create_app,
 )
@@ -56,7 +66,13 @@ from tests.support.helpers import (
 )
 
 
-def _request(path: str, body: bytes = b"{}") -> Request:
+def _request(
+    path: str,
+    body: bytes = b"{}",
+    *,
+    method: str = "POST",
+    path_params: dict[str, str] | None = None,
+) -> Request:
     sent = False
 
     async def receive() -> dict:
@@ -70,7 +86,7 @@ def _request(path: str, body: bytes = b"{}") -> Request:
         "type": "http",
         "asgi": {"version": "3.0"},
         "http_version": "1.1",
-        "method": "POST",
+        "method": method,
         "scheme": "http",
         "path": path,
         "raw_path": path.encode("utf-8"),
@@ -78,6 +94,7 @@ def _request(path: str, body: bytes = b"{}") -> Request:
         "headers": [(b"content-type", b"application/json")],
         "client": ("127.0.0.1", 12345),
         "server": ("testserver", 80),
+        "path_params": path_params or {},
         "state": {},
     }
     req = Request(scope, receive)
@@ -146,6 +163,172 @@ def test_request_payload_helpers_cover_edge_cases() -> None:
     )
     assert response.status_code == 413
     assert response.body == b'{"error":"Request body too large","max_bytes":64}'
+
+
+def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
+    assert _build_rest_legacy_error_payload(message="boom") == {"error": "boom"}
+    assert _build_rest_legacy_error_payload(
+        message="boom",
+        reason="INVALID_REQUEST",
+        metadata={"path": "/v1/message:send"},
+    ) == {
+        "error": "boom",
+        "type": "INVALID_REQUEST",
+        "path": "/v1/message:send",
+    }
+
+    request_v1 = _request("/v1/message:send")
+    request_v1.state.a2a_protocol_version = "1.0"
+    v1_error = _rest_error_response(
+        request=request_v1,
+        default_protocol_version="0.3",
+        error=InvalidRequestError(message="bad payload", data={"path": "/v1/message:send"}),
+    )
+    assert v1_error.status_code == 400
+    assert v1_error.body == (
+        b'{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"bad payload",'
+        b'"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"INVALID_REQUEST",'
+        b'"domain":"a2a-protocol.org","metadata":{"path":"/v1/message:send"}},'
+        b'{"@type":"type.googleapis.com/opencode_a2a.HttpErrorContext","path":"/v1/message:send"}]}}'
+    )
+
+    request_v03 = _request("/v1/message:send")
+    parse_error = _rest_error_response(
+        request=request_v03,
+        default_protocol_version="0.3",
+        error=ParseError("bad parse"),
+    )
+    assert parse_error.status_code == 400
+    assert parse_error.body == b'{"error":"bad parse","type":"INVALID_REQUEST"}'
+
+    generic_error = _rest_error_response(
+        request=request_v03,
+        default_protocol_version="0.3",
+        error=RuntimeError("boom"),
+    )
+    assert generic_error.status_code == 500
+    assert generic_error.body == b'{"error":"unknown exception","type":"INTERNAL_ERROR"}'
+
+    with pytest.raises(InvalidRequestError, match="message.content\\[0\\] must be an object"):
+        _normalize_rest_content_part("bad", field="message.content[0]")
+
+    assert _normalize_rest_content_part(
+        {"text": "hello", "metadata": {"tag": "plain"}},
+        field="message.content[0]",
+    ) == {"metadata": {"tag": "plain"}, "text": "hello"}
+    assert _normalize_rest_content_part(
+        {"data": {"step": 1}},
+        field="message.content[1]",
+    ) == {"data": {"step": 1}}
+    assert _normalize_rest_content_part(
+        {"file": {"bytes": "aGVsbG8=", "name": "report.txt", "mimeType": "text/plain"}},
+        field="message.content[2]",
+    ) == {
+        "raw": "aGVsbG8=",
+        "filename": "report.txt",
+        "mediaType": "text/plain",
+    }
+    assert _normalize_rest_content_part(
+        {
+            "file": {
+                "uri": "file:///tmp/report.txt",
+                "name": "report.txt",
+                "mediaType": "text/plain",
+            }
+        },
+        field="message.content[3]",
+    ) == {
+        "url": "file:///tmp/report.txt",
+        "filename": "report.txt",
+        "mediaType": "text/plain",
+    }
+    assert _normalize_rest_content_part(
+        {"raw": "aGVsbG8=", "filename": "inline.bin", "mediaType": "application/octet-stream"},
+        field="message.content[4]",
+    ) == {
+        "raw": "aGVsbG8=",
+        "filename": "inline.bin",
+        "mediaType": "application/octet-stream",
+    }
+    assert _normalize_rest_content_part(
+        {
+            "url": "https://example.com/report.txt",
+            "filename": "report.txt",
+            "mediaType": "text/plain",
+        },
+        field="message.content[5]",
+    ) == {
+        "url": "https://example.com/report.txt",
+        "filename": "report.txt",
+        "mediaType": "text/plain",
+    }
+    with pytest.raises(
+        InvalidRequestError, match="message.content\\[6\\]\\.file must contain uri or bytes"
+    ):
+        _normalize_rest_content_part({"file": {"name": "report.txt"}}, field="message.content[6]")
+
+    normalized_payload = _normalize_rest_send_message_payload(
+        {
+            "message": {
+                "messageId": "msg-1",
+                "contextId": "ctx-1",
+                "role": "ROLE_USER",
+                "content": [{"text": "hello"}],
+            },
+            "metadata": {"shared": {"session": {"id": "s-1"}}},
+            "acceptedOutputModes": ["text/plain"],
+            "configuration": {"historyLength": 2},
+        }
+    )
+    assert normalized_payload == {
+        "message": {
+            "messageId": "msg-1",
+            "contextId": "ctx-1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}],
+        },
+        "metadata": {"shared": {"session": {"id": "s-1"}}},
+        "configuration": {
+            "historyLength": 2,
+            "acceptedOutputModes": ["text/plain"],
+        },
+    }
+
+    with pytest.raises(InvalidRequestError, match="message must be an object"):
+        _normalize_rest_send_message_payload({})
+    with pytest.raises(InvalidRequestError, match="message.content must be an array"):
+        _normalize_rest_send_message_payload({"message": {"content": "bad"}})
+    with pytest.raises(InvalidRequestError, match="configuration must be an object"):
+        _normalize_rest_send_message_payload(
+            {
+                "message": {"role": "ROLE_USER", "content": [{"text": "hello"}]},
+                "configuration": "bad",
+                "acceptedOutputModes": ["text/plain"],
+            }
+        )
+
+    parsed = _parse_rest_send_message_request(
+        json.dumps(
+            {
+                "message": {
+                    "messageId": "msg-2",
+                    "role": "ROLE_USER",
+                    "content": [{"text": "hello from rest"}],
+                },
+                "returnImmediately": True,
+            }
+        ).encode("utf-8")
+    )
+    assert MessageToDict(parsed) == {
+        "message": {
+            "messageId": "msg-2",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello from rest"}],
+        },
+        "configuration": {"returnImmediately": True},
+    }
+    with pytest.raises(InvalidRequestError, match="REST message payload must be a JSON object"):
+        _parse_rest_send_message_request(b"[]")
 
 
 def test_agent_card_helper_builders_cover_optional_branches() -> None:
@@ -472,7 +655,7 @@ async def test_rest_adapter_routes_and_preconsume_error() -> None:
 
     handler.on_resubscribe_to_task = _stream
     response = await adapter.routes()[("/v1/tasks/{id}:subscribe", "GET")](
-        _request("/v1/tasks/x:subscribe")
+        _request("/v1/tasks/x:subscribe", method="GET", path_params={"id": "x"})
     )
     assert response is not None
 
@@ -480,8 +663,13 @@ async def test_rest_adapter_routes_and_preconsume_error() -> None:
         async def body(self) -> bytes:
             raise ValueError("broken body")
 
-    with pytest.raises(ServerError, match="Failed to pre-consume request body: broken body"):
-        await adapter._handle_streaming_request(_stream, _BrokenRequest())
+    with pytest.raises(
+        InvalidRequestError, match="Failed to pre-consume request body: broken body"
+    ):
+        await adapter._dispatcher._handle_streaming(  # pyright: ignore[reportAttributeAccessIssue]
+            _BrokenRequest(),
+            lambda _context: _stream(None, _context),
+        )
 
 
 @pytest.mark.asyncio
@@ -542,52 +730,54 @@ async def test_push_notification_jsonrpc_methods_remain_unsupported(monkeypatch)
 async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> None:
     task_store = MagicMock()
     handler = OpencodeRequestHandler(agent_executor=MagicMock(), task_store=task_store)
+    handler.agent_executor.cancel = AsyncMock()
+    handler._queue_manager.tap = AsyncMock(return_value=MagicMock())  # noqa: SLF001
     params = TaskIdParams(id="task-1")
     canceled_task = Task(
         id="task-1",
         context_id="ctx-1",
-        status=TaskStatus(state=TaskState.canceled),
+        status=TaskStatus(state=TaskState.TASK_STATE_CANCELED),
     )
     working_task = Task(
         id="task-1",
         context_id="ctx-1",
-        status=TaskStatus(state=TaskState.working),
+        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
     )
     completed_task = Task(
         id="task-1",
         context_id="ctx-1",
-        status=TaskStatus(state=TaskState.completed),
+        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
     )
 
     task_store.get = AsyncMock(return_value=None)
-    with pytest.raises(ServerError):
+    with pytest.raises(TaskNotFoundError):
         await handler.on_cancel_task(params)
 
     task_store.get = AsyncMock(return_value=canceled_task)
     assert await handler.on_cancel_task(params) is canceled_task
 
     task_store.get = AsyncMock(return_value=completed_task)
-    with pytest.raises(ServerError):
+    with pytest.raises(TaskNotCancelableError):
         await handler.on_cancel_task(params)
 
     task_store.get = AsyncMock(side_effect=[working_task, canceled_task])
 
-    async def _cancel_race(_self, _params, _context=None):  # noqa: ANN001
-        raise ServerError(error=TaskNotCancelableError(message="already terminal"))
+    async def _consume_non_canceled(_self, _consumer):  # noqa: ANN001
+        return working_task
 
-    monkeypatch.setattr(app_module.DefaultRequestHandler, "on_cancel_task", _cancel_race)
+    monkeypatch.setattr(app_module.ResultAggregator, "consume_all", _consume_non_canceled)
     assert await handler.on_cancel_task(params) is canceled_task
 
     task_store.get = AsyncMock(return_value=working_task)
 
-    async def _super_cancel(_self, _params, _context=None):  # noqa: ANN001
-        return working_task
+    async def _consume_canceled(_self, _consumer):  # noqa: ANN001
+        return canceled_task
 
-    monkeypatch.setattr(app_module.DefaultRequestHandler, "on_cancel_task", _super_cancel)
-    assert await handler.on_cancel_task(params) is working_task
+    monkeypatch.setattr(app_module.ResultAggregator, "consume_all", _consume_canceled)
+    assert await handler.on_cancel_task(params) is canceled_task
 
     task_store.get = AsyncMock(return_value=None)
-    with pytest.raises(ServerError):
+    with pytest.raises(TaskNotFoundError):
         events = [item async for item in handler.on_resubscribe_to_task(params)]
         assert events == []
 
@@ -597,16 +787,72 @@ async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> N
 
     task_store.get = AsyncMock(return_value=working_task)
 
-    async def _super_resubscribe(_self, _params, _context=None):  # noqa: ANN001
+    async def _consume_and_emit(_self, _consumer):  # noqa: ANN001
         yield "evt-1"
 
     monkeypatch.setattr(
-        app_module.DefaultRequestHandler,
-        "on_resubscribe_to_task",
-        _super_resubscribe,
+        app_module.ResultAggregator,
+        "consume_and_emit",
+        _consume_and_emit,
     )
     events = [item async for item in handler.on_resubscribe_to_task(params)]
-    assert events == ["evt-1"]
+    assert events == [working_task, "evt-1"]
+
+
+@pytest.mark.asyncio
+async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch) -> None:
+    monkeypatch.setattr(
+        app_module,
+        "OpencodeUpstreamClient",
+        DummyChatOpencodeUpstreamClient,
+    )
+    app = create_app(make_settings(test_bearer_token="test-token"))
+    handler = app.state._jsonrpc_app._http_handler  # noqa: SLF001
+
+    async def _message_response(params, context=None):  # noqa: ANN001
+        del params, context
+        return Message(
+            message_id="m-server",
+            role=app_module.Role.ROLE_AGENT,
+            parts=[app_module.make_text_part("server reply")],
+        )
+
+    async def _stream_failure(params, context=None):  # noqa: ANN001
+        del params, context
+        if False:  # pragma: no cover
+            yield None
+        raise InvalidRequestError(message="stream bad")
+
+    handler.on_message_send = _message_response
+    handler.on_message_send_stream = _stream_failure
+
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+    payload = {
+        "message": {
+            "messageId": "m-rest",
+            "role": "ROLE_USER",
+            "content": [{"text": "hello"}],
+        }
+    }
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        send_response = await client.post("/v1/message:send", headers=headers, json=payload)
+        stream_response = await client.post("/v1/message:stream", headers=headers, json=payload)
+
+    assert send_response.status_code == 200
+    assert send_response.json() == {
+        "message": {
+            "messageId": "m-server",
+            "role": "ROLE_AGENT",
+            "parts": [{"text": "server reply"}],
+        }
+    }
+    assert stream_response.status_code == 400
+    assert stream_response.json() == {
+        "error": "stream bad",
+        "type": "INVALID_REQUEST",
+    }
 
 
 @pytest.mark.asyncio
@@ -615,10 +861,10 @@ async def test_task_store_failures_map_to_stable_handler_errors() -> None:
     handler = OpencodeRequestHandler(agent_executor=MagicMock(), task_store=task_store)
 
     task_store.get = AsyncMock(side_effect=TaskStoreOperationError("get", "task-1"))
-    with pytest.raises(ServerError, match="Task store unavailable while loading task state."):
+    with pytest.raises(InternalError, match="Task store unavailable while loading task state."):
         await handler.on_get_task(TaskQueryParams(id="task-1"))
 
-    with pytest.raises(ServerError, match="Task store unavailable while loading task state."):
+    with pytest.raises(InternalError, match="Task store unavailable while loading task state."):
         events = [item async for item in handler.on_resubscribe_to_task(TaskIdParams(id="task-1"))]
         assert events == []
 
@@ -659,7 +905,7 @@ async def test_on_message_send_returns_stable_failure_task_for_task_store_error(
         message=types.SimpleNamespace(contextId="ctx-1"), configuration=None
     )
     result = await _Handler().on_message_send(params)
-    assert result.status.state == TaskState.failed
+    assert result.status.state == TaskState.TASK_STATE_FAILED
     assert result.metadata == {
         "opencode": {
             "error": {
@@ -710,7 +956,7 @@ async def test_on_message_send_stream_emits_stable_failure_events_for_task_store
     events = [event async for event in _Handler().on_message_send_stream(params)]
 
     assert len(events) == 2
-    assert events[-1].status.state == TaskState.failed
+    assert events[-1].status.state == TaskState.TASK_STATE_FAILED
     assert events[-1].metadata == {
         "opencode": {
             "error": {
@@ -768,7 +1014,7 @@ async def test_on_message_send_covers_error_cleanup_and_internal_error(monkeypat
     successful_result = Task(
         id="task-1",
         context_id="ctx-1",
-        status=TaskStatus(state=TaskState.completed),
+        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
     )
 
     error_handler = _Handler(_Aggregator(error=RuntimeError("boom")))
@@ -807,14 +1053,12 @@ async def test_on_message_send_covers_error_cleanup_and_internal_error(monkeypat
     assert result is successful_result
 
     internal_error_handler = _Handler(_Aggregator(result=None))
-    with pytest.raises(ServerError):
+    with pytest.raises(InternalError):
         await internal_error_handler.on_message_send(params)
 
 
 @pytest.mark.asyncio
 async def test_on_message_send_non_blocking_tracks_background_work(monkeypatch) -> None:
-    import a2a.utils.task as task_module
-
     class _Aggregator:
         def __init__(self, result: Task, bg_task: asyncio.Task[None]) -> None:
             self.result = result
@@ -858,20 +1102,20 @@ async def test_on_message_send_non_blocking_tracks_background_work(monkeypatch) 
     result = Task(
         id="task-1",
         context_id="ctx-1",
-        status=TaskStatus(state=TaskState.completed),
+        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
     )
     bg_task = asyncio.create_task(asyncio.sleep(0))
     handler = _Handler(_Aggregator(result=result, bg_task=bg_task))
     applied: dict[str, int] = {}
 
-    def _apply_history_length(task: Task, history_length: int) -> Task:
-        applied["history_length"] = history_length
+    def _apply_history_length(task: Task, configuration) -> Task:  # noqa: ANN001
+        applied["history_length"] = configuration.history_length
         return task
 
-    monkeypatch.setattr(task_module, "apply_history_length", _apply_history_length)
+    monkeypatch.setattr(app_module, "apply_history_length", _apply_history_length)
 
     params = types.SimpleNamespace(
-        configuration=types.SimpleNamespace(blocking=False, history_length=7)
+        configuration=types.SimpleNamespace(return_immediately=True, history_length=7)
     )
     returned = await handler.on_message_send(params)
     assert returned == result
@@ -901,12 +1145,11 @@ async def test_on_message_send_rejects_output_modes_without_text_plain() -> None
         configuration=types.SimpleNamespace(accepted_output_modes=["application/json"])
     )
 
-    with pytest.raises(ServerError) as exc_info:
+    with pytest.raises(UnsupportedOperationError) as exc_info:
         await handler.on_message_send(params)
 
-    assert isinstance(exc_info.value.error, UnsupportedOperationError)
-    assert "require text/plain" in exc_info.value.error.message
-    assert exc_info.value.error.data == {
+    assert "require text/plain" in exc_info.value.message
+    assert exc_info.value.data == {
         "accepted_output_modes": ["application/json"],
         "required_output_modes": ["text/plain"],
         "supported_output_modes": ["text/plain", "application/json"],
@@ -931,12 +1174,11 @@ async def test_on_message_send_stream_rejects_incompatible_output_modes_before_e
         configuration=types.SimpleNamespace(accepted_output_modes=["image/png"])
     )
 
-    with pytest.raises(ServerError) as exc_info:
+    with pytest.raises(UnsupportedOperationError) as exc_info:
         await handler.on_message_send_stream(params).__anext__()
 
-    assert isinstance(exc_info.value.error, UnsupportedOperationError)
-    assert "not compatible" in exc_info.value.error.message
-    assert exc_info.value.error.data == {
+    assert "not compatible" in exc_info.value.message
+    assert exc_info.value.data == {
         "accepted_output_modes": ["image/png"],
         "supported_output_modes": ["text/plain", "application/json"],
     }

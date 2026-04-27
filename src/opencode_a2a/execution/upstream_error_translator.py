@@ -81,7 +81,7 @@ def _format_stream_terminal_error(
         else:
             message = "OpenCode rejected the request due to authentication failure (session.error)."
         return _StreamTerminalSignal(
-            state=TaskState.auth_required,
+            state=TaskState.TASK_STATE_AUTH_REQUIRED,
             error_type="UPSTREAM_UNAUTHORIZED",
             message=message,
         )
@@ -93,7 +93,7 @@ def _format_stream_terminal_error(
     else:
         message = "OpenCode execution failed (session.error)."
     return _StreamTerminalSignal(
-        state=TaskState.failed,
+        state=TaskState.TASK_STATE_FAILED,
         error_type="UPSTREAM_EXECUTION_ERROR",
         message=message,
     )
@@ -129,7 +129,7 @@ def _format_inband_upstream_error(
             message = f"OpenCode rejected the request due to authentication failure ({source})."
         return _UpstreamInBandError(
             error_type="UPSTREAM_UNAUTHORIZED",
-            state=TaskState.auth_required,
+            state=TaskState.TASK_STATE_AUTH_REQUIRED,
             message=message,
         )
 
@@ -141,7 +141,7 @@ def _format_inband_upstream_error(
         message = f"OpenCode execution failed ({source})."
     return _UpstreamInBandError(
         error_type="UPSTREAM_EXECUTION_ERROR",
-        state=TaskState.failed,
+        state=TaskState.TASK_STATE_FAILED,
         message=message,
     )
 

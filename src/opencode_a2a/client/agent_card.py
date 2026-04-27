@@ -7,12 +7,12 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from a2a.client.card_resolver import A2ACardResolver
-from a2a.utils.constants import (
+
+from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
     EXTENDED_AGENT_CARD_PATH,
     PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
-
 from ..trace_context import current_trace_headers
 from .request_context import build_default_headers
 
