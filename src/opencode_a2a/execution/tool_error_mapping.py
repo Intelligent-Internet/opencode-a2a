@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from a2a.client.errors import A2AClientHTTPError, A2AClientJSONRPCError
+from a2a.client.errors import A2AClientError as SDKClientError
+from a2a.utils.errors import A2AError
 
-from ..client.error_mapping import map_http_error, map_jsonrpc_error
+from ..client.error_mapping import map_operation_error
 from ..client.errors import (
     A2AAgentUnavailableError,
     A2AAuthenticationError,
@@ -47,10 +48,8 @@ def build_tool_error(
 
 
 def map_a2a_tool_exception(exc: Exception) -> dict[str, Any]:
-    if isinstance(exc, A2AClientHTTPError):
-        return map_a2a_tool_exception(map_http_error("message/send", exc))
-    if isinstance(exc, A2AClientJSONRPCError):
-        return map_a2a_tool_exception(map_jsonrpc_error(exc))
+    if isinstance(exc, (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError)):
+        return map_a2a_tool_exception(map_operation_error("message/send", exc))
     if isinstance(exc, A2AAuthenticationError):
         return _build_client_error_payload(
             exc,

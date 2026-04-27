@@ -1,23 +1,36 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping
 from typing import Any, cast
 
 from a2a.server.events import EventConsumer
 from a2a.server.tasks import ResultAggregator, TaskManager
 from a2a.types import (
     Artifact,
-    DataPart,
-    FilePart,
     Message,
     Part,
     Task,
     TaskArtifactUpdateEvent,
     TaskState,
     TaskStatusUpdateEvent,
-    TextPart,
+)
+from google.protobuf.message import Message as ProtoMessage
+
+from .a2a_utils import (
+    clone_proto,
+    make_text_part,
+    part_is_data,
+    part_is_file,
+    part_is_text,
+    proto_to_dict,
+    replace_artifact_event_artifact,
+    replace_artifact_parts,
+    replace_message_parts,
+    replace_status_event_message,
+)
+from .a2a_utils import (
+    part_text_fallback as _part_text_fallback,
 )
 
 OUTPUT_NEGOTIATION_METADATA_KEY = "output_negotiation"
@@ -70,10 +83,8 @@ def accepts_output_mode(
 
 
 def part_text_fallback(part: Any) -> str | None:
-    if isinstance(part, TextPart):
-        return part.text
-    if isinstance(part, DataPart):
-        return json.dumps(part.data, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    if isinstance(part, Part):
+        return _part_text_fallback(part)
     return None
 
 
@@ -92,6 +103,15 @@ def build_output_negotiation_metadata(
     }
 
 
+def _normalize_metadata_mapping(metadata: Any) -> dict[str, Any]:
+    if isinstance(metadata, ProtoMessage):
+        normalized = proto_to_dict(metadata)
+        return normalized if isinstance(normalized, dict) else {}
+    if isinstance(metadata, Mapping):
+        return dict(metadata)
+    return {}
+
+
 def merge_output_negotiation_metadata(
     metadata: dict[str, Any] | None,
     accepted_output_modes: Iterable[str] | None,
@@ -100,7 +120,7 @@ def merge_output_negotiation_metadata(
     if negotiation_metadata is None:
         return metadata
 
-    merged = dict(metadata) if isinstance(metadata, dict) else {}
+    merged = _normalize_metadata_mapping(metadata)
     opencode_metadata = merged.get(_OPENCODE_METADATA_KEY)
     if not isinstance(opencode_metadata, dict):
         opencode_metadata = {}
@@ -120,9 +140,10 @@ def merge_output_negotiation_metadata(
 def extract_accepted_output_modes_from_metadata(
     metadata: dict[str, Any] | None,
 ) -> tuple[str, ...] | None:
-    if not isinstance(metadata, dict):
+    normalized_metadata = _normalize_metadata_mapping(metadata)
+    if not normalized_metadata:
         return None
-    opencode_metadata = metadata.get(_OPENCODE_METADATA_KEY)
+    opencode_metadata = normalized_metadata.get(_OPENCODE_METADATA_KEY)
     if not isinstance(opencode_metadata, dict):
         return None
     negotiation_metadata = opencode_metadata.get(OUTPUT_NEGOTIATION_METADATA_KEY)
@@ -141,19 +162,28 @@ def annotate_output_negotiation_metadata(
         return payload
 
     if isinstance(payload, Task):
-        return payload.model_copy(
-            update={"metadata": merge_output_negotiation_metadata(payload.metadata, normalized)}
-        )
+        updated = clone_proto(payload)
+        updated.ClearField("metadata")
+        merged_metadata = merge_output_negotiation_metadata(payload.metadata, normalized)
+        if merged_metadata:
+            updated.metadata.update(merged_metadata)
+        return updated
 
     if isinstance(payload, TaskStatusUpdateEvent):
-        return payload.model_copy(
-            update={"metadata": merge_output_negotiation_metadata(payload.metadata, normalized)}
-        )
+        updated = clone_proto(payload)
+        updated.ClearField("metadata")
+        merged_metadata = merge_output_negotiation_metadata(payload.metadata, normalized)
+        if merged_metadata:
+            updated.metadata.update(merged_metadata)
+        return updated
 
     if isinstance(payload, TaskArtifactUpdateEvent):
-        return payload.model_copy(
-            update={"metadata": merge_output_negotiation_metadata(payload.metadata, normalized)}
-        )
+        updated = clone_proto(payload)
+        updated.ClearField("metadata")
+        merged_metadata = merge_output_negotiation_metadata(payload.metadata, normalized)
+        if merged_metadata:
+            updated.metadata.update(merged_metadata)
+        return updated
 
     return payload
 
@@ -170,17 +200,13 @@ def apply_accepted_output_modes(
         artifact = _filter_artifact(payload.artifact, normalized)
         if artifact is None:
             return None
-        return payload.model_copy(update={"artifact": artifact})
+        return replace_artifact_event_artifact(payload, artifact)
 
     if isinstance(payload, TaskStatusUpdateEvent):
-        status = payload.status
-        return payload.model_copy(
-            update={
-                "status": status.model_copy(
-                    update={"message": _filter_optional_message(status.message, normalized)}
-                )
-            }
-        )
+        message = None
+        if payload.status.HasField("message"):
+            message = _filter_optional_message(payload.status.message, normalized)
+        return replace_status_event_message(payload, message)
 
     if isinstance(payload, Task):
         return _filter_task(payload, normalized)
@@ -189,7 +215,7 @@ def apply_accepted_output_modes(
         filtered = _filter_message(payload, normalized)
         if filtered is not None:
             return filtered
-        return payload.model_copy(update={"parts": []})
+        return replace_message_parts(payload, [])
 
     return payload
 
@@ -267,7 +293,7 @@ class NegotiatingResultAggregator(ResultAggregator):
             should_interrupt = False
             is_auth_required = (
                 isinstance(transformed_event, Task | TaskStatusUpdateEvent)
-                and transformed_event.status.state == TaskState.auth_required
+                and transformed_event.status.state == TaskState.TASK_STATE_AUTH_REQUIRED
             )
             if is_auth_required or not blocking:
                 should_interrupt = True
@@ -297,31 +323,35 @@ class NegotiatingResultAggregator(ResultAggregator):
 
 
 def _filter_task(task: Task, accepted_output_modes: Collection[str]) -> Task:
-    status = task.status.model_copy(
-        update={"message": _filter_optional_message(task.status.message, accepted_output_modes)}
-    )
-    history = None
-    if task.history is not None:
-        history = [
-            message
-            for filtered in (
-                _filter_message(message, accepted_output_modes) for message in task.history
-            )
-            if filtered is not None
-            for message in [filtered]
-        ]
-    artifacts = None
-    if task.artifacts is not None:
-        artifacts = [
-            artifact
-            for filtered in (
-                _filter_artifact(artifact, accepted_output_modes) for artifact in task.artifacts
-            )
-            if filtered is not None
-            for artifact in [filtered]
-        ]
+    updated = clone_proto(task)
+    if updated.status.HasField("message"):
+        filtered_message = _filter_optional_message(updated.status.message, accepted_output_modes)
+        if filtered_message is None:
+            updated.status.ClearField("message")
+        else:
+            updated.status.message.CopyFrom(filtered_message)
 
-    return task.model_copy(update={"status": status, "history": history, "artifacts": artifacts})
+    filtered_history = [
+        filtered
+        for filtered in (
+            _filter_message(message, accepted_output_modes) for message in task.history
+        )
+        if filtered is not None
+    ]
+    del updated.history[:]
+    updated.history.extend(filtered_history)
+
+    filtered_artifacts = [
+        filtered
+        for filtered in (
+            _filter_artifact(artifact, accepted_output_modes) for artifact in task.artifacts
+        )
+        if filtered is not None
+    ]
+    del updated.artifacts[:]
+    updated.artifacts.extend(filtered_artifacts)
+
+    return updated
 
 
 def _filter_optional_message(
@@ -340,7 +370,7 @@ def _filter_message(
     parts = _filter_parts(message.parts, accepted_output_modes)
     if not parts:
         return None
-    return message.model_copy(update={"parts": parts})
+    return replace_message_parts(message, parts)
 
 
 def _filter_artifact(
@@ -350,7 +380,7 @@ def _filter_artifact(
     parts = _filter_parts(artifact.parts, accepted_output_modes)
     if not parts:
         return None
-    return artifact.model_copy(update={"parts": parts})
+    return replace_artifact_parts(artifact, parts)
 
 
 def _filter_parts(
@@ -364,23 +394,17 @@ def _filter_parts(
             filtered.append(part)
             continue
         if accepts_output_mode(accepted_output_modes, _TEXT_PLAIN_MEDIA_TYPE):
-            fallback_text = part_text_fallback(part.root)
+            fallback_text = part_text_fallback(part)
             if fallback_text is not None:
-                filtered.append(Part(root=TextPart(text=fallback_text)))
+                filtered.append(make_text_part(fallback_text))
     return filtered
 
 
 def _part_media_type(part: Part) -> str | None:
-    payload = part.root
-    if isinstance(payload, TextPart):
+    if part_is_text(part):
         return _TEXT_PLAIN_MEDIA_TYPE
-    if isinstance(payload, DataPart):
+    if part_is_data(part):
         return _APPLICATION_JSON_MEDIA_TYPE
-    if isinstance(payload, FilePart):
-        file_value = payload.file
-        return (
-            getattr(file_value, "mime_type", None)
-            or getattr(file_value, "mimeType", None)
-            or "application/octet-stream"
-        )
+    if part_is_file(part):
+        return part.media_type or "application/octet-stream"
     return None

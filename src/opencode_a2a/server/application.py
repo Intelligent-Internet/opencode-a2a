@@ -2,42 +2,61 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from functools import partial
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import uvicorn
-from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPI
-from a2a.server.apps.jsonrpc.jsonrpc_app import DefaultCallContextBuilder
-from a2a.server.apps.rest.rest_adapter import RESTAdapter
-from a2a.server.events import EventConsumer
+from a2a.server.agent_execution import RequestContext
+from a2a.server.events import EventConsumer, EventQueueLegacy
 from a2a.server.request_handlers.default_request_handler import (
     TERMINAL_TASK_STATES,
-    DefaultRequestHandler,
+    LegacyRequestHandler,
 )
+from a2a.server.request_handlers.response_helpers import agent_card_to_dict
+from a2a.server.routes.common import DefaultServerCallContextBuilder
+from a2a.server.routes.rest_dispatcher import RestDispatcher
+from a2a.server.tasks import ResultAggregator, TaskManager
 from a2a.types import (
+    AgentCard,
     Artifact,
+    CancelTaskRequest,
+    GetTaskRequest,
     InternalError,
+    InvalidRequestError,
     Message,
-    Part,
     Role,
+    SendMessageRequest,
+    SendMessageResponse,
+    SubscribeToTaskRequest,
     Task,
     TaskArtifactUpdateEvent,
-    TaskIdParams,
     TaskNotCancelableError,
     TaskNotFoundError,
-    TaskQueryParams,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
     UnsupportedOperationError,
 )
-from a2a.utils import are_modalities_compatible
-from a2a.utils.errors import ServerError
+from a2a.utils import proto_utils
+from a2a.utils.errors import (
+    A2A_REST_ERROR_MAPPING,
+    A2AError,
+    RestErrorMap,
+)
+from a2a.utils.task import apply_history_length, validate_history_length
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic_settings import BaseSettings
 from starlette.middleware.gzip import GZipMiddleware
 
+from ..a2a_protocol import (
+    AGENT_CARD_WELL_KNOWN_PATH,
+    EXTENDED_AGENT_CARD_PATH,
+    PREV_AGENT_CARD_WELL_KNOWN_PATH,
+)
+from ..a2a_utils import make_text_part
 from ..config import Settings
 from ..contracts.extensions import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
@@ -63,6 +82,7 @@ from ..invocation import call_with_supported_kwargs
 from ..jsonrpc.application import (
     OpencodeSessionManagementJSONRPCApplication,
 )
+from ..jsonrpc.error_responses import build_http_error_body
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..output_modes import (
     NegotiatingResultAggregator,
@@ -122,6 +142,227 @@ from .task_store import (
 
 logger = logging.getLogger(__name__)
 TASK_STORE_ERROR_TYPE = "TASK_STORE_UNAVAILABLE"
+PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE = "Push notifications are not supported by the agent"
+_REST_MESSAGE_CONFIGURATION_FIELDS = (
+    "acceptedOutputModes",
+    "historyLength",
+    "returnImmediately",
+    "taskPushNotificationConfig",
+)
+
+
+def _are_modalities_compatible(
+    supported_output_modes: list[str],
+    accepted_output_modes: list[str],
+) -> bool:
+    return bool(set(supported_output_modes) & set(accepted_output_modes))
+
+
+def _build_rest_legacy_error_payload(
+    *,
+    message: str,
+    reason: str | None = None,
+    metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"error": message}
+    if reason:
+        payload["type"] = reason
+    if metadata:
+        payload.update(dict(metadata))
+    return payload
+
+
+def _rest_error_response(
+    *,
+    request: Request,
+    default_protocol_version: str,
+    error: Exception,
+) -> JSONResponse:
+    protocol_version = getattr(
+        request.state,
+        "a2a_protocol_version",
+        default_protocol_version,
+    )
+    logger_fn = logger.exception
+    logger_message = "Unexpected REST message route failure"
+
+    if isinstance(error, A2AError):
+        mapping = A2A_REST_ERROR_MAPPING.get(
+            type(error),
+            RestErrorMap(500, "INTERNAL", "INTERNAL_ERROR"),
+        )
+        message = getattr(error, "message", str(error))
+        metadata = getattr(error, "data", None) or {}
+        logger_fn = logger.error if mapping.http_code >= 500 else logger.warning
+        logger_message = (
+            f"REST message route failed status={mapping.http_code} "
+            f"reason={mapping.reason} message={message}"
+        )
+        logger_fn(logger_message)
+        return JSONResponse(
+            build_http_error_body(
+                protocol_version=protocol_version,
+                status_code=mapping.http_code,
+                status=mapping.grpc_status,
+                message=message,
+                legacy_payload=_build_rest_legacy_error_payload(
+                    message=message,
+                    reason=mapping.reason,
+                    metadata=metadata,
+                ),
+                reason=mapping.reason,
+                metadata=metadata,
+            ),
+            status_code=mapping.http_code,
+        )
+
+    if isinstance(error, ParseError):
+        message = str(error)
+        logger_fn = logger.warning
+        logger_message = f"REST message payload parse error: {message}"
+        logger_fn(logger_message)
+        return JSONResponse(
+            build_http_error_body(
+                protocol_version=protocol_version,
+                status_code=400,
+                status="INVALID_ARGUMENT",
+                message=message,
+                legacy_payload=_build_rest_legacy_error_payload(
+                    message=message,
+                    reason="INVALID_REQUEST",
+                ),
+                reason="INVALID_REQUEST",
+            ),
+            status_code=400,
+        )
+
+    logger_fn(logger_message)
+    return JSONResponse(
+        build_http_error_body(
+            protocol_version=protocol_version,
+            status_code=500,
+            status="INTERNAL",
+            message="unknown exception",
+            legacy_payload=_build_rest_legacy_error_payload(
+                message="unknown exception",
+                reason="INTERNAL_ERROR",
+            ),
+            reason="INTERNAL_ERROR",
+        ),
+        status_code=500,
+    )
+
+
+def _normalize_rest_content_part(
+    value: Any,
+    *,
+    field: str,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise InvalidRequestError(message=f"{field} must be an object.")
+
+    normalized: dict[str, Any] = {}
+    metadata = value.get("metadata")
+    if metadata is not None:
+        normalized["metadata"] = metadata
+
+    text_value = value.get("text")
+    if isinstance(text_value, str):
+        normalized["text"] = text_value
+        return normalized
+
+    if "data" in value:
+        normalized["data"] = value.get("data")
+        return normalized
+
+    file_value = value.get("file")
+    if isinstance(file_value, Mapping):
+        raw_value = file_value.get("bytes")
+        url_value = file_value.get("uri")
+        if isinstance(raw_value, str) and raw_value:
+            normalized["raw"] = raw_value
+        elif isinstance(url_value, str) and url_value:
+            normalized["url"] = url_value
+        else:
+            raise InvalidRequestError(message=f"{field}.file must contain uri or bytes.")
+        filename = file_value.get("name")
+        if isinstance(filename, str) and filename.strip():
+            normalized["filename"] = filename
+        media_type = (
+            file_value.get("mimeType") or file_value.get("mime_type") or file_value.get("mediaType")
+        )
+        if isinstance(media_type, str) and media_type.strip():
+            normalized["mediaType"] = media_type
+        return normalized
+
+    raw_value = value.get("raw")
+    if isinstance(raw_value, str) and raw_value:
+        normalized["raw"] = raw_value
+        filename = value.get("filename")
+        if isinstance(filename, str) and filename.strip():
+            normalized["filename"] = filename
+        media_type = value.get("mediaType") or value.get("media_type")
+        if isinstance(media_type, str) and media_type.strip():
+            normalized["mediaType"] = media_type
+        return normalized
+
+    url_value = value.get("url")
+    if isinstance(url_value, str) and url_value:
+        normalized["url"] = url_value
+        filename = value.get("filename")
+        if isinstance(filename, str) and filename.strip():
+            normalized["filename"] = filename
+        media_type = value.get("mediaType") or value.get("media_type")
+        if isinstance(media_type, str) and media_type.strip():
+            normalized["mediaType"] = media_type
+        return normalized
+
+    raise InvalidRequestError(message=f"{field} must contain text, data, or file.")
+
+
+def _normalize_rest_send_message_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    message = normalized.get("message")
+    if not isinstance(message, Mapping):
+        raise InvalidRequestError(message="message must be an object.")
+
+    normalized_message = dict(message)
+    content = normalized_message.pop("content", None)
+    if not isinstance(content, list):
+        raise InvalidRequestError(message="message.content must be an array.")
+    normalized_message["parts"] = [
+        _normalize_rest_content_part(item, field=f"message.content[{index}]")
+        for index, item in enumerate(content)
+    ]
+    normalized["message"] = normalized_message
+
+    configuration_updates: dict[str, Any] = {}
+    for field in _REST_MESSAGE_CONFIGURATION_FIELDS:
+        if field in normalized:
+            configuration_updates[field] = normalized.pop(field)
+    if configuration_updates:
+        configuration = normalized.get("configuration")
+        if configuration is None:
+            normalized["configuration"] = configuration_updates
+        elif isinstance(configuration, Mapping):
+            merged_configuration = dict(configuration)
+            merged_configuration.update(configuration_updates)
+            normalized["configuration"] = merged_configuration
+        else:
+            raise InvalidRequestError(message="configuration must be an object.")
+
+    return normalized
+
+
+def _parse_rest_send_message_request(body: bytes):
+    payload = _parse_json_body(body)
+    if payload is None:
+        raise InvalidRequestError(message="REST message payload must be a JSON object.")
+    return ParseDict(
+        _normalize_rest_send_message_payload(payload),
+        SendMessageRequest(),
+    )
+
 
 __all__ = [
     "_RequestBodyTooLargeError",
@@ -166,11 +407,44 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from a2a.server.agent_execution import AgentExecutor, RequestContextBuilder
     from a2a.server.context import ServerCallContext
+    from a2a.server.tasks import (
+        PushNotificationConfigStore,
+        PushNotificationSender,
+        TaskStore,
+    )
 
 
-class OpencodeRequestHandler(DefaultRequestHandler):
+class OpencodeRequestHandler(LegacyRequestHandler):
     """Custom request handler to gracefully handle client disconnects and prevent dead loops."""
+
+    def __init__(  # noqa: PLR0913
+        self,
+        agent_executor: AgentExecutor,
+        task_store: TaskStore,
+        agent_card: AgentCard | None = None,
+        queue_manager: Any | None = None,
+        push_config_store: PushNotificationConfigStore | None = None,
+        push_sender: PushNotificationSender | None = None,
+        request_context_builder: RequestContextBuilder | None = None,
+        extended_agent_card: AgentCard | None = None,
+        extended_card_modifier: Callable[[AgentCard, ServerCallContext], Awaitable[AgentCard]]
+        | None = None,
+    ) -> None:
+        super().__init__(
+            agent_executor=agent_executor,
+            task_store=task_store,
+            agent_card=agent_card or AgentCard(name="opencode-a2a"),
+            queue_manager=queue_manager,
+            push_config_store=push_config_store,
+            push_sender=push_sender,
+            request_context_builder=request_context_builder,
+            extended_agent_card=extended_agent_card,
+            extended_card_modifier=extended_card_modifier,
+        )
 
     @staticmethod
     def _task_store_failure_message(operation: str) -> str:
@@ -194,10 +468,8 @@ class OpencodeRequestHandler(DefaultRequestHandler):
         }
 
     @classmethod
-    def _task_store_server_error(cls, exc: TaskStoreOperationError) -> ServerError:
-        return ServerError(
-            error=InternalError(message=cls._task_store_failure_message(exc.operation))
-        )
+    def _task_store_server_error(cls, exc: TaskStoreOperationError) -> InternalError:
+        return InternalError(message=cls._task_store_failure_message(exc.operation))
 
     @classmethod
     def _task_store_failure_task(
@@ -210,15 +482,15 @@ class OpencodeRequestHandler(DefaultRequestHandler):
         message_text = cls._task_store_failure_message(operation)
         error_message = Message(
             message_id=f"{task_id}:task-store-error",
-            role=Role.agent,
-            parts=[Part(root=TextPart(text=message_text))],
+            role=Role.ROLE_AGENT,
+            parts=[make_text_part(message_text)],
             task_id=task_id,
             context_id=context_id,
         )
         return Task(
             id=task_id,
             context_id=context_id,
-            status=TaskStatus(state=TaskState.failed, message=error_message),
+            status=TaskStatus(state=TaskState.TASK_STATE_FAILED, message=error_message),
             history=[error_message],
             metadata=cls._task_store_failure_metadata(operation),
         )
@@ -238,7 +510,7 @@ class OpencodeRequestHandler(DefaultRequestHandler):
                 context_id=context_id,
                 artifact=Artifact(
                     artifact_id=f"{task_id}:error",
-                    parts=[Part(root=TextPart(text=message_text))],
+                    parts=[make_text_part(message_text)],
                 ),
                 append=False,
                 last_chunk=True,
@@ -246,9 +518,8 @@ class OpencodeRequestHandler(DefaultRequestHandler):
             TaskStatusUpdateEvent(
                 task_id=task_id,
                 context_id=context_id,
-                status=TaskStatus(state=TaskState.failed),
+                status=TaskStatus(state=TaskState.TASK_STATE_FAILED),
                 metadata=cls._task_store_failure_metadata(operation),
-                final=True,
             ),
         )
 
@@ -298,94 +569,132 @@ class OpencodeRequestHandler(DefaultRequestHandler):
         if not accepted_output_modes:
             return
 
-        if not are_modalities_compatible(list(_CHAT_OUTPUT_MODES), accepted_output_modes):
-            raise ServerError(
-                error=UnsupportedOperationError(
-                    message=(
-                        "Requested acceptedOutputModes are not compatible "
-                        "with OpenCode chat responses."
-                    ),
-                    data={
-                        "accepted_output_modes": accepted_output_modes,
-                        "supported_output_modes": list(_CHAT_OUTPUT_MODES),
-                    },
-                )
+        if not _are_modalities_compatible(list(_CHAT_OUTPUT_MODES), accepted_output_modes):
+            raise UnsupportedOperationError(
+                message=(
+                    "Requested acceptedOutputModes are not compatible with OpenCode chat responses."
+                ),
+                data={
+                    "accepted_output_modes": accepted_output_modes,
+                    "supported_output_modes": list(_CHAT_OUTPUT_MODES),
+                },
             )
 
         if "text/plain" not in accepted_output_modes:
-            raise ServerError(
-                error=UnsupportedOperationError(
-                    message="OpenCode chat responses require text/plain in acceptedOutputModes.",
-                    data={
-                        "accepted_output_modes": accepted_output_modes,
-                        "required_output_modes": ["text/plain"],
-                        "supported_output_modes": list(_CHAT_OUTPUT_MODES),
-                    },
-                )
+            raise UnsupportedOperationError(
+                message="OpenCode chat responses require text/plain in acceptedOutputModes.",
+                data={
+                    "accepted_output_modes": accepted_output_modes,
+                    "required_output_modes": ["text/plain"],
+                    "supported_output_modes": list(_CHAT_OUTPUT_MODES),
+                },
             )
 
     async def on_get_task(
         self,
-        params: TaskQueryParams,
+        params: GetTaskRequest,
         context=None,
     ) -> Task | None:
         try:
-            task = await super().on_get_task(params, context)
-            if task is None:
-                return None
-            return self._apply_task_output_negotiation(task)
+            validate_history_length(params)
+            task = await self.task_store.get(params.id, context)
+            if not task:
+                raise TaskNotFoundError()
+            return self._apply_task_output_negotiation(apply_history_length(task, params))
         except TaskStoreOperationError as exc:
             raise self._task_store_server_error(exc) from exc
 
     async def on_cancel_task(
         self,
-        params: TaskIdParams,
+        params: CancelTaskRequest,
         context=None,
     ) -> Task | None:
         try:
             task = await self.task_store.get(params.id, context)
             if not task:
-                raise ServerError(error=TaskNotFoundError())
+                raise TaskNotFoundError()
 
             # Idempotent contract:
             # repeated cancel on already-canceled task returns current terminal state.
-            if task.status.state == TaskState.canceled:
+            if task.status.state == TaskState.TASK_STATE_CANCELED:
                 return task
 
             if task.status.state in TERMINAL_TASK_STATES:
-                raise ServerError(
-                    error=TaskNotCancelableError(
-                        message=f"Task cannot be canceled - current state: {task.status.state}"
-                    )
+                raise TaskNotCancelableError(
+                    message=f"Task cannot be canceled - current state: {task.status.state}"
                 )
             try:
-                return await super().on_cancel_task(params, context)
-            except ServerError as exc:
-                # Race-safe idempotency: task may become canceled between pre-check and super call.
-                if isinstance(exc.error, TaskNotCancelableError):
-                    refreshed = await self.task_store.get(params.id, context)
-                    if refreshed and refreshed.status.state == TaskState.canceled:
-                        return refreshed
+                task_manager = TaskManager(
+                    task_id=task.id,
+                    context_id=task.context_id,
+                    task_store=self.task_store,
+                    initial_message=None,
+                    context=context,
+                )
+                result_aggregator = ResultAggregator(task_manager)
+                queue = await self._queue_manager.tap(task.id)
+                if not queue:
+                    queue = EventQueueLegacy()
+
+                await self.agent_executor.cancel(
+                    RequestContext(
+                        call_context=context,
+                        request=None,
+                        task_id=task.id,
+                        context_id=task.context_id,
+                        task=task,
+                    ),
+                    queue,
+                )
+                if producer_task := self._running_agents.get(task.id):
+                    producer_task.cancel()
+
+                result = await result_aggregator.consume_all(EventConsumer(queue))
+                if not isinstance(result, Task):
+                    raise InternalError(message="Agent did not return valid response for cancel")
+                if result.status.state != TaskState.TASK_STATE_CANCELED:
+                    raise TaskNotCancelableError(
+                        message=f"Task cannot be canceled - current state: {result.status.state}"
+                    )
+                return result
+            except TaskNotCancelableError:
+                refreshed = await self.task_store.get(params.id, context)
+                if refreshed and refreshed.status.state == TaskState.TASK_STATE_CANCELED:
+                    return refreshed
                 raise
         except TaskStoreOperationError as exc:
             raise self._task_store_server_error(exc) from exc
 
-    async def on_resubscribe_to_task(
+    async def on_subscribe_to_task(
         self,
-        params: TaskIdParams,
+        params: SubscribeToTaskRequest,
         context=None,
     ):
         try:
             task = await self.task_store.get(params.id, context)
             if not task:
-                raise ServerError(error=TaskNotFoundError())
+                raise TaskNotFoundError()
 
             # Subscribe contract: terminal tasks replay once and then close stream.
             if task.status.state in TERMINAL_TASK_STATES:
                 yield self._apply_task_output_negotiation(task)
                 return
 
-            async for event in super().on_resubscribe_to_task(params, context):
+            yield self._apply_task_output_negotiation(task)
+
+            task_manager = TaskManager(
+                task_id=task.id,
+                context_id=task.context_id,
+                task_store=self.task_store,
+                initial_message=None,
+                context=context,
+            )
+            result_aggregator = ResultAggregator(task_manager)
+            queue = await self._queue_manager.tap(task.id)
+            if not queue:
+                raise TaskNotFoundError()
+
+            async for event in result_aggregator.consume_and_emit(EventConsumer(queue)):
                 negotiated = apply_accepted_output_modes(
                     event,
                     extract_accepted_output_modes_from_metadata(getattr(event, "metadata", None)),
@@ -394,6 +703,17 @@ class OpencodeRequestHandler(DefaultRequestHandler):
                     yield negotiated
         except TaskStoreOperationError as exc:
             raise self._task_store_server_error(exc) from exc
+
+    async def on_resubscribe_to_task(
+        self,
+        params,
+        context=None,
+    ):
+        subscribe_params = params
+        if not isinstance(params, SubscribeToTaskRequest):
+            subscribe_params = SubscribeToTaskRequest(id=params.id)
+        async for event in self.on_subscribe_to_task(subscribe_params, context):
+            yield event
 
     async def on_message_send_stream(self, params, context=None):
         self._validate_chat_output_modes(params)
@@ -459,8 +779,8 @@ class OpencodeRequestHandler(DefaultRequestHandler):
         producer_task.add_done_callback(consumer.agent_task_callback)
 
         blocking = True
-        if params.configuration and params.configuration.blocking is False:
-            blocking = False
+        if params.configuration:
+            blocking = not params.configuration.return_immediately
 
         interrupted_or_non_blocking = False
         bg_consume_task: asyncio.Task | None = None
@@ -515,21 +835,19 @@ class OpencodeRequestHandler(DefaultRequestHandler):
                     pass
 
         if not result:
-            raise ServerError(error=InternalError())
+            raise InternalError()
 
         if hasattr(result, "id") and result.id:
             self._validate_task_id_match(task_id, result.id)
             if params.configuration and isinstance(result, Task):
-                from a2a.utils.task import apply_history_length
-
-                result = apply_history_length(result, params.configuration.history_length)
+                result = apply_history_length(result, params.configuration)
 
         await self._send_push_notification_if_needed(task_id, result_aggregator)
 
         return result
 
 
-class IdentityAwareCallContextBuilder(DefaultCallContextBuilder):
+class IdentityAwareCallContextBuilder(DefaultServerCallContextBuilder):
     def build(self, request: Request) -> ServerCallContext:
         context = super().build(request)
         path = request.url.path
@@ -590,6 +908,8 @@ def create_app(settings: Settings) -> FastAPI:
         interrupt_request_repository=interrupt_request_repository,
     )
     client_manager = A2AClientManager(settings)
+    agent_card = build_agent_card(settings)
+    extended_agent_card = build_authenticated_extended_agent_card(settings)
     executor = call_with_supported_kwargs(
         OpencodeAgentExecutor,
         upstream_client,
@@ -607,10 +927,10 @@ def create_app(settings: Settings) -> FastAPI:
     handler = OpencodeRequestHandler(
         agent_executor=executor,
         task_store=task_store,
+        agent_card=agent_card,
+        extended_agent_card=extended_agent_card,
     )
 
-    agent_card = build_agent_card(settings)
-    extended_agent_card = build_authenticated_extended_agent_card(settings)
     context_builder = IdentityAwareCallContextBuilder()
     runtime_profile = build_runtime_profile(settings)
     capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
@@ -625,8 +945,6 @@ def create_app(settings: Settings) -> FastAPI:
 
     # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.
     jsonrpc_app = OpencodeSessionManagementJSONRPCApplication(
-        agent_card=agent_card,
-        extended_agent_card=extended_agent_card,
         http_handler=handler,
         context_builder=context_builder,
         upstream_client=upstream_client,
@@ -649,9 +967,8 @@ def create_app(settings: Settings) -> FastAPI:
         ),
         methods=jsonrpc_methods,
     )
-    rest_adapter = RESTAdapter(
-        agent_card=agent_card,
-        http_handler=handler,
+    rest_dispatcher = RestDispatcher(
+        request_handler=handler,
         context_builder=context_builder,
     )
     public_card_etag = build_agent_card_etag(agent_card)
@@ -667,20 +984,125 @@ def create_app(settings: Settings) -> FastAPI:
         persistence_summary=persistence_summary,
     )
 
-    app = A2AFastAPI(
+    app = FastAPI(
         title=settings.a2a_title,
         version=settings.a2a_version,
         lifespan=lifespan,
     )
     app.add_middleware(GZipMiddleware, minimum_size=settings.a2a_http_gzip_minimum_size)
     jsonrpc_app.add_routes_to_app(app)
-    rest_routes = rest_adapter.routes()
-    rest_routes[("/v1/tasks", "GET")] = build_list_tasks_route(
-        task_store=task_store,
-        default_protocol_version=settings.a2a_protocol_version,
+
+    async def public_agent_card_route() -> JSONResponse:
+        return JSONResponse(agent_card_to_dict(agent_card))
+
+    async def authenticated_extended_agent_card_route() -> JSONResponse:
+        return JSONResponse(agent_card_to_dict(extended_agent_card))
+
+    async def rest_message_send_route(request: Request) -> JSONResponse:
+        try:
+
+            async def _handler(context) -> SendMessageResponse:  # noqa: ANN001
+                params = _parse_rest_send_message_request(await request.body())
+                task_or_message = await handler.on_message_send(params, context)
+                if isinstance(task_or_message, Task):
+                    return SendMessageResponse(task=task_or_message)
+                return SendMessageResponse(message=task_or_message)
+
+            response = await rest_dispatcher._handle_non_streaming(request, _handler)
+            return JSONResponse(content=MessageToDict(response))
+        except Exception as error:  # noqa: BLE001
+            return _rest_error_response(
+                request=request,
+                default_protocol_version=settings.a2a_protocol_version,
+                error=error,
+            )
+
+    async def rest_message_send_stream_route(request: Request):
+        try:
+
+            async def _handler(context):  # noqa: ANN001
+                params = _parse_rest_send_message_request(await request.body())
+                async for event in handler.on_message_send_stream(params, context):
+                    yield MessageToDict(proto_utils.to_stream_response(event))
+
+            return await rest_dispatcher._handle_streaming(request, _handler)
+        except Exception as error:  # noqa: BLE001
+            return _rest_error_response(
+                request=request,
+                default_protocol_version=settings.a2a_protocol_version,
+                error=error,
+            )
+
+    app.add_api_route(AGENT_CARD_WELL_KNOWN_PATH, public_agent_card_route, methods=["GET"])
+    app.add_api_route(PREV_AGENT_CARD_WELL_KNOWN_PATH, public_agent_card_route, methods=["GET"])
+    app.add_api_route("/v1/message:send", rest_message_send_route, methods=["POST"])
+    app.add_api_route("/v1/message:stream", rest_message_send_stream_route, methods=["POST"])
+    app.add_api_route("/v1/tasks/{id}:cancel", rest_dispatcher.on_cancel_task, methods=["POST"])
+    app.add_api_route(
+        "/v1/tasks/{id}:subscribe",
+        rest_dispatcher.on_subscribe_to_task,
+        methods=["GET"],
+        operation_id="subscribe_to_task_get",
     )
-    for route, callback in rest_routes.items():
-        app.add_api_route(route[0], callback, methods=[route[1]])
+    app.add_api_route(
+        "/v1/tasks/{id}:subscribe",
+        rest_dispatcher.on_subscribe_to_task,
+        methods=["POST"],
+        operation_id="subscribe_to_task_post",
+    )
+    app.add_api_route("/v1/tasks/{id}", rest_dispatcher.on_get_task, methods=["GET"])
+
+    async def push_notifications_unsupported_route(request: Request) -> JSONResponse:
+        protocol_version = getattr(
+            request.state,
+            "a2a_protocol_version",
+            settings.a2a_protocol_version,
+        )
+        return JSONResponse(
+            build_http_error_body(
+                protocol_version=protocol_version,
+                status_code=501,
+                status="UNIMPLEMENTED",
+                message=PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE,
+                legacy_payload={"message": PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE},
+                reason="PUSH_NOTIFICATIONS_UNSUPPORTED",
+            ),
+            status_code=501,
+        )
+
+    app.add_api_route(
+        "/v1/tasks/{id}/pushNotificationConfigs/{push_id}",
+        push_notifications_unsupported_route,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/v1/tasks/{id}/pushNotificationConfigs/{push_id}",
+        push_notifications_unsupported_route,
+        methods=["DELETE"],
+    )
+    app.add_api_route(
+        "/v1/tasks/{id}/pushNotificationConfigs",
+        push_notifications_unsupported_route,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/v1/tasks/{id}/pushNotificationConfigs",
+        push_notifications_unsupported_route,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/v1/tasks",
+        build_list_tasks_route(
+            task_store=task_store,
+            default_protocol_version=settings.a2a_protocol_version,
+        ),
+        methods=["GET"],
+    )
+    app.add_api_route(
+        EXTENDED_AGENT_CARD_PATH,
+        authenticated_extended_agent_card_route,
+        methods=["GET"],
+    )
     app.state._jsonrpc_app = jsonrpc_app
     app.state.task_store = task_store
     app.state.persistence_summary = persistence_summary

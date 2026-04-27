@@ -7,6 +7,7 @@ from a2a.types import (
 from opencode_a2a.execution.executor import (
     OpencodeAgentExecutor,
 )
+from opencode_a2a.task_states import TERMINAL_TASK_STATES
 from tests.support.helpers import (
     DummyEventQueue,
     make_request_context,
@@ -18,7 +19,19 @@ from tests.support.streaming_output import (
     _interrupt_resolved_event,
     _permission_asked_event,
     _question_asked_event,
+    _status_shared_meta,
 )
+
+
+def _is_terminal_status_event(event: TaskStatusUpdateEvent) -> bool:
+    return (
+        event.status.state in TERMINAL_TASK_STATES
+        or event.status.state == TaskState.TASK_STATE_AUTH_REQUIRED
+    )
+
+
+def _interrupt_type(event: TaskStatusUpdateEvent) -> str | None:
+    return _interrupt_meta(event).get("type")
 
 
 @pytest.mark.asyncio
@@ -44,9 +57,8 @@ async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> 
         event
         for event in queue.events
         if isinstance(event, TaskStatusUpdateEvent)
-        and event.final is False
-        and (event.metadata or {}).get("shared", {}).get("interrupt", {}).get("type")
-        == "permission"
+        and not _is_terminal_status_event(event)
+        and _interrupt_type(event) == "permission"
     ]
     assert len(interrupt_statuses) == 1
     interrupt = _interrupt_meta(interrupt_statuses[0])
@@ -56,7 +68,7 @@ async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> 
     assert "/data/project/.env.secret" in interrupt["details"]["patterns"]
     assert "metadata" not in interrupt["details"]
     assert "tool" not in interrupt["details"]
-    assert interrupt_statuses[0].status.state == TaskState.input_required
+    assert interrupt_statuses[0].status.state == TaskState.TASK_STATE_INPUT_REQUIRED
     assert client._interrupt_requests["perm-req-1"]["details"] == {
         "permission": "read",
         "patterns": ["/data/project/.env.secret"],
@@ -85,8 +97,8 @@ async def test_streaming_emits_interrupt_status_for_question_asked_event() -> No
         event
         for event in queue.events
         if isinstance(event, TaskStatusUpdateEvent)
-        and event.final is False
-        and (event.metadata or {}).get("shared", {}).get("interrupt", {}).get("type") == "question"
+        and not _is_terminal_status_event(event)
+        and _interrupt_type(event) == "question"
     ]
     assert len(interrupt_statuses) == 1
     interrupt = _interrupt_meta(interrupt_statuses[0])
@@ -100,7 +112,7 @@ async def test_streaming_emits_interrupt_status_for_question_asked_event() -> No
         }
     ]
     assert "tool" not in interrupt["details"]
-    assert interrupt_statuses[0].status.state == TaskState.input_required
+    assert interrupt_statuses[0].status.state == TaskState.TASK_STATE_INPUT_REQUIRED
     assert client._interrupt_requests["q-req-1"]["details"] == {
         "questions": [
             {
@@ -170,8 +182,8 @@ async def test_streaming_normalizes_question_interrupt_details() -> None:
         event
         for event in queue.events
         if isinstance(event, TaskStatusUpdateEvent)
-        and event.final is False
-        and (event.metadata or {}).get("shared", {}).get("interrupt", {}).get("type") == "question"
+        and not _is_terminal_status_event(event)
+        and _interrupt_type(event) == "question"
     )
     interrupt = _interrupt_meta(interrupt_status)
     assert interrupt["details"]["questions"] == [
@@ -225,25 +237,27 @@ async def test_streaming_resolved_interrupt_only_clears_internal_pending_state()
         event
         for event in queue.events
         if isinstance(event, TaskStatusUpdateEvent)
-        and event.final is False
-        and (event.metadata or {}).get("shared", {}).get("interrupt") is not None
+        and not _is_terminal_status_event(event)
+        and bool(_interrupt_meta(event))
     ]
     assert len(interrupt_statuses) == 2
     asked_interrupt = _interrupt_meta(interrupt_statuses[0])
     resolved_interrupt = _interrupt_meta(interrupt_statuses[1])
     assert asked_interrupt["request_id"] == "perm-req-resolve"
     assert asked_interrupt["phase"] == "asked"
-    assert interrupt_statuses[0].status.state == TaskState.input_required
+    assert interrupt_statuses[0].status.state == TaskState.TASK_STATE_INPUT_REQUIRED
     assert resolved_interrupt["request_id"] == "perm-req-resolve"
     assert resolved_interrupt["type"] == "permission"
     assert resolved_interrupt["phase"] == "resolved"
     assert resolved_interrupt["resolution"] == "replied"
     assert "details" not in resolved_interrupt
-    assert interrupt_statuses[1].status.state == TaskState.working
+    assert interrupt_statuses[1].status.state == TaskState.TASK_STATE_WORKING
     final_status = [
-        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent) and _is_terminal_status_event(event)
     ][-1]
-    assert "interrupt" not in (final_status.metadata or {}).get("shared", {})
+    assert "interrupt" not in _status_shared_meta(final_status)
 
 
 @pytest.mark.asyncio
@@ -282,8 +296,8 @@ async def test_streaming_duplicate_interrupt_resolved_event_is_not_emitted_twice
         event
         for event in queue.events
         if isinstance(event, TaskStatusUpdateEvent)
-        and event.final is False
-        and (event.metadata or {}).get("shared", {}).get("interrupt") is not None
+        and not _is_terminal_status_event(event)
+        and bool(_interrupt_meta(event))
     ]
     assert len(interrupt_statuses) == 2
     assert _interrupt_meta(interrupt_statuses[0])["phase"] == "asked"

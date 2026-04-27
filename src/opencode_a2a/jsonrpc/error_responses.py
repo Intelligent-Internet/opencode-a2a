@@ -4,9 +4,10 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from a2a.types import A2AError, InvalidParamsError, JSONRPCError
+from a2a.utils.errors import JSON_RPC_ERROR_CODE_MAP, A2AError, InvalidParamsError
 
 from ..protocol_versions import normalize_protocol_version
+from .models import JSONRPCError
 
 A2A_ERROR_DOMAIN = "a2a-protocol.org"
 GOOGLE_RPC_ERROR_INFO_TYPE = "type.googleapis.com/google.rpc.ErrorInfo"
@@ -116,8 +117,17 @@ def adapt_jsonrpc_error_for_protocol(
     if not protocol_uses_v1_error_format(protocol_version):
         return error
 
-    root_error = error.root if isinstance(error, A2AError) else error
-    root_data = getattr(root_error, "data", None)
+    reason_source: object = error
+    if isinstance(error, A2AError):
+        root_error = JSONRPCError(
+            code=JSON_RPC_ERROR_CODE_MAP.get(type(error), -32603),
+            message=error.message,
+            data=error.data,
+        )
+    else:
+        root_error = error
+        reason_source = root_error
+    root_data = root_error.data
 
     if root_error.code in STANDARD_JSONRPC_ERROR_CODES:
         adapted_data = None
@@ -133,8 +143,8 @@ def adapt_jsonrpc_error_for_protocol(
             data=adapted_data,
         )
 
-    reason = _reason_from_error(root_error)
-    metadata = _metadata_from_error(root_error)
+    reason = _reason_from_error(reason_source)
+    metadata = _metadata_from_error(reason_source)
     details: list[dict[str, Any]] = []
     if reason is not None:
         details.append(_build_error_info_detail(reason=reason, metadata=metadata))
@@ -186,7 +196,7 @@ def invalid_params_error(
     *,
     data: dict[str, Any] | None = None,
 ) -> A2AError:
-    return A2AError(root=InvalidParamsError(message=message, data=data))
+    return InvalidParamsError(message=message, data=data)
 
 
 def method_not_supported_error(

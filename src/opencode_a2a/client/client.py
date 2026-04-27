@@ -4,28 +4,36 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Mapping
+from types import SimpleNamespace
 from typing import Any, cast
 from uuid import uuid4
 
 import httpx
-from a2a.client import Client, ClientConfig, ClientFactory
+from a2a.client import Client, ClientConfig, create_client
 from a2a.client.errors import (
-    A2AClientHTTPError,
-    A2AClientJSONError,
-    A2AClientJSONRPCError,
+    A2AClientError as SDKClientError,
+)
+from a2a.client.errors import (
+    AgentCardResolutionError,
 )
 from a2a.types import (
+    CancelTaskRequest,
+    GetTaskRequest,
     Message,
     Part,
     Role,
+    SendMessageConfiguration,
+    SendMessageRequest,
+    StreamResponse,
+    SubscribeToTaskRequest,
     Task,
     TaskArtifactUpdateEvent,
-    TaskIdParams,
-    TaskQueryParams,
     TaskStatusUpdateEvent,
-    TextPart,
 )
+from a2a.utils.errors import A2AError
 
+from ..a2a_utils import make_text_part
+from ..invocation import call_with_supported_kwargs
 from .agent_card import build_agent_card_resolver, build_resolver_http_kwargs
 from .config import A2AClientSettings, load_settings
 from .error_mapping import (
@@ -36,6 +44,8 @@ from .errors import A2ATimeoutError, A2AUnsupportedBindingError
 from .payload_text import extract_text as extract_text_from_payload
 from .polling import PollingFallbackPolicy
 from .request_context import build_call_context, split_request_metadata
+
+ClientFactory = None
 
 
 class A2AClient:
@@ -95,8 +105,8 @@ class A2AClient:
                 )
             )
         except (
-            A2AClientHTTPError,
-            A2AClientJSONError,
+            AgentCardResolutionError,
+            SDKClientError,
             httpx.TimeoutException,
             httpx.TransportError,
         ) as exc:
@@ -126,26 +136,28 @@ class A2AClient:
                 context_id=context_id,
                 task_id=task_id,
                 message_id=message_id,
+                extensions=extensions,
+            )
+            call_context = build_call_context(
+                self._settings.bearer_token,
+                extra_headers,
+                self._settings.basic_auth,
+                self._settings.protocol_version,
             )
             try:
-                async for event in client.send_message(
-                    request,
-                    context=build_call_context(
-                        self._settings.bearer_token,
-                        extra_headers,
-                        self._settings.basic_auth,
-                        self._settings.protocol_version,
+                async for event in call_with_supported_kwargs(
+                    client.send_message,
+                    SendMessageRequest(
+                        message=request,
+                        configuration=SendMessageConfiguration(),
+                        metadata=request_metadata or {},
                     ),
+                    context=call_context,
+                    call_context=call_context,
                     request_metadata=request_metadata,
-                    extensions=extensions,
                 ):
-                    yield event
-            except (
-                A2AClientHTTPError,
-                A2AClientJSONRPCError,
-                httpx.TimeoutException,
-                httpx.TransportError,
-            ) as exc:
+                    yield self._adapt_stream_response(event)
+            except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
                 raise map_operation_error("message/send", exc) from exc
         finally:
             await self._release_operation()
@@ -198,26 +210,29 @@ class A2AClient:
         try:
             client = await self._ensure_client()
             request_metadata, extra_headers = split_request_metadata(metadata)
+            call_context = build_call_context(
+                self._settings.bearer_token,
+                extra_headers,
+                self._settings.basic_auth,
+                self._settings.protocol_version,
+            )
             try:
-                return await client.get_task(
-                    TaskQueryParams(
-                        id=task_id,
-                        history_length=history_length,
-                        metadata=request_metadata or {},
-                    ),
-                    context=build_call_context(
-                        self._settings.bearer_token,
-                        extra_headers,
-                        self._settings.basic_auth,
-                        self._settings.protocol_version,
+                return cast(
+                    Task,
+                    await call_with_supported_kwargs(
+                        client.get_task,
+                        self._build_get_task_request_for_client(
+                            client,
+                            task_id=task_id,
+                            history_length=history_length,
+                            metadata=request_metadata,
+                        ),
+                        context=call_context,
+                        call_context=call_context,
+                        request_metadata=request_metadata,
                     ),
                 )
-            except (
-                A2AClientHTTPError,
-                A2AClientJSONRPCError,
-                httpx.TimeoutException,
-                httpx.TransportError,
-            ) as exc:
+            except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
                 raise map_operation_error("tasks/get", exc) from exc
         finally:
             await self._release_operation()
@@ -233,22 +248,24 @@ class A2AClient:
         try:
             client = await self._ensure_client()
             request_metadata, extra_headers = split_request_metadata(metadata)
+            call_context = build_call_context(
+                self._settings.bearer_token,
+                extra_headers,
+                self._settings.basic_auth,
+                self._settings.protocol_version,
+            )
             try:
-                return await client.cancel_task(
-                    TaskIdParams(id=task_id, metadata=request_metadata or {}),
-                    context=build_call_context(
-                        self._settings.bearer_token,
-                        extra_headers,
-                        self._settings.basic_auth,
-                        self._settings.protocol_version,
+                return cast(
+                    Task,
+                    await call_with_supported_kwargs(
+                        client.cancel_task,
+                        CancelTaskRequest(id=task_id, metadata=request_metadata or {}),
+                        context=call_context,
+                        call_context=call_context,
+                        request_metadata=request_metadata,
                     ),
                 )
-            except (
-                A2AClientHTTPError,
-                A2AClientJSONRPCError,
-                httpx.TimeoutException,
-                httpx.TransportError,
-            ) as exc:
+            except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
                 raise map_operation_error("tasks/cancel", exc) from exc
         finally:
             await self._release_operation()
@@ -264,23 +281,36 @@ class A2AClient:
         try:
             client = await self._ensure_client()
             request_metadata, extra_headers = split_request_metadata(metadata)
+            call_context = build_call_context(
+                self._settings.bearer_token,
+                extra_headers,
+                self._settings.basic_auth,
+                self._settings.protocol_version,
+            )
             try:
-                async for event in client.resubscribe(
-                    TaskIdParams(id=task_id, metadata=request_metadata or {}),
-                    context=build_call_context(
-                        self._settings.bearer_token,
-                        extra_headers,
-                        self._settings.basic_auth,
-                        self._settings.protocol_version,
+                subscribe = getattr(client, "subscribe", None)
+                if subscribe is None:
+                    subscribe = cast(Any, client).resubscribe
+                async for event in call_with_supported_kwargs(
+                    subscribe,
+                    self._build_subscribe_request_for_client(
+                        client,
+                        task_id=task_id,
+                        metadata=request_metadata,
                     ),
+                    context=call_context,
+                    call_context=call_context,
+                    request_metadata=request_metadata,
                 ):
-                    yield event
-            except (
-                A2AClientHTTPError,
-                A2AClientJSONRPCError,
-                httpx.TimeoutException,
-                httpx.TransportError,
-            ) as exc:
+                    adapted = self._adapt_stream_response(event)
+                    if isinstance(adapted, tuple):
+                        yield adapted
+                    elif adapted is not None and not isinstance(adapted, Message):
+                        yield cast(
+                            tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None],
+                            adapted,
+                        )
+            except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
                 raise map_operation_error("tasks/resubscribe", exc) from exc
         finally:
             await self._release_operation()
@@ -292,17 +322,30 @@ class A2AClient:
             return await self._build_client()
 
     async def _build_client(self) -> Client:
-        card = await self.get_agent_card()
         config = ClientConfig(
             streaming=True,
             polling=self._polling_fallback_policy.enabled,
             httpx_client=await self._get_httpx_client(),
-            supported_transports=list(self._settings.supported_transports),
+            supported_protocol_bindings=list(self._settings.supported_transports),
             use_client_preference=self._settings.use_client_preference,
         )
+        factory_cls = globals().get("ClientFactory")
+        if factory_cls is not None:
+            card = await self.get_agent_card()
+            factory = factory_cls(config)
+            client = cast(Client, factory.create(card, interceptors=None))
+            self._client = client
+            return client
         try:
-            factory = ClientFactory(config, consumers=None)
-            client = factory.create(card)
+            client = await create_client(
+                self.agent_url,
+                client_config=config,
+                resolver_http_kwargs=build_resolver_http_kwargs(
+                    bearer_token=self._settings.bearer_token,
+                    timeout=self._settings.card_fetch_timeout,
+                    basic_auth=self._settings.basic_auth,
+                ),
+            )
         except ValueError as exc:
             raise A2AUnsupportedBindingError(
                 f"No supported transport found for {self.agent_url}"
@@ -388,23 +431,83 @@ class A2AClient:
         context_id: str | None,
         task_id: str | None,
         message_id: str | None,
+        extensions: list[str] | None,
     ) -> Message:
         return Message(
-            role=Role.user,
+            role=Role.ROLE_USER,
             message_id=message_id or str(uuid4()),
             context_id=context_id,
             task_id=task_id,
             parts=self._normalize_parts(text),
-            metadata=None,
+            extensions=list(extensions or []),
         )
 
     @classmethod
     def extract_text(cls, payload: Any) -> str | None:
         return extract_text_from_payload(payload)
 
-    # keep parts construction explicitly typed for mypy compatibility in older stubs
     def _normalize_parts(self, text: str) -> list[Part]:
-        return [cast(Part, TextPart(text=text))]
+        return [make_text_part(text)]
+
+    def _build_get_task_request_for_client(
+        self,
+        client: Any,
+        *,
+        task_id: str,
+        history_length: int | None,
+        metadata: Mapping[str, Any] | None,
+    ) -> GetTaskRequest | SimpleNamespace:
+        if isinstance(client, Client):
+            return GetTaskRequest(id=task_id, history_length=history_length)
+        return SimpleNamespace(
+            id=task_id,
+            history_length=history_length,
+            metadata=dict(metadata or {}),
+        )
+
+    def _build_subscribe_request_for_client(
+        self,
+        client: Any,
+        *,
+        task_id: str,
+        metadata: Mapping[str, Any] | None,
+    ) -> SubscribeToTaskRequest | SimpleNamespace:
+        if isinstance(client, Client):
+            return SubscribeToTaskRequest(id=task_id)
+        return SimpleNamespace(
+            id=task_id,
+            metadata=dict(metadata or {}),
+        )
+
+    def _adapt_stream_response(
+        self,
+        response: StreamResponse,
+    ) -> Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None:
+        if not hasattr(response, "HasField"):
+            return cast(
+                Message
+                | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None]
+                | None,
+                response,
+            )
+        if response.HasField("message"):
+            return response.message
+        if response.HasField("task"):
+            return (response.task, None)
+        if response.HasField("status_update"):
+            task = Task(
+                id=response.status_update.task_id,
+                context_id=response.status_update.context_id,
+                status=response.status_update.status,
+            )
+            return (task, response.status_update)
+        if response.HasField("artifact_update"):
+            task = Task(
+                id=response.artifact_update.task_id,
+                context_id=response.artifact_update.context_id,
+            )
+            return (task, response.artifact_update)
+        return None
 
 
 __all__ = ["A2AClient"]

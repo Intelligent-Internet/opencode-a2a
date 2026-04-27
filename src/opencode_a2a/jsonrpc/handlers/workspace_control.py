@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from a2a.types import JSONRPCRequest
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -14,6 +13,7 @@ from ...auth import (
 from ...contracts.extensions import WORKSPACE_CONTROL_ERROR_BUSINESS_CODES
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import invalid_params_error
+from ..models import JSONRPCRequest
 from .common import (
     build_authorization_forbidden_response,
     build_success_response,

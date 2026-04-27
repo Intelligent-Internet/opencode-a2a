@@ -88,6 +88,13 @@ def test_smoke_test_imports_installed_package_before_health_check() -> None:
     )
 
 
+def test_smoke_test_waits_quietly_for_health_and_surfaces_early_exit() -> None:
+    assert "wait_for_health()" in SMOKE_TEST_TEXT
+    assert 'if ! kill -0 "${server_pid}" >/dev/null 2>&1; then' in SMOKE_TEST_TEXT
+    assert "curl --silent --fail --output /dev/null \\" in SMOKE_TEST_TEXT
+    assert '"${health_url}" 2>/dev/null; then' in SMOKE_TEST_TEXT
+
+
 def test_coverage_policy_tracks_overall_and_critical_file_thresholds() -> None:
     assert "OVERALL_MINIMUM = 90.0" in COVERAGE_GATE_TEXT
     assert '"src/opencode_a2a/execution/executor.py": 90.0' in COVERAGE_GATE_TEXT

@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from a2a.server.events.event_queue import EventQueue
+from a2a.types import TaskState
 
 from opencode_a2a.execution.executor import OpencodeAgentExecutor, _TTLCache
 from opencode_a2a.execution.session_manager import SessionManager
@@ -141,10 +142,10 @@ async def test_session_hijack_prevention(mock_client):
     found_error_task = False
     for call in event_queue.enqueue_event.call_args_list:
         event = call[0][0]
-        if isinstance(event, Task) and event.status.state.name == "failed":
+        if isinstance(event, Task) and event.status.state == TaskState.TASK_STATE_FAILED:
             # Handle a2a types where parts contain root models
             part = event.status.message.parts[0]
-            text = getattr(part, "text", None) or getattr(part.root, "text", "")
+            text = getattr(part, "text", None) or getattr(getattr(part, "root", None), "text", "")
             if "not owned by you" in text:
                 found_error_task = True
                 break

@@ -5,12 +5,14 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 from a2a.server.tasks.task_store import TaskStore
 from a2a.types import Task, TaskState
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from ..a2a_utils import proto_to_dict
 from ..jsonrpc.error_responses import build_http_error_body
 from ..output_modes import (
     apply_accepted_output_modes,
@@ -165,7 +167,7 @@ def _serialize_task(
     if isinstance(negotiated, Task):
         task = negotiated
 
-    payload = task.model_dump(mode="json", by_alias=True, exclude_none=True)
+    payload = proto_to_dict(task)
 
     history = payload.get("history")
     if history_length <= 0:
@@ -213,7 +215,10 @@ def _parse_list_tasks_query(request: Request) -> _ListTasksQuery:
     status = None
     if status_value is not None:
         try:
-            status = TaskState(status_value)
+            normalized_status = status_value.strip().upper()
+            if normalized_status and not normalized_status.startswith("TASK_STATE_"):
+                normalized_status = f"TASK_STATE_{normalized_status}"
+            status = TaskState.Value(normalized_status)
         except ValueError as exc:
             raise _ListTasksValidationError(
                 field="status",
@@ -275,9 +280,12 @@ def _parse_timestamp(raw_value: str, *, field: str) -> datetime:
 
 
 def _task_status_timestamp(task: Task) -> datetime:
-    timestamp = task.status.timestamp
-    if not timestamp:
+    if not task.status.HasField("timestamp"):
         return datetime.min.replace(tzinfo=UTC)
+    timestamp = task.status.timestamp
+    if hasattr(timestamp, "ToDatetime"):
+        value = cast(datetime, timestamp.ToDatetime())
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
     try:
         return _parse_timestamp(timestamp, field="status.timestamp")
     except _ListTasksValidationError:

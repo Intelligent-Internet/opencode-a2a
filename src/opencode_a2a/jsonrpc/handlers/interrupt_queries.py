@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from a2a.types import JSONRPCRequest
 from starlette.requests import Request
 from starlette.responses import Response
 
 from ..dispatch import ExtensionHandlerContext
+from ..models import JSONRPCRequest
 from .common import build_internal_error_response, build_success_response, reject_unknown_fields
 
 

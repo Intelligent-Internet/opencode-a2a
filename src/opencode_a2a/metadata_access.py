@@ -3,6 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from google.protobuf.message import Message as ProtoMessage
+
+from .a2a_utils import proto_to_dict
+
 
 def extract_namespaced_value(
     source: Mapping[str, Any] | None,
@@ -10,17 +14,21 @@ def extract_namespaced_value(
     namespace: str,
     path: tuple[str, ...],
 ) -> Any | None:
-    if not isinstance(source, Mapping):
+    normalized_source = _normalize_mapping(source)
+    if normalized_source is None:
         return None
 
-    current: Any = source.get(namespace)
-    if not isinstance(current, Mapping):
+    current: Any = normalized_source.get(namespace)
+    current_mapping = _normalize_mapping(current)
+    if current_mapping is None:
         return None
+    current = current_mapping
 
     for part in path:
-        if not isinstance(current, Mapping):
+        current_mapping = _normalize_mapping(current)
+        if current_mapping is None:
             return None
-        current = current.get(part)
+        current = current_mapping.get(part)
     return current
 
 
@@ -36,4 +44,16 @@ def extract_first_namespaced_string(
             value = candidate.strip()
             if value:
                 return value
+    return None
+
+
+def _normalize_mapping(value: Any) -> Mapping[str, Any] | None:
+    if isinstance(value, ProtoMessage):
+        normalized = proto_to_dict(value)
+        return normalized if isinstance(normalized, Mapping) else None
+    if isinstance(value, Mapping):
+        try:
+            return value if isinstance(value, dict) else dict(value)
+        except Exception:
+            return None
     return None

@@ -8,17 +8,14 @@ import pytest
 from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.types import (
     Artifact,
-    DataPart,
     Message,
-    Part,
     Role,
     Task,
     TaskState,
     TaskStatus,
-    TextPart,
-    TransportProtocol,
 )
 
+from opencode_a2a.a2a_utils import make_data_part, make_text_part
 from opencode_a2a.output_modes import build_output_negotiation_metadata
 from opencode_a2a.server.application import (
     AUTHENTICATED_EXTENDED_CARD_CACHE_CONTROL,
@@ -40,44 +37,56 @@ def _task_for_listing(
     *,
     task_id: str,
     context_id: str,
-    state: TaskState = TaskState.completed,
-    timestamp: str,
+    state: TaskState = TaskState.TASK_STATE_COMPLETED,
+    timestamp: datetime | str,
     include_artifacts: bool = False,
     history_size: int = 0,
 ) -> Task:
-    task = Task(
-        id=task_id,
-        context_id=context_id,
-        status=TaskStatus(state=state, timestamp=timestamp),
-    )
+    status = TaskStatus(state=state)
+    if isinstance(timestamp, datetime):
+        status.timestamp = timestamp
+    else:
+        try:
+            status.timestamp = datetime.fromisoformat(timestamp)
+        except ValueError:
+            pass
+    artifacts: list[Artifact] = []
     if include_artifacts:
-        task.artifacts = [
+        artifacts = [
             Artifact(
                 artifact_id=f"{task_id}-artifact",
-                parts=[Part(root=TextPart(text=f"artifact:{task_id}"))],
+                parts=[make_text_part(f"artifact:{task_id}")],
             )
         ]
+    history: list[Message] = []
     if history_size > 0:
-        task.history = [
+        history = [
             Message(
                 message_id=f"{task_id}-history-{index}",
-                role=Role.agent,
-                parts=[Part(root=TextPart(text=f"history:{task_id}:{index}"))],
+                role=Role.ROLE_AGENT,
+                parts=[make_text_part(f"history:{task_id}:{index}")],
                 context_id=context_id,
                 task_id=task_id,
             )
             for index in range(history_size)
         ]
-    return task
+    return Task(
+        id=task_id,
+        context_id=context_id,
+        status=status,
+        artifacts=artifacts,
+        history=history,
+    )
 
 
 def test_agent_card_declares_dual_stack_with_http_json_preferred() -> None:
     card = build_agent_card(make_settings(test_bearer_token="test-token"))
 
-    assert card.preferred_transport == TransportProtocol.http_json
-    transports = {iface.transport for iface in card.additional_interfaces or []}
-    assert TransportProtocol.http_json in transports
-    assert TransportProtocol.jsonrpc in transports
+    interfaces = {
+        (iface.protocol_binding, iface.protocol_version) for iface in card.supported_interfaces
+    }
+    assert ("HTTP+JSON", "0.3") in interfaces
+    assert ("JSONRPC", "0.3") in interfaces
 
 
 def test_normalize_log_level_falls_back_to_warning_for_invalid_value() -> None:
@@ -120,6 +129,21 @@ def test_rest_subscription_route_matches_current_sdk_contract() -> None:
 
     assert "/v1/tasks/{id}:subscribe" in route_paths
     assert "/v1/tasks/{id}:resubscribe" not in route_paths
+
+
+def test_rest_subscription_route_registers_distinct_get_and_post_operations() -> None:
+    app = create_app(make_settings(test_bearer_token="test-token"))
+    subscribe_routes = [
+        route
+        for route in app.router.routes
+        if getattr(route, "path", None) == "/v1/tasks/{id}:subscribe"
+    ]
+
+    assert len(subscribe_routes) == 2
+    assert {tuple(sorted(route.methods or set())) for route in subscribe_routes} == {
+        ("GET",),
+        ("POST",),
+    }
 
 
 def test_rest_adapter_exposes_sdk_rest_routes() -> None:
@@ -171,7 +195,7 @@ async def test_list_tasks_route_returns_paginated_results(monkeypatch) -> None:
         _task_for_listing(
             task_id="task-other",
             context_id="ctx-other",
-            state=TaskState.working,
+            state=TaskState.TASK_STATE_WORKING,
             timestamp=now.isoformat(),
             history_size=1,
         )
@@ -302,7 +326,7 @@ async def test_list_tasks_route_supports_history_artifacts_and_filters(monkeypat
     target_task = _task_for_listing(
         task_id="task-filtered",
         context_id="ctx-filtered",
-        state=TaskState.completed,
+        state=TaskState.TASK_STATE_COMPLETED,
         timestamp=(now + timedelta(seconds=1)).isoformat(),
         include_artifacts=True,
         history_size=4,
@@ -312,7 +336,7 @@ async def test_list_tasks_route_supports_history_artifacts_and_filters(monkeypat
         _task_for_listing(
             task_id="task-excluded-status",
             context_id="ctx-filtered",
-            state=TaskState.failed,
+            state=TaskState.TASK_STATE_FAILED,
             timestamp=now.isoformat(),
             include_artifacts=True,
             history_size=2,
@@ -363,15 +387,15 @@ async def test_list_tasks_route_applies_persisted_output_negotiation(monkeypatch
     task = Task(
         id="task-negotiated-list",
         context_id="ctx-negotiated-list",
-        status=TaskStatus(state=TaskState.completed, timestamp=datetime.now(UTC).isoformat()),
+        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED, timestamp=datetime.now(UTC)),
         artifacts=[
             Artifact(
                 artifact_id="task-negotiated-list-text",
-                parts=[Part(root=TextPart(text="plain"))],
+                parts=[make_text_part("plain")],
             ),
             Artifact(
                 artifact_id="task-negotiated-list-json",
-                parts=[Part(root=DataPart(data={"tool": "bash", "status": "completed"}))],
+                parts=[make_data_part({"tool": "bash", "status": "completed"})],
             ),
         ],
         metadata=metadata,

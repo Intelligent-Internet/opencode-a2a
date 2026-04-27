@@ -6,9 +6,10 @@ import os
 import sys
 from collections.abc import Sequence
 
-from a2a.types import Message, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from a2a.types import Message, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
 
 from . import __version__
+from .a2a_utils import part_text
 from .client import A2AClient, load_settings
 from .server.application import main as serve_main
 
@@ -25,15 +26,15 @@ async def run_call(agent_url: str, text: str) -> int:
                     artifact = update.artifact
                     if artifact and artifact.parts:
                         for part in artifact.parts:
-                            text_val = getattr(part.root, "text", None)
+                            text_val = part_text(part)
                             if isinstance(text_val, str):
                                 print(text_val, end="", flush=True)
                 elif isinstance(update, TaskStatusUpdateEvent):
-                    if update.status and update.status.state == "failed":
+                    if update.status and update.status.state == TaskState.TASK_STATE_FAILED:
                         print(f"\n[Failed] {update.status.message or ''}")
             elif isinstance(event, Message):
                 for part in event.parts:
-                    text_val = getattr(part.root, "text", None)
+                    text_val = part_text(part)
                     if isinstance(text_val, str):
                         print(text_val, end="", flush=True)
         print()  # New line after completion

@@ -11,14 +11,13 @@ from a2a.types import (
     Artifact,
     JSONRPCError,
     JSONRPCErrorResponse,
-    Part,
     Task,
     TaskArtifactUpdateEvent,
     TaskState,
     TaskStatus,
-    TextPart,
 )
 
+from opencode_a2a.a2a_utils import make_text_part
 from opencode_a2a.client import A2AClient
 from opencode_a2a.client.errors import (
     A2AClientResetRequiredError,
@@ -281,12 +280,10 @@ async def test_agent_includes_usage_in_non_stream_task_metadata() -> None:
 async def test_agent_handles_a2a_call_tool(monkeypatch) -> None:
     from a2a.types import (
         Artifact,
-        Part,
         Task,
         TaskArtifactUpdateEvent,
         TaskState,
         TaskStatus,
-        TextPart,
     )
 
     from opencode_a2a.client import A2AClient
@@ -298,7 +295,7 @@ async def test_agent_handles_a2a_call_tool(monkeypatch) -> None:
             task = Task(
                 id="remote-task",
                 context_id="remote-ctx",
-                status=TaskStatus(state=TaskState.working),
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
             )
             yield (
                 task,
@@ -308,7 +305,7 @@ async def test_agent_handles_a2a_call_tool(monkeypatch) -> None:
                     artifact=Artifact(
                         artifact_id="artifact-1",
                         name="response",
-                        parts=[Part(root=TextPart(text=f"remote response to {text}"))],
+                        parts=[make_text_part(f"remote response to {text}")],
                     ),
                 ),
             )
@@ -390,7 +387,11 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
                 mock_client = MagicMock()
 
                 async def _send_message(_text: str):
-                    task = Task(id="t", context_id="c", status=TaskStatus(state=TaskState.working))
+                    task = Task(
+                        id="t",
+                        context_id="c",
+                        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+                    )
                     yield (
                         task,
                         TaskArtifactUpdateEvent(
@@ -399,7 +400,7 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
                             artifact=Artifact(
                                 artifact_id="artifact-1",
                                 name="response",
-                                parts=[Part(root=TextPart(text="streamed tool output"))],
+                                parts=[make_text_part("streamed tool output")],
                             ),
                         ),
                     )
@@ -420,12 +421,10 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
 
     from a2a.types import (
         Artifact,
-        Part,
         Task,
         TaskArtifactUpdateEvent,
         TaskState,
         TaskStatus,
-        TextPart,
     )
 
     from opencode_a2a.client import A2AClient
@@ -439,7 +438,10 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
 
     assert client.call_count == 2
     task = next(event for event in q.events if isinstance(event, Task))
-    assert task.status.message.parts[0].root.text == "done"
+    assert (
+        getattr(task.status.message.parts[0], "text", None)
+        or getattr(getattr(task.status.message.parts[0], "root", None), "text", "")
+    ) == "done"
 
 
 @pytest.mark.asyncio
@@ -560,7 +562,7 @@ async def test_agent_a2a_call_uses_server_side_basic_auth_headers(
                 Task(
                     id="remote-task",
                     context_id="remote-ctx",
-                    status=TaskStatus(state=TaskState.working),
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
                 ),
                 TaskArtifactUpdateEvent(
                     task_id="remote-task",
@@ -568,7 +570,7 @@ async def test_agent_a2a_call_uses_server_side_basic_auth_headers(
                     artifact=Artifact(
                         artifact_id="artifact-1",
                         name="response",
-                        parts=[Part(root=TextPart(text="remote response"))],
+                        parts=[make_text_part("remote response")],
                     ),
                 ),
             )
@@ -633,7 +635,7 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
                 Task(
                     id="remote-task",
                     context_id="remote-ctx",
-                    status=TaskStatus(state=TaskState.working),
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
                 ),
                 TaskArtifactUpdateEvent(
                     task_id="remote-task",
@@ -641,7 +643,7 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
                     artifact=Artifact(
                         artifact_id="artifact-1",
                         name="response",
-                        parts=[Part(root=TextPart(text="remote response"))],
+                        parts=[make_text_part("remote response")],
                     ),
                 ),
             )

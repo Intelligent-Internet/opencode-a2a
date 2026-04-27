@@ -149,7 +149,7 @@ async def test_build_client_uses_settings_and_transport_config(
     assert config.streaming is True
     assert config.polling is False
     assert config.use_client_preference is True
-    assert config.supported_transports == ["HTTP+JSON"]
+    assert config.supported_protocol_bindings == ["HTTP+JSON"]
     assert factory_calls["interceptors"] is None
     assert actual is fake_sdk_client
 
@@ -216,10 +216,10 @@ async def test_send_polling_fallback_returns_terminal_task(monkeypatch: pytest.M
         ),
     )
     fake_client = _FakeClient(
-        events=[(_task("task-1", TaskState.working), None)],
+        events=[(_task("task-1", TaskState.TASK_STATE_WORKING), None)],
         task_results=[
-            _task("task-1", TaskState.working),
-            _task("task-1", TaskState.completed),
+            _task("task-1", TaskState.TASK_STATE_WORKING),
+            _task("task-1", TaskState.TASK_STATE_COMPLETED),
         ],
     )
     sleep_calls: list[float] = []
@@ -232,7 +232,7 @@ async def test_send_polling_fallback_returns_terminal_task(monkeypatch: pytest.M
 
     response = await client.send("hello")
 
-    assert response == (_task("task-1", TaskState.completed), None)
+    assert response == (_task("task-1", TaskState.TASK_STATE_COMPLETED), None)
     assert [params.id for params, _kwargs in fake_client.task_inputs] == ["task-1", "task-1"]
     assert sleep_calls == [0.1, 0.2]
 
@@ -243,7 +243,7 @@ async def test_send_polling_fallback_skips_input_required(monkeypatch: pytest.Mo
         "http://agent.example.com",
         settings=A2AClientSettings(polling_fallback_enabled=True),
     )
-    event = (_task("task-1", TaskState.input_required), None)
+    event = (_task("task-1", TaskState.TASK_STATE_INPUT_REQUIRED), None)
     fake_client = _FakeClient(events=[event])
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
 
@@ -266,8 +266,8 @@ async def test_send_polling_fallback_timeout_raises(monkeypatch: pytest.MonkeyPa
         ),
     )
     fake_client = _FakeClient(
-        events=[(_task("task-1", TaskState.working), None)],
-        task_results=[_task("task-1", TaskState.working)],
+        events=[(_task("task-1", TaskState.TASK_STATE_WORKING), None)],
+        task_results=[_task("task-1", TaskState.TASK_STATE_WORKING)],
     )
     now_values = iter([0.0, 0.0, 0.3])
 
@@ -297,7 +297,7 @@ async def test_send_polling_fallback_maps_get_task_error(
         ),
     )
     fake_client = _FakeClient(
-        events=[(_task("task-1", TaskState.working), None)],
+        events=[(_task("task-1", TaskState.TASK_STATE_WORKING), None)],
         task_fail=A2AClientHTTPError(404, "gone"),
     )
 

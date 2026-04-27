@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from a2a.types import A2AError, InvalidParamsError, UnsupportedOperationError
+from a2a.types import InvalidParamsError, UnsupportedOperationError
 
 from opencode_a2a.jsonrpc.error_responses import (
     GOOGLE_RPC_ERROR_INFO_TYPE,
@@ -114,9 +114,9 @@ def test_invalid_error_helper_wraps_a2a_error() -> None:
         "bad field",
         data={"type": "INVALID_FIELD", "field": "request"},
     )
-    assert isinstance(invalid.root, InvalidParamsError)
-    assert invalid.root.message == "bad field"
-    assert invalid.root.data == {"type": "INVALID_FIELD", "field": "request"}
+    assert isinstance(invalid, InvalidParamsError)
+    assert invalid.message == "bad field"
+    assert invalid.data == {"type": "INVALID_FIELD", "field": "request"}
 
 
 def test_version_not_supported_error_includes_supported_versions() -> None:
@@ -186,7 +186,7 @@ def test_adapt_a2a_specific_error_for_v1_uses_error_info_details() -> None:
 def test_adapt_a2a_root_error_for_v1_uses_error_type_reason() -> None:
     adapted = adapt_jsonrpc_error_for_protocol(
         "1.0",
-        A2AError(root=UnsupportedOperationError()),
+        UnsupportedOperationError(),
     )
 
     assert adapted.code == -32004

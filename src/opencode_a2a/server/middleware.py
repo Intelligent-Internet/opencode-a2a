@@ -6,15 +6,16 @@ import logging
 from contextvars import ContextVar, Token
 from typing import cast
 
-from a2a.utils.constants import (
-    AGENT_CARD_WELL_KNOWN_PATH,
-    EXTENDED_AGENT_CARD_PATH,
-    PREV_AGENT_CARD_WELL_KNOWN_PATH,
-)
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from starlette.responses import StreamingResponse
 
+from ..a2a_protocol import (
+    AGENT_CARD_WELL_KNOWN_PATH,
+    EXTENDED_AGENT_CARD_PATH,
+    PREV_AGENT_CARD_WELL_KNOWN_PATH,
+)
+from ..a2a_utils import proto_to_dict
 from ..auth import (
     authenticate_static_credential,
     build_static_auth_credentials,
@@ -25,6 +26,7 @@ from ..jsonrpc.error_responses import (
     build_http_error_body,
     version_not_supported_error,
 )
+from ..jsonrpc.models import JSONRPCError
 from ..protocol_versions import (
     UnsupportedProtocolVersionError,
     negotiate_protocol_version,
@@ -108,7 +110,7 @@ def add_auth_middleware(app: FastAPI, settings) -> None:  # noqa: ANN001
 
 
 def build_agent_card_etag(card) -> str:  # noqa: ANN001
-    payload = card.model_dump(mode="json", by_alias=True, exclude_none=True)
+    payload = proto_to_dict(card)
     content = json.dumps(
         payload,
         ensure_ascii=False,
@@ -212,12 +214,17 @@ def install_runtime_middlewares(
                     {
                         "jsonrpc": "2.0",
                         "id": _extract_jsonrpc_request_id(payload),
-                        "error": adapt_jsonrpc_error_for_protocol(
-                            error.requested_version,
-                            version_not_supported_error(
-                                requested_version=error.requested_version,
-                                supported_protocol_versions=list(error.supported_protocol_versions),
-                                default_protocol_version=error.default_protocol_version,
+                        "error": cast(
+                            JSONRPCError,
+                            adapt_jsonrpc_error_for_protocol(
+                                error.requested_version,
+                                version_not_supported_error(
+                                    requested_version=error.requested_version,
+                                    supported_protocol_versions=list(
+                                        error.supported_protocol_versions
+                                    ),
+                                    default_protocol_version=error.default_protocol_version,
+                                ),
                             ),
                         ).model_dump(mode="json", exclude_none=True),
                     },

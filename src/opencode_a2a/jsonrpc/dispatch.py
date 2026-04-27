@@ -4,17 +4,22 @@ from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, TypeAlias
 
-from a2a.server.apps.jsonrpc.jsonrpc_app import JSONRPCApplication
-from a2a.types import A2AError, JSONRPCError, JSONRPCRequest
+from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
+from a2a.utils.errors import A2AError
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 from starlette.responses import Response
 
+from ..a2a_protocol import V1_JSONRPC_METHOD_TO_LEGACY_METHOD
 from ..opencode_upstream_client import OpencodeUpstreamClient
+from .models import JSONRPCError, JSONRPCRequest
 
 # Delegate all SDK-owned JSON-RPC methods to the base app, then let the local
 # extension registry override only the OpenCode-specific methods.
-CORE_JSONRPC_METHODS = frozenset(JSONRPCApplication.METHOD_TO_MODEL)
+CORE_JSONRPC_METHODS = frozenset(
+    V1_JSONRPC_METHOD_TO_LEGACY_METHOD.get(method, method)
+    for method in JsonRpcDispatcher.METHOD_TO_MODEL
+)
 
 ErrorResponseFactory: TypeAlias = Callable[[str | int | None, JSONRPCError | A2AError], Response]
 SuccessResponseFactory: TypeAlias = Callable[[str | int, Any], JSONResponse]

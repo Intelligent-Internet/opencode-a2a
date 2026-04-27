@@ -18,10 +18,10 @@ def test_polling_policy_state_rules_and_backoff() -> None:
         timeout_seconds=10.0,
     )
 
-    assert policy.should_poll_state(TaskState.working) is True
-    assert policy.should_poll_state(TaskState.input_required) is False
-    assert policy.is_terminal_state(TaskState.completed) is True
-    assert policy.is_terminal_state(TaskState.working) is False
+    assert policy.should_poll_state(TaskState.TASK_STATE_WORKING) is True
+    assert policy.should_poll_state(TaskState.TASK_STATE_INPUT_REQUIRED) is False
+    assert policy.is_terminal_state(TaskState.TASK_STATE_COMPLETED) is True
+    assert policy.is_terminal_state(TaskState.TASK_STATE_WORKING) is False
     assert policy.next_interval_seconds(0.5) == 1.0
     assert policy.next_interval_seconds(2.0) == 2.0
 

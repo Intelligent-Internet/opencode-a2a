@@ -17,6 +17,7 @@ from opencode_a2a.execution.executor import (
     _extract_tool_part_payload,
     _StreamOutputState,
 )
+from opencode_a2a.task_states import TERMINAL_TASK_STATES
 from tests.support.helpers import (
     DummyEventQueue,
     make_request_context,
@@ -33,6 +34,13 @@ from tests.support.streaming_output import (
     _step_finish_usage_event,
     _unique,
 )
+
+
+def _is_terminal_status_event(event: TaskStatusUpdateEvent) -> bool:
+    return (
+        event.status.state in TERMINAL_TASK_STATES
+        or event.status.state == TaskState.TASK_STATE_AUTH_REQUIRED
+    )
 
 
 @pytest.mark.asyncio
@@ -63,8 +71,8 @@ async def test_streaming_accepts_file_input_without_breaking_contract() -> None:
 
     status_events = [event for event in queue.events if isinstance(event, TaskStatusUpdateEvent)]
 
-    assert status_events[-1].final is True
-    assert status_events[-1].status.state == TaskState.completed
+    assert _is_terminal_status_event(status_events[-1])
+    assert status_events[-1].status.state == TaskState.TASK_STATE_COMPLETED
 
 
 def test_stream_output_state_deduplicates_non_accumulating_tool_chunks() -> None:
@@ -202,10 +210,12 @@ async def test_streaming_waits_for_session_idle_before_emitting_completed() -> N
     assert _part_text(updates[-1]) == "late final answer"
 
     final_statuses = [
-        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent) and _is_terminal_status_event(event)
     ]
     assert final_statuses
-    assert final_statuses[-1].status.state == TaskState.completed
+    assert final_statuses[-1].status.state == TaskState.TASK_STATE_COMPLETED
 
 
 @pytest.mark.asyncio
@@ -235,10 +245,12 @@ async def test_streaming_fails_when_event_stream_ends_before_terminal_signal() -
     )
 
     final_statuses = [
-        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent) and _is_terminal_status_event(event)
     ]
     assert final_statuses
-    assert final_statuses[-1].status.state == TaskState.failed
+    assert final_statuses[-1].status.state == TaskState.TASK_STATE_FAILED
     assert final_statuses[-1].metadata is not None
     assert final_statuses[-1].metadata["opencode"]["error"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
 
@@ -276,13 +288,15 @@ async def test_streaming_emits_only_failed_terminal_status_for_session_error() -
     )
 
     final_statuses = [
-        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent) and _is_terminal_status_event(event)
     ]
     assert len(final_statuses) == 1
-    assert final_statuses[0].status.state == TaskState.auth_required
+    assert final_statuses[0].status.state == TaskState.TASK_STATE_AUTH_REQUIRED
     assert final_statuses[0].metadata is not None
     assert final_statuses[0].metadata["opencode"]["error"]["type"] == "UPSTREAM_UNAUTHORIZED"
-    assert not any(event.status.state == TaskState.completed for event in final_statuses)
+    assert not any(event.status.state == TaskState.TASK_STATE_COMPLETED for event in final_statuses)
 
 
 @pytest.mark.asyncio
@@ -449,7 +463,9 @@ async def test_streaming_emits_events_without_message_id_using_stable_fallback()
     assert _artifact_stream_meta(update)["event_id"] == "task-6:ctx-6:task-6:stream:1"
     assert _artifact_stream_meta(update)["sequence"] == 1
     final_status = [
-        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent) and _is_terminal_status_event(event)
     ][-1]
     assert _status_shared_meta(final_status)["stream"]["message_id"] == "task-6:ctx-6:assistant"
     assert (
@@ -487,7 +503,7 @@ async def test_streaming_emits_snapshot_when_message_id_missing_and_stream_is_pa
 
     assert _part_text(first) == "partial "
     assert first.append is False
-    assert first.last_chunk is None
+    assert first.last_chunk is False
     assert _artifact_stream_meta(first)["source"] == "stream"
     assert _artifact_stream_meta(first)["message_id"] == "task-6b:ctx-6b:assistant"
     assert _artifact_stream_meta(first)["event_id"] == "task-6b:ctx-6b:task-6b:stream:1"
@@ -502,7 +518,9 @@ async def test_streaming_emits_snapshot_when_message_id_missing_and_stream_is_pa
     assert _artifact_stream_meta(second)["sequence"] == 2
 
     final_status = [
-        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent) and _is_terminal_status_event(event)
     ][-1]
     assert _status_shared_meta(final_status)["stream"]["message_id"] == "task-6b:ctx-6b:assistant"
     assert (
@@ -547,7 +565,9 @@ async def test_streaming_includes_usage_in_final_status_metadata() -> None:
     )
 
     final_status = [
-        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent) and _is_terminal_status_event(event)
     ][-1]
     usage = _status_shared_meta(final_status)["usage"]
     assert usage["input_tokens"] == 12
@@ -555,7 +575,7 @@ async def test_streaming_includes_usage_in_final_status_metadata() -> None:
     assert usage["total_tokens"] == 16
     assert usage["cost"] == 0.0012
     assert "raw" not in usage
-    assert final_status.status.state == TaskState.completed
+    assert final_status.status.state == TaskState.TASK_STATE_COMPLETED
 
 
 @pytest.mark.asyncio
@@ -604,7 +624,9 @@ async def test_streaming_ignores_non_step_finish_usage_like_part_payloads() -> N
     )
 
     final_status = [
-        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent) and _is_terminal_status_event(event)
     ][-1]
     usage = _status_shared_meta(final_status)["usage"]
     assert usage["input_tokens"] == 11
@@ -636,10 +658,12 @@ async def test_streaming_final_status_state_is_completed() -> None:
     )
 
     final_statuses = [
-        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent) and _is_terminal_status_event(event)
     ]
     assert final_statuses
-    assert final_statuses[-1].status.state == TaskState.completed
+    assert final_statuses[-1].status.state == TaskState.TASK_STATE_COMPLETED
 
 
 @pytest.mark.asyncio
@@ -688,7 +712,9 @@ async def test_streaming_does_not_emit_text_from_step_finish_snapshot_part() -> 
     assert text_updates == []
 
     final_status = [
-        event for event in queue.events if isinstance(event, TaskStatusUpdateEvent) and event.final
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent) and _is_terminal_status_event(event)
     ][-1]
     usage = _status_shared_meta(final_status)["usage"]
     assert usage["input_tokens"] == 1
@@ -741,8 +767,8 @@ async def test_streaming_emits_progress_metadata_for_step_events() -> None:
         event
         for event in queue.events
         if isinstance(event, TaskStatusUpdateEvent)
-        and not event.final
-        and (event.metadata or {}).get("shared", {}).get("progress") is not None
+        and not _is_terminal_status_event(event)
+        and bool(_progress_meta(event))
     ]
     assert len(progress_statuses) == 2
 
@@ -796,8 +822,8 @@ async def test_streaming_emits_progress_metadata_for_snapshot_without_text_artif
         event
         for event in queue.events
         if isinstance(event, TaskStatusUpdateEvent)
-        and not event.final
-        and (event.metadata or {}).get("shared", {}).get("progress") is not None
+        and not _is_terminal_status_event(event)
+        and bool(_progress_meta(event))
     ]
     assert len(progress_statuses) == 1
     progress = _progress_meta(progress_statuses[0])
@@ -828,4 +854,4 @@ async def test_non_streaming_response_task_state_is_completed() -> None:
 
     tasks = [event for event in queue.events if isinstance(event, Task)]
     assert tasks
-    assert tasks[-1].status.state == TaskState.completed
+    assert tasks[-1].status.state == TaskState.TASK_STATE_COMPLETED

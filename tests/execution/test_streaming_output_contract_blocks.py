@@ -1,5 +1,6 @@
 import pytest
 
+from opencode_a2a.a2a_utils import part_kind
 from opencode_a2a.execution.executor import (
     OpencodeAgentExecutor,
 )
@@ -119,7 +120,7 @@ async def test_streaming_emits_structured_tool_part_updates() -> None:
     assert [payload["status"] for payload in payloads] == ["pending", "running", "completed"]
     assert all(payload["call_id"] == "call-1" for payload in payloads)
     assert all(payload["tool"] == "bash" for payload in payloads)
-    assert all(getattr(ev.artifact.parts[0].root, "kind", None) == "data" for ev in tool_updates)
+    assert all(part_kind(ev.artifact.parts[0]) == "data" for ev in tool_updates)
 
 
 @pytest.mark.asyncio
@@ -159,7 +160,7 @@ async def test_streaming_downgrades_structured_tool_updates_when_json_output_not
     tool_updates = [ev for ev in updates if _artifact_stream_meta(ev)["block_type"] == "tool_call"]
     assert len(tool_updates) == 1
     assert _part_text(tool_updates[0]) == '{"call_id":"call-1","status":"running","tool":"bash"}'
-    assert getattr(tool_updates[0].artifact.parts[0].root, "kind", None) == "text"
+    assert part_kind(tool_updates[0].artifact.parts[0]) == "text"
     assert any(_artifact_stream_meta(ev)["block_type"] == "text" for ev in updates)
 
 

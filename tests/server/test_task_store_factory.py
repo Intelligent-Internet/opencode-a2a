@@ -29,9 +29,20 @@ from tests.support.helpers import make_settings
 def _task(task_id: str, *, context_id: str = "ctx-1") -> Task:
     return Task(
         id=task_id,
-        contextId=context_id,
-        status=TaskStatus(state=TaskState.working),
+        context_id=context_id,
+        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
     )
+
+
+def _set_status(task: Task, state: TaskState) -> Task:
+    task.status.CopyFrom(TaskStatus(state=state))
+    return task
+
+
+def _set_metadata(task: Task, metadata: dict) -> Task:
+    task.ClearField("metadata")
+    task.metadata.update(metadata)
+    return task
 
 
 def test_build_task_store_defaults_to_database_backend(tmp_path: Path) -> None:
@@ -110,7 +121,7 @@ async def test_database_task_store_persists_tasks_across_rebuilds(tmp_path: Path
     assert restored is not None
     assert restored.id == "task-1"
     assert restored.context_id == "ctx-1"
-    assert restored.status.state == TaskState.working
+    assert restored.status.state == TaskState.TASK_STATE_WORKING
 
     await reader.engine.dispose()
 
@@ -192,17 +203,15 @@ async def test_task_store_preserves_first_terminal_state(
     store = build_task_store(settings)
     await initialize_task_store(store)
 
-    completed = _task("task-terminal")
-    completed.status = TaskStatus(state=TaskState.completed)
+    completed = _set_status(_task("task-terminal"), TaskState.TASK_STATE_COMPLETED)
     await store.save(completed)
 
-    late_failed = _task("task-terminal")
-    late_failed.status = TaskStatus(state=TaskState.failed)
+    late_failed = _set_status(_task("task-terminal"), TaskState.TASK_STATE_FAILED)
     await store.save(late_failed)
 
     restored = await store.get("task-terminal")
     assert restored is not None
-    assert restored.status.state == TaskState.completed
+    assert restored.status.state == TaskState.TASK_STATE_COMPLETED
 
     engine = getattr(store, "engine", None)
     if engine is not None:
@@ -226,12 +235,10 @@ async def test_database_task_store_keeps_first_terminal_state_across_independent
         working = _task("task-1")
         await first.save(working)
 
-        completed = _task("task-1")
-        completed.status = TaskStatus(state=TaskState.completed)
+        completed = _set_status(_task("task-1"), TaskState.TASK_STATE_COMPLETED)
         await first.save(completed)
 
-        late_failed = _task("task-1")
-        late_failed.status = TaskStatus(state=TaskState.failed)
+        late_failed = _set_status(_task("task-1"), TaskState.TASK_STATE_FAILED)
         await second.save(late_failed)
 
         restored = await first.get("task-1")
@@ -240,7 +247,7 @@ async def test_database_task_store_keeps_first_terminal_state_across_independent
         await second.engine.dispose()
 
     assert restored is not None
-    assert restored.status.state == TaskState.completed
+    assert restored.status.state == TaskState.TASK_STATE_COMPLETED
 
 
 @pytest.mark.asyncio
@@ -257,19 +264,17 @@ async def test_task_store_rejects_late_mutation_after_terminal_state(
     store = build_task_store(settings)
     await initialize_task_store(store)
 
-    terminal = _task("task-late")
-    terminal.status = TaskStatus(state=TaskState.completed)
+    terminal = _set_status(_task("task-late"), TaskState.TASK_STATE_COMPLETED)
     await store.save(terminal)
 
-    late_same_state = _task("task-late")
-    late_same_state.status = TaskStatus(state=TaskState.completed)
-    late_same_state.metadata = {"opencode": {"note": "late"}}
+    late_same_state = _set_status(_task("task-late"), TaskState.TASK_STATE_COMPLETED)
+    _set_metadata(late_same_state, {"opencode": {"note": "late"}})
     await store.save(late_same_state)
 
     restored = await store.get("task-late")
     assert restored is not None
-    assert restored.status.state == TaskState.completed
-    assert restored.metadata is None
+    assert restored.status.state == TaskState.TASK_STATE_COMPLETED
+    assert not restored.metadata
 
     engine = getattr(store, "engine", None)
     if engine is not None:
@@ -294,13 +299,11 @@ async def test_database_task_store_atomic_guard_does_not_depend_on_stale_read(
         working = _task("task-1")
         await first.save(working)
 
-        completed = _task("task-1")
-        completed.status = TaskStatus(state=TaskState.completed)
+        completed = _set_status(_task("task-1"), TaskState.TASK_STATE_COMPLETED)
         await first.save(completed)
 
-        late_completed = _task("task-1")
-        late_completed.status = TaskStatus(state=TaskState.completed)
-        late_completed.metadata = {"opencode": {"late_mutation": True}}
+        late_completed = _set_status(_task("task-1"), TaskState.TASK_STATE_COMPLETED)
+        _set_metadata(late_completed, {"opencode": {"late_mutation": True}})
 
         raw_second = unwrap_task_store(second)
         assert isinstance(raw_second, DatabaseTaskStore)
@@ -322,8 +325,8 @@ async def test_database_task_store_atomic_guard_does_not_depend_on_stale_read(
         await second.engine.dispose()
 
     assert restored is not None
-    assert restored.status.state == TaskState.completed
-    assert restored.metadata is None
+    assert restored.status.state == TaskState.TASK_STATE_COMPLETED
+    assert not restored.metadata
 
 
 @pytest.mark.asyncio
@@ -372,23 +375,20 @@ async def test_task_store_wraps_backend_failures() -> None:
 def test_first_terminal_state_wins_policy_returns_explicit_decisions() -> None:
     policy = FirstTerminalStateWinsPolicy()
 
-    completed = _task("task-1")
-    completed.status = TaskStatus(state=TaskState.completed)
+    completed = _set_status(_task("task-1"), TaskState.TASK_STATE_COMPLETED)
 
     assert policy.evaluate(existing=None, incoming=completed) == TaskPersistenceDecision(
         persist=True
     )
 
-    failed = _task("task-1")
-    failed.status = TaskStatus(state=TaskState.failed)
+    failed = _set_status(_task("task-1"), TaskState.TASK_STATE_FAILED)
     assert policy.evaluate(existing=completed, incoming=failed) == TaskPersistenceDecision(
         persist=False,
         reason="state_overwrite_after_terminal_persistence",
     )
 
-    late_completed = _task("task-1")
-    late_completed.status = TaskStatus(state=TaskState.completed)
-    late_completed.metadata = {"opencode": {"note": "late"}}
+    late_completed = _set_status(_task("task-1"), TaskState.TASK_STATE_COMPLETED)
+    _set_metadata(late_completed, {"opencode": {"note": "late"}})
     assert policy.evaluate(existing=completed, incoming=late_completed) == TaskPersistenceDecision(
         persist=False,
         reason="late_mutation_after_terminal_persistence",
@@ -436,8 +436,7 @@ async def test_policy_aware_task_store_logs_warning_for_late_terminal_write(capl
             del context
             self.saved.append(task)
 
-    completed = _task("task-1")
-    completed.status = TaskStatus(state=TaskState.completed)
+    completed = _set_status(_task("task-1"), TaskState.TASK_STATE_COMPLETED)
 
     inner = _RecordingStore(existing=completed)
     store = PolicyAwareTaskStore(inner)

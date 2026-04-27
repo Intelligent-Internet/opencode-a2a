@@ -1,5 +1,6 @@
 import json
 
+from opencode_a2a.a2a_utils import proto_to_dict
 from opencode_a2a.contracts.extensions import (
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
@@ -24,6 +25,10 @@ from opencode_a2a.server.application import (
 from tests.support.helpers import make_settings
 
 
+def _security_requirements(card) -> list[dict[str, dict[str, list[str]]]]:
+    return [proto_to_dict(requirement)["schemes"] for requirement in card.security_requirements]
+
+
 def test_agent_card_description_reflects_actual_transport_capabilities() -> None:
     card = build_agent_card(make_settings(test_bearer_token="test-token"))
     skills_by_id = {skill.id: skill for skill in card.skills}
@@ -35,12 +40,17 @@ def test_agent_card_description_reflects_actual_transport_capabilities() -> None
     )
     assert "Single-tenant deployment" in card.description
     assert card.capabilities.streaming is True
-    assert card.supports_authenticated_extended_card is True
-    assert card.protocol_version == "0.3"
+    assert card.capabilities.extended_agent_card is True
+    assert [
+        (iface.protocol_binding, iface.protocol_version) for iface in card.supported_interfaces
+    ] == [
+        ("HTTP+JSON", "0.3"),
+        ("JSONRPC", "0.3"),
+    ]
     assert card.default_input_modes == ["text/plain", "application/octet-stream"]
     assert card.default_output_modes == ["text/plain", "application/json"]
-    assert list(card.security_schemes.keys()) == ["bearerAuth"]
-    assert card.security == [{"bearerAuth": []}]
+    assert set(card.security_schemes.keys()) == {"bearerAuth"}
+    assert _security_requirements(card) == [{"bearerAuth": {}}]
     assert skills_by_id["opencode.chat"].input_modes == ["text/plain", "application/octet-stream"]
     assert skills_by_id["opencode.chat"].output_modes == ["text/plain", "application/json"]
     assert skills_by_id["opencode.sessions.management"].input_modes == ["application/json"]
@@ -58,8 +68,8 @@ def test_agent_card_declares_optional_basic_auth_when_configured() -> None:
         )
     )
 
-    assert list(card.security_schemes.keys()) == ["bearerAuth", "basicAuth"]
-    assert card.security == [{"bearerAuth": []}, {"basicAuth": []}]
+    assert set(card.security_schemes.keys()) == {"bearerAuth", "basicAuth"}
+    assert _security_requirements(card) == [{"bearerAuth": {}}, {"basicAuth": {}}]
 
 
 def test_agent_card_reflects_registry_declared_auth_schemes() -> None:
@@ -76,8 +86,8 @@ def test_agent_card_reflects_registry_declared_auth_schemes() -> None:
         )
     )
 
-    assert list(card.security_schemes.keys()) == ["basicAuth"]
-    assert card.security == [{"basicAuth": []}]
+    assert set(card.security_schemes.keys()) == {"basicAuth"}
+    assert _security_requirements(card) == [{"basicAuth": {}}]
 
 
 def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> None:
@@ -169,18 +179,18 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
         COMPATIBILITY_PROFILE_EXTENSION_URI,
         WIRE_CONTRACT_EXTENSION_URI,
     ):
-        assert ext_by_uri[uri].params is None
+        assert proto_to_dict(ext_by_uri[uri]).get("params") in (None, {})
 
     public_size = len(
         json.dumps(
-            public_card.model_dump(mode="json", by_alias=True, exclude_none=True),
+            proto_to_dict(public_card),
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")
     )
     extended_size = len(
         json.dumps(
-            extended_card.model_dump(mode="json", by_alias=True, exclude_none=True),
+            proto_to_dict(extended_card),
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")
@@ -810,7 +820,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
 def test_agent_card_chat_examples_include_project_hint_when_configured() -> None:
     card = build_agent_card(make_settings(test_bearer_token="test-token", a2a_project="alpha"))
     chat_skill = next(skill for skill in card.skills if skill.id == "opencode.chat")
-    assert chat_skill.examples is None
+    assert list(chat_skill.examples) == []
     assert "shared session binding" in chat_skill.description
     assert "text/plain responses" in chat_skill.description
     assert "core-a2a" in chat_skill.tags
@@ -914,14 +924,14 @@ def test_agent_card_skills_hide_shell_when_disabled_by_default() -> None:
 
     assert "provider-private" in session_skill.tags
     assert "provider-private" in session_skill.description
-    assert session_skill.examples is None
+    assert list(session_skill.examples) == []
     assert "provider-private" in provider_skill.tags
-    assert provider_skill.examples is None
-    assert workspace_skill.examples is None
+    assert list(provider_skill.examples) == []
+    assert list(workspace_skill.examples) == []
     interrupt_recovery_skill = next(
         skill for skill in card.skills if skill.id == "opencode.interrupt.recovery"
     )
-    assert interrupt_recovery_skill.examples is None
+    assert list(interrupt_recovery_skill.examples) == []
 
 
 def test_agent_card_hides_shell_when_policy_disables_it() -> None:

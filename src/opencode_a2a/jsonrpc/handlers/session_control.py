@@ -4,7 +4,6 @@ import logging
 from typing import Any
 
 import httpx
-from a2a.types import JSONRPCRequest
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -24,6 +23,7 @@ from ..methods import (
     _validate_prompt_async_request_payload,
     _validate_shell_request_payload,
 )
+from ..models import JSONRPCRequest
 from .common import (
     build_authorization_forbidden_response,
     build_session_forbidden_response,

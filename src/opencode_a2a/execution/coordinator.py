@@ -14,15 +14,14 @@ from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
     Artifact,
     Message,
-    Part,
     Role,
     Task,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
 )
 
+from ..a2a_utils import make_text_part
 from ..invocation import call_with_supported_kwargs
 from ..opencode_upstream_client import UpstreamConcurrencyLimitError, UpstreamContractError
 from .event_helpers import _enqueue_artifact_update
@@ -204,7 +203,7 @@ class ExecutionCoordinator:
                 task_id=self._task_id,
                 context_id=self._context_id,
                 message=f"OpenCode request timed out: {exc}",
-                state=TaskState.failed,
+                state=TaskState.TASK_STATE_FAILED,
                 error_type="UPSTREAM_TIMEOUT",
                 streaming_request=self._prepared.streaming_request,
             )
@@ -215,7 +214,7 @@ class ExecutionCoordinator:
                 task_id=self._task_id,
                 context_id=self._context_id,
                 message=f"OpenCode payload mismatch: {exc}",
-                state=TaskState.failed,
+                state=TaskState.TASK_STATE_FAILED,
                 error_type="UPSTREAM_PAYLOAD_ERROR",
                 streaming_request=self._prepared.streaming_request,
             )
@@ -226,7 +225,7 @@ class ExecutionCoordinator:
                 task_id=self._task_id,
                 context_id=self._context_id,
                 message=str(exc),
-                state=TaskState.failed,
+                state=TaskState.TASK_STATE_FAILED,
                 error_type="UPSTREAM_BACKPRESSURE",
                 streaming_request=self._prepared.streaming_request,
             )
@@ -237,7 +236,7 @@ class ExecutionCoordinator:
                 task_id=self._task_id,
                 context_id=self._context_id,
                 message=f"OpenCode error: {exc}",
-                state=TaskState.failed,
+                state=TaskState.TASK_STATE_FAILED,
                 streaming_request=self._prepared.streaming_request,
             )
         finally:
@@ -297,8 +296,7 @@ class ExecutionCoordinator:
             TaskStatusUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
-                status=TaskStatus(state=TaskState.working),
-                final=False,
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
             )
         )
 
@@ -367,7 +365,7 @@ class ExecutionCoordinator:
             terminal_signal=self._stream_terminal_signal,
             session_id=self._session_id,
         )
-        if terminal_signal.state != TaskState.completed:
+        if terminal_signal.state != TaskState.TASK_STATE_COMPLETED:
             await self._executor._emit_error(
                 self._event_queue,
                 task_id=self._task_id,
@@ -400,7 +398,7 @@ class ExecutionCoordinator:
                 task_id=self._task_id,
                 context_id=self._context_id,
                 artifact_id=self._stream_artifact_id,
-                part=Part(root=TextPart(text=response_text)),
+                part=make_text_part(response_text),
                 append=self._stream_state.emitted_stream_chunk,
                 last_chunk=True,
                 artifact_metadata=_build_stream_artifact_metadata(
@@ -416,8 +414,7 @@ class ExecutionCoordinator:
             TaskStatusUpdateEvent(
                 task_id=self._task_id,
                 context_id=self._context_id,
-                status=TaskStatus(state=TaskState.completed),
-                final=True,
+                status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
                 metadata=_build_output_metadata(
                     session_id=self._session_id,
                     usage=resolved_token_usage,
@@ -448,7 +445,7 @@ class ExecutionCoordinator:
         artifact = Artifact(
             artifact_id=str(uuid.uuid4()),
             name="response",
-            parts=[Part(root=TextPart(text=response_text))],
+            parts=[make_text_part(response_text)],
         )
         from .request_context import _build_history
 
@@ -456,7 +453,7 @@ class ExecutionCoordinator:
         task = Task(
             id=self._task_id,
             context_id=self._context_id,
-            status=TaskStatus(state=TaskState.completed),
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
             history=history,
             artifacts=[artifact],
             metadata=_build_output_metadata(
@@ -464,7 +461,7 @@ class ExecutionCoordinator:
                 usage=resolved_token_usage,
             ),
         )
-        task.status.message = assistant_message
+        task.status.message.CopyFrom(assistant_message)
         await self._event_queue.enqueue_event(task)
 
     async def _cleanup(self) -> None:
@@ -500,8 +497,8 @@ def build_assistant_message(
 ) -> Message:
     return Message(
         message_id=message_id or str(uuid.uuid4()),
-        role=Role.agent,
-        parts=[Part(root=TextPart(text=text))],
+        role=Role.ROLE_AGENT,
+        parts=[make_text_part(text)],
         task_id=task_id,
         context_id=context_id,
     )

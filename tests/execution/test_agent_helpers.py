@@ -113,7 +113,7 @@ def test_format_upstream_errors_include_detail_and_provider_auth_paths() -> None
 
     error_type, state, message = _format_upstream_error(exc, request="send message")
     assert error_type == "UPSTREAM_QUOTA_EXCEEDED"
-    assert state == TaskState.failed
+    assert state == TaskState.TASK_STATE_FAILED
     assert "detail=rate limit" in message
 
     terminal = _format_stream_terminal_error(
@@ -121,7 +121,7 @@ def test_format_upstream_errors_include_detail_and_provider_auth_paths() -> None
         status=None,
         error_name="ProviderAuthError",
     )
-    assert terminal.state == TaskState.auth_required
+    assert terminal.state == TaskState.TASK_STATE_AUTH_REQUIRED
     assert terminal.error_type == "UPSTREAM_UNAUTHORIZED"
 
     inband = _format_inband_upstream_error(
@@ -130,7 +130,7 @@ def test_format_upstream_errors_include_detail_and_provider_auth_paths() -> None
         status=None,
         error_name="SomeOtherError",
     )
-    assert inband.state == TaskState.failed
+    assert inband.state == TaskState.TASK_STATE_FAILED
     assert inband.error_type == "UPSTREAM_EXECUTION_ERROR"
     assert "error=SomeOtherError" in inband.message
 
@@ -268,7 +268,7 @@ def test_role_session_and_terminal_extractors_cover_event_shapes() -> None:
 
     idle = _extract_stream_terminal_signal({"type": "session.idle"})
     assert idle is not None
-    assert idle.state == TaskState.completed
+    assert idle.state == TaskState.TASK_STATE_COMPLETED
 
     terminal = _extract_stream_terminal_signal(
         {
@@ -282,7 +282,7 @@ def test_role_session_and_terminal_extractors_cover_event_shapes() -> None:
         }
     )
     assert terminal is not None
-    assert terminal.state == TaskState.auth_required
+    assert terminal.state == TaskState.TASK_STATE_AUTH_REQUIRED
     assert terminal.upstream_status == 401
 
 

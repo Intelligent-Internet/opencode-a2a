@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
-from a2a.types import A2AError, InternalError
+from a2a.utils.errors import InternalError
 from starlette.responses import Response
 
 from ...contracts.extensions import SESSION_QUERY_ERROR_BUSINESS_CODES
@@ -589,5 +589,5 @@ def build_internal_error_response(
     logger.exception(log_message)
     return context.error_response(
         request_id,
-        A2AError(root=InternalError(message=str(exc))),
+        InternalError(message=str(exc)),
     )

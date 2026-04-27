@@ -7,29 +7,31 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from a2a.server.context import ServerCallContext
 from a2a.server.tasks.database_task_store import DatabaseTaskStore
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.server.tasks.task_store import TaskStore
-from a2a.types import Task
+from a2a.types import ListTasksRequest, ListTasksResponse, Task, TaskState
 from sqlalchemy import event, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import make_url
 
+from ..a2a_utils import proto_equals, proto_to_dict
 from ..config import Settings
 from ..task_states import TERMINAL_TASK_STATES
 
 if TYPE_CHECKING:
-    from a2a.server.context import ServerCallContext
     from sqlalchemy.ext.asyncio import AsyncEngine
 
 logger = logging.getLogger(__name__)
 
-_TERMINAL_TASK_STATE_VALUES = tuple(state.value for state in TERMINAL_TASK_STATES)
+_TERMINAL_TASK_STATE_VALUES = tuple(TaskState.Name(int(state)) for state in TERMINAL_TASK_STATES)
 _ATOMIC_TERMINAL_GUARD_DIALECTS = frozenset({"postgresql", "sqlite"})
 _SQLITE_JOURNAL_MODE = "WAL"
 _SQLITE_BUSY_TIMEOUT_MS = 30_000
 _SQLITE_SYNCHRONOUS_MODE = "NORMAL"
+_LIST_TASKS_BATCH_SIZE = 100
 
 
 class TaskStoreOperationError(RuntimeError):
@@ -70,7 +72,7 @@ class FirstTerminalStateWinsPolicy(TaskWritePolicy):
                 persist=False,
                 reason="state_overwrite_after_terminal_persistence",
             )
-        if incoming.model_dump(mode="json") != existing.model_dump(mode="json"):
+        if not proto_equals(incoming, existing):
             return TaskPersistenceDecision(
                 persist=False,
                 reason="late_mutation_after_terminal_persistence",
@@ -90,21 +92,28 @@ class TaskStoreDecorator(TaskStore):
         task: Task,
         context: ServerCallContext | None = None,
     ) -> None:
-        await self._inner.save(task, context)
+        await self._inner.save(task, _normalize_task_store_context(context))
 
     async def get(
         self,
         task_id: str,
         context: ServerCallContext | None = None,
     ) -> Task | None:
-        return await self._inner.get(task_id, context)
+        return await self._inner.get(task_id, _normalize_task_store_context(context))
+
+    async def list(
+        self,
+        params: ListTasksRequest,
+        context: ServerCallContext | None = None,
+    ) -> ListTasksResponse:
+        return await self._inner.list(params, _normalize_task_store_context(context))
 
     async def delete(
         self,
         task_id: str,
         context: ServerCallContext | None = None,
     ) -> None:
-        await self._inner.delete(task_id, context)
+        await self._inner.delete(task_id, _normalize_task_store_context(context))
 
 
 class TaskStoreOperationWrappingDecorator(TaskStoreDecorator):
@@ -113,8 +122,9 @@ class TaskStoreOperationWrappingDecorator(TaskStoreDecorator):
         task: Task,
         context: ServerCallContext | None = None,
     ) -> None:
+        normalized_context = _normalize_task_store_context(context)
         try:
-            await self._inner.save(task, context)
+            await self._inner.save(task, normalized_context)
         except TaskStoreOperationError:
             raise
         except Exception as exc:
@@ -125,20 +135,34 @@ class TaskStoreOperationWrappingDecorator(TaskStoreDecorator):
         task_id: str,
         context: ServerCallContext | None = None,
     ) -> Task | None:
+        normalized_context = _normalize_task_store_context(context)
         try:
-            return await self._inner.get(task_id, context)
+            return await self._inner.get(task_id, normalized_context)
         except TaskStoreOperationError:
             raise
         except Exception as exc:
             raise TaskStoreOperationError("get", task_id) from exc
+
+    async def list(
+        self,
+        params: ListTasksRequest,
+        context: ServerCallContext | None = None,
+    ) -> ListTasksResponse:
+        try:
+            return await self._inner.list(params, _normalize_task_store_context(context))
+        except TaskStoreOperationError:
+            raise
+        except Exception as exc:
+            raise TaskStoreOperationError("list", None) from exc
 
     async def delete(
         self,
         task_id: str,
         context: ServerCallContext | None = None,
     ) -> None:
+        normalized_context = _normalize_task_store_context(context)
         try:
-            await self._inner.delete(task_id, context)
+            await self._inner.delete(task_id, normalized_context)
         except TaskStoreOperationError:
             raise
         except Exception as exc:
@@ -162,16 +186,17 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
         task: Task,
         context: ServerCallContext | None = None,
     ) -> None:
+        normalized_context = _normalize_task_store_context(context)
         raw_task_store = unwrap_task_store(self._inner)
         if isinstance(raw_task_store, DatabaseTaskStore):
-            await self._save_database_task(raw_task_store, task, context)
+            await self._save_database_task(raw_task_store, task, normalized_context)
             return
-        await self._save_with_read_before_write(task, context)
+        await self._save_with_read_before_write(task, normalized_context)
 
     async def _save_with_read_before_write(
         self,
         task: Task,
-        context: ServerCallContext | None = None,
+        context: ServerCallContext,
     ) -> None:
         async with self._save_lock:
             existing = await self._inner.get(task.id, context)
@@ -189,7 +214,7 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
         self,
         task_store: DatabaseTaskStore,
         task: Task,
-        context: ServerCallContext | None = None,
+        context: ServerCallContext,
     ) -> None:
         dialect_name = task_store.engine.dialect.name
         if dialect_name not in _ATOMIC_TERMINAL_GUARD_DIALECTS:
@@ -204,7 +229,7 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
             return
 
         try:
-            if await self._persist_with_atomic_terminal_guard(task_store, task):
+            if await self._persist_with_atomic_terminal_guard(task_store, task, context):
                 return
             existing = await self._load_task_from_database(task_store, task.id)
             decision = self._write_policy.evaluate(existing=existing, incoming=task)
@@ -218,7 +243,7 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
             if (
                 existing is not None
                 and existing.status.state in TERMINAL_TASK_STATES
-                and existing.model_dump(mode="json") == task.model_dump(mode="json")
+                and proto_equals(existing, task)
             ):
                 return
             raise RuntimeError(
@@ -233,10 +258,12 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
         self,
         task_store: DatabaseTaskStore,
         task: Task,
+        context: ServerCallContext,
     ) -> bool:
         await task_store._ensure_initialized()
         statement = _build_atomic_task_save_statement(
             task=task,
+            owner=task_store.owner_resolver(context),
             task_table=task_store.task_model.__table__,
             dialect_name=task_store.engine.dialect.name,
         )
@@ -355,29 +382,30 @@ async def list_stored_tasks(
     task_store: TaskStore,
     context: ServerCallContext | None = None,
 ) -> list[Task]:
-    del context
-    raw_task_store = unwrap_task_store(task_store)
+    normalized_context = _normalize_task_store_context(context)
+    tasks: list[Task] = []
+    next_page_token = ""
 
-    try:
-        if isinstance(raw_task_store, InMemoryTaskStore):
-            async with raw_task_store.lock:
-                return list(raw_task_store.tasks.values())
-
-        if isinstance(raw_task_store, DatabaseTaskStore):
-            await raw_task_store._ensure_initialized()
-            async with raw_task_store.async_session_maker() as session:
-                stmt = select(raw_task_store.task_model)
-                result = await session.execute(stmt)
-                task_models = result.scalars().all()
-            return [raw_task_store._from_orm(task_model) for task_model in task_models]
-
-        raise TypeError(
-            f"Unsupported task store type for listing tasks: {type(raw_task_store).__name__}"
+    while True:
+        response = await task_store.list(
+            ListTasksRequest(
+                page_size=_LIST_TASKS_BATCH_SIZE,
+                page_token=next_page_token,
+            ),
+            normalized_context,
         )
-    except TaskStoreOperationError:
-        raise
-    except Exception as exc:
-        raise TaskStoreOperationError("list", None) from exc
+        tasks.extend(response.tasks)
+        if not response.next_page_token:
+            return tasks
+        next_page_token = response.next_page_token
+
+
+def _normalize_task_store_context(
+    context: ServerCallContext | None,
+) -> ServerCallContext:
+    if context is not None:
+        return context
+    return ServerCallContext()
 
 
 def _configure_sqlite_connection(dbapi_connection: Any, _connection_record: Any) -> None:
@@ -393,11 +421,12 @@ def _configure_sqlite_connection(dbapi_connection: Any, _connection_record: Any)
 def _build_atomic_task_save_statement(
     *,
     task: Task,
+    owner: str | None,
     task_table: Any,
     dialect_name: str,
 ):
     insert = _resolve_atomic_insert_factory(dialect_name)
-    values = _task_row_values(task)
+    values = _task_row_values(task, owner=owner)
     status_state = task_table.c.status["state"].as_string()
     persist_guard = or_(
         task_table.c.status.is_(None),
@@ -424,15 +453,20 @@ def _resolve_atomic_insert_factory(dialect_name: str):
     raise ValueError(f"Unsupported atomic task persistence dialect: {dialect_name}")
 
 
-def _task_row_values(task: Task) -> dict[str, Any]:
+def _task_row_values(task: Task, *, owner: str | None) -> dict[str, Any]:
     return {
         "id": task.id,
         "context_id": task.context_id,
-        "kind": task.kind,
-        "status": task.status,
-        "artifacts": task.artifacts,
-        "history": task.history,
-        "metadata": task.metadata,
+        "kind": "task",
+        "owner": owner,
+        "last_updated": (
+            task.status.timestamp.ToDatetime() if task.status.HasField("timestamp") else None
+        ),
+        "status": proto_to_dict(task.status),
+        "artifacts": [proto_to_dict(artifact) for artifact in task.artifacts],
+        "history": [proto_to_dict(message) for message in task.history],
+        "metadata": proto_to_dict(task.metadata),
+        "protocol_version": "1.0",
     }
 
 

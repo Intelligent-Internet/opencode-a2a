@@ -5,6 +5,7 @@ import logging
 
 from fastapi.responses import JSONResponse
 
+from ..a2a_protocol import V1_JSONRPC_METHOD_TO_LEGACY_METHOD
 from ..contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
     INTERRUPT_RECOVERY_METHODS,
@@ -15,17 +16,7 @@ from ..jsonrpc.error_responses import build_http_error_body
 
 logger = logging.getLogger(__name__)
 
-_V1_JSONRPC_METHOD_ALIASES = {
-    "CancelTask": "tasks/cancel",
-    "CreateTaskPushNotificationConfig": "tasks/pushNotificationConfig/set",
-    "DeleteTaskPushNotificationConfig": "tasks/pushNotificationConfig/delete",
-    "GetExtendedAgentCard": "agent/getAuthenticatedExtendedCard",
-    "GetTask": "tasks/get",
-    "GetTaskPushNotificationConfig": "tasks/pushNotificationConfig/get",
-    "ListTaskPushNotificationConfigs": "tasks/pushNotificationConfig/list",
-    "SendMessage": "message/send",
-    "SendStreamingMessage": "message/stream",
-}
+_V1_JSONRPC_METHOD_ALIASES = dict(V1_JSONRPC_METHOD_TO_LEGACY_METHOD)
 
 
 def _parse_json_body(body_bytes: bytes) -> dict | None:
