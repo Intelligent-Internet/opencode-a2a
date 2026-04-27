@@ -17,6 +17,7 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
     Message,
+    Part,
     Role,
     Task,
     TaskState,
@@ -24,7 +25,6 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from ..a2a_utils import make_text_part
 from ..invocation import call_with_supported_kwargs
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..output_modes import accepts_output_mode, normalize_accepted_output_modes
@@ -473,7 +473,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         error_message = Message(
             message_id=str(uuid.uuid4()),
             role=Role.ROLE_AGENT,
-            parts=[make_text_part(message)],
+            parts=[Part(text=message)],
             task_id=task_id,
             context_id=context_id,
         )
@@ -491,7 +491,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 artifact_id=f"{task_id}:error",
-                part=make_text_part(message),
+                part=Part(text=message),
                 append=False,
                 last_chunk=True,
             )

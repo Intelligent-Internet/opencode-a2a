@@ -8,6 +8,7 @@ from a2a.types import (
     AgentCapabilities,
     AgentCard,
     CancelTaskRequest,
+    Part,
     SubscribeToTaskRequest,
     Task,
     TaskNotCancelableError,
@@ -16,7 +17,6 @@ from a2a.types import (
     TaskStatus,
 )
 
-from opencode_a2a.a2a_utils import make_text_part
 from opencode_a2a.server.application import OpencodeRequestHandler
 
 
@@ -39,7 +39,7 @@ def _agent_card() -> AgentCard:
 def _message_send_params(*, text: str = "hello") -> types.SimpleNamespace:
     return types.SimpleNamespace(
         configuration=None,
-        message=types.SimpleNamespace(parts=[make_text_part(text)]),
+        message=types.SimpleNamespace(parts=[Part(text=text)]),
     )
 
 

@@ -9,12 +9,13 @@ from typing import Any
 
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
+    Part,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
 )
 
-from ..a2a_utils import make_data_part, make_text_part, part_kind, part_text, part_text_fallback
+from ..a2a_utils import make_data_part, part_kind, part_text, part_text_fallback
 from ..invocation import call_with_supported_kwargs
 from .event_helpers import _enqueue_artifact_update
 from .stream_events import (
@@ -89,7 +90,7 @@ class StreamRuntime:
                     if fallback_text is None:
                         continue
                     chunk = _NormalizedStreamChunk(
-                        part=make_text_part(fallback_text),
+                        part=Part(text=fallback_text),
                         content_key=fallback_text,
                         accumulate_content=False,
                         append=chunk.append,
@@ -223,7 +224,7 @@ class StreamRuntime:
             role: str | None,
         ) -> _NormalizedStreamChunk:
             return _NormalizedStreamChunk(
-                part=make_text_part(text),
+                part=Part(text=text),
                 content_key=text,
                 accumulate_content=True,
                 append=append,

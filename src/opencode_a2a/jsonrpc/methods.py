@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from a2a.types import Message, Role, Task, TaskState, TaskStatus
+from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus
 
-from ..a2a_utils import make_text_part, proto_to_dict
+from ..a2a_utils import proto_to_dict
 from ..contracts.extensions import (
     COMMAND_REQUEST_ALLOWED_FIELDS,
     PROMPT_ASYNC_REQUEST_ALLOWED_FIELDS,
@@ -383,7 +383,7 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
     msg = Message(
         message_id=message_id,
         role=role,
-        parts=[make_text_part(text)],
+        parts=[Part(text=text)],
         context_id=context_id,
         metadata={"shared": {"session": {"id": session_id}}},
     )

@@ -7,9 +7,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from a2a.client import ClientConfig
-from a2a.types import Message, Role, StreamResponse, Task, TaskState, TaskStatus
+from a2a.types import Message, Part, Role, StreamResponse, Task, TaskState, TaskStatus
 
-from opencode_a2a.a2a_utils import make_text_part
 from opencode_a2a.client import A2AClient
 from opencode_a2a.client import client as client_module
 from opencode_a2a.client.config import A2AClientSettings
@@ -102,7 +101,7 @@ def _stream_message(text: str) -> StreamResponse:
         message=Message(
             message_id=f"msg-{text}",
             role=Role.ROLE_AGENT,
-            parts=[make_text_part(text)],
+            parts=[Part(text=text)],
         )
     )
 

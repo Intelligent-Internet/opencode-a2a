@@ -8,6 +8,7 @@ import httpx
 import pytest
 from a2a.types import (
     Artifact,
+    Part,
     StreamResponse,
     Task,
     TaskArtifactUpdateEvent,
@@ -15,7 +16,6 @@ from a2a.types import (
     TaskStatus,
 )
 
-from opencode_a2a.a2a_utils import make_text_part
 from opencode_a2a.client import A2AClient
 from opencode_a2a.client.errors import (
     A2AClientResetRequiredError,
@@ -309,7 +309,7 @@ async def test_agent_handles_a2a_call_tool(monkeypatch) -> None:
                     artifact=Artifact(
                         artifact_id="artifact-1",
                         name="response",
-                        parts=[make_text_part(f"remote response to {text}")],
+                        parts=[Part(text=f"remote response to {text}")],
                     ),
                 ),
             )
@@ -401,7 +401,7 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
                             artifact=Artifact(
                                 artifact_id="artifact-1",
                                 name="response",
-                                parts=[make_text_part("streamed tool output")],
+                                parts=[Part(text="streamed tool output")],
                             ),
                         ),
                     )
@@ -548,7 +548,7 @@ async def test_agent_a2a_call_uses_server_side_basic_auth_headers(
                     artifact=Artifact(
                         artifact_id="artifact-1",
                         name="response",
-                        parts=[make_text_part("remote response")],
+                        parts=[Part(text="remote response")],
                     ),
                 )
             )
@@ -611,7 +611,7 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
                     artifact=Artifact(
                         artifact_id="artifact-1",
                         name="response",
-                        parts=[make_text_part("remote response")],
+                        parts=[Part(text="remote response")],
                     ),
                 )
             )

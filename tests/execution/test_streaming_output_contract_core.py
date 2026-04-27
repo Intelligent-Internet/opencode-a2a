@@ -3,12 +3,12 @@ from types import SimpleNamespace
 
 import pytest
 from a2a.types import (
+    Part,
     Task,
     TaskState,
     TaskStatusUpdateEvent,
 )
 
-from opencode_a2a.a2a_utils import make_url_part
 from opencode_a2a.execution.executor import (
     BlockType,
     OpencodeAgentExecutor,
@@ -55,8 +55,8 @@ async def test_streaming_accepts_file_input_without_breaking_contract() -> None:
         task_id="task-1",
         context_id="ctx-1",
         parts=[
-            make_url_part(
-                "file:///tmp/report.pdf",
+            Part(
+                url="file:///tmp/report.pdf",
                 filename="report.pdf",
                 media_type="application/pdf",
             )

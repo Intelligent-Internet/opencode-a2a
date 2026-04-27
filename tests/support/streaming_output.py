@@ -4,8 +4,9 @@ from a2a.types import (
     TaskArtifactUpdateEvent,
     TaskStatusUpdateEvent,
 )
+from google.protobuf.json_format import MessageToDict
 
-from opencode_a2a.a2a_utils import part_data_to_python, proto_to_dict
+from opencode_a2a.a2a_utils import proto_to_dict
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from tests.support.helpers import (
     DummyEventQueue,
@@ -262,7 +263,7 @@ def _part_text(event: TaskArtifactUpdateEvent) -> str:
 def _part_data(event: TaskArtifactUpdateEvent) -> dict:
     part = event.artifact.parts[0]
     if hasattr(part, "HasField") and part.HasField("data"):
-        return part_data_to_python(part) or {}
+        return MessageToDict(part.data) or {}
     return getattr(part, "data", None) or getattr(getattr(part, "root", None), "data", {})
 
 

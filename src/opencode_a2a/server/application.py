@@ -24,6 +24,7 @@ from a2a.types import (
     InternalError,
     InvalidRequestError,
     Message,
+    Part,
     Role,
     SendMessageRequest,
     SendMessageResponse,
@@ -55,7 +56,6 @@ from ..a2a_protocol import (
     EXTENDED_AGENT_CARD_PATH,
     PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
-from ..a2a_utils import make_text_part
 from ..config import Settings
 from ..contracts.extensions import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
@@ -365,7 +365,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         error_message = Message(
             message_id=f"{task_id}:task-store-error",
             role=Role.ROLE_AGENT,
-            parts=[make_text_part(message_text)],
+            parts=[Part(text=message_text)],
             task_id=task_id,
             context_id=context_id,
         )
@@ -392,7 +392,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
                 context_id=context_id,
                 artifact=Artifact(
                     artifact_id=f"{task_id}:error",
-                    parts=[make_text_part(message_text)],
+                    parts=[Part(text=message_text)],
                 ),
                 append=False,
                 last_chunk=True,

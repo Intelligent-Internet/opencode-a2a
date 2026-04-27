@@ -19,6 +19,7 @@ from a2a.types import (
     CancelTaskRequest,
     GetTaskRequest,
     Message,
+    Part,
     Role,
     SendMessageConfiguration,
     SendMessageRequest,
@@ -28,7 +29,6 @@ from a2a.types import (
 )
 from a2a.utils.errors import A2AError
 
-from ..a2a_utils import make_text_part
 from ..invocation import call_with_supported_kwargs
 from .agent_card import build_agent_card_resolver, build_resolver_http_kwargs
 from .config import A2AClientSettings, load_settings
@@ -137,7 +137,7 @@ class A2AClient:
                             message_id=message_id or str(uuid4()),
                             context_id=context_id,
                             task_id=task_id,
-                            parts=[make_text_part(text)],
+                            parts=[Part(text=text)],
                             extensions=list(extensions or []),
                         ),
                         configuration=SendMessageConfiguration(),

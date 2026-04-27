@@ -9,13 +9,14 @@ from a2a.server.routes.rest_dispatcher import RestDispatcher
 from a2a.types import (
     Artifact,
     Message,
+    Part,
     Role,
     Task,
     TaskState,
     TaskStatus,
 )
 
-from opencode_a2a.a2a_utils import make_data_part, make_text_part
+from opencode_a2a.a2a_utils import make_data_part
 from opencode_a2a.output_modes import build_output_negotiation_metadata
 from opencode_a2a.server.application import (
     AUTHENTICATED_EXTENDED_CARD_CACHE_CONTROL,
@@ -55,7 +56,7 @@ def _task_for_listing(
         artifacts = [
             Artifact(
                 artifact_id=f"{task_id}-artifact",
-                parts=[make_text_part(f"artifact:{task_id}")],
+                parts=[Part(text=f"artifact:{task_id}")],
             )
         ]
     history: list[Message] = []
@@ -64,7 +65,7 @@ def _task_for_listing(
             Message(
                 message_id=f"{task_id}-history-{index}",
                 role=Role.ROLE_AGENT,
-                parts=[make_text_part(f"history:{task_id}:{index}")],
+                parts=[Part(text=f"history:{task_id}:{index}")],
                 context_id=context_id,
                 task_id=task_id,
             )
@@ -387,7 +388,7 @@ async def test_list_tasks_route_applies_persisted_output_negotiation(monkeypatch
         artifacts=[
             Artifact(
                 artifact_id="task-negotiated-list-text",
-                parts=[make_text_part("plain")],
+                parts=[Part(text="plain")],
             ),
             Artifact(
                 artifact_id="task-negotiated-list-json",

@@ -10,6 +10,7 @@ from a2a.types import (
     AgentCapabilities,
     AgentCard,
     Message,
+    Part,
     Role,
     SendMessageRequest,
     Task,
@@ -17,7 +18,6 @@ from a2a.types import (
     TaskStatus,
 )
 
-from opencode_a2a.a2a_utils import make_text_part
 from opencode_a2a.execution.executor import OpencodeAgentExecutor, _StreamOutputState
 from opencode_a2a.server.application import OpencodeRequestHandler
 from tests.support.helpers import DummyEventQueue, make_settings
@@ -28,7 +28,7 @@ def _make_message_send_params() -> SendMessageRequest:
         message=Message(
             message_id="msg-user-1",
             role=Role.ROLE_USER,
-            parts=[make_text_part("hello")],
+            parts=[Part(text="hello")],
         )
     )
 

@@ -1,7 +1,7 @@
 import pytest
-from a2a.types import TaskState
+from a2a.types import Part, TaskState
 
-from opencode_a2a.a2a_utils import make_data_part, make_raw_part, make_text_part, make_url_part
+from opencode_a2a.a2a_utils import make_data_part
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from tests.support.helpers import DummyEventQueue, make_request_context_with_parts, make_settings
@@ -83,12 +83,8 @@ async def test_execute_forwards_text_and_file_parts() -> None:
         task_id="task-1",
         context_id="ctx-1",
         parts=[
-            make_text_part("Describe this file"),
-            make_raw_part(
-                b"hello",
-                filename="note.txt",
-                media_type="text/plain",
-            ),
+            Part(text="Describe this file"),
+            Part(raw=b"hello", filename="note.txt", media_type="text/plain"),
         ],
     )
 
@@ -125,8 +121,8 @@ async def test_execute_accepts_file_only_input() -> None:
         task_id="task-1",
         context_id="ctx-1",
         parts=[
-            make_url_part(
-                "file:///tmp/report.pdf",
+            Part(
+                url="file:///tmp/report.pdf",
                 filename="report.pdf",
                 media_type="application/pdf",
             )

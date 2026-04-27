@@ -10,7 +10,6 @@ from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.types import Message, Part, Role, SendMessageConfiguration, SendMessageRequest
 
-from opencode_a2a.a2a_utils import make_text_part
 from opencode_a2a.config import Settings
 from opencode_a2a.opencode_upstream_client import OpencodeMessage, OpencodeMessagePage
 
@@ -144,7 +143,7 @@ def make_request_context(
     message = Message(
         message_id=message_id,
         role=Role.ROLE_USER,
-        parts=[make_text_part(text)],
+        parts=[Part(text=text)],
     )
     configuration = (
         SendMessageConfiguration(accepted_output_modes=accepted_output_modes)

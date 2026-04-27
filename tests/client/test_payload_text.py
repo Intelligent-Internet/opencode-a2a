@@ -3,6 +3,7 @@ from __future__ import annotations
 from a2a.types import (
     Artifact,
     Message,
+    Part,
     Role,
     StreamResponse,
     Task,
@@ -11,7 +12,6 @@ from a2a.types import (
     TaskStatus,
 )
 
-from opencode_a2a.a2a_utils import make_text_part
 from opencode_a2a.client.payload_text import extract_text
 
 
@@ -22,7 +22,7 @@ def test_extract_text_prefers_stream_artifact_payload() -> None:
         artifact=Artifact(
             artifact_id="artifact-1",
             name="response",
-            parts=[make_text_part("streamed remote text")],
+            parts=[Part(text="streamed remote text")],
         ),
     )
 
@@ -38,7 +38,7 @@ def test_extract_text_reads_task_status_message() -> None:
             message=Message(
                 role=Role.ROLE_AGENT,
                 message_id="m1",
-                parts=[make_text_part("status message text")],
+                parts=[Part(text="status message text")],
             ),
         ),
     )

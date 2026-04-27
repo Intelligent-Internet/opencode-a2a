@@ -802,7 +802,7 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
         return Message(
             message_id="m-server",
             role=app_module.Role.ROLE_AGENT,
-            parts=[app_module.make_text_part("server reply")],
+            parts=[app_module.Part(text="server reply")],
         )
 
     async def _stream_failure(params, context=None):  # noqa: ANN001

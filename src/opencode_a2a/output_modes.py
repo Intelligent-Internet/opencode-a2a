@@ -19,10 +19,6 @@ from google.protobuf.message import Message as ProtoMessage
 
 from .a2a_utils import (
     clone_proto,
-    make_text_part,
-    part_is_data,
-    part_is_file,
-    part_is_text,
     proto_to_dict,
     replace_artifact_event_artifact,
     replace_artifact_parts,
@@ -396,15 +392,15 @@ def _filter_parts(
         if accepts_output_mode(accepted_output_modes, _TEXT_PLAIN_MEDIA_TYPE):
             fallback_text = part_text_fallback(part)
             if fallback_text is not None:
-                filtered.append(make_text_part(fallback_text))
+                filtered.append(Part(text=fallback_text))
     return filtered
 
 
 def _part_media_type(part: Part) -> str | None:
-    if part_is_text(part):
+    if part.HasField("text"):
         return _TEXT_PLAIN_MEDIA_TYPE
-    if part_is_data(part):
+    if part.HasField("data"):
         return _APPLICATION_JSON_MEDIA_TYPE
-    if part_is_file(part):
+    if part.HasField("raw") or part.HasField("url"):
         return part.media_type or "application/octet-stream"
     return None

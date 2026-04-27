@@ -13,6 +13,7 @@ from a2a.types import (
     Artifact,
     GetTaskRequest,
     Message,
+    Part,
     Role,
     SubscribeToTaskRequest,
     Task,
@@ -22,7 +23,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from opencode_a2a.a2a_utils import make_data_part, make_text_part, part_text
+from opencode_a2a.a2a_utils import make_data_part, part_text
 from opencode_a2a.output_modes import (
     NegotiatingResultAggregator,
     apply_accepted_output_modes,
@@ -46,7 +47,7 @@ def _message(*, message_id: str, text: str, task_id: str, context_id: str) -> Me
     return Message(
         message_id=message_id,
         role=Role.ROLE_AGENT,
-        parts=[make_text_part(text)],
+        parts=[Part(text=text)],
         task_id=task_id,
         context_id=context_id,
     )
@@ -78,7 +79,7 @@ def _task_with_negotiated_outputs(*, task_id: str, context_id: str) -> Task:
         artifacts=[
             Artifact(
                 artifact_id=f"{task_id}:text",
-                parts=[make_text_part("plain result")],
+                parts=[Part(text="plain result")],
             ),
             Artifact(
                 artifact_id=f"{task_id}:json",
@@ -154,7 +155,7 @@ async def test_negotiating_result_aggregator_persists_metadata_for_artifact_firs
             context_id="ctx-artifact-first",
             artifact=Artifact(
                 artifact_id="artifact-1",
-                parts=[make_text_part("hello")],
+                parts=[Part(text="hello")],
             ),
             append=False,
             last_chunk=False,
