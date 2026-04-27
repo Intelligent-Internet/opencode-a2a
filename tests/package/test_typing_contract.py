@@ -7,3 +7,7 @@ def test_package_declares_py_typed_marker() -> None:
     assert Path("src/opencode_a2a/py.typed").is_file()
     assert "[tool.setuptools.package-data]" in PYPROJECT_TEXT
     assert 'opencode_a2a = ["py.typed"]' in PYPROJECT_TEXT
+
+
+def test_package_declares_runtime_protobuf_dependency() -> None:
+    assert '"protobuf>=6.33.5,<7.0"' in PYPROJECT_TEXT
