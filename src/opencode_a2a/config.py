@@ -176,9 +176,9 @@ class Settings(BaseSettings):
     a2a_title: str = Field(default="OpenCode A2A", alias="A2A_TITLE")
     a2a_description: str = Field(default="OpenCode A2A runtime", alias="A2A_DESCRIPTION")
     a2a_version: str = Field(default=__version__, alias="A2A_VERSION")
-    a2a_protocol_version: str = Field(default="0.3", alias="A2A_PROTOCOL_VERSION")
+    a2a_protocol_version: str = Field(default="1.0", alias="A2A_PROTOCOL_VERSION")
     a2a_supported_protocol_versions: DeclaredStringList = Field(
-        default=("0.3", "1.0"),
+        default=("1.0",),
         alias="A2A_SUPPORTED_PROTOCOL_VERSIONS",
     )
     a2a_log_level: str = Field(default="WARNING", alias="A2A_LOG_LEVEL")
@@ -306,12 +306,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 "A2A_TASK_STORE_DATABASE_URL is required when A2A_TASK_STORE_BACKEND=database"
             )
+        if self.a2a_protocol_version != "1.0":
+            raise ValueError("Only A2A v1.0 is supported. Set A2A_PROTOCOL_VERSION=1.0.")
+        if self.a2a_supported_protocol_versions != ("1.0",):
+            raise ValueError("Only A2A v1.0 is supported. Set A2A_SUPPORTED_PROTOCOL_VERSIONS=1.0.")
         if self.a2a_protocol_version not in self.a2a_supported_protocol_versions:
             supported_display = ", ".join(self.a2a_supported_protocol_versions)
             raise ValueError(
                 "A2A_PROTOCOL_VERSION must be present in A2A_SUPPORTED_PROTOCOL_VERSIONS. "
                 f"Declared supported versions: {supported_display}"
             )
+        if self.a2a_client_protocol_version not in {None, "1.0"}:
+            raise ValueError("Only A2A v1.0 is supported. Set A2A_CLIENT_PROTOCOL_VERSION=1.0.")
         if self.a2a_static_auth_credentials:
             if not any(credential.enabled for credential in self.a2a_static_auth_credentials):
                 raise ValueError(

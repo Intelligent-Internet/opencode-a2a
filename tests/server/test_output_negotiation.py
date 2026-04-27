@@ -9,12 +9,12 @@ from a2a.server.tasks import TaskManager
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
     Artifact,
+    GetTaskRequest,
     Message,
     Role,
+    SubscribeToTaskRequest,
     Task,
     TaskArtifactUpdateEvent,
-    TaskIdParams,
-    TaskQueryParams,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
@@ -187,7 +187,7 @@ async def test_on_get_task_applies_persisted_output_negotiation() -> None:
     await store.save(task, ServerCallContext())
     handler = OpencodeRequestHandler(agent_executor=AsyncMock(), task_store=store)
 
-    result = await handler.on_get_task(TaskQueryParams(id="task-get"))
+    result = await handler.on_get_task(GetTaskRequest(id="task-get"))
 
     assert result is not None
     assert extract_accepted_output_modes_from_metadata(result.metadata) == ("text/plain",)
@@ -207,7 +207,7 @@ async def test_resubscribe_terminal_task_applies_persisted_output_negotiation() 
     handler = OpencodeRequestHandler(agent_executor=AsyncMock(), task_store=store)
 
     events = []
-    async for event in handler.on_resubscribe_to_task(TaskIdParams(id="task-resub")):
+    async for event in handler.on_resubscribe_to_task(SubscribeToTaskRequest(id="task-resub")):
         events.append(event)
 
     assert len(events) == 1

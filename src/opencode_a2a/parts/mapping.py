@@ -86,11 +86,13 @@ def map_a2a_parts_to_opencode_parts(parts: Any) -> list[OpencodeInputPart]:
 
         if kind == "data":
             raise UnsupportedA2AInputError(
-                f"request.parts[{index}] DataPart input is not supported; use TextPart or FilePart."
+                "request.parts["
+                f"{index}"
+                "] structured data is not supported; use text, raw, or url parts."
             )
 
         raise UnsupportedA2AInputError(
-            f"request.parts[{index}] is not supported; only TextPart and FilePart are accepted."
+            f"request.parts[{index}] is not supported; only text, raw, or url parts are accepted."
         )
 
     return mapped
@@ -122,53 +124,9 @@ def _map_file_part(part: Any, *, index: int) -> OpencodeFileInputPart:
             mapped["filename"] = name
         return mapped
 
-    root = _unwrap_part_root(part)
-    file_value = getattr(root, "file", None)
-    if file_value is None:
-        raise UnsupportedA2AInputError(
-            f"request.parts[{index}] FilePart is missing the file payload."
-        )
-
-    mime = (
-        _normalize_string(
-            getattr(file_value, "mime_type", None) or getattr(file_value, "mimeType", None)
-        )
-        or "application/octet-stream"
-    )
-    name = _normalize_string(getattr(file_value, "name", None))
-
-    bytes_value = _normalize_string(getattr(file_value, "bytes", None))
-    if bytes_value:
-        mapped_from_bytes: OpencodeFileInputPart = {
-            "type": "file",
-            "url": f"data:{mime};base64,{bytes_value}",
-            "mime": mime,
-        }
-        if name:
-            mapped_from_bytes["filename"] = name
-        return mapped_from_bytes
-
-    uri = _normalize_string(getattr(file_value, "uri", None))
-    if uri:
-        mapped = {
-            "type": "file",
-            "url": uri,
-            "mime": mime,
-        }
-        if name:
-            mapped["filename"] = name
-        return mapped
-
     raise UnsupportedA2AInputError(
-        f"request.parts[{index}] FilePart must contain either bytes or uri."
+        f"request.parts[{index}] file input must contain either raw bytes or a url."
     )
-
-
-def _unwrap_part_root(part: Any) -> Any:
-    root = getattr(part, "root", None)
-    if root is not None:
-        return root
-    return part
 
 
 def _part_kind(part: Any) -> str | None:
@@ -182,17 +140,6 @@ def _part_kind(part: Any) -> str | None:
     which_oneof = getattr(data, "WhichOneof", None)
     if callable(which_oneof) and which_oneof("kind") is not None:
         return "data"
-
-    root = _unwrap_part_root(part)
-    kind = getattr(root, "kind", None)
-    if isinstance(kind, str):
-        return kind
-    if isinstance(getattr(root, "text", None), str):
-        return "text"
-    if getattr(root, "file", None) is not None:
-        return "file"
-    if getattr(root, "data", None) is not None:
-        return "data"
     return None
 
 
@@ -200,10 +147,6 @@ def _part_text_value(part: Any) -> str | None:
     text = getattr(part, "text", None)
     if isinstance(text, str):
         return text
-    root = _unwrap_part_root(part)
-    root_text = getattr(root, "text", None)
-    if isinstance(root_text, str):
-        return root_text
     return None
 
 
@@ -211,9 +154,7 @@ def _part_filename(part: Any) -> str | None:
     filename = _normalize_string(getattr(part, "filename", None))
     if filename:
         return filename
-    root = _unwrap_part_root(part)
-    file_value = getattr(root, "file", None)
-    return _normalize_string(getattr(file_value, "name", None))
+    return None
 
 
 def _normalize_string(value: Any) -> str | None:

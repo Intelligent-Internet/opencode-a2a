@@ -42,8 +42,6 @@ from .errors import A2ATimeoutError, A2AUnsupportedBindingError
 from .polling import PollingFallbackPolicy
 from .request_context import build_call_context, split_request_metadata
 
-ClientFactory = None
-
 
 class A2AClient:
     """Factory-style facade for lightweight A2A client bootstrap and calls."""
@@ -155,7 +153,7 @@ class A2AClient:
                 ):
                     yield self._adapt_stream_response(event)
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
-                raise map_operation_error("message/send", exc) from exc
+                raise map_operation_error("SendMessage", exc) from exc
         finally:
             await self._release_operation()
 
@@ -172,7 +170,7 @@ class A2AClient:
         """Send a message and return the latest response event.
 
         When polling fallback is enabled, a non-terminal `(Task, None)` result may
-        be followed by bounded `tasks/get` polling until a terminal task snapshot
+        be followed by bounded `GetTask` polling until a terminal task snapshot
         is observed.
         """
         last_event: (
@@ -228,7 +226,7 @@ class A2AClient:
                     ),
                 )
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
-                raise map_operation_error("tasks/get", exc) from exc
+                raise map_operation_error("GetTask", exc) from exc
         finally:
             await self._release_operation()
 
@@ -261,7 +259,7 @@ class A2AClient:
                     ),
                 )
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
-                raise map_operation_error("tasks/cancel", exc) from exc
+                raise map_operation_error("CancelTask", exc) from exc
         finally:
             await self._release_operation()
 
@@ -283,11 +281,8 @@ class A2AClient:
                 self._settings.protocol_version,
             )
             try:
-                subscribe = getattr(client, "subscribe", None)
-                if subscribe is None:
-                    subscribe = cast(Any, client).resubscribe
                 async for event in call_with_supported_kwargs(
-                    subscribe,
+                    client.subscribe,
                     SubscribeToTaskRequest(id=task_id),
                     context=call_context,
                     call_context=call_context,
@@ -302,7 +297,7 @@ class A2AClient:
                             adapted,
                         )
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
-                raise map_operation_error("tasks/resubscribe", exc) from exc
+                raise map_operation_error("SubscribeToTask", exc) from exc
         finally:
             await self._release_operation()
 
@@ -320,13 +315,6 @@ class A2AClient:
             supported_protocol_bindings=list(self._settings.supported_transports),
             use_client_preference=self._settings.use_client_preference,
         )
-        factory_cls = globals().get("ClientFactory")
-        if factory_cls is not None:
-            card = await self.get_agent_card()
-            factory = factory_cls(config)
-            client = cast(Client, factory.create(card, interceptors=None))
-            self._client = client
-            return client
         try:
             client = await create_client(
                 self.agent_url,
@@ -409,13 +397,6 @@ class A2AClient:
         self,
         response: StreamResponse,
     ) -> Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None:
-        if not hasattr(response, "HasField"):
-            return cast(
-                Message
-                | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None]
-                | None,
-                response,
-            )
         if response.HasField("message"):
             return response.message
         if response.HasField("task"):

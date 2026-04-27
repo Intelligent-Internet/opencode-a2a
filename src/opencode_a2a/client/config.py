@@ -10,6 +10,8 @@ from ..protocol_versions import normalize_protocol_version
 from .auth import validate_basic_auth
 from .polling import PollingFallbackPolicy, validate_polling_fallback_policy
 
+_SUPPORTED_CLIENT_PROTOCOL_VERSION = "1.0"
+
 
 def _read_setting(
     source: Any,
@@ -75,7 +77,12 @@ def _coerce_optional_protocol_version(name: str, value: Any) -> str | None:
     normalized = _coerce_optional_str(name, value)
     if normalized is None:
         return None
-    return normalize_protocol_version(normalized)
+    protocol_version = normalize_protocol_version(normalized)
+    if protocol_version != _SUPPORTED_CLIENT_PROTOCOL_VERSION:
+        raise ValueError(
+            f"{name} only supports {_SUPPORTED_CLIENT_PROTOCOL_VERSION}, got {normalized!r}"
+        )
+    return protocol_version
 
 
 def _normalize_transport(value: str) -> str:
@@ -118,7 +125,7 @@ class A2AClientSettings:
     card_fetch_timeout: float = 5.0
     bearer_token: str | None = None
     basic_auth: str | None = None
-    protocol_version: str | None = None
+    protocol_version: str | None = _SUPPORTED_CLIENT_PROTOCOL_VERSION
     supported_transports: tuple[str, ...] = (
         "JSONRPC",
         "HTTP+JSON",
@@ -191,7 +198,7 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
                 "A2A_PROTOCOL_VERSION",
                 "a2a_protocol_version",
             ),
-            default=None,
+            default=_SUPPORTED_CLIENT_PROTOCOL_VERSION,
         ),
     )
     supported_transports = _parse_transports(

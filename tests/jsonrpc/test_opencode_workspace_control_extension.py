@@ -5,6 +5,10 @@ from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
 from tests.support.helpers import make_basic_auth_header, make_settings
+from tests.support.jsonrpc_error_assertions import (
+    assert_v1_error_metadata_contains,
+    assert_v1_error_reason,
+)
 from tests.support.session_extensions import _BASE_SETTINGS
 
 
@@ -235,12 +239,15 @@ async def test_workspace_control_mutations_require_workspace_mutation_capability
     assert response.status_code == 200
     payload = response.json()
     assert payload["error"]["code"] == -32007
-    assert payload["error"]["data"] == {
-        "type": "AUTHORIZATION_FORBIDDEN",
-        "method": "opencode.workspaces.create",
-        "capability": "workspace_mutation",
-        "credential_id": "cred-bearer",
-    }
+    assert_v1_error_reason(
+        payload["error"],
+        reason="AUTHORIZATION_FORBIDDEN",
+        metadata={
+            "method": "opencode.workspaces.create",
+            "capability": "workspace_mutation",
+            "credential_id": "cred-bearer",
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -268,7 +275,6 @@ async def test_workspace_control_mutations_are_disabled_by_default(monkeypatch) 
     assert response.status_code == 200
     payload = response.json()
     assert payload["error"]["code"] == -32601
-    assert payload["error"]["data"]["type"] == "METHOD_NOT_SUPPORTED"
     assert payload["error"]["data"]["method"] == "opencode.worktrees.create"
 
 
@@ -302,5 +308,8 @@ async def test_workspace_control_extension_maps_upstream_http_error(monkeypatch)
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["error"]["data"]["type"] == "UPSTREAM_HTTP_ERROR"
-    assert payload["error"]["data"]["upstream_status"] == 503
+    assert_v1_error_metadata_contains(
+        payload["error"],
+        reason="UPSTREAM_HTTP_ERROR",
+        metadata={"upstream_status": 503},
+    )

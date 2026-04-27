@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from a2a.client import ClientConfig
-from a2a.client.errors import A2AClientHTTPError, A2AClientJSONError, A2AClientJSONRPCError
-from a2a.types import JSONRPCError, JSONRPCErrorResponse, Task, TaskState, TaskStatus
+from a2a.types import Message, Role, StreamResponse, Task, TaskState, TaskStatus
 
+from opencode_a2a.a2a_utils import make_text_part
 from opencode_a2a.client import A2AClient
 from opencode_a2a.client import client as client_module
 from opencode_a2a.client.config import A2AClientSettings
@@ -17,6 +17,12 @@ from opencode_a2a.client.errors import (
     A2APeerProtocolError,
     A2ATimeoutError,
     A2AUnsupportedOperationError,
+)
+from opencode_a2a.jsonrpc.models import JSONRPCError, JSONRPCErrorResponse
+from tests.support.fake_client_errors import (
+    FakeA2AClientHTTPError,
+    FakeA2AClientJSONError,
+    FakeA2AClientJSONRPCError,
 )
 
 
@@ -33,12 +39,12 @@ class _FakeCardResolver:
 class _FakeClient:
     def __init__(
         self,
-        events: list[object] | None = None,
+        events: list[StreamResponse] | None = None,
         *,
         fail: BaseException | None = None,
-        task_results: list[object] | None = None,
+        task_results: list[Task] | None = None,
         task_fail: BaseException | None = None,
-    ):
+    ) -> None:
         self._events = list(events or [])
         self._fail = fail
         self._task_results = list(task_results or [])
@@ -46,16 +52,18 @@ class _FakeClient:
         self.send_message_inputs: list[tuple[object, object, object]] = []
         self.task_inputs: list[tuple[object, object]] = []
         self.cancel_inputs: list[tuple[object, object]] = []
-        self.resubscribe_inputs: list[tuple[object, object]] = []
+        self.subscribe_inputs: list[tuple[object, object]] = []
 
-    async def send_message(self, message, *args: object, **kwargs: object) -> AsyncIterator[object]:
+    async def send_message(
+        self, message, *args: object, **kwargs: object
+    ) -> AsyncIterator[StreamResponse]:
         self.send_message_inputs.append((message, args, kwargs))
         if self._fail:
             raise self._fail
         for event in self._events:
             yield event
 
-    async def get_task(self, params, *args: object, **kwargs: object) -> object:
+    async def get_task(self, params, *args: object, **kwargs: object) -> Task:
         self.task_inputs.append((params, kwargs))
         if self._task_fail:
             raise self._task_fail
@@ -63,16 +71,18 @@ class _FakeClient:
             raise self._fail
         if self._task_results:
             return self._task_results.pop(0)
-        return {"task_id": params.id}
+        return _task(params.id, TaskState.TASK_STATE_COMPLETED)
 
-    async def cancel_task(self, params, *args: object, **kwargs: object) -> object:
+    async def cancel_task(self, params, *args: object, **kwargs: object) -> Task:
         self.cancel_inputs.append((params, kwargs))
         if self._fail:
             raise self._fail
-        return {"task_id": params.id, "status": "canceled"}
+        return _task(params.id, TaskState.TASK_STATE_CANCELED)
 
-    async def resubscribe(self, params, *args: object, **kwargs: object) -> AsyncIterator[object]:
-        self.resubscribe_inputs.append((params, kwargs))
+    async def subscribe(
+        self, params, *args: object, **kwargs: object
+    ) -> AsyncIterator[StreamResponse]:
+        self.subscribe_inputs.append((params, kwargs))
         if self._fail:
             raise self._fail
         for event in self._events:
@@ -85,6 +95,20 @@ def _task(task_id: str, state: TaskState) -> Task:
         context_id="ctx-1",
         status=TaskStatus(state=state),
     )
+
+
+def _stream_message(text: str) -> StreamResponse:
+    return StreamResponse(
+        message=Message(
+            message_id=f"msg-{text}",
+            role=Role.ROLE_AGENT,
+            parts=[make_text_part(text)],
+        )
+    )
+
+
+def _stream_task(task_id: str, state: TaskState) -> StreamResponse:
+    return StreamResponse(task=_task(task_id, state))
 
 
 @pytest.mark.asyncio
@@ -117,40 +141,28 @@ async def test_build_client_uses_settings_and_transport_config(
     )
 
     fake_sdk_client = _FakeClient()
-    factory_calls: dict[str, object] = {}
+    create_calls: dict[str, object] = {}
 
-    class _FakeFactory:
-        def __init__(self, config: ClientConfig, consumers: list[object] | None = None):
-            factory_calls["config"] = config
-            factory_calls["consumers"] = consumers
+    async def _fake_create_client(agent, *, client_config, resolver_http_kwargs, **kwargs):  # noqa: ANN001
+        create_calls["agent"] = agent
+        create_calls["config"] = client_config
+        create_calls["resolver_http_kwargs"] = resolver_http_kwargs
+        create_calls["extra_kwargs"] = kwargs
+        return fake_sdk_client
 
-        def create(
-            self,
-            _card: object,
-            consumers: list[object] | None = None,
-            interceptors: list[object] | None = None,
-            extensions: list[str] | None = None,
-        ) -> _FakeClient:
-            factory_calls["create_consumers"] = consumers
-            factory_calls["interceptors"] = interceptors
-            factory_calls["extensions"] = extensions
-            return fake_sdk_client
-
-    monkeypatch.setattr(client_module, "ClientFactory", _FakeFactory)
-    monkeypatch.setattr(
-        client_module,
-        "build_agent_card_resolver",
-        lambda *_args: _FakeCardResolver("agent-card"),
-    )
+    monkeypatch.setattr(client_module, "create_client", _fake_create_client)
     actual = await client._build_client()
 
-    config = factory_calls["config"]
+    config = create_calls["config"]
     assert isinstance(config, ClientConfig)
     assert config.streaming is True
     assert config.polling is False
     assert config.use_client_preference is True
     assert config.supported_protocol_bindings == ["HTTP+JSON"]
-    assert factory_calls["interceptors"] is None
+    assert create_calls["resolver_http_kwargs"] == {
+        "timeout": 3,
+        "headers": {"Authorization": "Bearer peer-token"},
+    }
     assert actual is fake_sdk_client
 
 
@@ -163,32 +175,18 @@ async def test_build_client_enables_sdk_polling_when_polling_fallback_enabled(
         settings=A2AClientSettings(polling_fallback_enabled=True),
     )
     fake_sdk_client = _FakeClient()
-    factory_calls: dict[str, object] = {}
+    create_calls: dict[str, object] = {}
 
-    class _FakeFactory:
-        def __init__(self, config: ClientConfig, consumers: list[object] | None = None):
-            factory_calls["config"] = config
-            factory_calls["consumers"] = consumers
+    async def _fake_create_client(agent, *, client_config, resolver_http_kwargs, **kwargs):  # noqa: ANN001
+        del agent, resolver_http_kwargs, kwargs
+        create_calls["config"] = client_config
+        return fake_sdk_client
 
-        def create(
-            self,
-            _card: object,
-            consumers: list[object] | None = None,
-            interceptors: list[object] | None = None,
-            extensions: list[str] | None = None,
-        ) -> _FakeClient:
-            return fake_sdk_client
-
-    monkeypatch.setattr(client_module, "ClientFactory", _FakeFactory)
-    monkeypatch.setattr(
-        client_module,
-        "build_agent_card_resolver",
-        lambda *_args: _FakeCardResolver("agent-card"),
-    )
+    monkeypatch.setattr(client_module, "create_client", _fake_create_client)
 
     actual = await client._build_client()
 
-    config = factory_calls["config"]
+    config = create_calls["config"]
     assert isinstance(config, ClientConfig)
     assert config.polling is True
     assert actual is fake_sdk_client
@@ -197,10 +195,13 @@ async def test_build_client_enables_sdk_polling_when_polling_fallback_enabled(
 @pytest.mark.asyncio
 async def test_send_returns_last_event(monkeypatch: pytest.MonkeyPatch) -> None:
     client = A2AClient("http://agent.example.com")
-    fake_client = _FakeClient(events=["a", "b", "last"])
+    fake_client = _FakeClient(
+        events=[_stream_message("a"), _stream_message("b"), _stream_message("last")]
+    )
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
     response = await client.send("hello")
-    assert response == "last"
+    assert isinstance(response, Message)
+    assert response.parts[0].text == "last"
 
 
 @pytest.mark.asyncio
@@ -216,7 +217,7 @@ async def test_send_polling_fallback_returns_terminal_task(monkeypatch: pytest.M
         ),
     )
     fake_client = _FakeClient(
-        events=[(_task("task-1", TaskState.TASK_STATE_WORKING), None)],
+        events=[_stream_task("task-1", TaskState.TASK_STATE_WORKING)],
         task_results=[
             _task("task-1", TaskState.TASK_STATE_WORKING),
             _task("task-1", TaskState.TASK_STATE_COMPLETED),
@@ -232,7 +233,9 @@ async def test_send_polling_fallback_returns_terminal_task(monkeypatch: pytest.M
 
     response = await client.send("hello")
 
-    assert response == (_task("task-1", TaskState.TASK_STATE_COMPLETED), None)
+    assert isinstance(response, tuple)
+    assert response[0].status.state == TaskState.TASK_STATE_COMPLETED
+    assert response[1] is None
     assert [params.id for params, _kwargs in fake_client.task_inputs] == ["task-1", "task-1"]
     assert sleep_calls == [0.1, 0.2]
 
@@ -243,13 +246,13 @@ async def test_send_polling_fallback_skips_input_required(monkeypatch: pytest.Mo
         "http://agent.example.com",
         settings=A2AClientSettings(polling_fallback_enabled=True),
     )
-    event = (_task("task-1", TaskState.TASK_STATE_INPUT_REQUIRED), None)
-    fake_client = _FakeClient(events=[event])
+    fake_client = _FakeClient(events=[_stream_task("task-1", TaskState.TASK_STATE_INPUT_REQUIRED)])
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
 
     response = await client.send("hello")
 
-    assert response == event
+    assert isinstance(response, tuple)
+    assert response[0].status.state == TaskState.TASK_STATE_INPUT_REQUIRED
     assert fake_client.task_inputs == []
 
 
@@ -266,7 +269,7 @@ async def test_send_polling_fallback_timeout_raises(monkeypatch: pytest.MonkeyPa
         ),
     )
     fake_client = _FakeClient(
-        events=[(_task("task-1", TaskState.TASK_STATE_WORKING), None)],
+        events=[_stream_task("task-1", TaskState.TASK_STATE_WORKING)],
         task_results=[_task("task-1", TaskState.TASK_STATE_WORKING)],
     )
     now_values = iter([0.0, 0.0, 0.3])
@@ -297,8 +300,8 @@ async def test_send_polling_fallback_maps_get_task_error(
         ),
     )
     fake_client = _FakeClient(
-        events=[(_task("task-1", TaskState.TASK_STATE_WORKING), None)],
-        task_fail=A2AClientHTTPError(404, "gone"),
+        events=[_stream_task("task-1", TaskState.TASK_STATE_WORKING)],
+        task_fail=FakeA2AClientHTTPError(404, "gone"),
     )
 
     async def _fake_sleep(_delay: float) -> None:
@@ -307,7 +310,7 @@ async def test_send_polling_fallback_maps_get_task_error(
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
     monkeypatch.setattr(client, "_sleep", _fake_sleep)
 
-    with pytest.raises(A2AUnsupportedOperationError, match="does not support tasks/get"):
+    with pytest.raises(A2AUnsupportedOperationError, match="does not support GetTask"):
         await client.send("hello")
 
 
@@ -319,12 +322,13 @@ async def test_send_message_adds_bearer_token_from_settings(
         "http://agent.example.com",
         settings=A2AClientSettings(bearer_token="peer-token"),
     )
-    fake_client = _FakeClient(events=["ok"])
+    fake_client = _FakeClient(events=[_stream_message("ok")])
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
 
     result = [event async for event in client.send_message("hello")]
 
-    assert result == ["ok"]
+    assert len(result) == 1
+    assert isinstance(result[0], Message)
     _, _, kwargs = fake_client.send_message_inputs[0]
     assert kwargs["request_metadata"] is None
     assert kwargs["context"] is not None
@@ -339,12 +343,13 @@ async def test_send_message_adds_basic_auth_from_settings(
         "http://agent.example.com",
         settings=A2AClientSettings(basic_auth="user:pass"),
     )
-    fake_client = _FakeClient(events=["ok"])
+    fake_client = _FakeClient(events=[_stream_message("ok")])
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
 
     result = [event async for event in client.send_message("hello")]
 
-    assert result == ["ok"]
+    assert len(result) == 1
+    assert isinstance(result[0], Message)
     _, _, kwargs = fake_client.send_message_inputs[0]
     assert kwargs["request_metadata"] is None
     assert kwargs["context"] is not None
@@ -361,7 +366,7 @@ async def test_send_message_preserves_explicit_authorization_metadata(
         "http://agent.example.com",
         settings=A2AClientSettings(bearer_token="peer-token"),
     )
-    fake_client = _FakeClient(events=["ok"])
+    fake_client = _FakeClient(events=[_stream_message("ok")])
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
 
     result = [
@@ -372,7 +377,8 @@ async def test_send_message_preserves_explicit_authorization_metadata(
         )
     ]
 
-    assert result == ["ok"]
+    assert len(result) == 1
+    assert isinstance(result[0], Message)
     _, _, kwargs = fake_client.send_message_inputs[0]
     assert kwargs["request_metadata"] == {"trace_id": "trace-1"}
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
@@ -383,7 +389,7 @@ async def test_send_message_prefers_explicit_authorization_without_default_token
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = A2AClient("http://agent.example.com")
-    fake_client = _FakeClient(events=["ok"])
+    fake_client = _FakeClient(events=[_stream_message("ok")])
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
 
     result = [
@@ -393,7 +399,8 @@ async def test_send_message_prefers_explicit_authorization_without_default_token
         )
     ]
 
-    assert result == ["ok"]
+    assert len(result) == 1
+    assert isinstance(result[0], Message)
     _, _, kwargs = fake_client.send_message_inputs[0]
     assert kwargs["request_metadata"] is None
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
@@ -404,11 +411,11 @@ async def test_send_message_maps_jsonrpc_not_supported(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     rpc_error = JSONRPCErrorResponse(
-        error=JSONRPCError(code=-32601, message="Unsupported method: message/send"),
+        error=JSONRPCError(code=-32601, message="Unsupported method: SendMessage"),
         id="req-1",
     )
     client = A2AClient("http://agent.example.com")
-    fake_client = _FakeClient(fail=A2AClientJSONRPCError(rpc_error))
+    fake_client = _FakeClient(fail=FakeA2AClientJSONRPCError(rpc_error))
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
     with pytest.raises(
         A2AUnsupportedOperationError,
@@ -422,7 +429,7 @@ async def test_send_message_maps_jsonrpc_not_supported(
 async def test_get_agent_card_maps_json_error(monkeypatch: pytest.MonkeyPatch) -> None:
     class _BrokenResolver:
         async def get_agent_card(self, **_kwargs: object) -> object:
-            raise A2AClientJSONError("invalid json")
+            raise FakeA2AClientJSONError("invalid json")
 
     client = A2AClient("http://agent.example.com")
     monkeypatch.setattr(
@@ -526,20 +533,28 @@ async def test_get_task_maps_transport_http_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = A2AClient("http://agent.example.com")
-    fake_client = _FakeClient(fail=A2AClientHTTPError(404, "gone"))
+    fake_client = _FakeClient(fail=FakeA2AClientHTTPError(404, "gone"))
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
 
-    with pytest.raises(A2AUnsupportedOperationError, match="does not support tasks/get"):
+    with pytest.raises(A2AUnsupportedOperationError, match="does not support GetTask"):
         await client.get_task("task-id")
 
 
 @pytest.mark.asyncio
 async def test_resubscribe_forward_events(monkeypatch: pytest.MonkeyPatch) -> None:
     client = A2AClient("http://agent.example.com")
-    fake_client = _FakeClient(events=[1, 2])
+    fake_client = _FakeClient(
+        events=[
+            _stream_task("task-id", TaskState.TASK_STATE_WORKING),
+            _stream_task("task-id", TaskState.TASK_STATE_COMPLETED),
+        ]
+    )
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
     result = [event async for event in client.resubscribe_task("task-id")]
-    assert result == [1, 2]
+    assert [event[0].status.state for event in result] == [
+        TaskState.TASK_STATE_WORKING,
+        TaskState.TASK_STATE_COMPLETED,
+    ]
 
 
 @pytest.mark.asyncio
@@ -547,7 +562,7 @@ async def test_resubscribe_uses_authorization_header_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = A2AClient("http://agent.example.com")
-    fake_client = _FakeClient(events=[1])
+    fake_client = _FakeClient(events=[_stream_task("task-id", TaskState.TASK_STATE_WORKING)])
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
 
     result = [
@@ -558,8 +573,8 @@ async def test_resubscribe_uses_authorization_header_context(
         )
     ]
 
-    assert result == [1]
-    params, kwargs = fake_client.resubscribe_inputs[0]
+    assert [event[0].status.state for event in result] == [TaskState.TASK_STATE_WORKING]
+    params, kwargs = fake_client.subscribe_inputs[0]
     assert params.id == "task-id"
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
     assert kwargs["request_metadata"] == {"trace_id": "trace-1"}

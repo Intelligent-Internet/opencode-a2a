@@ -523,7 +523,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             return True
         # JSON-RPC transport sets method in call context state.
         method = call_context.state.get("method")
-        return method == "message/stream"
+        return method == "SendStreamingMessage"
 
     async def _consume_opencode_stream(
         self,

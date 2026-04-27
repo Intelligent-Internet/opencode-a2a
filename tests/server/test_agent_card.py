@@ -44,8 +44,8 @@ def test_agent_card_description_reflects_actual_transport_capabilities() -> None
     assert [
         (iface.protocol_binding, iface.protocol_version) for iface in card.supported_interfaces
     ] == [
-        ("HTTP+JSON", "0.3"),
-        ("JSONRPC", "0.3"),
+        ("HTTP+JSON", "1.0"),
+        ("JSONRPC", "1.0"),
     ]
     assert card.default_input_modes == ["text/plain", "application/octet-stream"]
     assert card.default_output_modes == ["text/plain", "application/json"]
@@ -116,7 +116,7 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
     assert ext_by_uri[MODEL_SELECTION_EXTENSION_URI].params == {
         "metadata_field": "metadata.shared.model",
         "behavior": "prefer_metadata_model_else_upstream_default",
-        "applies_to_methods": ["message/send", "message/stream"],
+        "applies_to_methods": ["SendMessage", "SendStreamingMessage"],
         "supported_metadata": [
             "shared.model.providerID",
             "shared.model.modelID",
@@ -281,7 +281,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert model_selection.params["metadata_field"] == "metadata.shared.model"
     assert model_selection.params["fields"]["providerID"] == "metadata.shared.model.providerID"
     assert model_selection.params["fields"]["modelID"] == "metadata.shared.model.modelID"
-    assert model_selection.params["applies_to_methods"] == ["message/send", "message/stream"]
+    assert model_selection.params["applies_to_methods"] == ["SendMessage", "SendStreamingMessage"]
     assert model_selection.params["behavior"] == "prefer_metadata_model_else_upstream_default"
 
     streaming = ext_by_uri[STREAMING_EXTENSION_URI]
@@ -679,8 +679,8 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     compatibility = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
     expected_service_behaviors = build_service_behavior_contract_params()
     expected_protocol_compatibility = build_protocol_compatibility_params(
-        supported_protocol_versions=["0.3", "1.0"],
-        default_protocol_version="0.3",
+        supported_protocol_versions=["1.0"],
+        default_protocol_version="1.0",
     )
     assert compatibility.params["extension_retention"][MODEL_SELECTION_EXTENSION_URI] == {
         "surface": "core-runtime-metadata",
@@ -739,12 +739,12 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "implementation_scope": "adapter-local",
         "identity_scope": "current_authenticated_caller",
     }
-    assert compatibility.params["method_retention"]["agent/getAuthenticatedExtendedCard"] == {
+    assert compatibility.params["method_retention"]["GetExtendedAgentCard"] == {
         "surface": "core",
         "availability": "always",
         "retention": "required",
     }
-    assert compatibility.params["method_retention"]["tasks/pushNotificationConfig/get"] == {
+    assert compatibility.params["method_retention"]["GetTaskPushNotificationConfig"] == {
         "surface": "core",
         "availability": "always",
         "retention": "required",
@@ -753,14 +753,14 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert compatibility.params["service_behaviors"]["classification"] == (
         "service-level-semantic-enhancement"
     )
-    assert compatibility.params["service_behaviors"]["methods"]["tasks/cancel"]["idempotency"] == {
+    assert compatibility.params["service_behaviors"]["methods"]["CancelTask"]["idempotency"] == {
         "already_canceled": {
             "behavior": "return_current_terminal_task",
             "returns_current_state": "canceled",
             "error": None,
         }
     }
-    assert compatibility.params["service_behaviors"]["methods"]["tasks/resubscribe"][
+    assert compatibility.params["service_behaviors"]["methods"]["SubscribeToTask"][
         "terminal_state_behavior"
     ] == {
         "behavior": "replay_terminal_task_once_then_close",
@@ -772,15 +772,15 @@ def test_agent_card_injects_profile_into_extensions() -> None:
 
     wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
     assert wire_contract.params["profile"]["profile_id"] == "opencode-a2a-single-tenant-coding-v1"
-    assert wire_contract.params["default_protocol_version"] == "0.3"
-    assert wire_contract.params["supported_protocol_versions"] == ["0.3", "1.0"]
+    assert wire_contract.params["default_protocol_version"] == "1.0"
+    assert wire_contract.params["supported_protocol_versions"] == ["1.0"]
     assert wire_contract.params["protocol_compatibility"] == expected_protocol_compatibility
     assert MODEL_SELECTION_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert PROVIDER_DISCOVERY_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert WORKSPACE_CONTROL_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert INTERRUPT_RECOVERY_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
-    assert "agent/getAuthenticatedExtendedCard" in wire_contract.params["all_jsonrpc_methods"]
-    assert "tasks/pushNotificationConfig/get" in wire_contract.params["all_jsonrpc_methods"]
+    assert "GetExtendedAgentCard" in wire_contract.params["all_jsonrpc_methods"]
+    assert "GetTaskPushNotificationConfig" in wire_contract.params["all_jsonrpc_methods"]
     assert "GET /v1/tasks" in wire_contract.params["core"]["http_endpoints"]
     assert (
         "GET /v1/tasks/{id}/pushNotificationConfigs"

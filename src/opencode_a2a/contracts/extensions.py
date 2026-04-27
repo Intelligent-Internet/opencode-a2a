@@ -3,9 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
-
-from ..a2a_protocol import V1_JSONRPC_METHOD_TO_LEGACY_METHOD
+from ..a2a_protocol import CORE_JSONRPC_METHODS as DECLARED_CORE_JSONRPC_METHODS
 from ..profile.runtime import (
     SESSION_SHELL_TOGGLE,
     WORKSPACE_MUTATIONS_TOGGLE,
@@ -45,13 +43,6 @@ WIRE_CONTRACT_EXTENSION_URI = _extension_spec_uri("a2a-wire-contract-v1")
 SERVICE_BEHAVIOR_CLASSIFICATION = "service-level-semantic-enhancement"
 CANCEL_IDEMPOTENCY_BEHAVIOR = "return_current_terminal_task"
 TERMINAL_RESUBSCRIBE_BEHAVIOR = "replay_terminal_task_once_then_close"
-V1_PARTIAL_COMPATIBILITY_GAPS: tuple[str, ...] = (
-    "AgentInterface.protocolVersion cannot be declared with a2a-sdk==0.3.25.",
-    (
-        "Transport payloads, enums, pagination, signatures, and push-notification "
-        "surfaces still follow the SDK-owned 0.3 baseline."
-    ),
-)
 
 
 @dataclass(frozen=True)
@@ -421,10 +412,7 @@ SESSION_MUTATION_METHODS: dict[str, str] = {
     key: SESSION_METHODS[key] for key in SESSION_MUTATION_METHOD_KEYS
 }
 
-CORE_JSONRPC_METHODS: tuple[str, ...] = tuple(
-    V1_JSONRPC_METHOD_TO_LEGACY_METHOD.get(method, method)
-    for method in JsonRpcDispatcher.METHOD_TO_MODEL
-)
+CORE_JSONRPC_METHODS: tuple[str, ...] = tuple(DECLARED_CORE_JSONRPC_METHODS)
 CORE_HTTP_ENDPOINTS: tuple[str, ...] = (
     "POST /v1/message:send",
     "POST /v1/message:stream",
@@ -955,7 +943,7 @@ def build_model_selection_extension_params(
     return {
         "metadata_field": SHARED_MODEL_SELECTION_FIELD,
         "behavior": "prefer_metadata_model_else_upstream_default",
-        "applies_to_methods": ["message/send", "message/stream"],
+        "applies_to_methods": ["SendMessage", "SendStreamingMessage"],
         "supported_metadata": [
             "shared.model.providerID",
             "shared.model.modelID",
@@ -1608,7 +1596,7 @@ def build_compatibility_profile_params(
             ),
             (
                 "Treat protocol_compatibility as the runtime truth for which major line "
-                "is fully supported versus partially adapted."
+                "is fully supported by the current deployment."
             ),
         ],
     }
@@ -1621,31 +1609,17 @@ def build_protocol_compatibility_params(
 ) -> dict[str, Any]:
     declared_supported_versions = list(supported_protocol_versions)
     versions: dict[str, dict[str, Any]] = {
-        "0.3": {
-            "enabled": "0.3" in declared_supported_versions,
-            "default": default_protocol_version == "0.3",
-            "status": "supported",
-            "supported_features": [
-                "Default compatibility line for the current deployment.",
-                "A2A-Version negotiation fallback and explicit 0.3 routing.",
-                "Legacy JSON-RPC and REST error envelopes.",
-                (
-                    "SDK-owned transport payloads, enums, pagination, signatures, and "
-                    "push-notification surfaces."
-                ),
-            ],
-            "known_gaps": [],
-        },
         "1.0": {
             "enabled": "1.0" in declared_supported_versions,
             "default": default_protocol_version == "1.0",
-            "status": "partial",
+            "status": "supported",
             "supported_features": [
-                "A2A-Version negotiation and request routing.",
-                "Protocol-aware JSON-RPC error shaping.",
-                "Protocol-aware REST error shaping.",
+                "Proto-first transport payloads and enum naming.",
+                "Canonical A2A v1.0 JSON-RPC method names.",
+                "Protocol-aware JSON-RPC and REST error shaping.",
+                "Agent Card and OpenAPI discovery aligned to the v1.0 surface.",
             ],
-            "known_gaps": list(V1_PARTIAL_COMPATIBILITY_GAPS),
+            "known_gaps": [],
         },
     }
 
@@ -1732,7 +1706,7 @@ def build_service_behavior_contract_params() -> dict[str, Any]:
     return {
         "classification": SERVICE_BEHAVIOR_CLASSIFICATION,
         "methods": {
-            "tasks/cancel": {
+            "CancelTask": {
                 "baseline": "core",
                 "retention": "stable",
                 "idempotency": {
@@ -1743,7 +1717,7 @@ def build_service_behavior_contract_params() -> dict[str, Any]:
                     }
                 },
             },
-            "tasks/resubscribe": {
+            "SubscribeToTask": {
                 "baseline": "core",
                 "retention": "stable",
                 "terminal_state_behavior": {

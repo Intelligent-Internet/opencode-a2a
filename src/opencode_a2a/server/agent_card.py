@@ -119,9 +119,9 @@ def _build_agent_card_description(
 
     summary = (
         "Supports HTTP+JSON and JSON-RPC transports, streaming-first A2A messaging "
-        "(message/send, message/stream), authenticated extended Agent Card "
-        "(agent/getAuthenticatedExtendedCard), task APIs (tasks/get, tasks/cancel, "
-        "tasks/resubscribe; SDK-owned push notification config surfaces remain "
+        "(SendMessage, SendStreamingMessage), authenticated extended Agent Card "
+        "(GetExtendedAgentCard), task APIs (GetTask, CancelTask, "
+        "SubscribeToTask; SDK-owned push notification config surfaces remain "
         "exposed but currently return unsupported; REST mappings include GET "
         "/v1/tasks and GET /v1/tasks/{id}:subscribe), shared "
         "session-binding/model-selection/streaming contracts, provider-private "
@@ -477,11 +477,11 @@ def _build_agent_skills(
             id="opencode.chat",
             name="OpenCode Chat",
             description=(
-                "Handle core A2A message/send and message/stream requests by routing "
-                "TextPart and FilePart inputs to OpenCode sessions with shared session "
-                "binding and optional request-scoped model selection. Chat clients "
-                "should continue accepting text/plain responses; application/json is "
-                "additive structured-output support."
+                "Handle core A2A SendMessage and SendStreamingMessage requests by routing "
+                "Part.text, Part.raw, and Part.url inputs to OpenCode sessions with "
+                "shared session binding and optional request-scoped model selection. "
+                "Chat clients should continue accepting text/plain responses; "
+                "application/json is additive structured-output support."
             ),
             input_modes=list(_CHAT_INPUT_MODES),
             output_modes=list(_CHAT_OUTPUT_MODES),

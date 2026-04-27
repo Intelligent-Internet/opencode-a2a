@@ -27,11 +27,11 @@ flowchart TD
         PeerA2A --> PeerRuntime
     end
 
-    External -->|message/send,\nmessage:stream| Ingress
+    External -->|SendMessage,\nSendStreamingMessage| Ingress
     Ingress -->|tool call| OpenCode
     OpenCode -->|model/tool result events| Ingress
     Ingress -->|a2a_call| Outbound
-    Outbound -->|message/send,\nmessage:stream| PeerA2A
+    Outbound -->|SendMessage,\nSendStreamingMessage| PeerA2A
     PeerA2A -->|tool result| Outbound
     PeerRuntime -->|task session\nexecution| PeerA2A
 ```
@@ -94,11 +94,10 @@ curl http://127.0.0.1:8000/.well-known/agent-card.json
 
 ## A2A Protocol Support
 
-- Default protocol line: `0.3`
-- Declared supported protocol lines: `0.3`, `1.0`
-- `0.3` is the stable interoperability baseline for the current runtime surface.
-- `1.0` currently covers version negotiation plus protocol-aware JSON-RPC and REST error shaping, while transport payloads, enums, pagination, signatures, and interface-level protocol declarations still follow the shipped SDK baseline.
-- The detailed compatibility matrix and machine-readable support boundary are documented in [`docs/guide.md`](docs/guide.md) and [`docs/compatibility.md`](docs/compatibility.md).
+- Supported protocol line: `1.0`
+- The runtime is now v1-only across HTTP+JSON, JSON-RPC, Agent Card discovery, and protocol-aware error contracts.
+- Legacy `0.3` method aliases and payload shapes are rejected instead of being normalized at runtime.
+- The detailed runtime contract and machine-readable support boundary are documented in [`docs/guide.md`](docs/guide.md) and [`docs/compatibility.md`](docs/compatibility.md).
 
 ## Peering Node / Outbound Access
 

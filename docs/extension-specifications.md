@@ -89,7 +89,7 @@ URI: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extens
 URI: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#a2a-compatibility-profile-v1`
 
 - Scope: compatibility profile describing core baselines, extension retention, and service behaviors
-- Includes machine-readable protocol compatibility summary for the currently declared `0.3` / `1.0` support boundary
+- Includes machine-readable protocol compatibility summary for the current v1-only runtime boundary
 - Public Agent Card: capability declaration only
 - Authenticated extended card: full compatibility profile payload
 - Transport: Agent Card extension params

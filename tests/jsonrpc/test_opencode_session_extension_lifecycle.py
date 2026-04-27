@@ -7,6 +7,7 @@ from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
 from tests.support.helpers import make_settings
+from tests.support.jsonrpc_error_assertions import assert_v1_error_reason
 from tests.support.session_extensions import _BASE_SETTINGS, _jsonrpc_app, _session_meta
 
 
@@ -300,7 +301,11 @@ async def test_session_lifecycle_mutation_rejects_owner_mismatch(monkeypatch):
 
     payload = response.json()
     assert payload["error"]["code"] == -32006
-    assert payload["error"]["data"]["type"] == "SESSION_FORBIDDEN"
+    assert_v1_error_reason(
+        payload["error"],
+        reason="SESSION_FORBIDDEN",
+        metadata={"session_id": "s-1"},
+    )
     assert dummy.lifecycle_calls == []
 
 
@@ -370,4 +375,8 @@ async def test_session_lifecycle_rejects_invalid_params_and_maps_404(monkeypatch
     assert invalid_summarize.json()["error"]["data"]["field"] == "request.auto"
     assert missing_revert_message_id.json()["error"]["data"]["field"] == "request.messageID"
     assert not_found.json()["error"]["code"] == -32001
-    assert not_found.json()["error"]["data"]["session_id"] == "s-404"
+    assert_v1_error_reason(
+        not_found.json()["error"],
+        reason="SESSION_NOT_FOUND",
+        metadata={"session_id": "s-404"},
+    )

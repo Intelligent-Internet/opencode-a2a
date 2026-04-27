@@ -49,7 +49,7 @@ def build_tool_error(
 
 def map_a2a_tool_exception(exc: Exception) -> dict[str, Any]:
     if isinstance(exc, (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError)):
-        return map_a2a_tool_exception(map_operation_error("message/send", exc))
+        return map_a2a_tool_exception(map_operation_error("SendMessage", exc))
     if isinstance(exc, A2AAuthenticationError):
         return _build_client_error_payload(
             exc,

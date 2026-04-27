@@ -5,7 +5,6 @@ import logging
 
 from fastapi.responses import JSONResponse
 
-from ..a2a_protocol import V1_JSONRPC_METHOD_TO_LEGACY_METHOD
 from ..contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
     INTERRUPT_RECOVERY_METHODS,
@@ -15,8 +14,6 @@ from ..contracts.extensions import (
 from ..jsonrpc.error_responses import build_http_error_body
 
 logger = logging.getLogger(__name__)
-
-_V1_JSONRPC_METHOD_ALIASES = dict(V1_JSONRPC_METHOD_TO_LEGACY_METHOD)
 
 
 def _parse_json_body(body_bytes: bytes) -> dict | None:
@@ -75,16 +72,24 @@ def _decode_payload_preview(body: bytes, *, limit: int) -> str:
     return body.decode("utf-8", errors="replace")
 
 
-def _looks_like_jsonrpc_message_payload(payload: dict | None) -> bool:
+def _looks_like_legacy_message_payload(payload: dict | None) -> bool:
     if payload is None:
         return False
     message = payload.get("message")
     if not isinstance(message, dict):
         return False
-    if "parts" in message:
+    if "content" in message:
         return True
     role = message.get("role")
-    return isinstance(role, str) and role in {"user", "agent"}
+    if isinstance(role, str) and role in {"user", "agent"}:
+        return True
+    parts = message.get("parts")
+    if not isinstance(parts, list):
+        return False
+    return any(
+        isinstance(part, dict) and ("kind" in part or "type" in part or "file" in part)
+        for part in parts
+    )
 
 
 def _looks_like_jsonrpc_envelope(payload: dict | None) -> bool:
@@ -93,22 +98,6 @@ def _looks_like_jsonrpc_envelope(payload: dict | None) -> bool:
     method = payload.get("method")
     version = payload.get("jsonrpc")
     return isinstance(method, str) and isinstance(version, str)
-
-
-def _normalize_v1_jsonrpc_method_alias(
-    payload: dict | None, *, protocol_version: str
-) -> dict | None:
-    if payload is None or protocol_version != "1.0":
-        return payload
-    method = payload.get("method")
-    if not isinstance(method, str):
-        return payload
-    canonical_method = _V1_JSONRPC_METHOD_ALIASES.get(method)
-    if canonical_method is None or canonical_method == method:
-        return payload
-    normalized_payload = dict(payload)
-    normalized_payload["method"] = canonical_method
-    return normalized_payload
 
 
 class _RequestBodyTooLargeError(Exception):
@@ -123,7 +112,7 @@ def _request_body_too_large_response(
     path: str,
     method: str,
     error: _RequestBodyTooLargeError,
-    protocol_version: str = "0.3",
+    protocol_version: str = "1.0",
 ) -> JSONResponse:
     logger.warning(
         "A2A request %s %s rejected: body_size=%s exceeds max_request_body_bytes=%s",

@@ -5,6 +5,11 @@ from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
 from tests.support.helpers import make_basic_auth_header, make_settings
+from tests.support.jsonrpc_error_assertions import (
+    assert_v1_error_context,
+    assert_v1_error_metadata_contains,
+    assert_v1_error_reason,
+)
 from tests.support.session_extensions import _BASE_SETTINGS, _jsonrpc_app, _session_meta
 
 
@@ -137,7 +142,11 @@ async def test_session_command_extension_uses_registry_bearer_principal(monkeypa
 
     assert owned.status_code == 200
     assert owned.json().get("error") is None
-    assert foreign.json()["error"]["data"]["type"] == "SESSION_FORBIDDEN"
+    assert_v1_error_reason(
+        foreign.json()["error"],
+        reason="SESSION_FORBIDDEN",
+        metadata={"session_id": "s-1"},
+    )
 
 
 @pytest.mark.asyncio
@@ -322,7 +331,11 @@ async def test_session_command_extension_maps_404_to_session_not_found(monkeypat
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32001
-        assert payload["error"]["data"]["type"] == "SESSION_NOT_FOUND"
+        assert_v1_error_reason(
+            payload["error"],
+            reason="SESSION_NOT_FOUND",
+            metadata={"session_id": "s-404"},
+        )
 
 
 @pytest.mark.asyncio
@@ -355,8 +368,8 @@ async def test_session_shell_extension_disabled_by_default(monkeypatch):
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32601
-        assert payload["error"]["data"]["type"] == "METHOD_NOT_SUPPORTED"
-        assert "opencode.sessions.shell" not in payload["error"]["data"]["supported_methods"]
+        assert payload["error"]["data"]["method"] == "opencode.sessions.shell"
+        assert "opencode.sessions.shell" not in payload["error"]["data"]["supportedMethods"]
         assert dummy.shell_calls == []
 
 
@@ -525,7 +538,11 @@ async def test_session_shell_extension_rejects_owner_mismatch(monkeypatch):
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32006
-        assert payload["error"]["data"]["type"] == "SESSION_FORBIDDEN"
+        assert_v1_error_reason(
+            payload["error"],
+            reason="SESSION_FORBIDDEN",
+            metadata={"session_id": "s-1"},
+        )
         assert dummy.shell_calls == []
 
 
@@ -595,12 +612,15 @@ async def test_session_shell_extension_requires_session_shell_capability(monkeyp
 
     payload = resp.json()
     assert payload["error"]["code"] == -32007
-    assert payload["error"]["data"] == {
-        "type": "AUTHORIZATION_FORBIDDEN",
-        "method": "opencode.sessions.shell",
-        "capability": "session_shell",
-        "credential_id": "cred-bearer",
-    }
+    assert_v1_error_reason(
+        payload["error"],
+        reason="AUTHORIZATION_FORBIDDEN",
+        metadata={
+            "method": "opencode.sessions.shell",
+            "capability": "session_shell",
+            "credential_id": "cred-bearer",
+        },
+    )
     assert dummy.shell_calls == []
 
 
@@ -703,8 +723,11 @@ async def test_session_command_extension_maps_500_to_upstream_http_error(monkeyp
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32003
-        assert payload["error"]["data"]["type"] == "UPSTREAM_HTTP_ERROR"
-        assert payload["error"]["data"]["upstream_status"] == 500
+        assert_v1_error_metadata_contains(
+            payload["error"],
+            reason="UPSTREAM_HTTP_ERROR",
+            metadata={"upstream_status": 500},
+        )
 
 
 @pytest.mark.asyncio
@@ -747,4 +770,12 @@ async def test_session_shell_extension_maps_network_error_to_unreachable(monkeyp
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32002
-        assert payload["error"]["data"]["type"] == "UPSTREAM_UNREACHABLE"
+        assert_v1_error_reason(
+            payload["error"],
+            reason="UPSTREAM_UNREACHABLE",
+            metadata={"method": "opencode.sessions.shell", "session_id": "s-1"},
+        )
+        assert_v1_error_context(
+            payload["error"],
+            metadata={"method": "opencode.sessions.shell", "session_id": "s-1"},
+        )

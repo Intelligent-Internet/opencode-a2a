@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Mapping
 from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
@@ -120,9 +119,8 @@ from .request_parsing import (
     _detect_sensitive_extension_method,
     _is_json_content_type,
     _looks_like_jsonrpc_envelope,
-    _looks_like_jsonrpc_message_payload,
+    _looks_like_legacy_message_payload,
     _normalize_content_type,
-    _normalize_v1_jsonrpc_method_alias,
     _parse_content_length,
     _parse_json_body,
     _request_body_too_large_response,
@@ -143,12 +141,6 @@ from .task_store import (
 logger = logging.getLogger(__name__)
 TASK_STORE_ERROR_TYPE = "TASK_STORE_UNAVAILABLE"
 PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE = "Push notifications are not supported by the agent"
-_REST_MESSAGE_CONFIGURATION_FIELDS = (
-    "acceptedOutputModes",
-    "historyLength",
-    "returnImmediately",
-    "taskPushNotificationConfig",
-)
 
 
 def _are_modalities_compatible(
@@ -156,20 +148,6 @@ def _are_modalities_compatible(
     accepted_output_modes: list[str],
 ) -> bool:
     return bool(set(supported_output_modes) & set(accepted_output_modes))
-
-
-def _build_rest_legacy_error_payload(
-    *,
-    message: str,
-    reason: str | None = None,
-    metadata: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {"error": message}
-    if reason:
-        payload["type"] = reason
-    if metadata:
-        payload.update(dict(metadata))
-    return payload
 
 
 def _rest_error_response(
@@ -205,11 +183,7 @@ def _rest_error_response(
                 status_code=mapping.http_code,
                 status=mapping.grpc_status,
                 message=message,
-                legacy_payload=_build_rest_legacy_error_payload(
-                    message=message,
-                    reason=mapping.reason,
-                    metadata=metadata,
-                ),
+                legacy_payload={"error": message},
                 reason=mapping.reason,
                 metadata=metadata,
             ),
@@ -227,10 +201,7 @@ def _rest_error_response(
                 status_code=400,
                 status="INVALID_ARGUMENT",
                 message=message,
-                legacy_payload=_build_rest_legacy_error_payload(
-                    message=message,
-                    reason="INVALID_REQUEST",
-                ),
+                legacy_payload={"error": message},
                 reason="INVALID_REQUEST",
             ),
             status_code=400,
@@ -243,125 +214,39 @@ def _rest_error_response(
             status_code=500,
             status="INTERNAL",
             message="unknown exception",
-            legacy_payload=_build_rest_legacy_error_payload(
-                message="unknown exception",
-                reason="INTERNAL_ERROR",
-            ),
+            legacy_payload={"error": "unknown exception"},
             reason="INTERNAL_ERROR",
         ),
         status_code=500,
     )
 
 
-def _normalize_rest_content_part(
-    value: Any,
-    *,
-    field: str,
-) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        raise InvalidRequestError(message=f"{field} must be an object.")
-
-    normalized: dict[str, Any] = {}
-    metadata = value.get("metadata")
-    if metadata is not None:
-        normalized["metadata"] = metadata
-
-    text_value = value.get("text")
-    if isinstance(text_value, str):
-        normalized["text"] = text_value
-        return normalized
-
-    if "data" in value:
-        normalized["data"] = value.get("data")
-        return normalized
-
-    file_value = value.get("file")
-    if isinstance(file_value, Mapping):
-        raw_value = file_value.get("bytes")
-        url_value = file_value.get("uri")
-        if isinstance(raw_value, str) and raw_value:
-            normalized["raw"] = raw_value
-        elif isinstance(url_value, str) and url_value:
-            normalized["url"] = url_value
-        else:
-            raise InvalidRequestError(message=f"{field}.file must contain uri or bytes.")
-        filename = file_value.get("name")
-        if isinstance(filename, str) and filename.strip():
-            normalized["filename"] = filename
-        media_type = (
-            file_value.get("mimeType") or file_value.get("mime_type") or file_value.get("mediaType")
-        )
-        if isinstance(media_type, str) and media_type.strip():
-            normalized["mediaType"] = media_type
-        return normalized
-
-    raw_value = value.get("raw")
-    if isinstance(raw_value, str) and raw_value:
-        normalized["raw"] = raw_value
-        filename = value.get("filename")
-        if isinstance(filename, str) and filename.strip():
-            normalized["filename"] = filename
-        media_type = value.get("mediaType") or value.get("media_type")
-        if isinstance(media_type, str) and media_type.strip():
-            normalized["mediaType"] = media_type
-        return normalized
-
-    url_value = value.get("url")
-    if isinstance(url_value, str) and url_value:
-        normalized["url"] = url_value
-        filename = value.get("filename")
-        if isinstance(filename, str) and filename.strip():
-            normalized["filename"] = filename
-        media_type = value.get("mediaType") or value.get("media_type")
-        if isinstance(media_type, str) and media_type.strip():
-            normalized["mediaType"] = media_type
-        return normalized
-
-    raise InvalidRequestError(message=f"{field} must contain text, data, or file.")
-
-
-def _normalize_rest_send_message_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(payload)
-    message = normalized.get("message")
-    if not isinstance(message, Mapping):
-        raise InvalidRequestError(message="message must be an object.")
-
-    normalized_message = dict(message)
-    content = normalized_message.pop("content", None)
-    if not isinstance(content, list):
-        raise InvalidRequestError(message="message.content must be an array.")
-    normalized_message["parts"] = [
-        _normalize_rest_content_part(item, field=f"message.content[{index}]")
-        for index, item in enumerate(content)
-    ]
-    normalized["message"] = normalized_message
-
-    configuration_updates: dict[str, Any] = {}
-    for field in _REST_MESSAGE_CONFIGURATION_FIELDS:
-        if field in normalized:
-            configuration_updates[field] = normalized.pop(field)
-    if configuration_updates:
-        configuration = normalized.get("configuration")
-        if configuration is None:
-            normalized["configuration"] = configuration_updates
-        elif isinstance(configuration, Mapping):
-            merged_configuration = dict(configuration)
-            merged_configuration.update(configuration_updates)
-            normalized["configuration"] = merged_configuration
-        else:
-            raise InvalidRequestError(message="configuration must be an object.")
-
-    return normalized
-
-
 def _parse_rest_send_message_request(body: bytes):
     payload = _parse_json_body(body)
     if payload is None:
         raise InvalidRequestError(message="REST message payload must be a JSON object.")
-    return ParseDict(
-        _normalize_rest_send_message_payload(payload),
-        SendMessageRequest(),
-    )
+    message = payload.get("message")
+    if isinstance(message, dict):
+        if "content" in message:
+            raise InvalidRequestError(
+                message="REST message payload must use message.parts, not message.content."
+            )
+        role = message.get("role")
+        if isinstance(role, str) and role in {"user", "agent"}:
+            raise InvalidRequestError(
+                message="REST message payload must use ROLE_* values for message.role."
+            )
+        parts = message.get("parts")
+        if isinstance(parts, list):
+            for index, part in enumerate(parts):
+                if isinstance(part, dict) and ("kind" in part or "type" in part or "file" in part):
+                    raise InvalidRequestError(
+                        message=(
+                            f"message.parts[{index}] must use direct Part fields "
+                            "such as text, raw, url, or data."
+                        )
+                    )
+    return ParseDict(payload, SendMessageRequest())
 
 
 __all__ = [
@@ -395,9 +280,8 @@ __all__ = [
     "_decode_payload_preview",
     "_detect_sensitive_extension_method",
     "_is_json_content_type",
+    "_looks_like_legacy_message_payload",
     "_looks_like_jsonrpc_envelope",
-    "_looks_like_jsonrpc_message_payload",
-    "_normalize_v1_jsonrpc_method_alias",
     "_normalize_content_type",
     "_normalize_log_level",
     "_parse_content_length",
@@ -706,13 +590,10 @@ class OpencodeRequestHandler(LegacyRequestHandler):
 
     async def on_resubscribe_to_task(
         self,
-        params,
+        params: SubscribeToTaskRequest,
         context=None,
     ):
-        subscribe_params = params
-        if not isinstance(params, SubscribeToTaskRequest):
-            subscribe_params = SubscribeToTaskRequest(id=params.id)
-        async for event in self.on_subscribe_to_task(subscribe_params, context):
+        async for event in self.on_subscribe_to_task(params, context):
             yield event
 
     async def on_message_send_stream(self, params, context=None):
@@ -803,7 +684,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
                 self._track_background_task(bg_consume_task)
         except TaskStoreOperationError as exc:
             logger.exception(
-                "Task store operation failed during message/send task_id=%s operation=%s",
+                "Task store operation failed during SendMessage task_id=%s operation=%s",
                 task_id,
                 exc.operation,
             )

@@ -26,7 +26,7 @@ def test_profile_runtime_splits_deployment_runtime_features_and_health_payload()
 
     assert profile.summary_dict(protocol_version=settings.a2a_protocol_version) == {
         "profile_id": "opencode-a2a-single-tenant-coding-v1",
-        "protocol_version": "0.3",
+        "protocol_version": "1.0",
         "deployment": {
             "id": "single_tenant_shared_workspace",
             "single_tenant": True,

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from a2a.server.apps.rest.rest_adapter import RESTAdapter
+from a2a.server.routes.rest_dispatcher import RestDispatcher
 from a2a.types import (
     Artifact,
     Message,
@@ -85,8 +85,8 @@ def test_agent_card_declares_dual_stack_with_http_json_preferred() -> None:
     interfaces = {
         (iface.protocol_binding, iface.protocol_version) for iface in card.supported_interfaces
     }
-    assert ("HTTP+JSON", "0.3") in interfaces
-    assert ("JSONRPC", "0.3") in interfaces
+    assert ("HTTP+JSON", "1.0") in interfaces
+    assert ("JSONRPC", "1.0") in interfaces
 
 
 def test_normalize_log_level_falls_back_to_warning_for_invalid_value() -> None:
@@ -146,18 +146,14 @@ def test_rest_subscription_route_registers_distinct_get_and_post_operations() ->
     }
 
 
-def test_rest_adapter_exposes_sdk_rest_routes() -> None:
-    rest_adapter = RESTAdapter(
-        agent_card=build_agent_card(make_settings(test_bearer_token="test-token")),
-        http_handler=MagicMock(),
-    )
-    route_paths = {route[0] for route in rest_adapter.routes()}
+def test_rest_dispatcher_exposes_sdk_rest_handlers() -> None:
+    rest_dispatcher = RestDispatcher(request_handler=MagicMock())
 
-    assert "/v1/message:send" in route_paths
-    assert "/v1/message:stream" in route_paths
-    assert "/v1/tasks/{id}" in route_paths
-    assert "/v1/tasks/{id}:cancel" in route_paths
-    assert "/v1/tasks/{id}:subscribe" in route_paths
+    assert callable(rest_dispatcher.on_message_send)
+    assert callable(rest_dispatcher.on_message_send_stream)
+    assert callable(rest_dispatcher.on_get_task)
+    assert callable(rest_dispatcher.on_cancel_task)
+    assert callable(rest_dispatcher.on_subscribe_to_task)
 
 
 @pytest.mark.asyncio
@@ -498,13 +494,43 @@ async def test_list_tasks_route_validates_query_parameters(monkeypatch) -> None:
 
     assert page_size_error.status_code == 400
     assert page_size_error.json() == {
-        "error": "pageSize must be between 1 and 100.",
-        "field": "pageSize",
+        "error": {
+            "code": 400,
+            "status": "INVALID_ARGUMENT",
+            "message": "pageSize must be between 1 and 100.",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "INVALID_LIST_TASKS_REQUEST",
+                    "domain": "a2a-protocol.org",
+                    "metadata": {"field": "pageSize"},
+                },
+                {
+                    "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
+                    "field": "pageSize",
+                },
+            ],
+        }
     }
     assert page_token_error.status_code == 400
     assert page_token_error.json() == {
-        "error": "pageToken is invalid.",
-        "field": "pageToken",
+        "error": {
+            "code": 400,
+            "status": "INVALID_ARGUMENT",
+            "message": "pageToken is invalid.",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "INVALID_LIST_TASKS_REQUEST",
+                    "domain": "a2a-protocol.org",
+                    "metadata": {"field": "pageToken"},
+                },
+                {
+                    "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
+                    "field": "pageToken",
+                },
+            ],
+        }
     }
 
 
@@ -541,8 +567,8 @@ def test_openapi_jsonrpc_examples_include_core_message_methods() -> None:
     )
     example_values = examples.values()
     methods = {value.get("value", {}).get("method") for value in example_values}
-    assert "message/send" in methods
-    assert "message/stream" in methods
+    assert "SendMessage" in methods
+    assert "SendStreamingMessage" in methods
     assert "message_send_file_input" in examples
 
 
@@ -563,7 +589,7 @@ async def test_agent_card_routes_split_public_and_authenticated_extended_contrac
         assert public_card.headers["cache-control"] == PUBLIC_AGENT_CARD_CACHE_CONTROL
         assert public_card.headers["etag"]
         assert public_card.headers["vary"] == "Accept-Encoding"
-        assert public_card.json()["supportsAuthenticatedExtendedCard"] is True
+        assert public_card.json()["capabilities"]["extendedAgentCard"] is True
 
         public_cached = await client.get(
             "/.well-known/agent-card.json",
@@ -609,7 +635,7 @@ async def test_agent_card_routes_split_public_and_authenticated_extended_contrac
             json={
                 "jsonrpc": "2.0",
                 "id": "card-1",
-                "method": "agent/getAuthenticatedExtendedCard",
+                "method": "GetExtendedAgentCard",
                 "params": {},
             },
         )
@@ -661,18 +687,36 @@ async def test_rest_endpoints_reject_unsupported_protocol_version() -> None:
                 "message": {
                     "messageId": "req-1",
                     "role": "ROLE_USER",
-                    "content": [{"text": "hello"}],
+                    "parts": [{"text": "hello"}],
                 }
             },
         )
 
     assert response.status_code == 400
     assert response.json() == {
-        "error": "Unsupported A2A version",
-        "type": "VERSION_NOT_SUPPORTED",
-        "requested_version": "2.0",
-        "supported_protocol_versions": ["0.3", "1.0"],
-        "default_protocol_version": "0.3",
+        "error": {
+            "code": 400,
+            "status": "INVALID_ARGUMENT",
+            "message": "Unsupported A2A version",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "VERSION_NOT_SUPPORTED",
+                    "domain": "a2a-protocol.org",
+                    "metadata": {
+                        "requestedVersion": "2.0",
+                        "supportedProtocolVersions": '["1.0"]',
+                        "defaultProtocolVersion": "1.0",
+                    },
+                },
+                {
+                    "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
+                    "requestedVersion": "2.0",
+                    "supportedProtocolVersions": ["1.0"],
+                    "defaultProtocolVersion": "1.0",
+                },
+            ],
+        }
     }
 
 
@@ -689,7 +733,7 @@ async def test_rest_endpoints_return_v1_status_body_for_v1_protocol_errors() -> 
                 "message": {
                     "messageId": "req-2",
                     "role": "ROLE_USER",
-                    "content": [{"text": "hello"}],
+                    "parts": [{"text": "hello"}],
                 }
             },
         )
@@ -707,15 +751,15 @@ async def test_rest_endpoints_return_v1_status_body_for_v1_protocol_errors() -> 
                     "domain": "a2a-protocol.org",
                     "metadata": {
                         "requestedVersion": "1.1",
-                        "supportedProtocolVersions": '["0.3","1.0"]',
-                        "defaultProtocolVersion": "0.3",
+                        "supportedProtocolVersions": '["1.0"]',
+                        "defaultProtocolVersion": "1.0",
                     },
                 },
                 {
                     "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
                     "requestedVersion": "1.1",
-                    "supportedProtocolVersions": ["0.3", "1.0"],
-                    "defaultProtocolVersion": "0.3",
+                    "supportedProtocolVersions": ["1.0"],
+                    "defaultProtocolVersion": "1.0",
                 },
             ],
         }
@@ -813,7 +857,7 @@ async def test_streaming_responses_remain_outside_gzip_middleware(monkeypatch) -
                 "message": {
                     "messageId": "gzip-stream-test",
                     "role": "ROLE_USER",
-                    "content": [{"text": "hello"}],
+                    "parts": [{"text": "hello"}],
                 }
             },
         ) as response:
@@ -835,18 +879,18 @@ async def test_dual_stack_send_accepts_transport_native_payloads(monkeypatch) ->
         "message": {
             "messageId": "m-rest",
             "role": "ROLE_USER",
-            "content": [{"text": "hello from rest"}],
+            "parts": [{"text": "hello from rest"}],
         }
     }
     rpc_payload = {
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {
             "message": {
                 "messageId": "m-rpc",
-                "role": "user",
-                "parts": [{"kind": "text", "text": "hello from jsonrpc"}],
+                "role": "ROLE_USER",
+                "parts": [{"text": "hello from jsonrpc"}],
             }
         },
     }
@@ -878,8 +922,8 @@ async def test_v1_pascalcase_sendmessage_alias_is_accepted(monkeypatch) -> None:
         "params": {
             "message": {
                 "messageId": "m-rpc-v1",
-                "role": "user",
-                "parts": [{"kind": "text", "text": "hello from v1 alias"}],
+                "role": "ROLE_USER",
+                "parts": [{"text": "hello from v1 dispatch"}],
             }
         },
     }
@@ -911,7 +955,7 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
     full_jsonrpc_envelope = {
         "jsonrpc": "2.0",
         "id": 3,
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {
             "message": {
                 "messageId": "m-rest-cross-envelope",
@@ -923,7 +967,7 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
     rpc_with_rest_shape = {
         "jsonrpc": "2.0",
         "id": 2,
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {
             "message": {
                 "messageId": "m-rpc-cross",
@@ -962,8 +1006,9 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
                 "status": "INVALID_ARGUMENT",
                 "message": (
                     "Invalid HTTP+JSON payload for REST endpoint. "
-                    "Use message.content with ROLE_* role values, or call "
-                    "POST / with method=message/send or method=message/stream."
+                    "Use ProtoJSON SendMessageRequest payloads with message.parts "
+                    "and ROLE_* role values, or call POST / with method=SendMessage "
+                    "or method=SendStreamingMessage."
                 ),
                 "details": [
                     {
@@ -991,7 +1036,7 @@ def _rest_message_payload() -> dict:
         "message": {
             "messageId": "m-rest",
             "role": "ROLE_USER",
-            "content": [{"text": "hello from rest"}],
+            "parts": [{"text": "hello from rest"}],
         }
     }
 
@@ -1000,12 +1045,12 @@ def _jsonrpc_message_send_payload(text: str) -> dict:
     return {
         "jsonrpc": "2.0",
         "id": 99,
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {
             "message": {
                 "messageId": "m-rpc",
-                "role": "user",
-                "parts": [{"kind": "text", "text": text}],
+                "role": "ROLE_USER",
+                "parts": [{"text": text}],
             }
         },
     }
@@ -1106,8 +1151,8 @@ async def test_log_payloads_omits_text_plain_request_body(monkeypatch, caplog) -
         "Content-Type": "text/plain",
     }
     body = (
-        '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":'
-        '{"messageId":"m","role":"user","parts":[{"kind":"text","text":"secret"}]}}}'
+        '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":'
+        '{"messageId":"m","role":"ROLE_USER","parts":[{"text":"secret"}]}}}'
     )
 
     with caplog.at_level(logging.DEBUG, logger="opencode_a2a.server.application"):
@@ -1140,8 +1185,8 @@ async def test_log_payloads_omits_when_content_length_missing(monkeypatch, caplo
         "Content-Type": "application/json",
     }
     body = (
-        b'{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":'
-        b'{"messageId":"m","role":"user","parts":[{"kind":"text","text":"missing-cl"}]}}}'
+        b'{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":'
+        b'{"messageId":"m","role":"ROLE_USER","parts":[{"text":"missing-cl"}]}}}'
     )
 
     async def _body_stream():
@@ -1218,7 +1263,26 @@ async def test_request_body_limit_rejects_oversized_content_length(monkeypatch) 
         )
 
     assert resp.status_code == 413
-    assert resp.json() == {"error": "Request body too large", "max_bytes": 64}
+    assert resp.json() == {
+        "error": {
+            "code": 413,
+            "status": "RESOURCE_EXHAUSTED",
+            "message": "Request body too large",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "REQUEST_BODY_TOO_LARGE",
+                    "domain": "a2a-protocol.org",
+                    "metadata": {"maxBytes": "64", "actualSize": str(len(resp.request.content))},
+                },
+                {
+                    "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
+                    "maxBytes": 64,
+                    "actualSize": len(resp.request.content),
+                },
+            ],
+        }
+    }
 
 
 @pytest.mark.asyncio
@@ -1237,10 +1301,8 @@ async def test_request_body_limit_rejects_oversized_stream_without_content_lengt
         "Content-Type": "application/json",
     }
     body = (
-        b'{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":'
-        b'{"messageId":"m","role":"user","parts":[{"kind":"text","text":"'
-        + (b"x" * 128)
-        + b'"}]}}}'
+        b'{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":'
+        b'{"messageId":"m","role":"ROLE_USER","parts":[{"text":"' + (b"x" * 128) + b'"}]}}}'
     )
 
     async def _body_stream():
@@ -1250,7 +1312,26 @@ async def test_request_body_limit_rejects_oversized_stream_without_content_lengt
         resp = await client.post("/", headers=headers, content=_body_stream())
 
     assert resp.status_code == 413
-    assert resp.json() == {"error": "Request body too large", "max_bytes": 64}
+    assert resp.json() == {
+        "error": {
+            "code": 413,
+            "status": "RESOURCE_EXHAUSTED",
+            "message": "Request body too large",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "REQUEST_BODY_TOO_LARGE",
+                    "domain": "a2a-protocol.org",
+                    "metadata": {"maxBytes": "64", "actualSize": str(len(body))},
+                },
+                {
+                    "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
+                    "maxBytes": 64,
+                    "actualSize": len(body),
+                },
+            ],
+        }
+    }
 
 
 @pytest.mark.asyncio

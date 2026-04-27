@@ -294,8 +294,8 @@ async def test_runtime_supported_methods_align_with_capability_snapshot(
 
     assert response.status_code == 200
     error = response.json()["error"]
-    assert error["data"]["supported_methods"] == capability_snapshot.supported_jsonrpc_methods()
-    assert error["data"]["supported_methods"] == wire_contract["all_jsonrpc_methods"]
+    assert error["data"]["supportedMethods"] == capability_snapshot.supported_jsonrpc_methods()
+    assert error["data"]["supportedMethods"] == wire_contract["all_jsonrpc_methods"]
 
 
 @pytest.mark.asyncio

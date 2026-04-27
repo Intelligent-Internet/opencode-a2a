@@ -13,6 +13,10 @@ from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
 from tests.support.helpers import make_settings
+from tests.support.jsonrpc_error_assertions import (
+    assert_v1_error_reason,
+    error_context_detail,
+)
 from tests.support.session_extensions import _BASE_SETTINGS, _session_meta
 
 
@@ -514,7 +518,7 @@ async def test_provider_discovery_extension_maps_payload_mismatch(monkeypatch):
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32005
-        assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_PAYLOAD_ERROR")
 
 
 @pytest.mark.asyncio
@@ -550,8 +554,10 @@ async def test_provider_discovery_extension_maps_concurrency_limit_to_unreachabl
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32002
-        assert payload["error"]["data"]["type"] == "UPSTREAM_UNREACHABLE"
-        assert "concurrency limit exceeded" in payload["error"]["data"]["detail"]
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_UNREACHABLE")
+        context = error_context_detail(payload["error"])
+        assert context is not None
+        assert "concurrency limit exceeded" in context["detail"]
 
 
 @pytest.mark.asyncio
@@ -584,7 +590,7 @@ async def test_session_query_extension_rejects_non_array_upstream_payload(monkey
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["error"]["code"] == -32005
-        assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_PAYLOAD_ERROR")
 
 
 @pytest.mark.asyncio
@@ -615,8 +621,10 @@ async def test_session_query_extension_maps_concurrency_limit_to_unreachable(mon
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32002
-        assert payload["error"]["data"]["type"] == "UPSTREAM_UNREACHABLE"
-        assert "concurrency limit exceeded" in payload["error"]["data"]["detail"]
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_UNREACHABLE")
+        context = error_context_detail(payload["error"])
+        assert context is not None
+        assert "concurrency limit exceeded" in context["detail"]
 
 
 @pytest.mark.asyncio
@@ -928,7 +936,7 @@ async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypa
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32005
-        assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_PAYLOAD_ERROR")
 
         resp = await client.post(
             "/",
@@ -942,7 +950,7 @@ async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypa
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32005
-        assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_PAYLOAD_ERROR")
 
 
 @pytest.mark.asyncio
@@ -1149,7 +1157,11 @@ async def test_session_query_extension_maps_404_to_session_not_found(monkeypatch
         assert payload["jsonrpc"] == "2.0"
         assert payload["id"] == 2
         assert payload["error"]["code"] == -32001
-        assert payload["error"]["data"]["type"] == "SESSION_NOT_FOUND"
+        assert_v1_error_reason(
+            payload["error"],
+            reason="SESSION_NOT_FOUND",
+            metadata={"session_id": "s-404"},
+        )
 
 
 @pytest.mark.asyncio

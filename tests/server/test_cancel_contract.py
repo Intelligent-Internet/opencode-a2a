@@ -7,8 +7,9 @@ from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
+    CancelTaskRequest,
+    SubscribeToTaskRequest,
     Task,
-    TaskIdParams,
     TaskNotCancelableError,
     TaskNotFoundError,
     TaskState,
@@ -46,7 +47,7 @@ async def test_cancel_is_idempotent_for_already_canceled_task() -> None:
     task = _task(task_id="task-1", context_id="ctx-1", state=TaskState.TASK_STATE_CANCELED)
     await store.save(task, None)
 
-    result = await handler.on_cancel_task(TaskIdParams(id="task-1"))
+    result = await handler.on_cancel_task(CancelTaskRequest(id="task-1"))
 
     assert result is not None
     assert result.status.state == TaskState.TASK_STATE_CANCELED
@@ -62,7 +63,7 @@ async def test_cancel_rejects_completed_task() -> None:
     await store.save(task, None)
 
     with pytest.raises(TaskNotCancelableError):
-        await handler.on_cancel_task(TaskIdParams(id="task-2"))
+        await handler.on_cancel_task(CancelTaskRequest(id="task-2"))
 
     executor.cancel.assert_not_awaited()
 
@@ -93,7 +94,7 @@ async def test_cancel_is_race_safe_when_task_becomes_canceled_during_super_call(
         _consume_non_canceled,
     )
 
-    result = await handler.on_cancel_task(TaskIdParams(id="task-race"))
+    result = await handler.on_cancel_task(CancelTaskRequest(id="task-race"))
 
     assert result is not None
     assert result.status.state == TaskState.TASK_STATE_CANCELED
@@ -112,7 +113,7 @@ async def test_resubscribe_terminal_task_replays_final_snapshot_once() -> None:
     await store.save(task, None)
 
     events = []
-    async for event in handler.on_resubscribe_to_task(TaskIdParams(id="task-3")):
+    async for event in handler.on_resubscribe_to_task(SubscribeToTaskRequest(id="task-3")):
         events.append(event)
 
     assert len(events) == 1
@@ -133,7 +134,7 @@ async def test_resubscribe_non_terminal_without_queue_keeps_not_found_behavior()
     await store.save(task, None)
 
     with pytest.raises(TaskNotFoundError):
-        async for _event in handler.on_resubscribe_to_task(TaskIdParams(id="task-4")):
+        async for _event in handler.on_resubscribe_to_task(SubscribeToTaskRequest(id="task-4")):
             pass
 
 
