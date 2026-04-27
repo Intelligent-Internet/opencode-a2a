@@ -10,7 +10,12 @@ from tests.support.jsonrpc_error_assertions import (
     assert_v1_error_metadata_contains,
     assert_v1_error_reason,
 )
-from tests.support.session_extensions import _BASE_SETTINGS, _jsonrpc_app, _session_meta
+from tests.support.session_extensions import (
+    _BASE_SETTINGS,
+    _extension_headers,
+    _jsonrpc_app,
+    _session_meta,
+)
 
 
 @pytest.mark.asyncio
@@ -37,7 +42,7 @@ async def test_session_command_extension_success(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -115,7 +120,7 @@ async def test_session_command_extension_uses_registry_bearer_principal(monkeypa
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         owned = await client.post(
             "/",
-            headers={"Authorization": "Bearer token-build"},
+            headers=_extension_headers({"Authorization": "Bearer token-build"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 32001,
@@ -128,7 +133,7 @@ async def test_session_command_extension_uses_registry_bearer_principal(monkeypa
         )
         foreign = await client.post(
             "/",
-            headers={"Authorization": "Bearer token-other"},
+            headers=_extension_headers({"Authorization": "Bearer token-other"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 32002,
@@ -165,7 +170,7 @@ async def test_session_command_extension_prefers_workspace_metadata(monkeypatch)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 3202,
@@ -197,7 +202,7 @@ async def test_session_command_extension_accepts_request_model(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -240,7 +245,7 @@ async def test_session_command_extension_rejects_invalid_params(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         missing_command = await client.post(
             "/",
             headers=headers,
@@ -315,7 +320,7 @@ async def test_session_command_extension_maps_404_to_session_not_found(monkeypat
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -352,7 +357,7 @@ async def test_session_shell_extension_disabled_by_default(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -401,7 +406,7 @@ async def test_session_shell_extension_success_when_enabled(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = make_basic_auth_header("operator", "op-pass")
+        headers = _extension_headers(make_basic_auth_header("operator", "op-pass"))
         resp = await client.post(
             "/",
             headers=headers,
@@ -452,7 +457,7 @@ async def test_session_shell_extension_rejects_invalid_params(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = make_basic_auth_header("operator", "op-pass")
+        headers = _extension_headers(make_basic_auth_header("operator", "op-pass"))
         missing_agent = await client.post(
             "/",
             headers=headers,
@@ -522,7 +527,7 @@ async def test_session_shell_extension_rejects_owner_mismatch(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = make_basic_auth_header("operator", "op-pass")
+        headers = _extension_headers(make_basic_auth_header("operator", "op-pass"))
         resp = await client.post(
             "/",
             headers=headers,
@@ -598,7 +603,7 @@ async def test_session_shell_extension_requires_session_shell_capability(monkeyp
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 3341,
@@ -672,7 +677,7 @@ async def test_session_shell_extension_accepts_registry_bearer_with_explicit_cap
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
             "/",
-            headers={"Authorization": "Bearer token-ops"},
+            headers=_extension_headers({"Authorization": "Bearer token-ops"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 3342,
@@ -707,7 +712,7 @@ async def test_session_command_extension_maps_500_to_upstream_http_error(monkeyp
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -754,7 +759,7 @@ async def test_session_shell_extension_maps_network_error_to_unreachable(monkeyp
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = make_basic_auth_header("operator", "op-pass")
+        headers = _extension_headers(make_basic_auth_header("operator", "op-pass"))
         resp = await client.post(
             "/",
             headers=headers,

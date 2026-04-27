@@ -386,6 +386,30 @@ async def test_send_message_preserves_explicit_authorization_metadata(
 
 
 @pytest.mark.asyncio
+async def test_send_message_negotiates_extensions_via_service_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = A2AClient("http://agent.example.com")
+    fake_client = _FakeClient(events=[_stream_message("ok")])
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+
+    result = [
+        event
+        async for event in client.send_message(
+            "hello",
+            metadata={"A2A-Extensions": "https://example.com/ext-b"},
+            extensions=["https://example.com/ext-a"],
+        )
+    ]
+
+    assert len(result) == 1
+    payload, _, kwargs = fake_client.send_message_inputs[0]
+    assert kwargs["context"].service_parameters == {
+        "A2A-Extensions": "https://example.com/ext-a,https://example.com/ext-b"
+    }
+
+
+@pytest.mark.asyncio
 async def test_send_message_prefers_explicit_authorization_without_default_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -509,6 +533,25 @@ async def test_get_task_uses_authorization_header_context(
     assert params.id == "task-id"
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
     assert kwargs["request_metadata"] == {"trace_id": "trace-1"}
+
+
+@pytest.mark.asyncio
+async def test_get_task_negotiates_extensions_via_service_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = A2AClient("http://agent.example.com")
+    fake_client = _FakeClient()
+    monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
+
+    await client.get_task(
+        "task-id",
+        extensions=["https://example.com/ext-b", "https://example.com/ext-a"],
+    )
+
+    _params, kwargs = fake_client.task_inputs[0]
+    assert kwargs["context"].service_parameters == {
+        "A2A-Extensions": "https://example.com/ext-a,https://example.com/ext-b"
+    }
 
 
 @pytest.mark.asyncio

@@ -4,9 +4,11 @@ from fastapi.responses import JSONResponse
 
 import opencode_a2a.server.application as app_module
 from opencode_a2a.a2a_protocol import CORE_JSONRPC_METHODS
+from opencode_a2a.contracts.extensions import SESSION_MANAGEMENT_EXTENSION_URI
 from opencode_a2a.jsonrpc.application import OpencodeSessionManagementJSONRPCApplication
 from tests.support.helpers import DummySessionQueryOpencodeUpstreamClient, make_settings
-from tests.support.session_extensions import _BASE_SETTINGS, _jsonrpc_app
+from tests.support.jsonrpc_error_assertions import assert_v1_error_reason, error_context_detail
+from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers, _jsonrpc_app
 
 
 @pytest.mark.asyncio
@@ -59,7 +61,7 @@ async def test_core_jsonrpc_methods_delegate_to_base_app(
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer test-token"},
+            headers=_extension_headers({"Authorization": "Bearer test-token"}),
             json={"jsonrpc": "2.0", "id": 1, "method": method, "params": {}},
         )
 
@@ -84,7 +86,7 @@ async def test_sdk_owned_non_chat_jsonrpc_methods_delegate_to_base_app(monkeypat
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer test-token"},
+            headers=_extension_headers({"Authorization": "Bearer test-token"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 2,
@@ -140,7 +142,7 @@ async def test_extension_methods_stay_on_local_registry(monkeypatch) -> None:
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer test-token"},
+            headers=_extension_headers({"Authorization": "Bearer test-token"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -151,3 +153,42 @@ async def test_extension_methods_stay_on_local_registry(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["result"]["items"][0]["id"] == "s-1"
+
+
+@pytest.mark.asyncio
+async def test_extension_methods_require_explicit_a2a_extensions_header(monkeypatch) -> None:
+    monkeypatch.setattr(
+        app_module,
+        "OpencodeUpstreamClient",
+        DummySessionQueryOpencodeUpstreamClient,
+    )
+    app = app_module.create_app(
+        make_settings(
+            test_bearer_token="test-token",
+            a2a_log_payloads=False,
+            **_BASE_SETTINGS,
+        )
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers={"Authorization": "Bearer test-token"},
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "opencode.sessions.list",
+                "params": {"limit": 1},
+            },
+        )
+
+    assert response.status_code == 200
+    error = response.json()["error"]
+    assert_v1_error_reason(error, reason="EXTENSION_NEGOTIATION_REQUIRED")
+    context = error_context_detail(error)
+    assert context is not None
+    assert context["method"] == "opencode.sessions.list"
+    assert context["requiredExtensions"] == [SESSION_MANAGEMENT_EXTENSION_URI]  # noqa: RUF005
+    assert context["requestedExtensions"] == []
+    assert context["header"] == "A2A-Extensions"

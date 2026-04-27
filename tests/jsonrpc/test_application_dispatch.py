@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 import opencode_a2a.server.application as app_module
+from opencode_a2a.contracts.extensions import SESSION_MANAGEMENT_EXTENSION_URI
 from opencode_a2a.jsonrpc.models import JSONRPCRequest
 from tests.support.helpers import DummySessionQueryOpencodeUpstreamClient, make_settings
 from tests.support.session_extensions import _BASE_SETTINGS, _jsonrpc_app
@@ -380,6 +381,15 @@ async def test_handle_requests_normalizes_invalid_request_id_and_extension_param
     monkeypatch.setattr(
         "opencode_a2a.jsonrpc.application.JSONRPCRequest.model_validate",
         lambda _body: fake_base_request,
+    )
+    monkeypatch.setattr(
+        dispatcher._context_builder,
+        "build",
+        lambda _request: SimpleNamespace(
+            requested_extensions={SESSION_MANAGEMENT_EXTENSION_URI},
+            state={},
+            tenant="",
+        ),
     )
 
     invalid_extension_response = await dispatcher.handle_requests(_Request())

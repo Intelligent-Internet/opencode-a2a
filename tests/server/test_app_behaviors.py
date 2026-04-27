@@ -31,7 +31,11 @@ from fastapi import Request
 from google.protobuf.json_format import MessageToDict, ParseError
 
 import opencode_a2a.server.application as app_module
-from opencode_a2a.contracts.extensions import build_capability_snapshot
+from opencode_a2a.contracts.extensions import (
+    MODEL_SELECTION_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
+    build_capability_snapshot,
+)
 from opencode_a2a.profile.runtime import build_runtime_profile
 from opencode_a2a.server.application import (
     OpencodeRequestHandler,
@@ -1209,6 +1213,102 @@ async def test_on_message_send_stream_rejects_incompatible_output_modes_before_e
     assert exc_info.value.data == {
         "accepted_output_modes": ["image/png"],
         "supported_output_modes": ["text/plain", "application/json"],
+    }
+    assert handler.setup_called is False
+
+
+@pytest.mark.asyncio
+async def test_on_message_send_rejects_shared_extension_metadata_without_negotiation() -> None:
+    class _Handler(OpencodeRequestHandler):
+        def __init__(self) -> None:
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
+            self.setup_called = False
+
+        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
+            del params, context
+            self.setup_called = True
+            raise AssertionError("_setup_message_execution should not be called")
+
+    handler = _Handler()
+    params = types.SimpleNamespace(
+        message=types.SimpleNamespace(
+            metadata={
+                "shared": {
+                    "session": {"id": "ses-1"},
+                    "model": {"providerID": "openai", "modelID": "gpt-5"},
+                }
+            }
+        ),
+        metadata={
+            "opencode": {
+                "directory": "/workspace",
+                "workspace": {"id": "wrk-1"},
+            }
+        },
+        configuration=None,
+    )
+
+    with pytest.raises(UnsupportedOperationError) as exc_info:
+        await handler.on_message_send(params)
+
+    assert exc_info.value.data == {
+        "type": "EXTENSION_NEGOTIATION_REQUIRED",
+        "fields": [
+            "metadata.shared.session.id",
+            "metadata.opencode.directory",
+            "metadata.opencode.workspace.id",
+            "metadata.shared.model",
+        ],
+        "required_extensions": sorted(
+            [SESSION_BINDING_EXTENSION_URI, MODEL_SELECTION_EXTENSION_URI]
+        ),
+        "requested_extensions": [],
+        "header": "A2A-Extensions",
+    }
+    assert handler.setup_called is False
+
+
+@pytest.mark.asyncio
+async def test_on_message_send_stream_rejects_shared_extension_metadata_without_negotiation() -> (
+    None
+):
+    class _Handler(OpencodeRequestHandler):
+        def __init__(self) -> None:
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
+            self.setup_called = False
+
+        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
+            del params, context
+            self.setup_called = True
+            raise AssertionError("_setup_message_execution should not be called")
+
+    handler = _Handler()
+    params = types.SimpleNamespace(
+        message=types.SimpleNamespace(metadata={"shared": {"session": {"id": "ses-1"}}}),
+        metadata={"opencode": {"directory": "/workspace"}},
+        configuration=None,
+    )
+
+    with pytest.raises(UnsupportedOperationError) as exc_info:
+        await handler.on_message_send_stream(params).__anext__()
+
+    assert exc_info.value.data == {
+        "type": "EXTENSION_NEGOTIATION_REQUIRED",
+        "fields": [
+            "metadata.shared.session.id",
+            "metadata.opencode.directory",
+        ],
+        "required_extensions": [SESSION_BINDING_EXTENSION_URI],
+        "requested_extensions": [],
+        "header": "A2A-Extensions",
     }
     assert handler.setup_called is False
 

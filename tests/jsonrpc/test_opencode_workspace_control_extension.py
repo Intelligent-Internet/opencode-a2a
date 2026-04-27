@@ -9,7 +9,7 @@ from tests.support.jsonrpc_error_assertions import (
     assert_v1_error_metadata_contains,
     assert_v1_error_reason,
 )
-from tests.support.session_extensions import _BASE_SETTINGS
+from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers
 
 
 @pytest.mark.asyncio
@@ -26,7 +26,7 @@ async def test_workspace_control_extension_supports_read_only_methods(monkeypatc
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         projects = await client.post(
             "/",
             headers=headers,
@@ -84,7 +84,7 @@ async def test_workspace_control_extension_supports_mutating_methods(monkeypatch
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = make_basic_auth_header("operator", "op-pass")
+        headers = _extension_headers(make_basic_auth_header("operator", "op-pass"))
         create_workspace = await client.post(
             "/",
             headers=headers,
@@ -179,7 +179,7 @@ async def test_workspace_control_extension_validates_request_shape(monkeypatch) 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers=make_basic_auth_header("operator", "op-pass"),
+            headers=_extension_headers(make_basic_auth_header("operator", "op-pass")),
             json={
                 "jsonrpc": "2.0",
                 "id": 20,
@@ -227,7 +227,7 @@ async def test_workspace_control_mutations_require_workspace_mutation_capability
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 201,
@@ -263,7 +263,7 @@ async def test_workspace_control_mutations_are_disabled_by_default(monkeypatch) 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 22,
@@ -297,7 +297,7 @@ async def test_workspace_control_extension_maps_upstream_http_error(monkeypatch)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 21,

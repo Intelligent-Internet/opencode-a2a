@@ -17,6 +17,11 @@ from a2a.types import (
 )
 
 from opencode_a2a.a2a_utils import make_data_part
+from opencode_a2a.contracts.extensions import (
+    MODEL_SELECTION_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
+    STREAMING_EXTENSION_URI,
+)
 from opencode_a2a.output_modes import build_output_negotiation_metadata
 from opencode_a2a.server.application import (
     AUTHENTICATED_EXTENDED_CARD_CACHE_CONTROL,
@@ -422,6 +427,69 @@ async def test_list_tasks_route_applies_persisted_output_negotiation(monkeypatch
     assert payload["tasks"][0]["artifacts"][1]["parts"][0]["text"] == (
         '{"status":"completed","tool":"bash"}'
     )
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_route_filters_unnegotiated_shared_extension_metadata(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(
+        make_settings(
+            test_bearer_token="test-token",
+            a2a_task_store_backend="memory",
+        )
+    )
+    task_store = app.state.task_store
+    metadata = {
+        "shared": {
+            "session": {"id": "ses-1"},
+            "model": {"providerID": "openai", "modelID": "gpt-5"},
+            "usage": {"input_tokens": 7},
+        },
+        "opencode": {"directory": "/workspace"},
+    }
+    await task_store.save(
+        Task(
+            id="task-shared-list",
+            context_id="ctx-shared-list",
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED, timestamp=datetime.now(UTC)),
+            metadata=metadata,
+        )
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        without_extensions = await client.get(
+            "/v1/tasks",
+            headers={"Authorization": "Bearer test-token"},
+            params={"contextId": "ctx-shared-list"},
+        )
+        with_extensions = await client.get(
+            "/v1/tasks",
+            headers={
+                "Authorization": "Bearer test-token",
+                "A2A-Extensions": ",".join(
+                    [
+                        MODEL_SELECTION_EXTENSION_URI,
+                        SESSION_BINDING_EXTENSION_URI,
+                        STREAMING_EXTENSION_URI,
+                    ]
+                ),
+            },
+            params={"contextId": "ctx-shared-list"},
+        )
+
+    assert without_extensions.status_code == 200
+    assert without_extensions.json()["tasks"][0]["metadata"] == {
+        "opencode": {"directory": "/workspace"}
+    }
+    assert with_extensions.status_code == 200
+    assert with_extensions.json()["tasks"][0]["metadata"]["shared"] == {
+        "session": {"id": "ses-1"},
+        "model": {"providerID": "openai", "modelID": "gpt-5"},
+        "usage": {"input_tokens": 7.0},
+    }
 
 
 @pytest.mark.asyncio

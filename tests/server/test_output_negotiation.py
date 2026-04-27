@@ -24,6 +24,11 @@ from a2a.types import (
 )
 
 from opencode_a2a.a2a_utils import make_data_part, part_text
+from opencode_a2a.contracts.extensions import (
+    MODEL_SELECTION_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
+    STREAMING_EXTENSION_URI,
+)
 from opencode_a2a.output_modes import (
     NegotiatingResultAggregator,
     apply_accepted_output_modes,
@@ -86,6 +91,34 @@ def _task_with_negotiated_outputs(*, task_id: str, context_id: str) -> Task:
                 parts=[make_data_part({"tool": "bash", "status": "completed"})],
             ),
         ],
+        metadata=metadata,
+    )
+
+
+def _task_with_extension_metadata(*, task_id: str, context_id: str) -> Task:
+    metadata = build_output_negotiation_metadata(["text/plain"])
+    assert metadata is not None
+    metadata["shared"] = {
+        "session": {"id": "ses-1", "title": "Alpha"},
+        "model": {"providerID": "openai", "modelID": "gpt-5"},
+        "usage": {"input_tokens": 12},
+    }
+    metadata["opencode"] = {
+        **metadata["opencode"],
+        "directory": "/workspace",
+    }
+    return Task(
+        id=task_id,
+        context_id=context_id,
+        status=TaskStatus(
+            state=TaskState.TASK_STATE_COMPLETED,
+            message=_message(
+                message_id=f"{task_id}:status",
+                text="done",
+                task_id=task_id,
+                context_id=context_id,
+            ),
+        ),
         metadata=metadata,
     )
 
@@ -233,3 +266,37 @@ async def test_resubscribe_terminal_task_applies_persisted_output_negotiation() 
         "task-resub:json",
     ]
     assert part_text(events[0].artifacts[1].parts[0]) == '{"status":"completed","tool":"bash"}'
+
+
+@pytest.mark.asyncio
+async def test_on_get_task_filters_unnegotiated_shared_extension_metadata() -> None:
+    store = _store()
+    task = _task_with_extension_metadata(task_id="task-filter", context_id="ctx-filter")
+    await store.save(task, ServerCallContext())
+    handler = OpencodeRequestHandler(
+        agent_executor=AsyncMock(),
+        task_store=store,
+        agent_card=_agent_card(),
+    )
+
+    unnegotiated = await handler.on_get_task(
+        GetTaskRequest(id="task-filter"), context=ServerCallContext()
+    )
+    assert unnegotiated is not None
+    assert "shared" not in unnegotiated.metadata
+    assert unnegotiated.metadata["opencode"]["directory"] == "/workspace"
+
+    negotiated = await handler.on_get_task(
+        GetTaskRequest(id="task-filter"),
+        context=ServerCallContext(
+            requested_extensions={
+                SESSION_BINDING_EXTENSION_URI,
+                MODEL_SELECTION_EXTENSION_URI,
+                STREAMING_EXTENSION_URI,
+            }
+        ),
+    )
+    assert negotiated is not None
+    assert negotiated.metadata["shared"]["session"]["id"] == "ses-1"
+    assert negotiated.metadata["shared"]["model"]["providerID"] == "openai"
+    assert negotiated.metadata["shared"]["usage"]["input_tokens"] == 12

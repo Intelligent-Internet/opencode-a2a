@@ -7,6 +7,7 @@ from typing import Any
 
 from a2a.client.client import ClientCallContext
 
+from ..extension_negotiation import merge_extension_service_parameters
 from ..protocol_versions import normalize_protocol_version
 from ..trace_context import current_trace_headers
 from .auth import encode_basic_auth
@@ -29,9 +30,10 @@ def build_default_headers(
 
 def split_request_metadata(
     metadata: Mapping[str, Any] | None,
-) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
+) -> tuple[dict[str, Any] | None, dict[str, str] | None, tuple[str, ...] | None]:
     request_metadata: dict[str, Any] = {}
     extra_headers: dict[str, str] = {}
+    requested_extensions: list[str] = []
     for key, value in dict(metadata or {}).items():
         if isinstance(key, str) and key.lower() == "authorization":
             if value is not None:
@@ -49,13 +51,28 @@ def split_request_metadata(
             if value is not None:
                 extra_headers["tracestate"] = str(value)
             continue
+        if isinstance(key, str) and key.lower() == "a2a-extensions":
+            if isinstance(value, str):
+                requested_extensions.extend(
+                    item.strip() for item in value.split(",") if item.strip()
+                )
+            elif isinstance(value, list | tuple | set):
+                requested_extensions.extend(
+                    str(item).strip() for item in value if isinstance(item, str) and item.strip()
+                )
+            continue
         request_metadata[key] = value
-    return request_metadata or None, extra_headers or None
+    return (
+        request_metadata or None,
+        extra_headers or None,
+        tuple(requested_extensions) or None,
+    )
 
 
 def build_call_context(
     bearer_token: str | None,
     extra_headers: Mapping[str, str] | None,
+    extensions: tuple[str, ...] | None = None,
     basic_auth: str | None = None,
     protocol_version: str | None = None,
 ) -> ClientCallContext | None:
@@ -63,13 +80,15 @@ def build_call_context(
     merged_headers.update(current_trace_headers())
     if extra_headers:
         merged_headers.update(extra_headers)
-    if not merged_headers:
+    service_parameters = merge_extension_service_parameters(None, extensions)
+    if not merged_headers and not service_parameters:
         return None
     return ClientCallContext(
         state={
             "headers": dict(merged_headers),
             "http_kwargs": {"headers": dict(merged_headers)},
-        }
+        },
+        service_parameters=service_parameters,
     )
 
 

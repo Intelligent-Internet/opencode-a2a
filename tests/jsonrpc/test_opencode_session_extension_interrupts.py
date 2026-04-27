@@ -11,7 +11,7 @@ from tests.support.jsonrpc_error_assertions import (
     assert_v1_error_reason,
     error_context_detail,
 )
-from tests.support.session_extensions import _BASE_SETTINGS
+from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers
 
 
 @pytest.mark.asyncio
@@ -60,7 +60,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -107,7 +107,7 @@ async def test_interrupt_callback_extension_rejects_legacy_permission_fields(mon
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -136,7 +136,7 @@ async def test_interrupt_callback_extension_rejects_legacy_metadata_directory(mo
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -222,7 +222,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         reply_resp = await client.post(
             "/",
             headers=headers,
@@ -304,7 +304,7 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -340,7 +340,7 @@ async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch)
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -392,7 +392,7 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -435,7 +435,7 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -482,7 +482,7 @@ async def test_interrupt_callback_extension_rejects_identity_mismatch(monkeypatc
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -550,7 +550,7 @@ async def test_interrupt_callback_extension_rejects_credential_id_mismatch(monke
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -606,7 +606,7 @@ async def test_interrupt_callback_extension_maps_concurrency_limit_to_unreachabl
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,

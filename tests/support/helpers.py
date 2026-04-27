@@ -11,6 +11,11 @@ from a2a.server.context import ServerCallContext
 from a2a.types import Message, Part, Role, SendMessageConfiguration, SendMessageRequest
 
 from opencode_a2a.config import Settings
+from opencode_a2a.contracts.extensions import (
+    MODEL_SELECTION_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
+    STREAMING_EXTENSION_URI,
+)
 from opencode_a2a.opencode_upstream_client import OpencodeMessage, OpencodeMessagePage
 
 
@@ -87,6 +92,22 @@ class DummyEventQueue:
         return None
 
 
+def _default_requested_extensions() -> set[str]:
+    return {
+        MODEL_SELECTION_EXTENSION_URI,
+        SESSION_BINDING_EXTENSION_URI,
+        STREAMING_EXTENSION_URI,
+    }
+
+
+def _ensure_test_call_context(call_context: Any | None) -> Any:
+    if call_context is None:
+        return ServerCallContext(requested_extensions=_default_requested_extensions())
+    if not hasattr(call_context, "requested_extensions"):
+        call_context.requested_extensions = _default_requested_extensions()
+    return call_context
+
+
 def make_request_context_mock(
     *,
     task_id: str | None,
@@ -108,6 +129,7 @@ def make_request_context_mock(
     if call_context_enabled:
         call_context = MagicMock(spec=ServerCallContext)
         call_context.state = {"identity": identity} if identity else {}
+        call_context.requested_extensions = _default_requested_extensions()
         context.call_context = call_context
     else:
         context.call_context = None
@@ -140,6 +162,7 @@ def make_request_context(
     accepted_output_modes: list[str] | None = None,
     call_context: Any = None,
 ) -> RequestContext:
+    call_context = _ensure_test_call_context(call_context)
     message = Message(
         message_id=message_id,
         role=Role.ROLE_USER,
@@ -169,6 +192,7 @@ def make_request_context_with_parts(
     call_context: Any = None,
     accepted_output_modes: list[str] | None = None,
 ) -> RequestContext:
+    call_context = _ensure_test_call_context(call_context)
     message = Message(
         message_id=message_id,
         role=Role.ROLE_USER,

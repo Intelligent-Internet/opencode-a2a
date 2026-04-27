@@ -77,6 +77,11 @@ from ..contracts.extensions import (
     build_capability_snapshot,
 )
 from ..execution.executor import OpencodeAgentExecutor
+from ..extension_negotiation import (
+    filter_negotiated_extensions_from_payload,
+    requested_extensions_from_call_context,
+    required_extensions_for_send_message_params,
+)
 from ..invocation import call_with_supported_kwargs
 from ..jsonrpc.application import (
     OpencodeSessionManagementJSONRPCApplication,
@@ -419,14 +424,43 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         return list(normalized) if normalized is not None else None
 
     @staticmethod
-    def _apply_task_output_negotiation(task: Task) -> Task:
+    def _apply_task_output_negotiation(task: Task, context=None) -> Task:
         negotiated = apply_accepted_output_modes(
             task,
             extract_accepted_output_modes_from_metadata(task.metadata),
         )
-        if isinstance(negotiated, Task):
-            return negotiated
-        return task
+        resolved = negotiated if isinstance(negotiated, Task) else task
+        return cast(
+            Task,
+            filter_negotiated_extensions_from_payload(
+                resolved,
+                requested_extensions_from_call_context(context),
+            ),
+        )
+
+    @staticmethod
+    def _validate_shared_extension_negotiation(params, context=None) -> None:  # noqa: ANN001
+        requested_extensions = requested_extensions_from_call_context(context)
+        requirements = required_extensions_for_send_message_params(params)
+        missing_requirements = [
+            requirement
+            for requirement in requirements
+            if requirement.extension_uri not in requested_extensions
+        ]
+        if not missing_requirements:
+            return
+        raise UnsupportedOperationError(
+            message="Request requires explicit A2A extension negotiation via A2A-Extensions.",
+            data={
+                "type": "EXTENSION_NEGOTIATION_REQUIRED",
+                "fields": [requirement.field for requirement in missing_requirements],
+                "required_extensions": sorted(
+                    {requirement.extension_uri for requirement in missing_requirements}
+                ),
+                "requested_extensions": sorted(requested_extensions),
+                "header": "A2A-Extensions",
+            },
+        )
 
     async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
         (
@@ -482,7 +516,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
             task = await self.task_store.get(params.id, context)
             if not task:
                 raise TaskNotFoundError()
-            return self._apply_task_output_negotiation(apply_history_length(task, params))
+            return self._apply_task_output_negotiation(apply_history_length(task, params), context)
         except TaskStoreOperationError as exc:
             raise self._task_store_server_error(exc) from exc
 
@@ -559,10 +593,10 @@ class OpencodeRequestHandler(LegacyRequestHandler):
 
             # Subscribe contract: terminal tasks replay once and then close stream.
             if task.status.state in TERMINAL_TASK_STATES:
-                yield self._apply_task_output_negotiation(task)
+                yield self._apply_task_output_negotiation(task, context)
                 return
 
-            yield self._apply_task_output_negotiation(task)
+            yield self._apply_task_output_negotiation(task, context)
 
             task_manager = TaskManager(
                 task_id=task.id,
@@ -582,12 +616,16 @@ class OpencodeRequestHandler(LegacyRequestHandler):
                     extract_accepted_output_modes_from_metadata(getattr(event, "metadata", None)),
                 )
                 if negotiated is not None:
-                    yield negotiated
+                    yield filter_negotiated_extensions_from_payload(
+                        negotiated,
+                        requested_extensions_from_call_context(context),
+                    )
         except TaskStoreOperationError as exc:
             raise self._task_store_server_error(exc) from exc
 
     async def on_message_send_stream(self, params, context=None):
         self._validate_chat_output_modes(params)
+        self._validate_shared_extension_negotiation(params, context)
         (
             _task_manager,
             task_id,
@@ -638,6 +676,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
 
     async def on_message_send(self, params, context=None):
         self._validate_chat_output_modes(params)
+        self._validate_shared_extension_negotiation(params, context)
         (
             _task_manager,
             task_id,

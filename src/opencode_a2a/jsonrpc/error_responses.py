@@ -4,7 +4,12 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from a2a.utils.errors import JSON_RPC_ERROR_CODE_MAP, A2AError, InvalidParamsError
+from a2a.utils.errors import (
+    JSON_RPC_ERROR_CODE_MAP,
+    A2AError,
+    InvalidParamsError,
+    UnsupportedOperationError,
+)
 
 from ..protocol_versions import normalize_protocol_version
 from .models import JSONRPCError
@@ -197,6 +202,27 @@ def invalid_params_error(
     data: dict[str, Any] | None = None,
 ) -> A2AError:
     return InvalidParamsError(message=message, data=data)
+
+
+def extension_negotiation_required_error(
+    *,
+    method: str,
+    extension_uri: str,
+    requested_extensions: list[str],
+) -> A2AError:
+    return UnsupportedOperationError(
+        message=(
+            f"Method {method} requires explicit A2A extension negotiation via "
+            "the A2A-Extensions header."
+        ),
+        data={
+            "type": "EXTENSION_NEGOTIATION_REQUIRED",
+            "method": method,
+            "required_extensions": [extension_uri],
+            "requested_extensions": requested_extensions,
+            "header": "A2A-Extensions",
+        },
+    )
 
 
 def method_not_supported_error(

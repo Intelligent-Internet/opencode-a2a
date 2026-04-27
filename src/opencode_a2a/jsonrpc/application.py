@@ -18,6 +18,10 @@ from jsonrpc.jsonrpc2 import JSONRPC20Response
 from starlette.requests import Request
 from starlette.responses import Response
 
+from ..extension_negotiation import (
+    missing_requested_extensions,
+    requested_extensions_from_call_context,
+)
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from .dispatch import (
     ExtensionHandlerContext,
@@ -25,6 +29,7 @@ from .dispatch import (
 )
 from .error_responses import (
     adapt_jsonrpc_error_for_protocol,
+    extension_negotiation_required_error,
     invalid_params_error,
     method_not_supported_error,
 )
@@ -398,6 +403,22 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                 request,
                 body,
                 base_request,
+                protocol_version=negotiated_protocol_version,
+            )
+
+        call_context = self._context_builder.build(request)
+        missing_extensions = missing_requested_extensions(
+            requested_extensions_from_call_context(call_context),
+            [extension_spec.extension_uri],
+        )
+        if missing_extensions:
+            return self._generate_protocol_error_response(
+                base_request.id,
+                extension_negotiation_required_error(
+                    method=base_request.method,
+                    extension_uri=extension_spec.extension_uri,
+                    requested_extensions=sorted(call_context.requested_extensions),
+                ),
                 protocol_version=negotiated_protocol_version,
             )
 

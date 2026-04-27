@@ -77,6 +77,8 @@ class StreamRuntime:
         directory: str | None = None,
         workspace_id: str | None = None,
         allow_structured_output: bool = True,
+        emit_session_metadata: bool = True,
+        emit_streaming_metadata: bool = True,
     ) -> None:
         part_states: dict[str, _StreamPartState] = {}
         pending_deltas: defaultdict[str, list[_PendingDelta]] = defaultdict(list)
@@ -132,6 +134,7 @@ class StreamRuntime:
                         role=chunk.role,
                         event_id=stream_state.build_event_id(sequence),
                         sequence=sequence,
+                        include_shared_stream_metadata=emit_streaming_metadata,
                     ),
                 )
                 logger.debug(
@@ -181,6 +184,8 @@ class StreamRuntime:
                             "sequence": sequence,
                         },
                         interrupt=interrupt_metadata,
+                        include_session_metadata=emit_session_metadata,
+                        include_streaming_metadata=emit_streaming_metadata,
                     ),
                 )
             )
@@ -209,6 +214,8 @@ class StreamRuntime:
                             "sequence": sequence,
                         },
                         progress=dict(progress),
+                        include_session_metadata=emit_session_metadata,
+                        include_streaming_metadata=emit_streaming_metadata,
                     ),
                 )
             )

@@ -14,10 +14,11 @@ from opencode_a2a.trace_context import TraceContext, bind_trace_context
 
 
 def test_split_request_metadata_and_default_headers() -> None:
-    request_metadata, extra_headers = split_request_metadata(
+    request_metadata, extra_headers, requested_extensions = split_request_metadata(
         {
             "authorization": "Bearer explicit-token",
             "A2A-Version": "1.0.0",
+            "A2A-Extensions": "https://example.com/ext-b, https://example.com/ext-a",
             "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
             "tracestate": "vendor=value",
             "trace_id": "trace-1",
@@ -31,6 +32,10 @@ def test_split_request_metadata_and_default_headers() -> None:
         "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
         "tracestate": "vendor=value",
     }
+    assert requested_extensions == (
+        "https://example.com/ext-b",
+        "https://example.com/ext-a",
+    )
     assert build_default_headers("peer-token") == {"Authorization": "Bearer peer-token"}
 
 
@@ -120,4 +125,17 @@ def test_build_call_context_carries_default_headers_without_interceptor_layer() 
     assert context.state["http_kwargs"]["headers"] == {
         "Authorization": "Bearer peer-token",
         "X-Trace-Id": "trace-1",
+    }
+
+
+def test_build_call_context_merges_extension_service_parameters() -> None:
+    context = build_call_context(
+        "peer-token",
+        {"X-Trace-Id": "trace-1"},
+        ("https://example.com/ext-b", "https://example.com/ext-a"),
+    )
+
+    assert isinstance(context, ClientCallContext)
+    assert context.service_parameters == {
+        "A2A-Extensions": "https://example.com/ext-a,https://example.com/ext-b"
     }

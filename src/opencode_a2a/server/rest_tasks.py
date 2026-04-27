@@ -13,6 +13,10 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from ..a2a_utils import proto_to_dict
+from ..extension_negotiation import (
+    filter_negotiated_extensions_from_payload,
+    requested_extensions_from_headers,
+)
 from ..jsonrpc.error_responses import build_http_error_body
 from ..output_modes import (
     apply_accepted_output_modes,
@@ -115,6 +119,7 @@ def build_list_tasks_route(
                         task,
                         history_length=query.history_length,
                         include_artifacts=query.include_artifacts,
+                        requested_extensions=requested_extensions_from_headers(request.headers),
                     )
                     for task in page_tasks
                 ],
@@ -159,6 +164,7 @@ def _serialize_task(
     *,
     history_length: int,
     include_artifacts: bool,
+    requested_extensions: frozenset[str],
 ) -> dict:
     negotiated = apply_accepted_output_modes(
         task,
@@ -166,6 +172,7 @@ def _serialize_task(
     )
     if isinstance(negotiated, Task):
         task = negotiated
+    task = filter_negotiated_extensions_from_payload(task, requested_extensions)
 
     payload = proto_to_dict(task)
 

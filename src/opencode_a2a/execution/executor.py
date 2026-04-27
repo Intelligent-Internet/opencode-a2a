@@ -25,6 +25,11 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
+from ..contracts.extensions import (
+    SESSION_BINDING_EXTENSION_URI,
+    STREAMING_EXTENSION_URI,
+)
+from ..extension_negotiation import requested_extensions_from_request_context
 from ..invocation import call_with_supported_kwargs
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..output_modes import accepts_output_mode, normalize_accepted_output_modes
@@ -197,6 +202,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         trace_id = call_context.state.get("trace_id") if call_context else None
 
         streaming_request = self._should_stream(context)
+        requested_extensions = requested_extensions_from_request_context(context)
         accepted_output_modes = normalize_accepted_output_modes(context.configuration)
         message_parts = (
             getattr(context.message, "parts", None) if context.message is not None else None
@@ -291,6 +297,14 @@ class OpencodeAgentExecutor(AgentExecutor):
             accepted_output_modes,
             _APPLICATION_JSON_MEDIA_TYPE,
         )
+        emit_session_metadata = bool(
+            {
+                SESSION_BINDING_EXTENSION_URI,
+                STREAMING_EXTENSION_URI,
+            }
+            & set(requested_extensions)
+        )
+        emit_streaming_metadata = STREAMING_EXTENSION_URI in requested_extensions
 
         logger.debug(
             (
@@ -321,6 +335,8 @@ class OpencodeAgentExecutor(AgentExecutor):
             workspace_id=workspace_id,
             session_binding_context_id=session_binding_context_id,
             allow_structured_output=allow_structured_output,
+            emit_session_metadata=emit_session_metadata,
+            emit_streaming_metadata=emit_streaming_metadata,
         )
         coordinator = ExecutionCoordinator(
             self,
@@ -540,6 +556,8 @@ class OpencodeAgentExecutor(AgentExecutor):
         directory: str | None = None,
         workspace_id: str | None = None,
         allow_structured_output: bool = True,
+        emit_session_metadata: bool = True,
+        emit_streaming_metadata: bool = True,
     ) -> None:
         await self._stream_runtime.consume(
             session_id=session_id,
@@ -554,4 +572,6 @@ class OpencodeAgentExecutor(AgentExecutor):
             directory=directory,
             workspace_id=workspace_id,
             allow_structured_output=allow_structured_output,
+            emit_session_metadata=emit_session_metadata,
+            emit_streaming_metadata=emit_streaming_metadata,
         )

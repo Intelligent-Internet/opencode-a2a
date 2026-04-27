@@ -10,6 +10,13 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ..a2a_protocol import CORE_JSONRPC_METHODS as DECLARED_CORE_JSONRPC_METHODS
+from ..contracts.extensions import (
+    INTERRUPT_CALLBACK_EXTENSION_URI,
+    INTERRUPT_RECOVERY_EXTENSION_URI,
+    PROVIDER_DISCOVERY_EXTENSION_URI,
+    SESSION_MANAGEMENT_EXTENSION_URI,
+    WORKSPACE_CONTROL_EXTENSION_URI,
+)
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from .models import JSONRPCError, JSONRPCRequest
 
@@ -78,6 +85,7 @@ class ExtensionHandlerContext:
 class ExtensionMethodSpec:
     name: str
     methods: frozenset[str]
+    extension_uri: str
     handler: ExtensionHandlerFunc
 
 
@@ -159,6 +167,7 @@ def build_extension_method_registry(
             ExtensionMethodSpec(
                 name="session_lifecycle",
                 methods=frozenset(session_item_methods),
+                extension_uri=SESSION_MANAGEMENT_EXTENSION_URI,
                 handler=handle_session_lifecycle_request,
             ),
             ExtensionMethodSpec(
@@ -169,6 +178,7 @@ def build_extension_method_registry(
                         context.method_get_session_messages,
                     }
                 ),
+                extension_uri=SESSION_MANAGEMENT_EXTENSION_URI,
                 handler=handle_session_query_request,
             ),
             ExtensionMethodSpec(
@@ -179,6 +189,7 @@ def build_extension_method_registry(
                         context.method_list_models,
                     }
                 ),
+                extension_uri=PROVIDER_DISCOVERY_EXTENSION_URI,
                 handler=handle_provider_discovery_request,
             ),
             ExtensionMethodSpec(
@@ -189,16 +200,19 @@ def build_extension_method_registry(
                         context.method_list_questions,
                     }
                 ),
+                extension_uri=INTERRUPT_RECOVERY_EXTENSION_URI,
                 handler=handle_interrupt_query_request,
             ),
             ExtensionMethodSpec(
                 name="workspace_control",
                 methods=frozenset(workspace_control_methods),
+                extension_uri=WORKSPACE_CONTROL_EXTENSION_URI,
                 handler=handle_workspace_control_request,
             ),
             ExtensionMethodSpec(
                 name="session_control",
                 methods=frozenset(session_control_methods),
+                extension_uri=SESSION_MANAGEMENT_EXTENSION_URI,
                 handler=handle_session_control_request,
             ),
             ExtensionMethodSpec(
@@ -210,6 +224,7 @@ def build_extension_method_registry(
                         context.method_reject_question,
                     }
                 ),
+                extension_uri=INTERRUPT_CALLBACK_EXTENSION_URI,
                 handler=handle_interrupt_callback_request,
             ),
         )

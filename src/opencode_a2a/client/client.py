@@ -41,6 +41,19 @@ from .polling import PollingFallbackPolicy
 from .request_context import build_call_context, split_request_metadata
 
 
+def _merge_requested_extensions(
+    explicit_extensions: list[str] | None,
+    metadata_extensions: tuple[str, ...] | None,
+) -> tuple[str, ...] | None:
+    merged: list[str] = []
+    for value in list(explicit_extensions or []) + list(metadata_extensions or ()):
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized and normalized not in merged:
+                merged.append(normalized)
+    return tuple(merged) or None
+
+
 class A2AClient:
     """Factory-style facade for lightweight A2A client bootstrap and calls."""
 
@@ -121,10 +134,12 @@ class A2AClient:
         await self._acquire_operation()
         try:
             client = await self._ensure_client()
-            request_metadata, extra_headers = split_request_metadata(metadata)
+            request_metadata, extra_headers, metadata_extensions = split_request_metadata(metadata)
+            requested_extensions = _merge_requested_extensions(extensions, metadata_extensions)
             call_context = build_call_context(
                 self._settings.bearer_token,
                 extra_headers,
+                requested_extensions,
                 self._settings.basic_auth,
                 self._settings.protocol_version,
             )
@@ -138,7 +153,6 @@ class A2AClient:
                             context_id=context_id,
                             task_id=task_id,
                             parts=[Part(text=text)],
-                            extensions=list(extensions or []),
                         ),
                         configuration=SendMessageConfiguration(),
                         metadata=request_metadata or {},
@@ -184,6 +198,7 @@ class A2AClient:
         terminal_task = await self._poll_task_until_terminal(
             cast(StreamResponse, last_event).task,
             metadata=metadata,
+            extensions=extensions,
         )
         return StreamResponse(task=terminal_task)
 
@@ -193,15 +208,18 @@ class A2AClient:
         *,
         history_length: int | None = None,
         metadata: Mapping[str, Any] | None = None,
+        extensions: list[str] | None = None,
     ) -> Task:
         """Fetch one task by id."""
         await self._acquire_operation()
         try:
             client = await self._ensure_client()
-            request_metadata, extra_headers = split_request_metadata(metadata)
+            request_metadata, extra_headers, metadata_extensions = split_request_metadata(metadata)
+            requested_extensions = _merge_requested_extensions(extensions, metadata_extensions)
             call_context = build_call_context(
                 self._settings.bearer_token,
                 extra_headers,
+                requested_extensions,
                 self._settings.basic_auth,
                 self._settings.protocol_version,
             )
@@ -226,15 +244,18 @@ class A2AClient:
         task_id: str,
         *,
         metadata: Mapping[str, Any] | None = None,
+        extensions: list[str] | None = None,
     ) -> Task:
         """Cancel one task by id."""
         await self._acquire_operation()
         try:
             client = await self._ensure_client()
-            request_metadata, extra_headers = split_request_metadata(metadata)
+            request_metadata, extra_headers, metadata_extensions = split_request_metadata(metadata)
+            requested_extensions = _merge_requested_extensions(extensions, metadata_extensions)
             call_context = build_call_context(
                 self._settings.bearer_token,
                 extra_headers,
+                requested_extensions,
                 self._settings.basic_auth,
                 self._settings.protocol_version,
             )
@@ -259,15 +280,18 @@ class A2AClient:
         task_id: str,
         *,
         metadata: Mapping[str, Any] | None = None,
+        extensions: list[str] | None = None,
     ) -> AsyncIterator[StreamResponse]:
         """Subscribe to task updates."""
         await self._acquire_operation()
         try:
             client = await self._ensure_client()
-            request_metadata, extra_headers = split_request_metadata(metadata)
+            request_metadata, extra_headers, metadata_extensions = split_request_metadata(metadata)
+            requested_extensions = _merge_requested_extensions(extensions, metadata_extensions)
             call_context = build_call_context(
                 self._settings.bearer_token,
                 extra_headers,
+                requested_extensions,
                 self._settings.basic_auth,
                 self._settings.protocol_version,
             )
@@ -348,6 +372,7 @@ class A2AClient:
         task: Task,
         *,
         metadata: Mapping[str, Any] | None = None,
+        extensions: list[str] | None = None,
     ) -> Task:
         deadline = self._current_time() + self._polling_fallback_policy.timeout_seconds
         interval = self._polling_fallback_policy.initial_interval_seconds
@@ -367,7 +392,11 @@ class A2AClient:
                 )
 
             await self._sleep(min(interval, remaining))
-            current_task = await self.get_task(current_task.id, metadata=metadata)
+            current_task = await self.get_task(
+                current_task.id,
+                metadata=metadata,
+                extensions=extensions,
+            )
             interval = self._polling_fallback_policy.next_interval_seconds(interval)
 
     def _current_time(self) -> float:

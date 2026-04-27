@@ -16,7 +16,7 @@ from tests.support.jsonrpc_error_assertions import (
     assert_v1_error_reason,
     error_context_detail,
 )
-from tests.support.session_extensions import _BASE_SETTINGS, _jsonrpc_app
+from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers, _jsonrpc_app
 
 
 @pytest.mark.asyncio
@@ -43,7 +43,7 @@ async def test_session_prompt_async_extension_success(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -97,7 +97,7 @@ async def test_session_prompt_async_extension_accepts_subtask_parts(monkeypatch)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 3012,
@@ -158,7 +158,7 @@ async def test_session_prompt_async_extension_prefers_workspace_metadata(monkeyp
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 3011,
@@ -195,7 +195,7 @@ async def test_session_prompt_async_extension_rejects_invalid_params(monkeypatch
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
 
         missing_session_id = await client.post(
             "/",
@@ -298,7 +298,7 @@ async def test_session_prompt_async_extension_rejects_owner_mismatch(monkeypatch
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -346,7 +346,7 @@ async def test_session_prompt_async_extension_reuses_directory_boundary_validati
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -393,7 +393,7 @@ async def test_session_prompt_async_extension_honors_directory_override_switch(m
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -432,7 +432,7 @@ async def test_session_prompt_async_extension_maps_404_to_session_not_found(monk
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -473,7 +473,7 @@ async def test_session_prompt_async_extension_maps_non_204_to_payload_error(monk
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -510,7 +510,7 @@ async def test_session_prompt_async_extension_maps_500_to_upstream_http_error(mo
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -550,7 +550,7 @@ async def test_session_prompt_async_extension_maps_network_error_to_unreachable(
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -593,7 +593,7 @@ async def test_session_prompt_async_release_failure_does_not_override_response(m
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -636,7 +636,7 @@ async def test_session_prompt_async_extension_maps_concurrency_limit_to_unreacha
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -672,7 +672,7 @@ async def test_session_prompt_async_extension_notification_returns_204(monkeypat
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,

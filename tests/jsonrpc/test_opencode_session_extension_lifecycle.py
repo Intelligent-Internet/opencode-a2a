@@ -8,7 +8,12 @@ from tests.support.helpers import (
 )
 from tests.support.helpers import make_settings
 from tests.support.jsonrpc_error_assertions import assert_v1_error_reason
-from tests.support.session_extensions import _BASE_SETTINGS, _jsonrpc_app, _session_meta
+from tests.support.session_extensions import (
+    _BASE_SETTINGS,
+    _extension_headers,
+    _jsonrpc_app,
+    _session_meta,
+)
 
 
 def _identity_for_token(token: str) -> str:
@@ -30,7 +35,7 @@ async def test_session_lifecycle_status_get_and_children_success(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         status_response = await client.post(
             "/",
             headers=headers,
@@ -100,7 +105,7 @@ async def test_session_lifecycle_todo_diff_and_message_get_success(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         todo_response = await client.post(
             "/",
             headers=headers,
@@ -194,7 +199,7 @@ async def test_session_lifecycle_mutations_succeed_and_claim_owner(
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={"jsonrpc": "2.0", "id": 407, "method": method, "params": params},
         )
 
@@ -235,7 +240,7 @@ async def test_session_lifecycle_summarize_succeeds_and_claims_owner(monkeypatch
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 4071,
@@ -290,7 +295,7 @@ async def test_session_lifecycle_mutation_rejects_owner_mismatch(monkeypatch):
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 408,
@@ -329,7 +334,7 @@ async def test_session_lifecycle_rejects_invalid_params_and_maps_404(monkeypatch
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         missing_message_id = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 409,
@@ -339,7 +344,7 @@ async def test_session_lifecycle_rejects_invalid_params_and_maps_404(monkeypatch
         )
         invalid_summarize = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 4091,
@@ -352,7 +357,7 @@ async def test_session_lifecycle_rejects_invalid_params_and_maps_404(monkeypatch
         )
         missing_revert_message_id = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 4092,
@@ -362,7 +367,7 @@ async def test_session_lifecycle_rejects_invalid_params_and_maps_404(monkeypatch
         )
         not_found = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={
                 "jsonrpc": "2.0",
                 "id": 410,

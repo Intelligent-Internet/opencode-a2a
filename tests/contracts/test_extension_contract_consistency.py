@@ -37,6 +37,7 @@ from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
 from tests.support.helpers import make_settings
+from tests.support.session_extensions import _extension_headers
 
 
 def test_extension_ssot_matches_agent_card_contracts() -> None:
@@ -408,7 +409,7 @@ async def test_extension_notification_contracts_return_204(
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={"jsonrpc": "2.0", "method": method, "params": params},
         )
     assert response.status_code == 204
