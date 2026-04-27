@@ -95,7 +95,7 @@ Current client facade API:
 - `A2AClient.send()` / `A2AClient.send_message()`
 - `A2AClient.get_task()`
 - `A2AClient.cancel_task()`
-- `A2AClient.resubscribe_task()`
+- `A2AClient.subscribe_to_task()`
 
 Server-side outbound peer calls read outbound credentials from environment variables. Configure `A2A_CLIENT_BEARER_TOKEN` or `A2A_CLIENT_BASIC_AUTH` when the remote agent protects its runtime surface. CLI outbound calls follow the same environment-only model.
 
@@ -107,7 +107,7 @@ Server-side outbound peer calls read outbound credentials from environment varia
 - `A2A_CLIENT_POLLING_FALLBACK_BACKOFF_MULTIPLIER`
 - `A2A_CLIENT_POLLING_FALLBACK_TIMEOUT_SECONDS`
 
-The fallback only applies to `send()`, keeps `send_message()` as a thin event stream wrapper, and stops polling once the task reaches a terminal state or a caller-intervention state such as `input-required` or `auth-required`.
+The fallback only applies to `send()`, keeps `send_message()` and `subscribe_to_task()` as thin raw `StreamResponse` wrappers, and stops polling once the task reaches a terminal state or a caller-intervention state such as `input-required` or `auth-required`.
 
 Execution-boundary metadata is intentionally declarative deployment metadata: it is published through `RuntimeProfile`, Agent Card, OpenAPI, and `/health`, and should not be interpreted as a live per-request privilege snapshot or a runtime CLI self-inspection result.
 
@@ -1239,9 +1239,9 @@ If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscr
 
 - The service first marks the A2A task as `canceled` and keeps cancel requests responsive.
 - For running tasks, the service attempts upstream OpenCode `POST /session/{sessionID}/abort` to stop generation.
-- Upstream interruption is best-effort: if upstream returns 404, network errors, or other HTTP errors, A2A cancellation still completes with `TaskState.canceled`.
+- Upstream interruption is best-effort: if upstream returns 404, network errors, or other HTTP errors, A2A cancellation still completes with `TaskState.TASK_STATE_CANCELED`.
 - Idempotency contract: repeated `CancelTask` on an already `canceled` task returns the current terminal task state without error.
-- Terminal subscribe contract: calling `subscribe` on a terminal task replays one terminal `Task` snapshot and then closes the stream.
+- Terminal subscribe contract: calling `SubscribeToTask` or `GET /v1/tasks/{task_id}:subscribe` on a terminal task replays one terminal `Task` snapshot and then closes the stream.
 - These two semantics are also declared as machine-readable `service_behaviors` in the compatibility profile and wire contract extensions.
 - At `A2A_LOG_LEVEL=DEBUG`, the service emits lightweight metric log records
   (`logger=opencode_a2a.execution.executor`):

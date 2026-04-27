@@ -186,7 +186,8 @@ async def test_generate_protocol_error_response_supports_a2a_error_payloads(
 
     assert response.status_code == 200
     assert response.body == (
-        b'{"jsonrpc":"2.0","id":12,"error":{"code":-32602,"message":"bad request","data":{"field":"params"}}}'
+        b'{"jsonrpc":"2.0","id":12,"error":{"code":-32602,'
+        b'"message":"bad request","data":{"field":"params"}}}'
     )
 
 

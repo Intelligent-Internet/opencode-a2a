@@ -8,6 +8,8 @@ from a2a.server.events import EventConsumer, EventQueue
 from a2a.server.tasks import TaskManager
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
     Artifact,
     GetTaskRequest,
     Message,
@@ -34,6 +36,10 @@ from opencode_a2a.server.application import OpencodeRequestHandler
 
 def _store() -> InMemoryTaskStore:
     return InMemoryTaskStore(owner_resolver=lambda _context: "test-owner")
+
+
+def _agent_card() -> AgentCard:
+    return AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True))
 
 
 def _message(*, message_id: str, text: str, task_id: str, context_id: str) -> Message:
@@ -185,7 +191,11 @@ async def test_on_get_task_applies_persisted_output_negotiation() -> None:
     store = _store()
     task = _task_with_negotiated_outputs(task_id="task-get", context_id="ctx-get")
     await store.save(task, ServerCallContext())
-    handler = OpencodeRequestHandler(agent_executor=AsyncMock(), task_store=store)
+    handler = OpencodeRequestHandler(
+        agent_executor=AsyncMock(),
+        task_store=store,
+        agent_card=_agent_card(),
+    )
 
     result = await handler.on_get_task(GetTaskRequest(id="task-get"))
 
@@ -204,10 +214,14 @@ async def test_resubscribe_terminal_task_applies_persisted_output_negotiation() 
     store = _store()
     task = _task_with_negotiated_outputs(task_id="task-resub", context_id="ctx-resub")
     await store.save(task, ServerCallContext())
-    handler = OpencodeRequestHandler(agent_executor=AsyncMock(), task_store=store)
+    handler = OpencodeRequestHandler(
+        agent_executor=AsyncMock(),
+        task_store=store,
+        agent_card=_agent_card(),
+    )
 
     events = []
-    async for event in handler.on_resubscribe_to_task(SubscribeToTaskRequest(id="task-resub")):
+    async for event in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-resub")):
         events.append(event)
 
     assert len(events) == 1

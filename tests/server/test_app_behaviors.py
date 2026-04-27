@@ -11,6 +11,8 @@ import pytest
 from a2a.server.events import EventConsumer
 from a2a.server.routes.rest_dispatcher import RestDispatcher
 from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
     CancelTaskRequest,
     GetTaskRequest,
     InternalError,
@@ -44,7 +46,6 @@ from opencode_a2a.server.application import (
     _detect_sensitive_extension_method,
     _is_json_content_type,
     _looks_like_jsonrpc_envelope,
-    _looks_like_legacy_message_payload,
     _normalize_content_type,
     _normalize_log_level,
     _parse_content_length,
@@ -61,6 +62,10 @@ from tests.support.helpers import (
     make_basic_auth_header,
     make_settings,
 )
+
+
+def _agent_card() -> AgentCard:
+    return AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True))
 
 
 def _request(
@@ -123,17 +128,6 @@ def test_request_payload_helpers_cover_edge_cases() -> None:
     assert _is_json_content_type("application/problem+json") is True
     assert _decode_payload_preview(b"abcdef", limit=3) == "abc...[truncated]"
 
-    assert _looks_like_legacy_message_payload(None) is False
-    assert _looks_like_legacy_message_payload({"message": {"parts": []}}) is False
-    assert _looks_like_legacy_message_payload({"message": {"content": []}}) is True
-    assert _looks_like_legacy_message_payload({"message": {"role": "user"}}) is True
-    assert _looks_like_legacy_message_payload({"message": {"role": "ROLE_USER"}}) is False
-    assert (
-        _looks_like_legacy_message_payload(
-            {"message": {"parts": [{"file": {"uri": "file:///tmp/report.txt"}}]}}
-        )
-        is True
-    )
     assert _looks_like_jsonrpc_envelope(None) is False
     assert _looks_like_jsonrpc_envelope({"jsonrpc": "2.0", "method": "SendMessage"}) is True
     assert _looks_like_jsonrpc_envelope({"jsonrpc": 2, "method": "SendMessage"}) is False
@@ -622,7 +616,7 @@ async def test_rest_adapter_routes_and_preconsume_error() -> None:
     async def _stream(_request: Request, _context):  # noqa: ANN001
         yield {"id": "evt-1"}
 
-    handler.on_resubscribe_to_task = _stream
+    handler.on_subscribe_to_task = _stream
     response = await adapter.on_subscribe_to_task(
         _request("/v1/tasks/x:subscribe", method="GET", path_params={"id": "x"})
     )
@@ -718,7 +712,11 @@ async def test_push_notification_jsonrpc_methods_remain_unsupported(monkeypatch)
 @pytest.mark.asyncio
 async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> None:
     task_store = MagicMock()
-    handler = OpencodeRequestHandler(agent_executor=MagicMock(), task_store=task_store)
+    handler = OpencodeRequestHandler(
+        agent_executor=MagicMock(),
+        task_store=task_store,
+        agent_card=_agent_card(),
+    )
     handler.agent_executor.cancel = AsyncMock()
     handler._queue_manager.tap = AsyncMock(return_value=MagicMock())  # noqa: SLF001
     cancel_params = CancelTaskRequest(id="task-1")
@@ -768,11 +766,11 @@ async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> N
 
     task_store.get = AsyncMock(return_value=None)
     with pytest.raises(TaskNotFoundError):
-        events = [item async for item in handler.on_resubscribe_to_task(subscribe_params)]
+        events = [item async for item in handler.on_subscribe_to_task(subscribe_params)]
         assert events == []
 
     task_store.get = AsyncMock(return_value=canceled_task)
-    events = [item async for item in handler.on_resubscribe_to_task(subscribe_params)]
+    events = [item async for item in handler.on_subscribe_to_task(subscribe_params)]
     assert events == [canceled_task]
 
     task_store.get = AsyncMock(return_value=working_task)
@@ -785,7 +783,7 @@ async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> N
         "consume_and_emit",
         _consume_and_emit,
     )
-    events = [item async for item in handler.on_resubscribe_to_task(subscribe_params)]
+    events = [item async for item in handler.on_subscribe_to_task(subscribe_params)]
     assert events == [working_task, "evt-1"]
 
 
@@ -858,7 +856,11 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
 @pytest.mark.asyncio
 async def test_task_store_failures_map_to_stable_handler_errors() -> None:
     task_store = MagicMock()
-    handler = OpencodeRequestHandler(agent_executor=MagicMock(), task_store=task_store)
+    handler = OpencodeRequestHandler(
+        agent_executor=MagicMock(),
+        task_store=task_store,
+        agent_card=_agent_card(),
+    )
 
     task_store.get = AsyncMock(side_effect=TaskStoreOperationError("get", "task-1"))
     with pytest.raises(InternalError, match="Task store unavailable while loading task state."):
@@ -866,8 +868,7 @@ async def test_task_store_failures_map_to_stable_handler_errors() -> None:
 
     with pytest.raises(InternalError, match="Task store unavailable while loading task state."):
         events = [
-            item
-            async for item in handler.on_resubscribe_to_task(SubscribeToTaskRequest(id="task-1"))
+            item async for item in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-1"))
         ]
         assert events == []
 
@@ -881,7 +882,11 @@ async def test_on_message_send_returns_stable_failure_task_for_task_store_error(
 
     class _Handler(OpencodeRequestHandler):
         def __init__(self) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.queue = AsyncMock()
             self.producer = MagicMock()
 
@@ -929,7 +934,11 @@ async def test_on_message_send_stream_emits_stable_failure_events_for_task_store
 
     class _Handler(OpencodeRequestHandler):
         def __init__(self) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.queue = AsyncMock()
             self.producer = MagicMock()
             self.background_tasks: list[asyncio.Task] = []
@@ -985,7 +994,11 @@ async def test_on_message_send_covers_error_cleanup_and_internal_error(monkeypat
 
     class _Handler(OpencodeRequestHandler):
         def __init__(self, aggregator: _Aggregator) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.aggregator = aggregator
             self.queue = AsyncMock()
             self.producer = MagicMock()
@@ -1074,7 +1087,11 @@ async def test_on_message_send_non_blocking_tracks_background_work(monkeypatch) 
 
     class _Handler(OpencodeRequestHandler):
         def __init__(self, aggregator: _Aggregator) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.aggregator = aggregator
             self.queue = AsyncMock()
             self.producer = MagicMock()
@@ -1135,7 +1152,11 @@ async def test_on_message_send_non_blocking_tracks_background_work(monkeypatch) 
 async def test_on_message_send_rejects_output_modes_without_text_plain() -> None:
     class _Handler(OpencodeRequestHandler):
         def __init__(self) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.setup_called = False
 
         async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
@@ -1164,7 +1185,11 @@ async def test_on_message_send_rejects_output_modes_without_text_plain() -> None
 async def test_on_message_send_stream_rejects_incompatible_output_modes_before_execution() -> None:
     class _Handler(OpencodeRequestHandler):
         def __init__(self) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.setup_called = False
 
         async def _setup_message_execution(self, params, context=None):  # noqa: ANN001

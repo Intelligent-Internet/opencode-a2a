@@ -4,6 +4,8 @@ import logging
 import uuid
 from typing import Any
 
+from a2a.types import StreamResponse, TaskState
+
 from ..client.payload_text import extract_text
 from .tool_error_mapping import build_tool_error, map_a2a_tool_exception
 
@@ -80,7 +82,7 @@ async def handle_a2a_call_tool(
         }
 
     try:
-        event = None
+        event: StreamResponse | None = None
         result_text = ""
         async with a2a_client_manager.borrow_client(agent_url) as client:
             async for current_event in client.send_message(message):
@@ -89,8 +91,6 @@ async def handle_a2a_call_tool(
                 if extracted:
                     result_text = merge_streamed_tool_output(result_text, extracted)
 
-        from a2a.types import Task
-
         if result_text:
             return {
                 "call_id": call_id,
@@ -98,25 +98,16 @@ async def handle_a2a_call_tool(
                 "output": result_text,
             }
 
-        if isinstance(event, Task):
-            result_text = ""
-            if event.status and event.status.message:
-                for part_obj in event.status.message.parts:
-                    root = getattr(part_obj, "root", part_obj)
-                    text_val = getattr(root, "text", "")
-                    if text_val:
-                        result_text += str(text_val)
+        if (
+            event is not None
+            and event.HasField("task")
+            and event.task.HasField("status")
+            and event.task.status.state == TaskState.TASK_STATE_COMPLETED
+        ):
             return {
                 "call_id": call_id,
                 "tool": tool_name,
-                "output": result_text or "Task completed.",
-            }
-
-        if isinstance(event, tuple) and len(event) > 0 and isinstance(event[0], Task):
-            return {
-                "call_id": call_id,
-                "tool": tool_name,
-                "output": "Task completed (streaming).",
+                "output": "Task completed.",
             }
 
         return {

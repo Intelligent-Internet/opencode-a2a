@@ -4,6 +4,7 @@ from a2a.types import (
     Artifact,
     Message,
     Role,
+    StreamResponse,
     Task,
     TaskArtifactUpdateEvent,
     TaskState,
@@ -15,11 +16,6 @@ from opencode_a2a.client.payload_text import extract_text
 
 
 def test_extract_text_prefers_stream_artifact_payload() -> None:
-    task = Task(
-        id="remote-task",
-        context_id="remote-context",
-        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-    )
     update = TaskArtifactUpdateEvent(
         task_id="remote-task",
         context_id="remote-context",
@@ -30,7 +26,7 @@ def test_extract_text_prefers_stream_artifact_payload() -> None:
         ),
     )
 
-    assert extract_text((task, update)) == "streamed remote text"
+    assert extract_text(StreamResponse(artifact_update=update)) == "streamed remote text"
 
 
 def test_extract_text_reads_task_status_message() -> None:

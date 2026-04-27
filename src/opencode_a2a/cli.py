@@ -6,7 +6,7 @@ import os
 import sys
 from collections.abc import Sequence
 
-from a2a.types import Message, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
+from a2a.types import TaskState
 
 from . import __version__
 from .a2a_utils import part_text
@@ -20,23 +20,24 @@ async def run_call(agent_url: str, text: str) -> int:
 
     try:
         async for event in client.send_message(text):
-            if isinstance(event, tuple):
-                _, update = event
-                if isinstance(update, TaskArtifactUpdateEvent):
-                    artifact = update.artifact
-                    if artifact and artifact.parts:
-                        for part in artifact.parts:
-                            text_val = part_text(part)
-                            if isinstance(text_val, str):
-                                print(text_val, end="", flush=True)
-                elif isinstance(update, TaskStatusUpdateEvent):
-                    if update.status and update.status.state == TaskState.TASK_STATE_FAILED:
-                        print(f"\n[Failed] {update.status.message or ''}")
-            elif isinstance(event, Message):
-                for part in event.parts:
+            if event.HasField("message"):
+                for part in event.message.parts:
                     text_val = part_text(part)
                     if isinstance(text_val, str):
                         print(text_val, end="", flush=True)
+            elif event.HasField("artifact_update"):
+                artifact = event.artifact_update.artifact
+                if artifact and artifact.parts:
+                    for part in artifact.parts:
+                        text_val = part_text(part)
+                        if isinstance(text_val, str):
+                            print(text_val, end="", flush=True)
+            elif (
+                event.HasField("status_update")
+                and event.status_update.status
+                and event.status_update.status.state == TaskState.TASK_STATE_FAILED
+            ):
+                print(f"\n[Failed] {event.status_update.status.message or ''}")
         print()  # New line after completion
     except Exception as exc:
         print(f"\n[Error] {exc}", file=sys.stderr)

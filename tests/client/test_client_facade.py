@@ -200,8 +200,9 @@ async def test_send_returns_last_event(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
     response = await client.send("hello")
-    assert isinstance(response, Message)
-    assert response.parts[0].text == "last"
+    assert isinstance(response, StreamResponse)
+    assert response.HasField("message")
+    assert response.message.parts[0].text == "last"
 
 
 @pytest.mark.asyncio
@@ -233,9 +234,9 @@ async def test_send_polling_fallback_returns_terminal_task(monkeypatch: pytest.M
 
     response = await client.send("hello")
 
-    assert isinstance(response, tuple)
-    assert response[0].status.state == TaskState.TASK_STATE_COMPLETED
-    assert response[1] is None
+    assert isinstance(response, StreamResponse)
+    assert response.HasField("task")
+    assert response.task.status.state == TaskState.TASK_STATE_COMPLETED
     assert [params.id for params, _kwargs in fake_client.task_inputs] == ["task-1", "task-1"]
     assert sleep_calls == [0.1, 0.2]
 
@@ -251,8 +252,9 @@ async def test_send_polling_fallback_skips_input_required(monkeypatch: pytest.Mo
 
     response = await client.send("hello")
 
-    assert isinstance(response, tuple)
-    assert response[0].status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+    assert isinstance(response, StreamResponse)
+    assert response.HasField("task")
+    assert response.task.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
     assert fake_client.task_inputs == []
 
 
@@ -328,7 +330,7 @@ async def test_send_message_adds_bearer_token_from_settings(
     result = [event async for event in client.send_message("hello")]
 
     assert len(result) == 1
-    assert isinstance(result[0], Message)
+    assert result[0].HasField("message")
     _, _, kwargs = fake_client.send_message_inputs[0]
     assert kwargs["request_metadata"] is None
     assert kwargs["context"] is not None
@@ -349,7 +351,7 @@ async def test_send_message_adds_basic_auth_from_settings(
     result = [event async for event in client.send_message("hello")]
 
     assert len(result) == 1
-    assert isinstance(result[0], Message)
+    assert result[0].HasField("message")
     _, _, kwargs = fake_client.send_message_inputs[0]
     assert kwargs["request_metadata"] is None
     assert kwargs["context"] is not None
@@ -378,7 +380,7 @@ async def test_send_message_preserves_explicit_authorization_metadata(
     ]
 
     assert len(result) == 1
-    assert isinstance(result[0], Message)
+    assert result[0].HasField("message")
     _, _, kwargs = fake_client.send_message_inputs[0]
     assert kwargs["request_metadata"] == {"trace_id": "trace-1"}
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
@@ -400,7 +402,7 @@ async def test_send_message_prefers_explicit_authorization_without_default_token
     ]
 
     assert len(result) == 1
-    assert isinstance(result[0], Message)
+    assert result[0].HasField("message")
     _, _, kwargs = fake_client.send_message_inputs[0]
     assert kwargs["request_metadata"] is None
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
@@ -541,7 +543,7 @@ async def test_get_task_maps_transport_http_error(
 
 
 @pytest.mark.asyncio
-async def test_resubscribe_forward_events(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_subscribe_to_task_forwards_events(monkeypatch: pytest.MonkeyPatch) -> None:
     client = A2AClient("http://agent.example.com")
     fake_client = _FakeClient(
         events=[
@@ -550,15 +552,15 @@ async def test_resubscribe_forward_events(monkeypatch: pytest.MonkeyPatch) -> No
         ]
     )
     monkeypatch.setattr(A2AClient, "_build_client", AsyncMock(return_value=fake_client))
-    result = [event async for event in client.resubscribe_task("task-id")]
-    assert [event[0].status.state for event in result] == [
+    result = [event async for event in client.subscribe_to_task("task-id")]
+    assert [event.task.status.state for event in result] == [
         TaskState.TASK_STATE_WORKING,
         TaskState.TASK_STATE_COMPLETED,
     ]
 
 
 @pytest.mark.asyncio
-async def test_resubscribe_uses_authorization_header_context(
+async def test_subscribe_to_task_uses_authorization_header_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = A2AClient("http://agent.example.com")
@@ -567,13 +569,13 @@ async def test_resubscribe_uses_authorization_header_context(
 
     result = [
         event
-        async for event in client.resubscribe_task(
+        async for event in client.subscribe_to_task(
             "task-id",
             metadata={"authorization": "Bearer explicit-token", "trace_id": "trace-1"},
         )
     ]
 
-    assert [event[0].status.state for event in result] == [TaskState.TASK_STATE_WORKING]
+    assert [event.task.status.state for event in result] == [TaskState.TASK_STATE_WORKING]
     params, kwargs = fake_client.subscribe_inputs[0]
     assert params.id == "task-id"
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"

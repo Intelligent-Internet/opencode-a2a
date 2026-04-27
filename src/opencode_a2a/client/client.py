@@ -25,8 +25,6 @@ from a2a.types import (
     StreamResponse,
     SubscribeToTaskRequest,
     Task,
-    TaskArtifactUpdateEvent,
-    TaskStatusUpdateEvent,
 )
 from a2a.utils.errors import A2AError
 
@@ -118,10 +116,8 @@ class A2AClient:
         message_id: str | None = None,
         metadata: Mapping[str, Any] | None = None,
         extensions: list[str] | None = None,
-    ) -> AsyncIterator[
-        Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None
-    ]:
-        """Send one user message and stream protocol events."""
+    ) -> AsyncIterator[StreamResponse]:
+        """Send one user message and stream raw protocol events."""
         await self._acquire_operation()
         try:
             client = await self._ensure_client()
@@ -151,7 +147,7 @@ class A2AClient:
                     call_context=call_context,
                     request_metadata=request_metadata,
                 ):
-                    yield self._adapt_stream_response(event)
+                    yield event
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
                 raise map_operation_error("SendMessage", exc) from exc
         finally:
@@ -166,16 +162,14 @@ class A2AClient:
         message_id: str | None = None,
         metadata: Mapping[str, Any] | None = None,
         extensions: list[str] | None = None,
-    ) -> Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None:
+    ) -> StreamResponse | None:
         """Send a message and return the latest response event.
 
-        When polling fallback is enabled, a non-terminal `(Task, None)` result may
-        be followed by bounded `GetTask` polling until a terminal task snapshot
+        When polling fallback is enabled, a non-terminal task snapshot may be
+        followed by bounded `GetTask` polling until a terminal task snapshot
         is observed.
         """
-        last_event: (
-            Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None
-        ) = None
+        last_event: StreamResponse | None = None
         async for event in self.send_message(
             text,
             context_id=context_id,
@@ -188,13 +182,10 @@ class A2AClient:
         if not self._should_poll_after_send(last_event):
             return last_event
         terminal_task = await self._poll_task_until_terminal(
-            cast(
-                tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None],
-                last_event,
-            )[0],
+            cast(StreamResponse, last_event).task,
             metadata=metadata,
         )
-        return (terminal_task, None)
+        return StreamResponse(task=terminal_task)
 
     async def get_task(
         self,
@@ -263,13 +254,13 @@ class A2AClient:
         finally:
             await self._release_operation()
 
-    async def resubscribe_task(
+    async def subscribe_to_task(
         self,
         task_id: str,
         *,
         metadata: Mapping[str, Any] | None = None,
-    ) -> AsyncIterator[tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None]]:
-        """Resubscribe to task updates."""
+    ) -> AsyncIterator[StreamResponse]:
+        """Subscribe to task updates."""
         await self._acquire_operation()
         try:
             client = await self._ensure_client()
@@ -288,14 +279,7 @@ class A2AClient:
                     call_context=call_context,
                     request_metadata=request_metadata,
                 ):
-                    adapted = self._adapt_stream_response(event)
-                    if isinstance(adapted, tuple):
-                        yield adapted
-                    elif adapted is not None and not isinstance(adapted, Message):
-                        yield cast(
-                            tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None],
-                            adapted,
-                        )
+                    yield event
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
                 raise map_operation_error("SubscribeToTask", exc) from exc
         finally:
@@ -349,16 +333,15 @@ class A2AClient:
 
     def _should_poll_after_send(
         self,
-        event: Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None,
+        event: StreamResponse | None,
     ) -> bool:
         if not self._polling_fallback_policy.enabled:
             return False
-        if event is None or isinstance(event, Message) or not isinstance(event, tuple):
+        if event is None or not event.HasField("task"):
             return False
-        task, update = event
-        if update is not None:
+        if not event.task.HasField("status"):
             return False
-        return self._polling_fallback_policy.should_poll_state(task.status.state)
+        return self._polling_fallback_policy.should_poll_state(event.task.status.state)
 
     async def _poll_task_until_terminal(
         self,
@@ -392,29 +375,6 @@ class A2AClient:
 
     async def _sleep(self, delay_seconds: float) -> None:
         await asyncio.sleep(delay_seconds)
-
-    def _adapt_stream_response(
-        self,
-        response: StreamResponse,
-    ) -> Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None:
-        if response.HasField("message"):
-            return response.message
-        if response.HasField("task"):
-            return (response.task, None)
-        if response.HasField("status_update"):
-            task = Task(
-                id=response.status_update.task_id,
-                context_id=response.status_update.context_id,
-                status=response.status_update.status,
-            )
-            return (task, response.status_update)
-        if response.HasField("artifact_update"):
-            task = Task(
-                id=response.artifact_update.task_id,
-                context_id=response.artifact_update.context_id,
-            )
-            return (task, response.artifact_update)
-        return None
 
 
 __all__ = ["A2AClient"]

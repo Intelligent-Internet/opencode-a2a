@@ -32,6 +32,10 @@ def _store() -> InMemoryTaskStore:
     return InMemoryTaskStore(owner_resolver=lambda _context: "test-owner")
 
 
+def _agent_card() -> AgentCard:
+    return AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True))
+
+
 def _message_send_params(*, text: str = "hello") -> types.SimpleNamespace:
     return types.SimpleNamespace(
         configuration=None,
@@ -43,7 +47,11 @@ def _message_send_params(*, text: str = "hello") -> types.SimpleNamespace:
 async def test_cancel_is_idempotent_for_already_canceled_task() -> None:
     executor = AsyncMock()
     store = _store()
-    handler = OpencodeRequestHandler(agent_executor=executor, task_store=store)
+    handler = OpencodeRequestHandler(
+        agent_executor=executor,
+        task_store=store,
+        agent_card=_agent_card(),
+    )
     task = _task(task_id="task-1", context_id="ctx-1", state=TaskState.TASK_STATE_CANCELED)
     await store.save(task, None)
 
@@ -58,7 +66,11 @@ async def test_cancel_is_idempotent_for_already_canceled_task() -> None:
 async def test_cancel_rejects_completed_task() -> None:
     executor = AsyncMock()
     store = _store()
-    handler = OpencodeRequestHandler(agent_executor=executor, task_store=store)
+    handler = OpencodeRequestHandler(
+        agent_executor=executor,
+        task_store=store,
+        agent_card=_agent_card(),
+    )
     task = _task(task_id="task-2", context_id="ctx-2", state=TaskState.TASK_STATE_COMPLETED)
     await store.save(task, None)
 
@@ -74,7 +86,11 @@ async def test_cancel_is_race_safe_when_task_becomes_canceled_during_super_call(
 ) -> None:
     executor = AsyncMock()
     store = _store()
-    handler = OpencodeRequestHandler(agent_executor=executor, task_store=store)
+    handler = OpencodeRequestHandler(
+        agent_executor=executor,
+        task_store=store,
+        agent_card=_agent_card(),
+    )
     task = _task(task_id="task-race", context_id="ctx-race", state=TaskState.TASK_STATE_WORKING)
     await store.save(task, None)
 
@@ -107,13 +123,13 @@ async def test_resubscribe_terminal_task_replays_final_snapshot_once() -> None:
     handler = OpencodeRequestHandler(
         agent_executor=executor,
         task_store=store,
-        agent_card=AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True)),
+        agent_card=_agent_card(),
     )
     task = _task(task_id="task-3", context_id="ctx-3", state=TaskState.TASK_STATE_CANCELED)
     await store.save(task, None)
 
     events = []
-    async for event in handler.on_resubscribe_to_task(SubscribeToTaskRequest(id="task-3")):
+    async for event in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-3")):
         events.append(event)
 
     assert len(events) == 1
@@ -128,13 +144,13 @@ async def test_resubscribe_non_terminal_without_queue_keeps_not_found_behavior()
     handler = OpencodeRequestHandler(
         agent_executor=executor,
         task_store=store,
-        agent_card=AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True)),
+        agent_card=_agent_card(),
     )
     task = _task(task_id="task-4", context_id="ctx-4", state=TaskState.TASK_STATE_WORKING)
     await store.save(task, None)
 
     with pytest.raises(TaskNotFoundError):
-        async for _event in handler.on_resubscribe_to_task(SubscribeToTaskRequest(id="task-4")):
+        async for _event in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-4")):
             pass
 
 
@@ -144,7 +160,11 @@ async def test_message_send_tracks_background_consumer_from_sdk_interrupt_path(
 ) -> None:
     executor = AsyncMock()
     store = _store()
-    handler = OpencodeRequestHandler(agent_executor=executor, task_store=store)
+    handler = OpencodeRequestHandler(
+        agent_executor=executor,
+        task_store=store,
+        agent_card=_agent_card(),
+    )
 
     result_task = _task(
         task_id="task-5", context_id="ctx-5", state=TaskState.TASK_STATE_INPUT_REQUIRED

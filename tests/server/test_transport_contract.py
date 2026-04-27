@@ -984,7 +984,20 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
             json=rest_with_jsonrpc_shape,
         )
         assert rest_resp.status_code == 400
-        assert "Invalid HTTP+JSON payload" in rest_resp.text
+        assert rest_resp.json() == {
+            "error": {
+                "code": 400,
+                "status": "INVALID_ARGUMENT",
+                "message": "REST message payload must use ROLE_* values for message.role.",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": "INVALID_REQUEST",
+                        "domain": "a2a-protocol.org",
+                    }
+                ],
+            }
+        }
 
         rest_envelope_resp = await client.post(
             "/v1/message:send",
@@ -992,23 +1005,15 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
             json=full_jsonrpc_envelope,
         )
         assert rest_envelope_resp.status_code == 400
-        assert "Invalid HTTP+JSON payload" in rest_envelope_resp.text
-
-        v1_rest_resp = await client.post(
-            "/v1/message:send",
-            headers={**headers, "A2A-Version": "1.0"},
-            json=rest_with_jsonrpc_shape,
-        )
-        assert v1_rest_resp.status_code == 400
-        assert v1_rest_resp.json() == {
+        assert rest_envelope_resp.json() == {
             "error": {
                 "code": 400,
                 "status": "INVALID_ARGUMENT",
                 "message": (
-                    "Invalid HTTP+JSON payload for REST endpoint. "
-                    "Use ProtoJSON SendMessageRequest payloads with message.parts "
-                    "and ROLE_* role values, or call POST / with method=SendMessage "
-                    "or method=SendStreamingMessage."
+                    "Invalid JSON-RPC payload for REST endpoint. "
+                    "Call POST / for JSON-RPC methods such as SendMessage "
+                    "or SendStreamingMessage, or send ProtoJSON "
+                    "SendMessageRequest payloads to the REST endpoint."
                 ),
                 "details": [
                     {
@@ -1020,6 +1025,27 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
                     {
                         "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
                         "path": "/v1/message:send",
+                    },
+                ],
+            }
+        }
+
+        v1_rest_resp = await client.post(
+            "/v1/message:send",
+            headers={**headers, "A2A-Version": "1.0"},
+            json=rest_with_jsonrpc_shape,
+        )
+        assert v1_rest_resp.status_code == 400
+        assert v1_rest_resp.json() == {
+            "error": {
+                "code": 400,
+                "status": "INVALID_ARGUMENT",
+                "message": "REST message payload must use ROLE_* values for message.role.",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": "INVALID_REQUEST",
+                        "domain": "a2a-protocol.org",
                     },
                 ],
             }

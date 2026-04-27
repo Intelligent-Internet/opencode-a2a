@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from a2a.types import Message, Part
+from a2a.types import Message, Part, StreamResponse
 from google.protobuf.message import Message as ProtoMessage
 
 from ..a2a_utils import part_text, proto_to_dict
@@ -96,6 +96,17 @@ def extract_text(payload: Any) -> str | None:
 
     if isinstance(payload, Message):
         return extract_from_parts(payload.parts)
+
+    if isinstance(payload, StreamResponse):
+        if payload.HasField("artifact_update"):
+            return extract_text(payload.artifact_update.artifact)
+        if payload.HasField("status_update"):
+            return extract_text(payload.status_update.status)
+        if payload.HasField("message"):
+            return extract_text(payload.message)
+        if payload.HasField("task"):
+            return extract_text(payload.task)
+        return None
 
     if isinstance(payload, str):
         return payload.strip() or None

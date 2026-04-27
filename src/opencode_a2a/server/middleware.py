@@ -43,7 +43,6 @@ from .request_parsing import (
     _detect_sensitive_extension_method,
     _is_json_content_type,
     _looks_like_jsonrpc_envelope,
-    _looks_like_legacy_message_payload,
     _normalize_content_type,
     _parse_content_length,
     _parse_json_body,
@@ -376,24 +375,24 @@ def install_runtime_middlewares(
         try:
             body, token = await _get_request_body(request)
             payload = _parse_json_body(body)
-            if _looks_like_jsonrpc_envelope(payload) or _looks_like_legacy_message_payload(payload):
+            if _looks_like_jsonrpc_envelope(payload):
                 return JSONResponse(
                     build_http_error_body(
                         protocol_version=_error_protocol_version(request),
                         status_code=400,
                         status="INVALID_ARGUMENT",
                         message=(
-                            "Invalid HTTP+JSON payload for REST endpoint. "
-                            "Use ProtoJSON SendMessageRequest payloads with message.parts "
-                            "and ROLE_* role values, or call POST / with method=SendMessage "
-                            "or method=SendStreamingMessage."
+                            "Invalid JSON-RPC payload for REST endpoint. "
+                            "Call POST / for JSON-RPC methods such as SendMessage "
+                            "or SendStreamingMessage, or send ProtoJSON "
+                            "SendMessageRequest payloads to the REST endpoint."
                         ),
                         legacy_payload={
                             "error": (
-                                "Invalid HTTP+JSON payload for REST endpoint. "
-                                "Use ProtoJSON SendMessageRequest payloads with message.parts "
-                                "and ROLE_* role values, or call POST / with method=SendMessage "
-                                "or method=SendStreamingMessage."
+                                "Invalid JSON-RPC payload for REST endpoint. "
+                                "Call POST / for JSON-RPC methods such as SendMessage "
+                                "or SendStreamingMessage, or send ProtoJSON "
+                                "SendMessageRequest payloads to the REST endpoint."
                             )
                         },
                         reason="INVALID_HTTP_JSON_PAYLOAD",

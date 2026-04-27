@@ -72,26 +72,6 @@ def _decode_payload_preview(body: bytes, *, limit: int) -> str:
     return body.decode("utf-8", errors="replace")
 
 
-def _looks_like_legacy_message_payload(payload: dict | None) -> bool:
-    if payload is None:
-        return False
-    message = payload.get("message")
-    if not isinstance(message, dict):
-        return False
-    if "content" in message:
-        return True
-    role = message.get("role")
-    if isinstance(role, str) and role in {"user", "agent"}:
-        return True
-    parts = message.get("parts")
-    if not isinstance(parts, list):
-        return False
-    return any(
-        isinstance(part, dict) and ("kind" in part or "type" in part or "file" in part)
-        for part in parts
-    )
-
-
 def _looks_like_jsonrpc_envelope(payload: dict | None) -> bool:
     if payload is None:
         return False

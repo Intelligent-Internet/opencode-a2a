@@ -119,7 +119,6 @@ from .request_parsing import (
     _detect_sensitive_extension_method,
     _is_json_content_type,
     _looks_like_jsonrpc_envelope,
-    _looks_like_legacy_message_payload,
     _normalize_content_type,
     _parse_content_length,
     _parse_json_body,
@@ -280,7 +279,6 @@ __all__ = [
     "_decode_payload_preview",
     "_detect_sensitive_extension_method",
     "_is_json_content_type",
-    "_looks_like_legacy_message_payload",
     "_looks_like_jsonrpc_envelope",
     "_normalize_content_type",
     "_normalize_log_level",
@@ -309,7 +307,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         self,
         agent_executor: AgentExecutor,
         task_store: TaskStore,
-        agent_card: AgentCard | None = None,
+        agent_card: AgentCard,
         queue_manager: Any | None = None,
         push_config_store: PushNotificationConfigStore | None = None,
         push_sender: PushNotificationSender | None = None,
@@ -321,7 +319,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         super().__init__(
             agent_executor=agent_executor,
             task_store=task_store,
-            agent_card=agent_card or AgentCard(name="opencode-a2a"),
+            agent_card=agent_card,
             queue_manager=queue_manager,
             push_config_store=push_config_store,
             push_sender=push_sender,
@@ -587,14 +585,6 @@ class OpencodeRequestHandler(LegacyRequestHandler):
                     yield negotiated
         except TaskStoreOperationError as exc:
             raise self._task_store_server_error(exc) from exc
-
-    async def on_resubscribe_to_task(
-        self,
-        params: SubscribeToTaskRequest,
-        context=None,
-    ):
-        async for event in self.on_subscribe_to_task(params, context):
-            yield event
 
     async def on_message_send_stream(self, params, context=None):
         self._validate_chat_output_modes(params)
