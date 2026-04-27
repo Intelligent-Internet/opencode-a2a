@@ -26,6 +26,7 @@ from opencode_a2a.client.errors import (
     A2ATimeoutError,
     A2AUnsupportedOperationError,
 )
+from opencode_a2a.client.payload_text import extract_text
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.execution.tool_error_mapping import map_a2a_tool_exception
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
@@ -286,10 +287,8 @@ async def test_agent_handles_a2a_call_tool(monkeypatch) -> None:
         TaskStatus,
     )
 
-    from opencode_a2a.client import A2AClient
-
     class MockA2AClient:
-        extract_text = staticmethod(A2AClient.extract_text)
+        extract_text = staticmethod(extract_text)
 
         async def send_message(self, text: str):
             task = Task(
@@ -406,7 +405,7 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
                     )
 
                 mock_client.send_message = _send_message
-                mock_client.extract_text = A2AClient.extract_text
+                mock_client.extract_text = extract_text
                 return mock_client
 
             async def __aexit__(self, exc_type, exc, tb):
@@ -426,8 +425,6 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
         TaskState,
         TaskStatus,
     )
-
-    from opencode_a2a.client import A2AClient
 
     client = ToolLoopClient()
     manager = MockManager()

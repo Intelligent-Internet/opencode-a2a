@@ -4,6 +4,7 @@ import logging
 import uuid
 from typing import Any
 
+from ..client.payload_text import extract_text
 from .tool_error_mapping import build_tool_error, map_a2a_tool_exception
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ async def handle_a2a_call_tool(
         async with a2a_client_manager.borrow_client(agent_url) as client:
             async for current_event in client.send_message(message):
                 event = current_event
-                extracted = client.extract_text(current_event)
+                extracted = extract_text(current_event)
                 if extracted:
                     result_text = merge_streamed_tool_output(result_text, extracted)
 

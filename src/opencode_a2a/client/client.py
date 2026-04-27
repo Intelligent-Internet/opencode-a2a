@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Mapping
-from types import SimpleNamespace
 from typing import Any, cast
 from uuid import uuid4
 
@@ -20,7 +19,6 @@ from a2a.types import (
     CancelTaskRequest,
     GetTaskRequest,
     Message,
-    Part,
     Role,
     SendMessageConfiguration,
     SendMessageRequest,
@@ -41,7 +39,6 @@ from .error_mapping import (
     map_operation_error,
 )
 from .errors import A2ATimeoutError, A2AUnsupportedBindingError
-from .payload_text import extract_text as extract_text_from_payload
 from .polling import PollingFallbackPolicy
 from .request_context import build_call_context, split_request_metadata
 
@@ -131,13 +128,6 @@ class A2AClient:
         try:
             client = await self._ensure_client()
             request_metadata, extra_headers = split_request_metadata(metadata)
-            request = self._build_user_message(
-                text=text,
-                context_id=context_id,
-                task_id=task_id,
-                message_id=message_id,
-                extensions=extensions,
-            )
             call_context = build_call_context(
                 self._settings.bearer_token,
                 extra_headers,
@@ -148,7 +138,14 @@ class A2AClient:
                 async for event in call_with_supported_kwargs(
                     client.send_message,
                     SendMessageRequest(
-                        message=request,
+                        message=Message(
+                            role=Role.ROLE_USER,
+                            message_id=message_id or str(uuid4()),
+                            context_id=context_id,
+                            task_id=task_id,
+                            parts=[make_text_part(text)],
+                            extensions=list(extensions or []),
+                        ),
                         configuration=SendMessageConfiguration(),
                         metadata=request_metadata or {},
                     ),
@@ -193,7 +190,10 @@ class A2AClient:
         if not self._should_poll_after_send(last_event):
             return last_event
         terminal_task = await self._poll_task_until_terminal(
-            self._extract_task_from_client_event(last_event),
+            cast(
+                tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None],
+                last_event,
+            )[0],
             metadata=metadata,
         )
         return (terminal_task, None)
@@ -221,12 +221,7 @@ class A2AClient:
                     Task,
                     await call_with_supported_kwargs(
                         client.get_task,
-                        self._build_get_task_request_for_client(
-                            client,
-                            task_id=task_id,
-                            history_length=history_length,
-                            metadata=request_metadata,
-                        ),
+                        GetTaskRequest(id=task_id, history_length=history_length),
                         context=call_context,
                         call_context=call_context,
                         request_metadata=request_metadata,
@@ -293,11 +288,7 @@ class A2AClient:
                     subscribe = cast(Any, client).resubscribe
                 async for event in call_with_supported_kwargs(
                     subscribe,
-                    self._build_subscribe_request_for_client(
-                        client,
-                        task_id=task_id,
-                        metadata=request_metadata,
-                    ),
+                    SubscribeToTaskRequest(id=task_id),
                     context=call_context,
                     call_context=call_context,
                     request_metadata=request_metadata,
@@ -381,16 +372,6 @@ class A2AClient:
             return False
         return self._polling_fallback_policy.should_poll_state(task.status.state)
 
-    def _extract_task_from_client_event(
-        self,
-        event: Message | tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None] | None,
-    ) -> Task:
-        task, _update = cast(
-            tuple[Task, TaskStatusUpdateEvent | TaskArtifactUpdateEvent | None],
-            event,
-        )
-        return task
-
     async def _poll_task_until_terminal(
         self,
         task: Task,
@@ -423,61 +404,6 @@ class A2AClient:
 
     async def _sleep(self, delay_seconds: float) -> None:
         await asyncio.sleep(delay_seconds)
-
-    def _build_user_message(
-        self,
-        *,
-        text: str,
-        context_id: str | None,
-        task_id: str | None,
-        message_id: str | None,
-        extensions: list[str] | None,
-    ) -> Message:
-        return Message(
-            role=Role.ROLE_USER,
-            message_id=message_id or str(uuid4()),
-            context_id=context_id,
-            task_id=task_id,
-            parts=self._normalize_parts(text),
-            extensions=list(extensions or []),
-        )
-
-    @classmethod
-    def extract_text(cls, payload: Any) -> str | None:
-        return extract_text_from_payload(payload)
-
-    def _normalize_parts(self, text: str) -> list[Part]:
-        return [make_text_part(text)]
-
-    def _build_get_task_request_for_client(
-        self,
-        client: Any,
-        *,
-        task_id: str,
-        history_length: int | None,
-        metadata: Mapping[str, Any] | None,
-    ) -> GetTaskRequest | SimpleNamespace:
-        if isinstance(client, Client):
-            return GetTaskRequest(id=task_id, history_length=history_length)
-        return SimpleNamespace(
-            id=task_id,
-            history_length=history_length,
-            metadata=dict(metadata or {}),
-        )
-
-    def _build_subscribe_request_for_client(
-        self,
-        client: Any,
-        *,
-        task_id: str,
-        metadata: Mapping[str, Any] | None,
-    ) -> SubscribeToTaskRequest | SimpleNamespace:
-        if isinstance(client, Client):
-            return SubscribeToTaskRequest(id=task_id)
-        return SimpleNamespace(
-            id=task_id,
-            metadata=dict(metadata or {}),
-        )
 
     def _adapt_stream_response(
         self,

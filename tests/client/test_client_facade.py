@@ -498,8 +498,9 @@ async def test_get_task_uses_authorization_header_context(
     )
 
     params, kwargs = fake_client.task_inputs[0]
-    assert params.metadata == {"trace_id": "trace-1"}
+    assert params.id == "task-id"
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
+    assert kwargs["request_metadata"] == {"trace_id": "trace-1"}
 
 
 @pytest.mark.asyncio
@@ -559,8 +560,9 @@ async def test_resubscribe_uses_authorization_header_context(
 
     assert result == [1]
     params, kwargs = fake_client.resubscribe_inputs[0]
-    assert params.metadata == {"trace_id": "trace-1"}
+    assert params.id == "task-id"
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
+    assert kwargs["request_metadata"] == {"trace_id": "trace-1"}
 
 
 @pytest.mark.asyncio
