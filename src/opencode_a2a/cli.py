@@ -12,7 +12,13 @@ from . import __version__
 from .client import A2AClient, load_settings
 from .server.application import main as serve_main
 
-CLI_BRAND_BANNER = "".join(("OpenCode", "-", "A2A"))
+CLI_BRAND_BANNER = (
+    "  ___                 ___         _          _    ___   _   \n"
+    " / _ \\ _ __  ___ _ _ / __|___  __| |___ ___ /_\\  |_  ) /_\\  \n"
+    "| (_) | '_ \\/ -_) ' \\\\ (__/ _ \\/ _` / -_)___/ _ \\  / / / _ \\ \n"
+    " \\___/| .__/\\___|_||_\\___\\___/\\__,_\\___|  /_/ \\_\\/___/_/ \\_\\\n"
+    "      |_|                                                   "
+)
 PROJECT_REPOSITORY_URL = "https://github.com/Intelligent-Internet/opencode-a2a"
 
 
