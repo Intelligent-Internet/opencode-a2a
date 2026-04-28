@@ -1,4 +1,5 @@
 from opencode_a2a.profile.runtime import build_runtime_profile
+from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
 from tests.support.helpers import make_settings
 
 
@@ -24,9 +25,9 @@ def test_profile_runtime_splits_deployment_runtime_features_and_health_payload()
 
     profile = build_runtime_profile(settings)
 
-    assert profile.summary_dict(protocol_version=settings.a2a_protocol_version) == {
+    assert profile.summary_dict(protocol_version=A2A_PROTOCOL_VERSION) == {
         "profile_id": "opencode-a2a-single-tenant-coding-v1",
-        "protocol_version": "0.3",
+        "protocol_version": "1.0",
         "deployment": {
             "id": "single_tenant_shared_workspace",
             "single_tenant": True,
@@ -95,12 +96,12 @@ def test_profile_runtime_splits_deployment_runtime_features_and_health_payload()
     assert profile.health_payload(
         service="opencode-a2a",
         version=settings.a2a_version,
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
     ) == {
         "status": "ok",
         "service": "opencode-a2a",
         "version": settings.a2a_version,
-        "profile": profile.summary_dict(protocol_version=settings.a2a_protocol_version),
+        "profile": profile.summary_dict(protocol_version=A2A_PROTOCOL_VERSION),
     }
 
 

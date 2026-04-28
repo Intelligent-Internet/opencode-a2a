@@ -7,7 +7,11 @@ from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
 from tests.support.helpers import make_settings
-from tests.support.session_extensions import _BASE_SETTINGS
+from tests.support.jsonrpc_error_assertions import (
+    assert_v1_error_reason,
+    error_context_detail,
+)
+from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers
 
 
 @pytest.mark.asyncio
@@ -56,7 +60,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -103,7 +107,7 @@ async def test_interrupt_callback_extension_rejects_legacy_permission_fields(mon
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -132,7 +136,7 @@ async def test_interrupt_callback_extension_rejects_legacy_metadata_directory(mo
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -218,7 +222,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         reply_resp = await client.post(
             "/",
             headers=headers,
@@ -300,7 +304,7 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -313,7 +317,11 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32004
-        assert payload["error"]["data"]["type"] == "INTERRUPT_REQUEST_NOT_FOUND"
+        assert_v1_error_reason(
+            payload["error"],
+            reason="INTERRUPT_REQUEST_NOT_FOUND",
+            metadata={"request_id": "perm-404"},
+        )
 
 
 @pytest.mark.asyncio
@@ -332,7 +340,7 @@ async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch)
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -345,7 +353,11 @@ async def test_interrupt_callback_extension_rejects_expired_request(monkeypatch)
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32007
-        assert payload["error"]["data"]["type"] == "INTERRUPT_REQUEST_EXPIRED"
+        assert_v1_error_reason(
+            payload["error"],
+            reason="INTERRUPT_REQUEST_EXPIRED",
+            metadata={"request_id": "perm-expired"},
+        )
 
 
 @pytest.mark.asyncio
@@ -380,7 +392,7 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -393,7 +405,11 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32004
-        assert payload["error"]["data"]["type"] == "INTERRUPT_REQUEST_NOT_FOUND"
+        assert_v1_error_reason(
+            payload["error"],
+            reason="INTERRUPT_REQUEST_NOT_FOUND",
+            metadata={"request_id": "perm-unknown"},
+        )
         assert dummy.permission_reply_calls == []
 
 
@@ -419,7 +435,7 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -432,9 +448,15 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32008
-        assert payload["error"]["data"]["type"] == "INTERRUPT_TYPE_MISMATCH"
-        assert payload["error"]["data"]["expected_interrupt_type"] == "permission"
-        assert payload["error"]["data"]["actual_interrupt_type"] == "question"
+        assert_v1_error_reason(
+            payload["error"],
+            reason="INTERRUPT_TYPE_MISMATCH",
+            metadata={
+                "request_id": "q-only",
+                "expected_interrupt_type": "permission",
+                "actual_interrupt_type": "question",
+            },
+        )
 
 
 @pytest.mark.asyncio
@@ -460,7 +482,7 @@ async def test_interrupt_callback_extension_rejects_identity_mismatch(monkeypatc
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -473,7 +495,11 @@ async def test_interrupt_callback_extension_rejects_identity_mismatch(monkeypatc
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32004
-        assert payload["error"]["data"]["type"] == "INTERRUPT_REQUEST_NOT_FOUND"
+        assert_v1_error_reason(
+            payload["error"],
+            reason="INTERRUPT_REQUEST_NOT_FOUND",
+            metadata={"request_id": "perm-owned"},
+        )
 
 
 @pytest.mark.asyncio
@@ -524,7 +550,7 @@ async def test_interrupt_callback_extension_rejects_credential_id_mismatch(monke
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -537,7 +563,11 @@ async def test_interrupt_callback_extension_rejects_credential_id_mismatch(monke
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32004
-        assert payload["error"]["data"]["type"] == "INTERRUPT_REQUEST_NOT_FOUND"
+        assert_v1_error_reason(
+            payload["error"],
+            reason="INTERRUPT_REQUEST_NOT_FOUND",
+            metadata={"request_id": "perm-owned"},
+        )
 
 
 @pytest.mark.asyncio
@@ -576,7 +606,7 @@ async def test_interrupt_callback_extension_maps_concurrency_limit_to_unreachabl
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -589,5 +619,7 @@ async def test_interrupt_callback_extension_maps_concurrency_limit_to_unreachabl
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32002
-        assert payload["error"]["data"]["type"] == "UPSTREAM_UNREACHABLE"
-        assert "concurrency limit exceeded" in payload["error"]["data"]["detail"]
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_UNREACHABLE")
+        context = error_context_detail(payload["error"])
+        assert context is not None
+        assert "concurrency limit exceeded" in context["detail"]

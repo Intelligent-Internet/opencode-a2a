@@ -11,7 +11,6 @@ from a2a.client.card_resolver import A2ACardResolver
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
     EXTENDED_AGENT_CARD_PATH,
-    PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
 from ..trace_context import current_trace_headers
 from .request_context import build_default_headers
@@ -26,7 +25,6 @@ def normalize_agent_card_endpoint(agent_url: str) -> tuple[str, str]:
     normalized_no_leading = path.rstrip("/").lstrip("/")
     candidate_paths = (
         AGENT_CARD_WELL_KNOWN_PATH,
-        PREV_AGENT_CARD_WELL_KNOWN_PATH,
         EXTENDED_AGENT_CARD_PATH,
     )
 
@@ -77,10 +75,3 @@ def build_resolver_http_kwargs(
     if default_headers:
         http_kwargs["headers"] = default_headers
     return http_kwargs
-
-
-__all__ = [
-    "build_agent_card_resolver",
-    "build_resolver_http_kwargs",
-    "normalize_agent_card_endpoint",
-]

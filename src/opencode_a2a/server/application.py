@@ -25,6 +25,7 @@ from a2a.types import (
     InternalError,
     InvalidRequestError,
     Message,
+    Part,
     Role,
     SendMessageRequest,
     SendMessageResponse,
@@ -48,41 +49,32 @@ from a2a.utils.task import apply_history_length, validate_history_length
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
+from google.protobuf.message import Message as ProtoMessage
 from pydantic_settings import BaseSettings
 from starlette.middleware.gzip import GZipMiddleware
 
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
     EXTENDED_AGENT_CARD_PATH,
-    PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
-from ..a2a_utils import make_text_part
 from ..config import Settings
 from ..contracts.extensions import (
-    COMPATIBILITY_PROFILE_EXTENSION_URI,
-    INTERRUPT_CALLBACK_EXTENSION_URI,
-    INTERRUPT_CALLBACK_METHODS,
-    INTERRUPT_RECOVERY_EXTENSION_URI,
-    INTERRUPT_RECOVERY_METHODS,
     MODEL_SELECTION_EXTENSION_URI,
-    PROVIDER_DISCOVERY_EXTENSION_URI,
-    PROVIDER_DISCOVERY_METHODS,
     SESSION_BINDING_EXTENSION_URI,
-    SESSION_CONTROL_METHODS,
-    SESSION_MANAGEMENT_EXTENSION_URI,
-    SESSION_METHODS,
-    STREAMING_EXTENSION_URI,
-    WIRE_CONTRACT_EXTENSION_URI,
-    WORKSPACE_CONTROL_EXTENSION_URI,
-    WORKSPACE_CONTROL_METHODS,
     build_capability_snapshot,
 )
 from ..execution.executor import OpencodeAgentExecutor
+from ..extension_negotiation import (
+    ExtensionRequirement,
+    filter_negotiated_extensions_from_payload,
+    requested_extensions_from_call_context,
+)
 from ..invocation import call_with_supported_kwargs
 from ..jsonrpc.application import (
     OpencodeSessionManagementJSONRPCApplication,
 )
 from ..jsonrpc.error_responses import build_http_error_body
+from ..metadata_access import extract_namespaced_value
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..output_modes import (
     NegotiatingResultAggregator,
@@ -91,42 +83,25 @@ from ..output_modes import (
     normalize_accepted_output_modes,
 )
 from ..profile.runtime import build_runtime_profile
+from ..protocol_versions import A2A_PROTOCOL_VERSION
 from ..trace_context import install_log_record_factory
 from .agent_card import (
     _CHAT_OUTPUT_MODES,
-    _build_agent_card_description,
-    _build_chat_examples,
-    _build_session_management_skill_examples,
     build_agent_card,
     build_authenticated_extended_agent_card,
 )
 from .client_manager import A2AClientManager
 from .lifespan import build_lifespan
 from .middleware import (
-    AUTHENTICATED_EXTENDED_CARD_CACHE_CONTROL,
-    PUBLIC_AGENT_CARD_CACHE_CONTROL,
     build_agent_card_etag,
     emit_stream_request_metrics,
     install_runtime_middlewares,
 )
 from .openapi import (
-    _build_jsonrpc_extension_openapi_description,
-    _build_jsonrpc_extension_openapi_examples,
-    _build_rest_message_openapi_examples,
     _patch_jsonrpc_openapi_contract,
 )
 from .request_parsing import (
-    _decode_payload_preview,
-    _detect_sensitive_extension_method,
-    _is_json_content_type,
-    _looks_like_jsonrpc_envelope,
-    _looks_like_jsonrpc_message_payload,
-    _normalize_content_type,
-    _normalize_v1_jsonrpc_method_alias,
-    _parse_content_length,
     _parse_json_body,
-    _request_body_too_large_response,
-    _RequestBodyTooLargeError,
 )
 from .rest_tasks import build_list_tasks_route
 from .state_store import (
@@ -143,12 +118,6 @@ from .task_store import (
 logger = logging.getLogger(__name__)
 TASK_STORE_ERROR_TYPE = "TASK_STORE_UNAVAILABLE"
 PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE = "Push notifications are not supported by the agent"
-_REST_MESSAGE_CONFIGURATION_FIELDS = (
-    "acceptedOutputModes",
-    "historyLength",
-    "returnImmediately",
-    "taskPushNotificationConfig",
-)
 
 
 def _are_modalities_compatible(
@@ -158,31 +127,12 @@ def _are_modalities_compatible(
     return bool(set(supported_output_modes) & set(accepted_output_modes))
 
 
-def _build_rest_legacy_error_payload(
-    *,
-    message: str,
-    reason: str | None = None,
-    metadata: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {"error": message}
-    if reason:
-        payload["type"] = reason
-    if metadata:
-        payload.update(dict(metadata))
-    return payload
-
-
 def _rest_error_response(
     *,
     request: Request,
-    default_protocol_version: str,
     error: Exception,
 ) -> JSONResponse:
-    protocol_version = getattr(
-        request.state,
-        "a2a_protocol_version",
-        default_protocol_version,
-    )
+    del request
     logger_fn = logger.exception
     logger_message = "Unexpected REST message route failure"
 
@@ -201,15 +151,9 @@ def _rest_error_response(
         logger_fn(logger_message)
         return JSONResponse(
             build_http_error_body(
-                protocol_version=protocol_version,
                 status_code=mapping.http_code,
                 status=mapping.grpc_status,
                 message=message,
-                legacy_payload=_build_rest_legacy_error_payload(
-                    message=message,
-                    reason=mapping.reason,
-                    metadata=metadata,
-                ),
                 reason=mapping.reason,
                 metadata=metadata,
             ),
@@ -223,14 +167,9 @@ def _rest_error_response(
         logger_fn(logger_message)
         return JSONResponse(
             build_http_error_body(
-                protocol_version=protocol_version,
                 status_code=400,
                 status="INVALID_ARGUMENT",
                 message=message,
-                legacy_payload=_build_rest_legacy_error_payload(
-                    message=message,
-                    reason="INVALID_REQUEST",
-                ),
                 reason="INVALID_REQUEST",
             ),
             status_code=400,
@@ -239,172 +178,42 @@ def _rest_error_response(
     logger_fn(logger_message)
     return JSONResponse(
         build_http_error_body(
-            protocol_version=protocol_version,
             status_code=500,
             status="INTERNAL",
             message="unknown exception",
-            legacy_payload=_build_rest_legacy_error_payload(
-                message="unknown exception",
-                reason="INTERNAL_ERROR",
-            ),
             reason="INTERNAL_ERROR",
         ),
         status_code=500,
     )
 
 
-def _normalize_rest_content_part(
-    value: Any,
-    *,
-    field: str,
-) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        raise InvalidRequestError(message=f"{field} must be an object.")
-
-    normalized: dict[str, Any] = {}
-    metadata = value.get("metadata")
-    if metadata is not None:
-        normalized["metadata"] = metadata
-
-    text_value = value.get("text")
-    if isinstance(text_value, str):
-        normalized["text"] = text_value
-        return normalized
-
-    if "data" in value:
-        normalized["data"] = value.get("data")
-        return normalized
-
-    file_value = value.get("file")
-    if isinstance(file_value, Mapping):
-        raw_value = file_value.get("bytes")
-        url_value = file_value.get("uri")
-        if isinstance(raw_value, str) and raw_value:
-            normalized["raw"] = raw_value
-        elif isinstance(url_value, str) and url_value:
-            normalized["url"] = url_value
-        else:
-            raise InvalidRequestError(message=f"{field}.file must contain uri or bytes.")
-        filename = file_value.get("name")
-        if isinstance(filename, str) and filename.strip():
-            normalized["filename"] = filename
-        media_type = (
-            file_value.get("mimeType") or file_value.get("mime_type") or file_value.get("mediaType")
-        )
-        if isinstance(media_type, str) and media_type.strip():
-            normalized["mediaType"] = media_type
-        return normalized
-
-    raw_value = value.get("raw")
-    if isinstance(raw_value, str) and raw_value:
-        normalized["raw"] = raw_value
-        filename = value.get("filename")
-        if isinstance(filename, str) and filename.strip():
-            normalized["filename"] = filename
-        media_type = value.get("mediaType") or value.get("media_type")
-        if isinstance(media_type, str) and media_type.strip():
-            normalized["mediaType"] = media_type
-        return normalized
-
-    url_value = value.get("url")
-    if isinstance(url_value, str) and url_value:
-        normalized["url"] = url_value
-        filename = value.get("filename")
-        if isinstance(filename, str) and filename.strip():
-            normalized["filename"] = filename
-        media_type = value.get("mediaType") or value.get("media_type")
-        if isinstance(media_type, str) and media_type.strip():
-            normalized["mediaType"] = media_type
-        return normalized
-
-    raise InvalidRequestError(message=f"{field} must contain text, data, or file.")
-
-
-def _normalize_rest_send_message_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(payload)
-    message = normalized.get("message")
-    if not isinstance(message, Mapping):
-        raise InvalidRequestError(message="message must be an object.")
-
-    normalized_message = dict(message)
-    content = normalized_message.pop("content", None)
-    if not isinstance(content, list):
-        raise InvalidRequestError(message="message.content must be an array.")
-    normalized_message["parts"] = [
-        _normalize_rest_content_part(item, field=f"message.content[{index}]")
-        for index, item in enumerate(content)
-    ]
-    normalized["message"] = normalized_message
-
-    configuration_updates: dict[str, Any] = {}
-    for field in _REST_MESSAGE_CONFIGURATION_FIELDS:
-        if field in normalized:
-            configuration_updates[field] = normalized.pop(field)
-    if configuration_updates:
-        configuration = normalized.get("configuration")
-        if configuration is None:
-            normalized["configuration"] = configuration_updates
-        elif isinstance(configuration, Mapping):
-            merged_configuration = dict(configuration)
-            merged_configuration.update(configuration_updates)
-            normalized["configuration"] = merged_configuration
-        else:
-            raise InvalidRequestError(message="configuration must be an object.")
-
-    return normalized
-
-
 def _parse_rest_send_message_request(body: bytes):
     payload = _parse_json_body(body)
     if payload is None:
         raise InvalidRequestError(message="REST message payload must be a JSON object.")
-    return ParseDict(
-        _normalize_rest_send_message_payload(payload),
-        SendMessageRequest(),
-    )
+    message = payload.get("message")
+    if isinstance(message, dict):
+        if "content" in message:
+            raise InvalidRequestError(
+                message="REST message payload must use message.parts, not message.content."
+            )
+        role = message.get("role")
+        if isinstance(role, str) and role in {"user", "agent"}:
+            raise InvalidRequestError(
+                message="REST message payload must use ROLE_* values for message.role."
+            )
+        parts = message.get("parts")
+        if isinstance(parts, list):
+            for index, part in enumerate(parts):
+                if isinstance(part, dict) and ("kind" in part or "type" in part or "file" in part):
+                    raise InvalidRequestError(
+                        message=(
+                            f"message.parts[{index}] must use direct Part fields "
+                            "such as text, raw, url, or data."
+                        )
+                    )
+    return ParseDict(payload, SendMessageRequest())
 
-
-__all__ = [
-    "_RequestBodyTooLargeError",
-    "COMPATIBILITY_PROFILE_EXTENSION_URI",
-    "INTERRUPT_CALLBACK_EXTENSION_URI",
-    "INTERRUPT_CALLBACK_METHODS",
-    "INTERRUPT_RECOVERY_EXTENSION_URI",
-    "INTERRUPT_RECOVERY_METHODS",
-    "MODEL_SELECTION_EXTENSION_URI",
-    "PUBLIC_AGENT_CARD_CACHE_CONTROL",
-    "AUTHENTICATED_EXTENDED_CARD_CACHE_CONTROL",
-    "PROVIDER_DISCOVERY_EXTENSION_URI",
-    "PROVIDER_DISCOVERY_METHODS",
-    "SESSION_MANAGEMENT_EXTENSION_URI",
-    "SESSION_BINDING_EXTENSION_URI",
-    "SESSION_CONTROL_METHODS",
-    "SESSION_METHODS",
-    "STREAMING_EXTENSION_URI",
-    "WIRE_CONTRACT_EXTENSION_URI",
-    "WORKSPACE_CONTROL_EXTENSION_URI",
-    "WORKSPACE_CONTROL_METHODS",
-    "_build_agent_card_description",
-    "_build_chat_examples",
-    "_build_jsonrpc_extension_openapi_description",
-    "_build_jsonrpc_extension_openapi_examples",
-    "_build_rest_message_openapi_examples",
-    "_build_session_management_skill_examples",
-    "build_authenticated_extended_agent_card",
-    "_configure_logging",
-    "_decode_payload_preview",
-    "_detect_sensitive_extension_method",
-    "_is_json_content_type",
-    "_looks_like_jsonrpc_envelope",
-    "_looks_like_jsonrpc_message_payload",
-    "_normalize_v1_jsonrpc_method_alias",
-    "_normalize_content_type",
-    "_normalize_log_level",
-    "_parse_content_length",
-    "_parse_json_body",
-    "_request_body_too_large_response",
-    "build_agent_card",
-]
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -425,7 +234,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         self,
         agent_executor: AgentExecutor,
         task_store: TaskStore,
-        agent_card: AgentCard | None = None,
+        agent_card: AgentCard,
         queue_manager: Any | None = None,
         push_config_store: PushNotificationConfigStore | None = None,
         push_sender: PushNotificationSender | None = None,
@@ -437,7 +246,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         super().__init__(
             agent_executor=agent_executor,
             task_store=task_store,
-            agent_card=agent_card or AgentCard(name="opencode-a2a"),
+            agent_card=agent_card,
             queue_manager=queue_manager,
             push_config_store=push_config_store,
             push_sender=push_sender,
@@ -483,7 +292,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         error_message = Message(
             message_id=f"{task_id}:task-store-error",
             role=Role.ROLE_AGENT,
-            parts=[make_text_part(message_text)],
+            parts=[Part(text=message_text)],
             task_id=task_id,
             context_id=context_id,
         )
@@ -510,7 +319,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
                 context_id=context_id,
                 artifact=Artifact(
                     artifact_id=f"{task_id}:error",
-                    parts=[make_text_part(message_text)],
+                    parts=[Part(text=message_text)],
                 ),
                 append=False,
                 last_chunk=True,
@@ -537,14 +346,108 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         return list(normalized) if normalized is not None else None
 
     @staticmethod
-    def _apply_task_output_negotiation(task: Task) -> Task:
+    def _apply_task_output_negotiation(task: Task, context=None) -> Task:
         negotiated = apply_accepted_output_modes(
             task,
             extract_accepted_output_modes_from_metadata(task.metadata),
         )
-        if isinstance(negotiated, Task):
-            return negotiated
-        return task
+        resolved = negotiated if isinstance(negotiated, Task) else task
+        return cast(
+            Task,
+            filter_negotiated_extensions_from_payload(
+                resolved,
+                requested_extensions_from_call_context(context),
+            ),
+        )
+
+    @staticmethod
+    def _validate_shared_extension_negotiation(params, context=None) -> None:  # noqa: ANN001
+        requested_extensions = requested_extensions_from_call_context(context)
+        sources: list[dict[str, Any]] = []
+        params_metadata = getattr(params, "metadata", None)
+        if isinstance(params_metadata, ProtoMessage):
+            params_metadata = MessageToDict(params_metadata, preserving_proto_field_name=True)
+        elif isinstance(params_metadata, Mapping):
+            params_metadata = dict(params_metadata)
+        else:
+            params_metadata = None
+        if params_metadata:
+            sources.append(params_metadata)
+        message = getattr(params, "message", None)
+        message_metadata = getattr(message, "metadata", None)
+        if isinstance(message_metadata, ProtoMessage):
+            message_metadata = MessageToDict(message_metadata, preserving_proto_field_name=True)
+        elif isinstance(message_metadata, Mapping):
+            message_metadata = dict(message_metadata)
+        else:
+            message_metadata = None
+        if message_metadata:
+            sources.append(message_metadata)
+
+        requirements: list[ExtensionRequirement] = []
+        if any(
+            extract_namespaced_value(source, namespace="shared", path=("session", "id")) is not None
+            for source in sources
+        ):
+            requirements.append(
+                ExtensionRequirement(
+                    extension_uri=SESSION_BINDING_EXTENSION_URI,
+                    field="metadata.shared.session.id",
+                )
+            )
+        if any(
+            extract_namespaced_value(source, namespace="opencode", path=("directory",)) is not None
+            for source in sources
+        ):
+            requirements.append(
+                ExtensionRequirement(
+                    extension_uri=SESSION_BINDING_EXTENSION_URI,
+                    field="metadata.opencode.directory",
+                )
+            )
+        if any(
+            extract_namespaced_value(source, namespace="opencode", path=("workspace", "id"))
+            is not None
+            for source in sources
+        ):
+            requirements.append(
+                ExtensionRequirement(
+                    extension_uri=SESSION_BINDING_EXTENSION_URI,
+                    field="metadata.opencode.workspace.id",
+                )
+            )
+        if any(
+            extract_namespaced_value(source, namespace="shared", path=("model", "providerID"))
+            is not None
+            or extract_namespaced_value(source, namespace="shared", path=("model", "modelID"))
+            is not None
+            for source in sources
+        ):
+            requirements.append(
+                ExtensionRequirement(
+                    extension_uri=MODEL_SELECTION_EXTENSION_URI,
+                    field="metadata.shared.model",
+                )
+            )
+        missing_requirements = [
+            requirement
+            for requirement in requirements
+            if requirement.extension_uri not in requested_extensions
+        ]
+        if not missing_requirements:
+            return
+        raise UnsupportedOperationError(
+            message="Request requires explicit A2A extension negotiation via A2A-Extensions.",
+            data={
+                "type": "EXTENSION_NEGOTIATION_REQUIRED",
+                "fields": [requirement.field for requirement in missing_requirements],
+                "required_extensions": sorted(
+                    {requirement.extension_uri for requirement in missing_requirements}
+                ),
+                "requested_extensions": sorted(requested_extensions),
+                "header": "A2A-Extensions",
+            },
+        )
 
     async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
         (
@@ -600,7 +503,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
             task = await self.task_store.get(params.id, context)
             if not task:
                 raise TaskNotFoundError()
-            return self._apply_task_output_negotiation(apply_history_length(task, params))
+            return self._apply_task_output_negotiation(apply_history_length(task, params), context)
         except TaskStoreOperationError as exc:
             raise self._task_store_server_error(exc) from exc
 
@@ -677,10 +580,10 @@ class OpencodeRequestHandler(LegacyRequestHandler):
 
             # Subscribe contract: terminal tasks replay once and then close stream.
             if task.status.state in TERMINAL_TASK_STATES:
-                yield self._apply_task_output_negotiation(task)
+                yield self._apply_task_output_negotiation(task, context)
                 return
 
-            yield self._apply_task_output_negotiation(task)
+            yield self._apply_task_output_negotiation(task, context)
 
             task_manager = TaskManager(
                 task_id=task.id,
@@ -700,23 +603,16 @@ class OpencodeRequestHandler(LegacyRequestHandler):
                     extract_accepted_output_modes_from_metadata(getattr(event, "metadata", None)),
                 )
                 if negotiated is not None:
-                    yield negotiated
+                    yield filter_negotiated_extensions_from_payload(
+                        negotiated,
+                        requested_extensions_from_call_context(context),
+                    )
         except TaskStoreOperationError as exc:
             raise self._task_store_server_error(exc) from exc
 
-    async def on_resubscribe_to_task(
-        self,
-        params,
-        context=None,
-    ):
-        subscribe_params = params
-        if not isinstance(params, SubscribeToTaskRequest):
-            subscribe_params = SubscribeToTaskRequest(id=params.id)
-        async for event in self.on_subscribe_to_task(subscribe_params, context):
-            yield event
-
     async def on_message_send_stream(self, params, context=None):
         self._validate_chat_output_modes(params)
+        self._validate_shared_extension_negotiation(params, context)
         (
             _task_manager,
             task_id,
@@ -767,6 +663,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
 
     async def on_message_send(self, params, context=None):
         self._validate_chat_output_modes(params)
+        self._validate_shared_extension_negotiation(params, context)
         (
             _task_manager,
             task_id,
@@ -803,7 +700,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
                 self._track_background_task(bg_consume_task)
         except TaskStoreOperationError as exc:
             logger.exception(
-                "Task store operation failed during message/send task_id=%s operation=%s",
+                "Task store operation failed during SendMessage task_id=%s operation=%s",
                 task_id,
                 exc.operation,
             )
@@ -882,12 +779,6 @@ class IdentityAwareCallContextBuilder(DefaultServerCallContextBuilder):
         trace_id = getattr(request.state, "trace_id", None)
         if trace_id:
             context.state["trace_id"] = trace_id
-        negotiated_protocol_version = getattr(request.state, "a2a_protocol_version", None)
-        if negotiated_protocol_version:
-            context.state["a2a_protocol_version"] = negotiated_protocol_version
-        requested_protocol_version = getattr(request.state, "a2a_requested_protocol_version", None)
-        if requested_protocol_version:
-            context.state["a2a_requested_protocol_version"] = requested_protocol_version
 
         return context
 
@@ -948,7 +839,6 @@ def create_app(settings: Settings) -> FastAPI:
         http_handler=handler,
         context_builder=context_builder,
         upstream_client=upstream_client,
-        protocol_version=settings.a2a_protocol_version,
         supported_methods=capability_snapshot.supported_jsonrpc_methods(),
         directory_resolver=(
             partial(
@@ -1013,7 +903,6 @@ def create_app(settings: Settings) -> FastAPI:
         except Exception as error:  # noqa: BLE001
             return _rest_error_response(
                 request=request,
-                default_protocol_version=settings.a2a_protocol_version,
                 error=error,
             )
 
@@ -1029,12 +918,10 @@ def create_app(settings: Settings) -> FastAPI:
         except Exception as error:  # noqa: BLE001
             return _rest_error_response(
                 request=request,
-                default_protocol_version=settings.a2a_protocol_version,
                 error=error,
             )
 
     app.add_api_route(AGENT_CARD_WELL_KNOWN_PATH, public_agent_card_route, methods=["GET"])
-    app.add_api_route(PREV_AGENT_CARD_WELL_KNOWN_PATH, public_agent_card_route, methods=["GET"])
     app.add_api_route("/v1/message:send", rest_message_send_route, methods=["POST"])
     app.add_api_route("/v1/message:stream", rest_message_send_stream_route, methods=["POST"])
     app.add_api_route("/v1/tasks/{id}:cancel", rest_dispatcher.on_cancel_task, methods=["POST"])
@@ -1053,18 +940,12 @@ def create_app(settings: Settings) -> FastAPI:
     app.add_api_route("/v1/tasks/{id}", rest_dispatcher.on_get_task, methods=["GET"])
 
     async def push_notifications_unsupported_route(request: Request) -> JSONResponse:
-        protocol_version = getattr(
-            request.state,
-            "a2a_protocol_version",
-            settings.a2a_protocol_version,
-        )
+        del request
         return JSONResponse(
             build_http_error_body(
-                protocol_version=protocol_version,
                 status_code=501,
                 status="UNIMPLEMENTED",
                 message=PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE,
-                legacy_payload={"message": PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE},
                 reason="PUSH_NOTIFICATIONS_UNSUPPORTED",
             ),
             status_code=501,
@@ -1094,7 +975,6 @@ def create_app(settings: Settings) -> FastAPI:
         "/v1/tasks",
         build_list_tasks_route(
             task_store=task_store,
-            default_protocol_version=settings.a2a_protocol_version,
         ),
         methods=["GET"],
     )
@@ -1122,7 +1002,7 @@ def create_app(settings: Settings) -> FastAPI:
         return runtime_profile.health_payload(
             service="opencode-a2a",
             version=settings.a2a_version,
-            protocol_version=settings.a2a_protocol_version,
+            protocol_version=A2A_PROTOCOL_VERSION,
         )
 
     return app

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import replace
-from functools import partial
 from typing import Any, cast
 
 from a2a.server.events import Event
@@ -18,30 +17,18 @@ from jsonrpc.jsonrpc2 import JSONRPC20Response
 from starlette.requests import Request
 from starlette.responses import Response
 
-from ..a2a_protocol import LEGACY_JSONRPC_METHOD_TO_V1_METHOD, V1_JSONRPC_METHOD_TO_LEGACY_METHOD
+from ..extension_negotiation import (
+    requested_extensions_from_call_context,
+)
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from .dispatch import (
     ExtensionHandlerContext,
     build_extension_method_registry,
 )
 from .error_responses import (
-    adapt_jsonrpc_error_for_protocol,
+    adapt_jsonrpc_error,
     invalid_params_error,
     method_not_supported_error,
-    protocol_uses_v1_error_format,
-)
-from .methods import (
-    SESSION_CONTEXT_PREFIX,
-    _extract_provider_catalog,
-    _normalize_model_summaries,
-    _normalize_permission_reply,
-    _normalize_provider_summaries,
-    _parse_question_answers,
-    _PromptAsyncValidationError,
-    _validate_command_request_payload,
-    _validate_prompt_async_format,
-    _validate_prompt_async_part,
-    _validate_shell_request_payload,
 )
 from .models import JSONRPCError, JSONRPCRequest
 
@@ -55,87 +42,6 @@ _PUSH_NOTIFICATION_METHODS = frozenset(
     }
 )
 
-__all__ = [
-    "SESSION_CONTEXT_PREFIX",
-    "_extract_provider_catalog",
-    "_normalize_model_summaries",
-    "_normalize_permission_reply",
-    "_normalize_provider_summaries",
-    "_parse_question_answers",
-    "_PromptAsyncValidationError",
-    "_validate_command_request_payload",
-    "_validate_prompt_async_format",
-    "_validate_prompt_async_part",
-    "_validate_shell_request_payload",
-]
-
-
-def _normalize_core_message_role(value: Any) -> Any:
-    if not isinstance(value, str):
-        return value
-    normalized = value.strip().lower()
-    if normalized == "user":
-        return "ROLE_USER"
-    if normalized == "agent":
-        return "ROLE_AGENT"
-    return value
-
-
-def _normalize_core_message_part(part: Any) -> Any:
-    if not isinstance(part, Mapping):
-        return part
-
-    normalized = dict(part)
-    kind = normalized.pop("kind", normalized.pop("type", None))
-    if kind in {None, "text", "data"}:
-        return normalized
-
-    if kind != "file":
-        return normalized
-
-    file_value = normalized.pop("file", None)
-    if isinstance(file_value, Mapping):
-        mapped = dict(normalized)
-        raw_value = file_value.get("bytes")
-        url_value = file_value.get("uri")
-        if isinstance(raw_value, str) and raw_value:
-            mapped["raw"] = raw_value
-        elif isinstance(url_value, str) and url_value:
-            mapped["url"] = url_value
-        filename = file_value.get("name")
-        if isinstance(filename, str) and filename.strip():
-            mapped["filename"] = filename
-        media_type = (
-            file_value.get("mimeType") or file_value.get("mime_type") or file_value.get("mediaType")
-        )
-        if isinstance(media_type, str) and media_type.strip():
-            mapped["mediaType"] = media_type
-        return mapped
-
-    return normalized
-
-
-def _normalize_core_message_payload(message: Any) -> Any:
-    if not isinstance(message, Mapping):
-        return message
-
-    normalized = dict(message)
-    normalized["role"] = _normalize_core_message_role(normalized.get("role"))
-    parts = normalized.get("parts")
-    if isinstance(parts, list):
-        normalized["parts"] = [_normalize_core_message_part(part) for part in parts]
-    return normalized
-
-
-def _normalize_core_request_params(method: str, params: Any) -> Any:
-    if not isinstance(params, Mapping):
-        return params
-
-    normalized = dict(params)
-    if method in {"SendMessage", "SendStreamingMessage"}:
-        normalized["message"] = _normalize_core_message_payload(normalized.get("message"))
-    return normalized
-
 
 class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
     """Dispatch OpenCode extension methods on top of the SDK JSON-RPC surface."""
@@ -146,7 +52,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         http_handler,
         upstream_client: OpencodeUpstreamClient,
         methods: dict[str, str],
-        protocol_version: str,
         supported_methods: list[str],
         directory_resolver: Callable[[str | None], str | None] | None = None,
         session_claim: Callable[..., Awaitable[bool]] | None = None,
@@ -190,7 +95,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         self._method_reply_permission = methods["reply_permission"]
         self._method_reply_question = methods["reply_question"]
         self._method_reject_question = methods["reject_question"]
-        self._protocol_version = protocol_version
         self._supported_methods = list(supported_methods)
         missing_control_hooks = [
             name
@@ -245,7 +149,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             method_reply_permission=self._method_reply_permission,
             method_reply_question=self._method_reply_question,
             method_reject_question=self._method_reject_question,
-            protocol_version=self._protocol_version,
             supported_methods=tuple(self._supported_methods),
             directory_resolver=self._directory_resolver,
             session_claim=self._session_claim,
@@ -271,10 +174,8 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         self,
         request_id: str | int | None,
         error: JSONRPCError | A2AError,
-        *,
-        protocol_version: str,
     ) -> JSONResponse:
-        adapted = adapt_jsonrpc_error_for_protocol(protocol_version, error)
+        adapted = adapt_jsonrpc_error(error)
         if isinstance(adapted, A2AError):
             error_payload = {
                 "code": JSON_RPC_ERROR_CODE_MAP.get(type(adapted), -32603),
@@ -370,33 +271,12 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         request: Request,
         body: dict[str, Any],
         base_request: JSONRPCRequest,
-        *,
-        protocol_version: str,
     ) -> Response:
-        if (
-            base_request.method in V1_JSONRPC_METHOD_TO_LEGACY_METHOD
-            and not protocol_uses_v1_error_format(protocol_version)
-        ):
-            if base_request.id is None:
-                return Response(status_code=204)
-            return self._generate_protocol_error_response(
-                base_request.id,
-                method_not_supported_error(
-                    method=base_request.method,
-                    supported_methods=self._supported_methods,
-                    protocol_version=protocol_version,
-                ),
-                protocol_version=protocol_version,
-            )
-        canonical_method = LEGACY_JSONRPC_METHOD_TO_V1_METHOD.get(
-            base_request.method,
-            base_request.method,
-        )
+        canonical_method = base_request.method
         if canonical_method in _PUSH_NOTIFICATION_METHODS:
             return self._generate_protocol_error_response(
                 base_request.id,
                 UnsupportedOperationError(),
-                protocol_version=protocol_version,
             )
         if canonical_method == "GetExtendedAgentCard":
             if base_request.id is None:
@@ -408,7 +288,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                     UnsupportedOperationError(
                         message="The agent does not support authenticated extended cards"
                     ),
-                    protocol_version=protocol_version,
                 )
             return self._jsonrpc_success_response(
                 base_request.id,
@@ -423,20 +302,16 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                 method_not_supported_error(
                     method=base_request.method,
                     supported_methods=self._supported_methods,
-                    protocol_version=protocol_version,
                 ),
-                protocol_version=protocol_version,
             )
 
         try:
             params = body.get("params", {})
-            normalized_params = _normalize_core_request_params(canonical_method, params)
-            specific_request = ParseDict(normalized_params, model_class())
+            specific_request = ParseDict(params, model_class())
         except Exception as exc:
             return self._generate_protocol_error_response(
                 base_request.id,
                 invalid_params_error(str(exc)),
-                protocol_version=protocol_version,
             )
 
         call_context = self._context_builder.build(request)
@@ -460,16 +335,10 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             return self._generate_protocol_error_response(
                 base_request.id,
                 exc,
-                protocol_version=protocol_version,
             )
 
     async def handle_requests(self, request: Request) -> Response:
         request_id: str | int | None = None
-        negotiated_protocol_version = getattr(
-            request.state,
-            "a2a_protocol_version",
-            self._protocol_version,
-        )
         try:
             body = await request.json()
             if isinstance(body, dict):
@@ -486,7 +355,26 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                 request,
                 body,
                 base_request,
-                protocol_version=negotiated_protocol_version,
+            )
+
+        call_context = self._context_builder.build(request)
+        requested_extensions = requested_extensions_from_call_context(call_context)
+        if extension_spec.extension_uri not in requested_extensions:
+            return self._generate_protocol_error_response(
+                base_request.id,
+                UnsupportedOperationError(
+                    message=(
+                        f"Method {base_request.method} requires explicit A2A extension "
+                        "negotiation via the A2A-Extensions header."
+                    ),
+                    data={
+                        "type": "EXTENSION_NEGOTIATION_REQUIRED",
+                        "method": base_request.method,
+                        "required_extensions": [extension_spec.extension_uri],
+                        "requested_extensions": sorted(requested_extensions),
+                        "header": "A2A-Extensions",
+                    },
+                ),
             )
 
         params = base_request.params or {}
@@ -494,15 +382,10 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             return self._generate_protocol_error_response(
                 base_request.id,
                 invalid_params_error("params must be an object"),
-                protocol_version=negotiated_protocol_version,
             )
         request_context = replace(
             self._extension_handler_context,
-            protocol_version=negotiated_protocol_version,
-            error_response=partial(
-                self._generate_protocol_error_response,
-                protocol_version=negotiated_protocol_version,
-            ),
+            error_response=self._generate_protocol_error_response,
         )
         return await extension_spec.handler(
             request_context,

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from typing import Any, TypeVar, cast
 
-from a2a.types import Artifact, Message, Part, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from google.protobuf.json_format import MessageToDict
+from a2a.types import Artifact, Message, Part, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from google.protobuf.message import Message as ProtoMessage
 from google.protobuf.struct_pb2 import ListValue, Struct, Value
 
@@ -18,76 +16,8 @@ def clone_proto(message: ProtoT) -> ProtoT:
     return cloned
 
 
-def proto_to_dict(
-    message: ProtoMessage,
-    *,
-    preserving_proto_field_name: bool = False,
-) -> dict[str, Any]:
-    return cast(
-        dict[str, Any],
-        MessageToDict(
-            message,
-            preserving_proto_field_name=preserving_proto_field_name,
-        ),
-    )
-
-
 def proto_equals(left: ProtoMessage, right: ProtoMessage) -> bool:
-    return proto_to_dict(left, preserving_proto_field_name=True) == proto_to_dict(
-        right,
-        preserving_proto_field_name=True,
-    )
-
-
-def make_text_part(
-    text: str,
-    *,
-    metadata: Mapping[str, Any] | None = None,
-    filename: str | None = None,
-    media_type: str | None = None,
-) -> Part:
-    part = Part(text=text)
-    if metadata:
-        part.metadata.update(dict(metadata))
-    if filename:
-        part.filename = filename
-    if media_type:
-        part.media_type = media_type
-    return part
-
-
-def make_raw_part(
-    raw: bytes,
-    *,
-    filename: str | None = None,
-    media_type: str | None = None,
-    metadata: Mapping[str, Any] | None = None,
-) -> Part:
-    part = Part(raw=raw)
-    if metadata:
-        part.metadata.update(dict(metadata))
-    if filename:
-        part.filename = filename
-    if media_type:
-        part.media_type = media_type
-    return part
-
-
-def make_url_part(
-    url: str,
-    *,
-    filename: str | None = None,
-    media_type: str | None = None,
-    metadata: Mapping[str, Any] | None = None,
-) -> Part:
-    part = Part(url=url)
-    if metadata:
-        part.metadata.update(dict(metadata))
-    if filename:
-        part.filename = filename
-    if media_type:
-        part.media_type = media_type
-    return part
+    return bool(left == right)
 
 
 def _to_proto_value(value: Any) -> Value:
@@ -131,53 +61,6 @@ def make_data_part(
     return part
 
 
-def part_is_text(part: Part) -> bool:
-    return cast(bool, part.HasField("text"))
-
-
-def part_is_data(part: Part) -> bool:
-    return cast(bool, part.HasField("data"))
-
-
-def part_is_file(part: Part) -> bool:
-    return cast(bool, part.HasField("raw")) or cast(bool, part.HasField("url"))
-
-
-def part_kind(part: Part) -> str | None:
-    if part_is_text(part):
-        return "text"
-    if part_is_data(part):
-        return "data"
-    if part_is_file(part):
-        return "file"
-    return None
-
-
-def part_text(part: Part) -> str | None:
-    if part.HasField("text"):
-        return part.text
-    return None
-
-
-def part_data_to_python(part: Part) -> Any:
-    if not part.HasField("data"):
-        return None
-    return MessageToDict(part.data)
-
-
-def part_text_fallback(part: Part) -> str | None:
-    if part.HasField("text"):
-        return part.text
-    if part.HasField("data"):
-        return json.dumps(
-            part_data_to_python(part),
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    return None
-
-
 def replace_message_parts(message: Message, parts: Sequence[Part]) -> Message:
     updated = clone_proto(message)
     del updated.parts[:]
@@ -189,37 +72,6 @@ def replace_artifact_parts(artifact: Artifact, parts: Sequence[Part]) -> Artifac
     updated = clone_proto(artifact)
     del updated.parts[:]
     updated.parts.extend(parts)
-    return updated
-
-
-def replace_task_status_message(task: Task, message: Message | None) -> Task:
-    updated = clone_proto(task)
-    if message is None:
-        updated.status.ClearField("message")
-    else:
-        updated.status.message.CopyFrom(message)
-    return updated
-
-
-def replace_task_history(task: Task, history: Sequence[Message]) -> Task:
-    updated = clone_proto(task)
-    del updated.history[:]
-    updated.history.extend(history)
-    return updated
-
-
-def replace_task_artifacts(task: Task, artifacts: Sequence[Artifact]) -> Task:
-    updated = clone_proto(task)
-    del updated.artifacts[:]
-    updated.artifacts.extend(artifacts)
-    return updated
-
-
-def replace_task_metadata(task: Task, metadata: Mapping[str, Any] | None) -> Task:
-    updated = clone_proto(task)
-    updated.ClearField("metadata")
-    if metadata:
-        updated.metadata.update(dict(metadata))
     return updated
 
 

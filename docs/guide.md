@@ -7,15 +7,16 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
 - The service supports both transports:
   - HTTP+JSON (REST endpoints such as `/v1/message:send`)
   - JSON-RPC (`POST /`)
-- Agent Card keeps `preferredTransport=HTTP+JSON` and also exposes JSON-RPC in `additional_interfaces`.
+- Agent Card exposes both HTTP+JSON and JSON-RPC through `supportedInterfaces`.
 - The public Agent Card is intentionally slimmed to the minimum discovery surface; per-extension disclosure policy is defined in [`extension-specifications.md`](./extension-specifications.md).
 - Detailed provider-private contracts are served through the authenticated extended card endpoint `/agent/authenticatedExtendedCard`.
 - Agent Card responses emit weak `ETag` and `Cache-Control`; clients should revalidate cached cards instead of repeatedly fetching full payloads.
 - Global HTTP gzip compression is enabled for eligible non-streaming HTTP responses larger than `A2A_HTTP_GZIP_MINIMUM_SIZE` bytes when clients send `Accept-Encoding: gzip`; the default threshold is `8192`, so the main benefit currently lands on larger responses such as the authenticated extended card.
 - The current A2A prose specification may refer to `AgentCard.capabilities.extendedAgentCard`, but the official JSON schema and SDK types use the top-level `supportsAuthenticatedExtendedCard` field. This service follows the shipped schema/SDK surface.
 - Payload schema is transport-specific and should not be mixed:
-  - REST send payload usually uses `message.content` and role values like `ROLE_USER`
-  - JSON-RPC `message/send` payload uses `params.message.parts` and role values `user` / `agent`
+  - REST and JSON-RPC both use v1 `message.parts` payloads and enum values such as `ROLE_USER`
+  - JSON-RPC uses canonical PascalCase core methods such as `SendMessage` and `SubscribeToTask`
+  - legacy `message.content`, lowercase roles, `{kind: ...}` wrappers, and `message/send` aliases are rejected
 
 ## Runtime Environment Variables
 
@@ -69,7 +70,7 @@ Key variables to understand protocol behavior:
   - `opencode.worktrees.create`
   - `opencode.worktrees.remove`
   - `opencode.worktrees.reset`
-- Runtime authentication also applies to `/health`; the public unauthenticated discovery surface remains `/.well-known/agent-card.json` and `/.well-known/agent.json`.
+- Runtime authentication also applies to `/health`; the public unauthenticated discovery surface remains `/.well-known/agent-card.json`.
 - The authenticated extended card endpoint `/agent/authenticatedExtendedCard` accepts the same configured bearer/basic auth modes.
 - The same outbound client flags are also honored by the server-side embedded A2A client used for peer calls and `a2a_call` tool execution:
   - `A2A_CLIENT_TIMEOUT_SECONDS`
@@ -94,11 +95,11 @@ Current client facade API:
 - `A2AClient.send()` / `A2AClient.send_message()`
 - `A2AClient.get_task()`
 - `A2AClient.cancel_task()`
-- `A2AClient.resubscribe_task()`
+- `A2AClient.subscribe_to_task()`
 
 Server-side outbound peer calls read outbound credentials from environment variables. Configure `A2A_CLIENT_BEARER_TOKEN` or `A2A_CLIENT_BASIC_AUTH` when the remote agent protects its runtime surface. CLI outbound calls follow the same environment-only model.
 
-`A2AClient.send()` returns the latest response event and keeps the default stream-first behavior. If a peer returns a non-terminal task snapshot and expects follow-up `tasks/get` polling, enable the optional facade fallback with:
+`A2AClient.send()` returns the latest response event and keeps the default stream-first behavior. If a peer returns a non-terminal task snapshot and expects follow-up `GetTask` polling, enable the optional facade fallback with:
 
 - `A2A_CLIENT_POLLING_FALLBACK_ENABLED=true`
 - `A2A_CLIENT_POLLING_FALLBACK_INITIAL_INTERVAL_SECONDS`
@@ -106,7 +107,7 @@ Server-side outbound peer calls read outbound credentials from environment varia
 - `A2A_CLIENT_POLLING_FALLBACK_BACKOFF_MULTIPLIER`
 - `A2A_CLIENT_POLLING_FALLBACK_TIMEOUT_SECONDS`
 
-The fallback only applies to `send()`, keeps `send_message()` as a thin event stream wrapper, and stops polling once the task reaches a terminal state or a caller-intervention state such as `input-required` or `auth-required`.
+The fallback only applies to `send()`, keeps `send_message()` and `subscribe_to_task()` as thin raw `StreamResponse` wrappers, and stops polling once the task reaches a terminal state or a caller-intervention state such as `input-required` or `auth-required`.
 
 Execution-boundary metadata is intentionally declarative deployment metadata: it is published through `RuntimeProfile`, Agent Card, OpenAPI, and `/health`, and should not be interpreted as a live per-request privilege snapshot or a runtime CLI self-inspection result.
 
@@ -193,19 +194,19 @@ If one deployment works while another fails against the same upstream provider, 
 
 ## Core Behavior
 
-- The service forwards A2A `message:send` to OpenCode session/message calls.
+- The service forwards A2A `SendMessage` / `SendStreamingMessage` traffic to OpenCode session/message calls.
 - Main chat requests may override the upstream model for one request through `metadata.shared.model`.
 - Provider/model catalog discovery is available through `opencode.providers.list` and `opencode.models.list`.
 - Main chat requests that explicitly send `configuration.acceptedOutputModes` must stay compatible with the declared chat output modes.
 - Current main chat requests must continue accepting `text/plain`; requests that only accept `application/json` or other incompatible modes are rejected before execution starts.
 - `application/json` is additive structured-output support for incremental `tool_call` payloads. It does not guarantee that ordinary assistant prose can always be losslessly represented as JSON, so consumers that expect normal chat text should keep accepting `text/plain`.
 - When a client accepts `text/plain` but not `application/json`, structured `tool_call` payloads are downgraded to compact JSON text instead of being silently dropped.
-- Accepted output-mode negotiation is persisted as task-scoped metadata so later `tasks/get` and `tasks/resubscribe` reads keep the same filtered response contract as the original `message/send` or `message:stream` request.
-- Main chat input supports structured A2A `parts` passthrough:
-  - `TextPart` is forwarded as an OpenCode text part.
-  - `FilePart(FileWithBytes)` is forwarded as a `file` part with a `data:` URL.
-  - `FilePart(FileWithUri)` is forwarded as a `file` part with the original URI.
-  - `DataPart` is currently rejected explicitly; it is not silently downgraded.
+- Accepted output-mode negotiation is persisted as task-scoped metadata so later `GetTask` and `SubscribeToTask` reads keep the same filtered response contract as the original send/stream request.
+- Main chat input supports v1 `message.parts[]` passthrough:
+  - `{"text": ...}` is forwarded as an OpenCode text part.
+  - `{"raw": ..., "mediaType": ..., "filename": ...}` is forwarded as a `file` part with a `data:` URL.
+  - `{"url": ..., "mediaType": ..., "filename": ...}` is forwarded as a `file` part with the original URI.
+  - structured data-only input parts are rejected explicitly; they are not silently downgraded.
 - Task state defaults to `completed` for successful turns.
 - The deployment profile is single-tenant and shared-workspace. For detailed isolation principles and security boundaries, see [SECURITY.md](../SECURITY.md).
 
@@ -220,7 +221,7 @@ If one deployment works while another fails against the same upstream provider, 
 - A final snapshot is emitted only when streaming chunks did not already produce the same final text.
 - Stream routing is schema-first: the service classifies chunks primarily by OpenCode `part.type` and `part_id` state rather than inline text markers.
 - `message.part.delta` and `message.part.updated` are merged per `part_id`; out-of-order deltas are buffered and replayed when the corresponding `part.updated` arrives.
-- Structured `tool` parts are emitted as `tool_call` blocks backed by `DataPart(data={...})`, while `text` and `reasoning` continue to use `TextPart`.
+- Structured `tool` parts are emitted as `tool_call` blocks using structured v1 part payloads, while `text` and `reasoning` continue to use text parts.
 - `tool_call` block payloads are normalized structured objects that may expose fields such as `call_id`, `tool`, `status`, `title`, `subtitle`, `input`, `output`, and `error`.
 - If `application/json` is not accepted but `text/plain` is still accepted, those `tool_call` blocks are downgraded to stable compact JSON text so text-only clients retain the same observable state transitions.
 - When a request restricts `acceptedOutputModes`, the stream applies the same output filtering before persistence so later task snapshots do not re-expose filtered structured blocks.
@@ -280,38 +281,38 @@ Unsupported method contract:
 - Error data fields:
   - `type=METHOD_NOT_SUPPORTED`
   - `method`
-  - `supported_methods`
-  - `protocol_version`
+  - `supportedMethods`
+  - `protocolVersion`
 
 Consumer guidance:
 
 - Discover custom JSON-RPC methods from Agent Card / OpenAPI before calling them.
-- Treat `supported_methods` in `error.data` as the runtime truth for the current deployment, especially when a deployment-conditional method is disabled.
+- Treat `supportedMethods` in `error.data` as the runtime truth for the current deployment, especially when a deployment-conditional method is disabled.
 
 ## Protocol Version Negotiation
 
 - The runtime accepts `A2A-Version` from either the HTTP header or the query parameter of A2A transport requests.
-- If both are omitted, the runtime falls back to the configured default protocol version.
-- Current defaults declare `default_protocol_version=0.3` and `supported_protocol_versions=["0.3", "1.0"]`.
+- If both are omitted, the runtime uses the fixed v1 protocol version `1.0`.
+- Machine-readable discovery still declares `default_protocol_version=1.0` and `supported_protocol_versions=["1.0"]`, but those values are runtime constants rather than operator-configurable settings.
 - Unsupported or invalid versions are rejected before request routing:
   - JSON-RPC returns a unified `VERSION_NOT_SUPPORTED` error envelope.
   - REST returns HTTP `400` with the same contract fields.
-- Error shaping now follows the negotiated major line:
-  - `0.3` keeps the existing legacy `error.data={...}` and flat REST error payloads.
-  - `1.0` keeps standard JSON-RPC error codes for standard failures, but moves A2A-specific JSON-RPC errors to `google.rpc.ErrorInfo`-style `error.data[]` details and REST errors to AIP-193 `error.details[]`.
-- The current transport payloads still follow the SDK-owned request/response shapes; version negotiation is introduced first so later issues can evolve error and payload compatibility without scattering version checks across handlers.
+- Error shaping follows the v1 contract:
+  - JSON-RPC keeps standard JSON-RPC error codes for standard failures and uses `google.rpc.ErrorInfo`-style `error.data[]` details for A2A-specific failures.
+  - REST uses AIP-193 style `error.details[]`.
+- The runtime does not normalize legacy `0.3` method aliases or payload shapes.
 
 Current compatibility matrix:
 
-| Area | `0.3` | `1.0` | Current note |
-| --- | --- | --- | --- |
-| Version negotiation | Supported | Supported | The runtime accepts `A2A-Version` and routes requests before handler dispatch. |
-| Agent Card / interface version discovery | Default card protocol only | Partial | The service publishes `default_protocol_version` and `supported_protocol_versions`, but `AgentInterface.protocolVersion` cannot yet be declared with `a2a-sdk==0.3.25`. |
-| Transport payloads and enums | Supported | Partial | Request/response payloads, enums, and schema details still follow the SDK-owned `0.3` baseline. |
-| Error model | Supported | Partial | `0.3` keeps legacy `error.data={...}` / flat REST payloads; `1.0` uses protocol-aware JSON-RPC details and AIP-193-style REST errors. |
-| Pagination and list semantics | Supported | Partial | Cursor/list behavior is stable, but the declared shape still follows the `0.3` SDK baseline. |
-| Push notification surfaces | Unsupported | Unsupported | SDK-owned task push-notification routes are still exposed, but this runtime does not enable push sender/config-store support. REST routes return HTTP `501`, while JSON-RPC methods remain unsupported via SDK-owned error envelopes. |
-| Signatures and authenticated data | Supported | Partial | Security schemes and authenticated extended card discovery follow the shipped SDK schema rather than a dedicated `1.0` compatibility layer. |
+| Area | `1.0` | Current note |
+| --- | --- | --- |
+| Version negotiation | Supported | The runtime accepts `A2A-Version` and routes requests before handler dispatch. |
+| Agent Card / interface version discovery | Supported | Agent Card publishes v1 `supportedInterfaces` entries for HTTP+JSON and JSON-RPC. |
+| Transport payloads and enums | Supported | Request/response payloads, enums, and schema details follow the current SDK-owned v1 baseline. |
+| Error model | Supported | JSON-RPC and REST both use the v1 protocol-aware error shapes. |
+| Pagination and list semantics | Supported | Cursor/list behavior follows the current SDK baseline. |
+| Push notification surfaces | Unsupported | SDK-owned task push-notification routes are still exposed, but this runtime does not enable push sender/config-store support. REST routes return HTTP `501`, while JSON-RPC methods remain unsupported via SDK-owned error envelopes. |
+| Signatures and authenticated data | Supported | Security schemes and authenticated extended card discovery follow the shipped SDK schema. |
 
 ## Compatibility Profile
 
@@ -330,8 +331,7 @@ Current profile shape:
 - `default_protocol_version`
 - `supported_protocol_versions`
 - `protocol_compatibility`
-  - `versions["0.3"].status=supported`
-  - `versions["1.0"].status=partial`
+  - `versions["1.0"].status=supported`
   - `versions[*].supported_features[]`
   - `versions[*].known_gaps[]`
 - Deployment semantics are declared under `deployment`:
@@ -396,23 +396,19 @@ curl -sS http://127.0.0.1:8000/ \
   -d '{
     "jsonrpc": "2.0",
     "id": "req-1",
-    "method": "message/send",
+    "method": "SendMessage",
     "params": {
       "message": {
         "messageId": "msg-multipart-1",
-        "role": "user",
+        "role": "ROLE_USER",
         "parts": [
           {
-            "kind": "text",
             "text": "Please summarize this file."
           },
           {
-            "kind": "file",
-            "file": {
-              "name": "report.pdf",
-              "mimeType": "application/pdf",
-              "uri": "file:///workspace/report.pdf"
-            }
+            "url": "file:///workspace/report.pdf",
+            "filename": "report.pdf",
+            "mediaType": "application/pdf"
           }
         ]
       }
@@ -420,10 +416,10 @@ curl -sS http://127.0.0.1:8000/ \
   }'
 ```
 
-Current compatibility note:
+Current input note:
 
-- `TextPart` and `FilePart` are supported.
-- `DataPart` input is not supported and is rejected with an explicit error.
+- text parts and file/url/raw parts are supported.
+- structured data-only input parts are not supported and are rejected with an explicit error.
 
 ## Extension Capability Overview
 
@@ -574,7 +570,7 @@ Consumer guidance:
 Minimal stream semantics summary:
 
 - `text`, `reasoning`, and `tool_call` are emitted as canonical block types
-- `text` and `reasoning` blocks use `TextPart`, while `tool_call` uses `DataPart`
+- `text` and `reasoning` blocks use text parts, while `tool_call` uses structured v1 part payloads
 - `message_id` and `event_id` preserve stable timeline identity where possible
 - `sequence` is the per-request canonical stream sequence
 - final task/status metadata may repeat normalized usage and interrupt context even after the streaming phase ends
@@ -586,7 +582,7 @@ This service exposes OpenCode session read, mutation, and control methods via A2
 - Trigger: call extension methods through A2A JSON-RPC
 - Auth: same runtime auth as the main endpoint (`Bearer` or configured `Basic`)
 - Privacy guard: when `A2A_LOG_PAYLOADS=true`, request/response bodies are still suppressed for `method=opencode.sessions.*`
-- Endpoint discovery: prefer `additional_interfaces[]` with `transport=jsonrpc` from Agent Card
+- Endpoint discovery: prefer `supportedInterfaces[]` with `protocolBinding=JSONRPC` from Agent Card
 - The runtime still delegates SDK-owned JSON-RPC methods such as `agent/getAuthenticatedExtendedCard` and `tasks/pushNotificationConfig/*` to the base A2A implementation; they are not OpenCode-specific extensions.
 - Push notification config methods remain effectively unsupported in the current runtime because no push config store or push sender is configured; REST routes return HTTP `501`, while JSON-RPC methods stay on SDK-owned unsupported error handling.
 - Notification behavior: for `opencode.sessions.*`, requests without `id` return HTTP `204 No Content`
@@ -595,8 +591,8 @@ This service exposes OpenCode session read, mutation, and control methods via A2
   - `opencode.sessions.list` / `opencode.sessions.children` => A2A `Task[]`
   - `opencode.sessions.get` => A2A `Task`
   - `opencode.sessions.todo` / `opencode.sessions.diff` => provider-private summaries in `result.items`
-  - `opencode.sessions.messages.list` => A2A `Message[]`
-  - `opencode.sessions.messages.get` => A2A `Message`
+  - `opencode.sessions.messages.list` => adapter-normalized A2A `Message` projections
+  - `opencode.sessions.messages.get` => adapter-normalized A2A `Message` projection
   - `opencode.sessions.fork` / `opencode.sessions.share` / `opencode.sessions.unshare` => provider-private session summary in `result.item`
   - `opencode.sessions.summarize` => provider-private completion result in `result.ok` plus `result.session_id`
   - `opencode.sessions.revert` / `opencode.sessions.unrevert` => provider-private session summary in `result.item`
@@ -678,7 +674,9 @@ curl -sS http://127.0.0.1:8000/ \
 
 Message history responses include:
 
-- `result.items`: normalized A2A `Message[]`
+- `result.items`: adapter-normalized A2A `Message[]`
+- `role`: canonical v1 enum values such as `ROLE_USER` / `ROLE_AGENT`
+- `parts`: current projection is text-focused; text parts are aggregated into a single `Part(text=...)` rather than preserving arbitrary upstream part structure
 - `result.next_cursor`: opaque cursor for the next older page, or `null` when no older page is available
 
 ### Session Get / Children / Todo / Diff / Message Get
@@ -687,7 +685,7 @@ Message history responses include:
 - `opencode.sessions.children` => read child sessions and map them to A2A `Task[]`
 - `opencode.sessions.todo` => read provider-private todo summaries
 - `opencode.sessions.diff` => read provider-private diff summaries; optional `message_id`
-- `opencode.sessions.messages.get` => read one message and map it to A2A `Message`
+- `opencode.sessions.messages.get` => read one message and map it to the same adapter-normalized A2A `Message` projection
 
 Example (`opencode.sessions.messages.get`):
 
@@ -1224,28 +1222,28 @@ curl -sS http://127.0.0.1:8000/ \
   -d '{
     "jsonrpc": "2.0",
     "id": 101,
-    "method": "message/send",
+    "method": "SendMessage",
     "params": {
       "message": {
         "messageId": "msg-1",
-        "role": "user",
-        "parts": [{"kind": "text", "text": "Explain what this repository does."}]
+        "role": "ROLE_USER",
+        "parts": [{"text": "Explain what this repository does."}]
       }
     }
   }'
 ```
 
-## Streaming Re-Subscription (`subscribe`)
+## Streaming Re-Subscription (`SubscribeToTask`)
 
 If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscribe while the task is still non-terminal.
 
-## Cancellation Semantics (`tasks/cancel`)
+## Cancellation Semantics (`CancelTask`)
 
 - The service first marks the A2A task as `canceled` and keeps cancel requests responsive.
 - For running tasks, the service attempts upstream OpenCode `POST /session/{sessionID}/abort` to stop generation.
-- Upstream interruption is best-effort: if upstream returns 404, network errors, or other HTTP errors, A2A cancellation still completes with `TaskState.canceled`.
-- Idempotency contract: repeated `tasks/cancel` on an already `canceled` task returns the current terminal task state without error.
-- Terminal subscribe contract: calling `subscribe` on a terminal task replays one terminal `Task` snapshot and then closes the stream.
+- Upstream interruption is best-effort: if upstream returns 404, network errors, or other HTTP errors, A2A cancellation still completes with `TaskState.TASK_STATE_CANCELED`.
+- Idempotency contract: repeated `CancelTask` on an already `canceled` task returns the current terminal task state without error.
+- Terminal subscribe contract: calling `SubscribeToTask` or `GET /v1/tasks/{task_id}:subscribe` on a terminal task replays one terminal `Task` snapshot and then closes the stream.
 - These two semantics are also declared as machine-readable `service_behaviors` in the compatibility profile and wire contract extensions.
 - At `A2A_LOG_LEVEL=DEBUG`, the service emits lightweight metric log records
   (`logger=opencode_a2a.execution.executor`):

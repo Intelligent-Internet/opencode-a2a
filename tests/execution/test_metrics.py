@@ -6,9 +6,18 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
-from a2a.types import Message, Role, SendMessageRequest, Task, TaskState, TaskStatus
+from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
+    Message,
+    Part,
+    Role,
+    SendMessageRequest,
+    Task,
+    TaskState,
+    TaskStatus,
+)
 
-from opencode_a2a.a2a_utils import make_text_part
 from opencode_a2a.execution.executor import OpencodeAgentExecutor, _StreamOutputState
 from opencode_a2a.server.application import OpencodeRequestHandler
 from tests.support.helpers import DummyEventQueue, make_settings
@@ -19,9 +28,13 @@ def _make_message_send_params() -> SendMessageRequest:
         message=Message(
             message_id="msg-user-1",
             role=Role.ROLE_USER,
-            parts=[make_text_part("hello")],
+            parts=[Part(text="hello")],
         )
     )
+
+
+def _agent_card() -> AgentCard:
+    return AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True))
 
 
 @pytest.mark.asyncio
@@ -50,7 +63,11 @@ async def test_stream_request_metrics_track_total_and_active(caplog) -> None:
             except asyncio.CancelledError:
                 pass
 
-    handler = _TestHandler(agent_executor=MagicMock(), task_store=InMemoryTaskStore())
+    handler = _TestHandler(
+        agent_executor=MagicMock(),
+        task_store=InMemoryTaskStore(),
+        agent_card=_agent_card(),
+    )
 
     with caplog.at_level(logging.DEBUG, logger="opencode_a2a.execution.executor"):
         stream = handler.on_message_send_stream(_make_message_send_params())

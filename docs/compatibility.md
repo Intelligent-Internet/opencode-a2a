@@ -1,15 +1,14 @@
 # Compatibility Guide
 
-This document explains the compatibility promises `opencode-a2a` currently tries to uphold for A2A consumers, operators, and maintainers.
+This document defines the compatibility promises `opencode-a2a` currently upholds for A2A consumers, operators, and maintainers.
 
 ## Runtime Support
 
 - Python versions: 3.11, 3.12, 3.13
-- A2A SDK line: `0.3.x`
-- Default advertised protocol line: `0.3`
-- Declared supported protocol lines: `0.3`, `1.0`
+- A2A SDK line: `1.x.y`
+- Supported A2A protocol line: `1.0`
 
-The repository pins the SDK version in `pyproject.toml`. Upgrade the SDK deliberately rather than relying on floating dependency resolution.
+The repository currently pins one concrete SDK release in `pyproject.toml` within that v1 line. Upgrade the SDK deliberately rather than relying on floating dependency resolution.
 
 ## Contract Honesty
 
@@ -21,11 +20,11 @@ Machine-readable discovery surfaces must reflect actual runtime behavior:
 - JSON-RPC wire contract
 - compatibility profile
 
-If runtime support is not actually implemented, do not publish it as a supported machine-readable capability.
+If runtime support is not implemented, do not publish it as a supported machine-readable capability.
 
 Consumer guidance:
 
-- Treat the core A2A send / stream / task methods as the portable baseline.
+- Treat the v1 core A2A methods (`SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`, `SubscribeToTask`) as the portable baseline.
 - Treat `urn:a2a:*` entries in this repository as shared repo-family conventions, not as a claim that they are part of the A2A core baseline.
 - Treat `opencode.*` methods and `metadata.opencode.*` fields as provider-private OpenCode control and discovery surfaces layered on top of the portable A2A baseline.
 - Treat [extension-specifications.md](./extension-specifications.md) as the stable URI/spec index, not as the main usage guide.
@@ -45,7 +44,8 @@ External TCK runs and local conformance experiments are investigation inputs. Th
 This repository still ships as an alpha project. Within that alpha line, these declared surfaces should not drift silently:
 
 - core A2A send / stream / task methods
-- version negotiation and protocol-aware error shaping
+- v1-only request/response payloads and enum values
+- v1 protocol-aware JSON-RPC and REST error shaping
 - shared session-binding metadata
 - shared model-selection metadata
 - shared streaming metadata
@@ -56,9 +56,9 @@ Changes to those surfaces should be treated as compatibility-sensitive and shoul
 
 Service-level behavior layered on top of those core methods should also be declared explicitly when interoperability depends on it. Current examples:
 
-- `tasks/resubscribe` replay-once behavior for terminal updates
+- `SubscribeToTask` replay-once behavior for terminal updates
 - first-terminal-state-wins task persistence policy
-- task-scoped `acceptedOutputModes` negotiation persistence across send / stream / get / resubscribe
+- task-scoped `acceptedOutputModes` negotiation persistence across send / stream / get / subscribe
 - request-body rejection behavior for oversized transport payloads
 
 ## Deployment Profile
@@ -98,7 +98,7 @@ The default SQLite-first profile is intended for local or controlled single-inst
 - `opencode.sessions.shell` is compatibility-sensitive as a deployment-conditional shell snapshot surface. It should not silently widen into a general interactive shell API.
 - `opencode.workspaces.*` and `opencode.worktrees.*` are boundary-sensitive and should remain explicitly provider-private, operator-scoped, and deployment-conditional where applicable.
 - Interrupt callback and recovery methods are compatibility-sensitive because clients may depend on request ID lifecycle, expiry semantics, and identity scoping.
-- Agent Card media modes and `acceptedOutputModes` handling are compatibility-sensitive. Changes to declared chat modes, to task-scoped negotiation persistence, or to `DataPart` -> `TextPart` downgrade behavior should be treated as wire-level changes.
+- Agent Card media modes and `acceptedOutputModes` handling are compatibility-sensitive. Changes to declared chat modes, to task-scoped negotiation persistence, or to output filtering of structured tool payloads should be treated as wire-level changes.
 - Agent Card and OpenAPI publication of `protocol_compatibility`, `service_behaviors`, and runtime feature toggles is compatibility-sensitive discoverability surface.
 
 ## Extension Boundary Governance
@@ -142,6 +142,6 @@ This repository does not currently promise:
 
 - hard multi-tenant isolation inside one instance
 - generic provider-auth orchestration on behalf of OpenCode
-- a claim that all declared `1.0` protocol surfaces are fully implemented beyond the documented compatibility matrix
+- compatibility with legacy A2A `0.3` method aliases or payload shapes
 
 Those areas may evolve later, but they should not be implied by current machine-readable discovery output.

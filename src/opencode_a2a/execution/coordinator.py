@@ -14,6 +14,7 @@ from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
     Artifact,
     Message,
+    Part,
     Role,
     Task,
     TaskState,
@@ -21,7 +22,6 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from ..a2a_utils import make_text_part
 from ..invocation import call_with_supported_kwargs
 from ..opencode_upstream_client import UpstreamConcurrencyLimitError, UpstreamContractError
 from .event_helpers import _enqueue_artifact_update
@@ -59,6 +59,8 @@ class PreparedExecution:
     workspace_id: str | None
     session_binding_context_id: str
     allow_structured_output: bool
+    emit_session_metadata: bool
+    emit_streaming_metadata: bool
 
 
 def build_session_binding_context_id(
@@ -288,6 +290,8 @@ class ExecutionCoordinator:
                     workspace_id=self._prepared.workspace_id,
                     terminal_signal=self._stream_terminal_signal,
                     allow_structured_output=self._prepared.allow_structured_output,
+                    emit_session_metadata=self._prepared.emit_session_metadata,
+                    emit_streaming_metadata=self._prepared.emit_streaming_metadata,
                 )
             )
 
@@ -398,7 +402,7 @@ class ExecutionCoordinator:
                 task_id=self._task_id,
                 context_id=self._context_id,
                 artifact_id=self._stream_artifact_id,
-                part=make_text_part(response_text),
+                part=Part(text=response_text),
                 append=self._stream_state.emitted_stream_chunk,
                 last_chunk=True,
                 artifact_metadata=_build_stream_artifact_metadata(
@@ -407,6 +411,7 @@ class ExecutionCoordinator:
                     message_id=resolved_message_id,
                     event_id=self._stream_state.build_event_id(sequence),
                     sequence=sequence,
+                    include_shared_stream_metadata=self._prepared.emit_streaming_metadata,
                 ),
             )
 
@@ -423,6 +428,8 @@ class ExecutionCoordinator:
                         "event_id": f"{self._stream_state.event_id_namespace}:status",
                         "source": "status",
                     },
+                    include_session_metadata=self._prepared.emit_session_metadata,
+                    include_streaming_metadata=self._prepared.emit_streaming_metadata,
                 ),
             )
         )
@@ -445,7 +452,7 @@ class ExecutionCoordinator:
         artifact = Artifact(
             artifact_id=str(uuid.uuid4()),
             name="response",
-            parts=[make_text_part(response_text)],
+            parts=[Part(text=response_text)],
         )
         from .request_context import _build_history
 
@@ -459,6 +466,8 @@ class ExecutionCoordinator:
             metadata=_build_output_metadata(
                 session_id=response.session_id,
                 usage=resolved_token_usage,
+                include_session_metadata=self._prepared.emit_session_metadata,
+                include_streaming_metadata=self._prepared.emit_streaming_metadata,
             ),
         )
         task.status.message.CopyFrom(assistant_message)
@@ -498,7 +507,7 @@ def build_assistant_message(
     return Message(
         message_id=message_id or str(uuid.uuid4()),
         role=Role.ROLE_AGENT,
-        parts=[make_text_part(text)],
+        parts=[Part(text=text)],
         task_id=task_id,
         context_id=context_id,
     )

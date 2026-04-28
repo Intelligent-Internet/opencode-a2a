@@ -6,8 +6,9 @@ import pytest
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import TaskState
 
-from opencode_a2a.execution.executor import OpencodeAgentExecutor, _TTLCache
+from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.execution.session_manager import SessionManager
+from opencode_a2a.execution.stream_state import _TTLCache
 from opencode_a2a.opencode_upstream_client import OpencodeUpstreamClient
 from opencode_a2a.server.state_store import (
     DatabaseSessionStateRepository,

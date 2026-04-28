@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from a2a.types import Message, Role, Task, TaskState, TaskStatus
+from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus
+from google.protobuf.json_format import MessageToDict
 
-from ..a2a_utils import make_text_part, proto_to_dict
 from ..contracts.extensions import (
     COMMAND_REQUEST_ALLOWED_FIELDS,
     PROMPT_ASYNC_REQUEST_ALLOWED_FIELDS,
@@ -13,12 +13,6 @@ from ..contracts.extensions import (
 from ..parts.text import extract_text_from_parts
 
 SESSION_CONTEXT_PREFIX = "ctx:opencode-session:"
-
-
-def _jsonrpc_role_name(role: Role) -> str:
-    if role == Role.ROLE_USER:
-        return "user"
-    return "agent"
 
 
 class _PromptAsyncValidationError(ValueError):
@@ -350,7 +344,7 @@ def _as_a2a_session_task(session: Any) -> dict[str, Any] | None:
         status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
         metadata={"shared": {"session": {"id": session_id, "title": title}}},
     )
-    return proto_to_dict(task)
+    return cast(dict[str, Any], MessageToDict(task))
 
 
 def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
@@ -383,13 +377,11 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
     msg = Message(
         message_id=message_id,
         role=role,
-        parts=[make_text_part(text)],
+        parts=[Part(text=text)],
         context_id=context_id,
         metadata={"shared": {"session": {"id": session_id}}},
     )
-    message = proto_to_dict(msg)
-    message["role"] = _jsonrpc_role_name(role)
-    return message
+    return cast(dict[str, Any], MessageToDict(msg))
 
 
 def _extract_raw_items(raw_result: Any, *, kind: str) -> list[Any]:

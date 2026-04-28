@@ -25,9 +25,10 @@ from ..contracts.extensions import (
     build_wire_contract_params,
     build_workspace_control_extension_params,
 )
-from ..jsonrpc.application import SESSION_CONTEXT_PREFIX
+from ..jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from ..jsonrpc.models import JSONRPCRequest
 from ..profile.runtime import RuntimeProfile
+from ..protocol_versions import A2A_PROTOCOL_VERSION
 
 
 def _build_jsonrpc_extension_openapi_description(
@@ -41,7 +42,7 @@ def _build_jsonrpc_extension_openapi_description(
     interrupt_methods = ", ".join(sorted(INTERRUPT_CALLBACK_METHODS.values()))
     return (
         "A2A JSON-RPC entrypoint. Supports core A2A methods "
-        "(message/send, message/stream, tasks/get, tasks/cancel, tasks/resubscribe) "
+        "(SendMessage, SendStreamingMessage, GetTask, CancelTask, SubscribeToTask) "
         "plus shared model-selection metadata, OpenCode session/provider extensions, "
         "interrupt recovery extensions, and shared interrupt callback methods.\n\n"
         f"OpenCode session read/mutation/control methods: {', '.join(session_methods)}.\n"
@@ -67,12 +68,12 @@ def _build_jsonrpc_extension_openapi_examples(
             "value": {
                 "jsonrpc": "2.0",
                 "id": 101,
-                "method": "message/send",
+                "method": "SendMessage",
                 "params": {
                     "message": {
                         "messageId": "msg-1",
-                        "role": "user",
-                        "parts": [{"kind": "text", "text": "Explain what this repository does."}],
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "Explain what this repository does."}],
                     }
                 },
             },
@@ -82,17 +83,12 @@ def _build_jsonrpc_extension_openapi_examples(
             "value": {
                 "jsonrpc": "2.0",
                 "id": 102,
-                "method": "message/stream",
+                "method": "SendStreamingMessage",
                 "params": {
                     "message": {
                         "messageId": "msg-stream-1",
-                        "role": "user",
-                        "parts": [
-                            {
-                                "kind": "text",
-                                "text": "Stream the answer and highlight key conclusions.",
-                            }
-                        ],
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "Stream the answer and highlight key conclusions."}],
                     }
                 },
             },
@@ -102,12 +98,12 @@ def _build_jsonrpc_extension_openapi_examples(
             "value": {
                 "jsonrpc": "2.0",
                 "id": 103,
-                "method": "message/send",
+                "method": "SendMessage",
                 "params": {
                     "message": {
                         "messageId": "msg-model-1",
-                        "role": "user",
-                        "parts": [{"kind": "text", "text": "Answer with the faster model."}],
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "Answer with the faster model."}],
                     },
                     "metadata": {
                         "shared": {
@@ -125,23 +121,17 @@ def _build_jsonrpc_extension_openapi_examples(
             "value": {
                 "jsonrpc": "2.0",
                 "id": 104,
-                "method": "message/send",
+                "method": "SendMessage",
                 "params": {
                     "message": {
                         "messageId": "msg-file-1",
-                        "role": "user",
+                        "role": "ROLE_USER",
                         "parts": [
+                            {"text": "Review the attached file and summarize the main risks."},
                             {
-                                "kind": "text",
-                                "text": "Review the attached file and summarize the main risks.",
-                            },
-                            {
-                                "kind": "file",
-                                "file": {
-                                    "name": "report.pdf",
-                                    "mimeType": "application/pdf",
-                                    "uri": "file:///workspace/report.pdf",
-                                },
+                                "url": "file:///workspace/report.pdf",
+                                "filename": "report.pdf",
+                                "mediaType": "application/pdf",
                             },
                         ],
                     }
@@ -525,24 +515,22 @@ def _build_rest_message_openapi_examples() -> dict[str, Any]:
                 "message": {
                     "messageId": "msg-rest-1",
                     "role": "ROLE_USER",
-                    "content": [{"text": "Explain what this repository does."}],
+                    "parts": [{"text": "Explain what this repository does."}],
                 }
             },
         },
         "message_with_file_input": {
-            "summary": "Send message with FilePart input (HTTP+JSON)",
+            "summary": "Send message with file input (HTTP+JSON)",
             "value": {
                 "message": {
                     "messageId": "msg-rest-file-1",
                     "role": "ROLE_USER",
-                    "content": [
+                    "parts": [
                         {"text": "Review the attached file and summarize the main risks."},
                         {
-                            "file": {
-                                "name": "report.pdf",
-                                "mimeType": "application/pdf",
-                                "uri": "file:///workspace/report.pdf",
-                            }
+                            "url": "file:///workspace/report.pdf",
+                            "filename": "report.pdf",
+                            "mediaType": "application/pdf",
                         },
                     ],
                 }
@@ -554,7 +542,7 @@ def _build_rest_message_openapi_examples() -> dict[str, Any]:
                 "message": {
                     "messageId": "msg-rest-continue-1",
                     "role": "ROLE_USER",
-                    "content": [{"text": "Continue previous work and summarize next steps."}],
+                    "parts": [{"text": "Continue previous work and summarize next steps."}],
                 },
                 "metadata": {
                     "shared": {
@@ -569,7 +557,7 @@ def _build_rest_message_openapi_examples() -> dict[str, Any]:
                 "message": {
                     "messageId": "msg-rest-model-1",
                     "role": "ROLE_USER",
-                    "content": [{"text": "Answer with the faster model."}],
+                    "parts": [{"text": "Answer with the faster model."}],
                 },
                 "metadata": {
                     "shared": {
@@ -614,16 +602,12 @@ def _patch_jsonrpc_openapi_contract(
         runtime_profile=runtime_profile,
     )
     compatibility_profile = build_compatibility_profile_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
     wire_contract = build_wire_contract_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
     capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
     original_openapi = app.openapi
@@ -680,7 +664,8 @@ def _patch_jsonrpc_openapi_contract(
                     "summary": "Send Message (HTTP+JSON)",
                     "description": (
                         "A2A HTTP+JSON message send endpoint. "
-                        "Use REST payload shape with message.content and ROLE_* roles."
+                        "Use ProtoJSON SendMessageRequest payloads with message.parts "
+                        "and ROLE_* roles."
                     ),
                     "schema_ref": "#/components/schemas/SendMessageRequest",
                 },
@@ -688,7 +673,8 @@ def _patch_jsonrpc_openapi_contract(
                     "summary": "Stream Message (HTTP+JSON)",
                     "description": (
                         "A2A HTTP+JSON streaming endpoint. "
-                        "Use REST payload shape with message.content and ROLE_* roles."
+                        "Use ProtoJSON SendMessageRequest payloads with message.parts "
+                        "and ROLE_* roles."
                     ),
                     "schema_ref": "#/components/schemas/SendStreamingMessageRequest",
                 },

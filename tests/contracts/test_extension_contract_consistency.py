@@ -2,9 +2,19 @@ import httpx
 import pytest
 
 from opencode_a2a.contracts.extensions import (
+    COMPATIBILITY_PROFILE_EXTENSION_URI,
+    INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
+    INTERRUPT_RECOVERY_EXTENSION_URI,
+    MODEL_SELECTION_EXTENSION_URI,
+    PROVIDER_DISCOVERY_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
+    SESSION_MANAGEMENT_EXTENSION_URI,
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
+    STREAMING_EXTENSION_URI,
+    WIRE_CONTRACT_EXTENSION_URI,
+    WORKSPACE_CONTROL_EXTENSION_URI,
     build_capability_snapshot,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
@@ -17,26 +27,16 @@ from opencode_a2a.contracts.extensions import (
     build_wire_contract_params,
     build_workspace_control_extension_params,
 )
-from opencode_a2a.jsonrpc.application import SESSION_CONTEXT_PREFIX
+from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from opencode_a2a.profile.runtime import build_runtime_profile
+from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
 from opencode_a2a.server.agent_card import build_authenticated_extended_agent_card
-from opencode_a2a.server.application import (
-    COMPATIBILITY_PROFILE_EXTENSION_URI,
-    INTERRUPT_CALLBACK_EXTENSION_URI,
-    INTERRUPT_RECOVERY_EXTENSION_URI,
-    MODEL_SELECTION_EXTENSION_URI,
-    PROVIDER_DISCOVERY_EXTENSION_URI,
-    SESSION_BINDING_EXTENSION_URI,
-    SESSION_MANAGEMENT_EXTENSION_URI,
-    STREAMING_EXTENSION_URI,
-    WIRE_CONTRACT_EXTENSION_URI,
-    WORKSPACE_CONTROL_EXTENSION_URI,
-    create_app,
-)
+from opencode_a2a.server.application import create_app
 from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
 from tests.support.helpers import make_settings
+from tests.support.session_extensions import _extension_headers
 
 
 def test_extension_ssot_matches_agent_card_contracts() -> None:
@@ -81,16 +81,12 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
         runtime_profile=runtime_profile,
     )
     expected_compatibility_profile = build_compatibility_profile_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
     expected_wire_contract = build_wire_contract_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
 
     assert session_binding.params == expected_session_binding, (
@@ -175,16 +171,12 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
         runtime_profile=runtime_profile,
     )
     expected_compatibility_profile = build_compatibility_profile_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
     expected_wire_contract = build_wire_contract_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
 
     assert session_binding == expected_session_binding, (
@@ -280,7 +272,7 @@ async def test_runtime_supported_methods_align_with_capability_snapshot(
     runtime_profile = build_runtime_profile(settings)
     capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
     wire_contract = build_wire_contract_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
     )
     transport = httpx.ASGITransport(app=app)
@@ -294,8 +286,8 @@ async def test_runtime_supported_methods_align_with_capability_snapshot(
 
     assert response.status_code == 200
     error = response.json()["error"]
-    assert error["data"]["supported_methods"] == capability_snapshot.supported_jsonrpc_methods()
-    assert error["data"]["supported_methods"] == wire_contract["all_jsonrpc_methods"]
+    assert error["data"]["supportedMethods"] == capability_snapshot.supported_jsonrpc_methods()
+    assert error["data"]["supportedMethods"] == wire_contract["all_jsonrpc_methods"]
 
 
 @pytest.mark.asyncio
@@ -408,7 +400,7 @@ async def test_extension_notification_contracts_return_204(
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={"jsonrpc": "2.0", "method": method, "params": params},
         )
     assert response.status_code == 204

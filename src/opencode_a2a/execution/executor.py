@@ -17,6 +17,7 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
     Message,
+    Part,
     Role,
     Task,
     TaskState,
@@ -24,7 +25,11 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from ..a2a_utils import make_text_part
+from ..contracts.extensions import (
+    SESSION_BINDING_EXTENSION_URI,
+    STREAMING_EXTENSION_URI,
+)
+from ..extension_negotiation import requested_extensions_from_call_context
 from ..invocation import call_with_supported_kwargs
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..output_modes import accepts_output_mode, normalize_accepted_output_modes
@@ -45,77 +50,17 @@ from .request_context import (
     _extract_shared_session_id,
 )
 from .session_manager import SessionManager
-from .stream_events import (
-    BlockType,
-    _build_progress_identity,
-    _coerce_number,
-    _extract_event_session_id,
-    _extract_interrupt_asked_event,
-    _extract_interrupt_resolved_event,
-    _extract_progress_metadata,
-    _extract_stream_session_id,
-    _extract_stream_snapshot_text,
-    _extract_stream_terminal_signal,
-    _extract_token_usage,
-    _extract_tool_part_payload,
-    _extract_upstream_error_from_event,
-    _extract_upstream_error_from_response,
-    _normalize_interrupt_question_options,
-    _normalize_interrupt_questions,
-    _normalize_role,
-    _preview_log_value,
-)
 from .stream_runtime import StreamRuntime
 from .stream_state import (
-    _build_output_metadata,
-    _merge_token_usage,
     _StreamOutputState,
-    _TTLCache,
 )
 from .upstream_error_translator import (
-    _await_stream_terminal_signal,
-    _extract_upstream_error_detail,
-    _format_inband_upstream_error,
-    _format_stream_terminal_error,
-    _format_upstream_error,
-    _resolve_upstream_error_profile,
     _StreamTerminalSignal,
 )
 
 logger = logging.getLogger(__name__)
 _TEXT_PLAIN_MEDIA_TYPE = "text/plain"
 _APPLICATION_JSON_MEDIA_TYPE = "application/json"
-
-__all__ = [
-    "BlockType",
-    "_build_output_metadata",
-    "_build_progress_identity",
-    "_coerce_number",
-    "_extract_event_session_id",
-    "_extract_interrupt_asked_event",
-    "_extract_interrupt_resolved_event",
-    "_extract_progress_metadata",
-    "_extract_stream_session_id",
-    "_extract_stream_snapshot_text",
-    "_extract_stream_terminal_signal",
-    "_extract_token_usage",
-    "_extract_tool_part_payload",
-    "_extract_upstream_error_detail",
-    "_extract_upstream_error_from_event",
-    "_extract_upstream_error_from_response",
-    "_format_inband_upstream_error",
-    "_format_stream_terminal_error",
-    "_format_upstream_error",
-    "_merge_token_usage",
-    "_normalize_interrupt_question_options",
-    "_normalize_interrupt_questions",
-    "_normalize_role",
-    "_preview_log_value",
-    "_resolve_upstream_error_profile",
-    "_TTLCache",
-]
-
-_EXPORTED_COMPAT_SYMBOLS = (BlockType, _await_stream_terminal_signal)
 
 
 def _emit_metric(
@@ -197,6 +142,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         trace_id = call_context.state.get("trace_id") if call_context else None
 
         streaming_request = self._should_stream(context)
+        requested_extensions = requested_extensions_from_call_context(context.call_context)
         accepted_output_modes = normalize_accepted_output_modes(context.configuration)
         message_parts = (
             getattr(context.message, "parts", None) if context.message is not None else None
@@ -291,6 +237,14 @@ class OpencodeAgentExecutor(AgentExecutor):
             accepted_output_modes,
             _APPLICATION_JSON_MEDIA_TYPE,
         )
+        emit_session_metadata = bool(
+            {
+                SESSION_BINDING_EXTENSION_URI,
+                STREAMING_EXTENSION_URI,
+            }
+            & set(requested_extensions)
+        )
+        emit_streaming_metadata = STREAMING_EXTENSION_URI in requested_extensions
 
         logger.debug(
             (
@@ -321,6 +275,8 @@ class OpencodeAgentExecutor(AgentExecutor):
             workspace_id=workspace_id,
             session_binding_context_id=session_binding_context_id,
             allow_structured_output=allow_structured_output,
+            emit_session_metadata=emit_session_metadata,
+            emit_streaming_metadata=emit_streaming_metadata,
         )
         coordinator = ExecutionCoordinator(
             self,
@@ -473,7 +429,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         error_message = Message(
             message_id=str(uuid.uuid4()),
             role=Role.ROLE_AGENT,
-            parts=[make_text_part(message)],
+            parts=[Part(text=message)],
             task_id=task_id,
             context_id=context_id,
         )
@@ -491,7 +447,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 task_id=task_id,
                 context_id=context_id,
                 artifact_id=f"{task_id}:error",
-                part=make_text_part(message),
+                part=Part(text=message),
                 append=False,
                 last_chunk=True,
             )
@@ -523,7 +479,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             return True
         # JSON-RPC transport sets method in call context state.
         method = call_context.state.get("method")
-        return method == "message/stream"
+        return method == "SendStreamingMessage"
 
     async def _consume_opencode_stream(
         self,
@@ -540,6 +496,8 @@ class OpencodeAgentExecutor(AgentExecutor):
         directory: str | None = None,
         workspace_id: str | None = None,
         allow_structured_output: bool = True,
+        emit_session_metadata: bool = True,
+        emit_streaming_metadata: bool = True,
     ) -> None:
         await self._stream_runtime.consume(
             session_id=session_id,
@@ -554,4 +512,6 @@ class OpencodeAgentExecutor(AgentExecutor):
             directory=directory,
             workspace_id=workspace_id,
             allow_structured_output=allow_structured_output,
+            emit_session_metadata=emit_session_metadata,
+            emit_streaming_metadata=emit_streaming_metadata,
         )

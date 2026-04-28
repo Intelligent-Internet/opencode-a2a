@@ -13,7 +13,11 @@ from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
 from tests.support.helpers import make_settings
-from tests.support.session_extensions import _BASE_SETTINGS, _session_meta
+from tests.support.jsonrpc_error_assertions import (
+    assert_v1_error_reason,
+    error_context_detail,
+)
+from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers, _session_meta
 
 
 def _identity_for_token(token: str) -> str:
@@ -74,7 +78,7 @@ async def test_session_query_extension_returns_jsonrpc_result(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -149,7 +153,7 @@ async def test_session_query_extension_supports_session_filters_and_message_curs
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         sessions_resp = await client.post(
             "/",
             headers=headers,
@@ -219,7 +223,7 @@ async def test_session_query_extension_prefers_workspace_metadata_for_routing(mo
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         await client.post(
             "/",
             headers=headers,
@@ -278,7 +282,7 @@ async def test_session_query_extension_rejects_directory_outside_workspace(monke
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -322,7 +326,7 @@ async def test_session_query_extension_applies_default_limit(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -378,7 +382,7 @@ async def test_session_query_extension_enforces_session_limit_locally(monkeypatc
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -419,7 +423,7 @@ async def test_provider_discovery_extension_returns_normalized_catalog(monkeypat
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         providers_resp = await client.post(
             "/",
             headers=headers,
@@ -470,7 +474,7 @@ async def test_provider_discovery_extension_rejects_invalid_provider_id(monkeypa
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -501,7 +505,7 @@ async def test_provider_discovery_extension_maps_payload_mismatch(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -514,7 +518,7 @@ async def test_provider_discovery_extension_maps_payload_mismatch(monkeypatch):
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32005
-        assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_PAYLOAD_ERROR")
 
 
 @pytest.mark.asyncio
@@ -537,7 +541,7 @@ async def test_provider_discovery_extension_maps_concurrency_limit_to_unreachabl
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -550,8 +554,10 @@ async def test_provider_discovery_extension_maps_concurrency_limit_to_unreachabl
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32002
-        assert payload["error"]["data"]["type"] == "UPSTREAM_UNREACHABLE"
-        assert "concurrency limit exceeded" in payload["error"]["data"]["detail"]
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_UNREACHABLE")
+        context = error_context_detail(payload["error"])
+        assert context is not None
+        assert "concurrency limit exceeded" in context["detail"]
 
 
 @pytest.mark.asyncio
@@ -570,7 +576,7 @@ async def test_session_query_extension_rejects_non_array_upstream_payload(monkey
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -584,7 +590,7 @@ async def test_session_query_extension_rejects_non_array_upstream_payload(monkey
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["error"]["code"] == -32005
-        assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_PAYLOAD_ERROR")
 
 
 @pytest.mark.asyncio
@@ -607,7 +613,7 @@ async def test_session_query_extension_maps_concurrency_limit_to_unreachable(mon
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -615,8 +621,10 @@ async def test_session_query_extension_maps_concurrency_limit_to_unreachable(mon
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32002
-        assert payload["error"]["data"]["type"] == "UPSTREAM_UNREACHABLE"
-        assert "concurrency limit exceeded" in payload["error"]["data"]["detail"]
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_UNREACHABLE")
+        context = error_context_detail(payload["error"])
+        assert context is not None
+        assert "concurrency limit exceeded" in context["detail"]
 
 
 @pytest.mark.asyncio
@@ -672,7 +680,7 @@ async def test_interrupt_recovery_extension_returns_identity_scoped_items(monkey
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = _extension_headers({"Authorization": f"Bearer {token}"})
         permission_resp = await client.post(
             "/",
             headers=headers,
@@ -719,7 +727,7 @@ async def test_interrupt_recovery_extension_rejects_unsupported_fields(monkeypat
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -752,7 +760,7 @@ async def test_interrupt_recovery_extension_notification_returns_204(monkeypatch
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/",
-            headers={"Authorization": "Bearer t-1"},
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
             json={"jsonrpc": "2.0", "method": "opencode.questions.list", "params": {}},
         )
 
@@ -775,7 +783,7 @@ async def test_session_query_extension_session_title_is_extracted_or_placeholder
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -803,7 +811,7 @@ async def test_session_query_extension_keeps_session_with_empty_title(monkeypatc
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -836,7 +844,7 @@ async def test_session_query_extension_message_role_and_id_from_info(monkeypatch
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -850,7 +858,7 @@ async def test_session_query_extension_message_role_and_id_from_info(monkeypatch
         payload = resp.json()
         message = payload["result"]["items"][0]
         assert message["messageId"] == "msg-1"
-        assert message["role"] == "user"
+        assert message["role"] == "ROLE_USER"
         assert message["parts"][0]["text"] == "hello"
 
 
@@ -876,7 +884,7 @@ async def test_session_query_extension_accepts_top_level_list_payload(monkeypatc
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -900,6 +908,7 @@ async def test_session_query_extension_accepts_top_level_list_payload(monkeypatc
         payload = resp.json()
         assert payload["result"]["items"][0]["contextId"] == "ctx:opencode-session:s-1"
         assert _session_meta(payload["result"]["items"][0])["id"] == "s-1"
+        assert payload["result"]["items"][0]["role"] == "ROLE_AGENT"
         assert payload["result"]["items"][0]["parts"][0]["text"] == "SECRET_HISTORY"
 
 
@@ -920,7 +929,7 @@ async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypa
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -928,7 +937,7 @@ async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypa
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32005
-        assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_PAYLOAD_ERROR")
 
         resp = await client.post(
             "/",
@@ -942,7 +951,7 @@ async def test_session_query_extension_rejects_non_list_wrapped_payload(monkeypa
         )
         payload = resp.json()
         assert payload["error"]["code"] == -32005
-        assert payload["error"]["data"]["type"] == "UPSTREAM_PAYLOAD_ERROR"
+        assert_v1_error_reason(payload["error"], reason="UPSTREAM_PAYLOAD_ERROR")
 
 
 @pytest.mark.asyncio
@@ -969,7 +978,7 @@ async def test_session_query_extension_rejects_cursor_limit(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -1011,7 +1020,7 @@ async def test_session_query_extension_rejects_page_size_pagination(monkeypatch)
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -1052,7 +1061,7 @@ async def test_session_query_extension_rejects_limit_above_max(monkeypatch):
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -1098,7 +1107,7 @@ async def test_session_query_extension_accepts_equivalent_string_and_integer_lim
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -1134,7 +1143,7 @@ async def test_session_query_extension_maps_404_to_session_not_found(monkeypatch
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,
@@ -1149,7 +1158,11 @@ async def test_session_query_extension_maps_404_to_session_not_found(monkeypatch
         assert payload["jsonrpc"] == "2.0"
         assert payload["id"] == 2
         assert payload["error"]["code"] == -32001
-        assert payload["error"]["data"]["type"] == "SESSION_NOT_FOUND"
+        assert_v1_error_reason(
+            payload["error"],
+            reason="SESSION_NOT_FOUND",
+            metadata={"session_id": "s-404"},
+        )
 
 
 @pytest.mark.asyncio
@@ -1165,7 +1178,7 @@ async def test_session_query_extension_does_not_log_response_bodies(monkeypatch,
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer t-1"}
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
         resp = await client.post(
             "/",
             headers=headers,

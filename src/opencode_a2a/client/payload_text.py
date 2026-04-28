@@ -5,10 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from a2a.types import Message, Part
+from a2a.types import Message, Part, StreamResponse
+from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message as ProtoMessage
-
-from ..a2a_utils import part_text, proto_to_dict
 
 
 def extract_text(payload: Any) -> str | None:
@@ -27,7 +26,7 @@ def extract_text(payload: Any) -> str | None:
         collected: list[str] = []
         for part in parts:
             if isinstance(part, Part):
-                text_value = part_text(part)
+                text_value = part.text if part.HasField("text") else None
                 if text_value:
                     collected.append(text_value)
                 continue
@@ -97,6 +96,17 @@ def extract_text(payload: Any) -> str | None:
     if isinstance(payload, Message):
         return extract_from_parts(payload.parts)
 
+    if isinstance(payload, StreamResponse):
+        if payload.HasField("artifact_update"):
+            return extract_text(payload.artifact_update.artifact)
+        if payload.HasField("status_update"):
+            return extract_text(payload.status_update.status)
+        if payload.HasField("message"):
+            return extract_text(payload.message)
+        if payload.HasField("task"):
+            return extract_text(payload.task)
+        return None
+
     if isinstance(payload, str):
         return payload.strip() or None
 
@@ -155,7 +165,7 @@ def extract_text(payload: Any) -> str | None:
 
     mapping_payload: Mapping[str, Any] | None = None
     if isinstance(payload, ProtoMessage):
-        payload_dict = proto_to_dict(payload)
+        payload_dict = MessageToDict(payload)
         if isinstance(payload_dict, Mapping):
             mapping_payload = payload_dict
     elif hasattr(payload, "model_dump") and callable(payload.model_dump):
@@ -175,6 +185,3 @@ def extract_text(payload: Any) -> str | None:
             return mapped_text
 
     return None
-
-
-__all__ = ["extract_text"]

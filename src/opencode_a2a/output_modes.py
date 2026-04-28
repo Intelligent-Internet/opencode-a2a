@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Collection, Iterable, Mapping
 from typing import Any, cast
 
@@ -15,22 +16,15 @@ from a2a.types import (
     TaskState,
     TaskStatusUpdateEvent,
 )
+from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message as ProtoMessage
 
 from .a2a_utils import (
     clone_proto,
-    make_text_part,
-    part_is_data,
-    part_is_file,
-    part_is_text,
-    proto_to_dict,
     replace_artifact_event_artifact,
     replace_artifact_parts,
     replace_message_parts,
     replace_status_event_message,
-)
-from .a2a_utils import (
-    part_text_fallback as _part_text_fallback,
 )
 
 OUTPUT_NEGOTIATION_METADATA_KEY = "output_negotiation"
@@ -82,12 +76,6 @@ def accepts_output_mode(
     return accepted_output_modes is None or media_type in accepted_output_modes
 
 
-def part_text_fallback(part: Any) -> str | None:
-    if isinstance(part, Part):
-        return _part_text_fallback(part)
-    return None
-
-
 def build_output_negotiation_metadata(
     accepted_output_modes: Iterable[str] | None,
 ) -> dict[str, Any] | None:
@@ -105,7 +93,7 @@ def build_output_negotiation_metadata(
 
 def _normalize_metadata_mapping(metadata: Any) -> dict[str, Any]:
     if isinstance(metadata, ProtoMessage):
-        normalized = proto_to_dict(metadata)
+        normalized = MessageToDict(metadata)
         return normalized if isinstance(normalized, dict) else {}
     if isinstance(metadata, Mapping):
         return dict(metadata)
@@ -394,17 +382,28 @@ def _filter_parts(
             filtered.append(part)
             continue
         if accepts_output_mode(accepted_output_modes, _TEXT_PLAIN_MEDIA_TYPE):
-            fallback_text = part_text_fallback(part)
-            if fallback_text is not None:
-                filtered.append(make_text_part(fallback_text))
+            if part.HasField("text"):
+                filtered.append(Part(text=part.text))
+                continue
+            if part.HasField("data"):
+                filtered.append(
+                    Part(
+                        text=json.dumps(
+                            MessageToDict(part.data),
+                            ensure_ascii=True,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                    )
+                )
     return filtered
 
 
 def _part_media_type(part: Part) -> str | None:
-    if part_is_text(part):
+    if part.HasField("text"):
         return _TEXT_PLAIN_MEDIA_TYPE
-    if part_is_data(part):
+    if part.HasField("data"):
         return _APPLICATION_JSON_MEDIA_TYPE
-    if part_is_file(part):
+    if part.HasField("raw") or part.HasField("url"):
         return part.media_type or "application/octet-stream"
     return None

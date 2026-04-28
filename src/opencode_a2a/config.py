@@ -3,14 +3,10 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from opencode_a2a import __version__
-from opencode_a2a.protocol_versions import (
-    normalize_protocol_version,
-    normalize_protocol_versions,
-)
 from opencode_a2a.sandbox_policy import SandboxPolicy
 
 SandboxMode = Literal[
@@ -176,11 +172,6 @@ class Settings(BaseSettings):
     a2a_title: str = Field(default="OpenCode A2A", alias="A2A_TITLE")
     a2a_description: str = Field(default="OpenCode A2A runtime", alias="A2A_DESCRIPTION")
     a2a_version: str = Field(default=__version__, alias="A2A_VERSION")
-    a2a_protocol_version: str = Field(default="0.3", alias="A2A_PROTOCOL_VERSION")
-    a2a_supported_protocol_versions: DeclaredStringList = Field(
-        default=("0.3", "1.0"),
-        alias="A2A_SUPPORTED_PROTOCOL_VERSIONS",
-    )
     a2a_log_level: str = Field(default="WARNING", alias="A2A_LOG_LEVEL")
     a2a_log_payloads: bool = Field(default=False, alias="A2A_LOG_PAYLOADS")
     a2a_log_body_limit: int = Field(default=0, alias="A2A_LOG_BODY_LIMIT")
@@ -270,10 +261,6 @@ class Settings(BaseSettings):
     )
     a2a_client_bearer_token: str | None = Field(default=None, alias="A2A_CLIENT_BEARER_TOKEN")
     a2a_client_basic_auth: str | None = Field(default=None, alias="A2A_CLIENT_BASIC_AUTH")
-    a2a_client_protocol_version: str | None = Field(
-        default=None,
-        alias="A2A_CLIENT_PROTOCOL_VERSION",
-    )
     a2a_client_cache_ttl_seconds: float = Field(
         default=900.0,
         ge=0.0,
@@ -288,7 +275,6 @@ class Settings(BaseSettings):
         default=("JSONRPC", "HTTP+JSON"),
         alias="A2A_CLIENT_SUPPORTED_TRANSPORTS",
     )
-
     # Task store settings
     a2a_task_store_backend: TaskStoreBackend = Field(
         default="database",
@@ -306,12 +292,6 @@ class Settings(BaseSettings):
             raise ValueError(
                 "A2A_TASK_STORE_DATABASE_URL is required when A2A_TASK_STORE_BACKEND=database"
             )
-        if self.a2a_protocol_version not in self.a2a_supported_protocol_versions:
-            supported_display = ", ".join(self.a2a_supported_protocol_versions)
-            raise ValueError(
-                "A2A_PROTOCOL_VERSION must be present in A2A_SUPPORTED_PROTOCOL_VERSIONS. "
-                f"Declared supported versions: {supported_display}"
-            )
         if self.a2a_static_auth_credentials:
             if not any(credential.enabled for credential in self.a2a_static_auth_credentials):
                 raise ValueError(
@@ -320,30 +300,3 @@ class Settings(BaseSettings):
         else:
             raise ValueError("Configure runtime authentication via A2A_STATIC_AUTH_CREDENTIALS")
         return self
-
-    @field_validator("a2a_protocol_version", mode="before")
-    @classmethod
-    def _normalize_a2a_protocol_version(cls, value: Any) -> str:
-        if not isinstance(value, str):
-            raise TypeError("A2A_PROTOCOL_VERSION must be a string.")
-        return normalize_protocol_version(value)
-
-    @field_validator("a2a_client_protocol_version", mode="before")
-    @classmethod
-    def _normalize_a2a_client_protocol_version(cls, value: Any) -> str | None:
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            raise TypeError("A2A_CLIENT_PROTOCOL_VERSION must be a string.")
-        normalized = value.strip()
-        if not normalized:
-            return None
-        return normalize_protocol_version(normalized)
-
-    @field_validator("a2a_supported_protocol_versions")
-    @classmethod
-    def _normalize_supported_protocol_versions(
-        cls,
-        value: tuple[str, ...],
-    ) -> tuple[str, ...]:
-        return normalize_protocol_versions(value)

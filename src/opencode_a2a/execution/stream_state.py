@@ -230,7 +230,10 @@ def _build_stream_artifact_metadata(
     role: str | None = None,
     event_id: str | None = None,
     sequence: int | None = None,
-) -> dict[str, Any]:
+    include_shared_stream_metadata: bool = True,
+) -> dict[str, Any] | None:
+    if not include_shared_stream_metadata:
+        return None
     stream_meta: dict[str, Any] = {
         "block_type": block_type.value,
         "source": shared_source,
@@ -255,22 +258,24 @@ def _build_output_metadata(
     progress: Mapping[str, Any] | None = None,
     interrupt: Mapping[str, Any] | None = None,
     opencode_private: Mapping[str, Any] | None = None,
+    include_session_metadata: bool = True,
+    include_streaming_metadata: bool = True,
 ) -> dict[str, Any] | None:
     metadata: dict[str, Any] = {}
     shared_meta: dict[str, Any] = {}
 
-    if session_id:
+    if include_session_metadata and session_id:
         session_meta: dict[str, Any] = {"id": session_id}
         if session_title is not None:
             session_meta["title"] = session_title
         shared_meta["session"] = session_meta
-    if usage is not None:
+    if include_streaming_metadata and usage is not None:
         shared_meta["usage"] = dict(usage)
-    if stream is not None:
+    if include_streaming_metadata and stream is not None:
         shared_meta["stream"] = dict(stream)
-    if progress is not None:
+    if include_streaming_metadata and progress is not None:
         shared_meta["progress"] = dict(progress)
-    if interrupt is not None:
+    if include_streaming_metadata and interrupt is not None:
         shared_meta["interrupt"] = dict(interrupt)
     if shared_meta:
         metadata["shared"] = shared_meta

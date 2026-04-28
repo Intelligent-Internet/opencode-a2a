@@ -40,8 +40,9 @@ from ..contracts.extensions import (
     build_wire_contract_params,
     build_workspace_control_extension_params,
 )
-from ..jsonrpc.application import SESSION_CONTEXT_PREFIX
+from ..jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from ..profile.runtime import RuntimeProfile, build_runtime_profile
+from ..protocol_versions import A2A_PROTOCOL_VERSION
 
 _CHAT_INPUT_MODES = ["text/plain", "application/octet-stream"]
 _CHAT_OUTPUT_MODES = ["text/plain", "application/json"]
@@ -119,9 +120,9 @@ def _build_agent_card_description(
 
     summary = (
         "Supports HTTP+JSON and JSON-RPC transports, streaming-first A2A messaging "
-        "(message/send, message/stream), authenticated extended Agent Card "
-        "(agent/getAuthenticatedExtendedCard), task APIs (tasks/get, tasks/cancel, "
-        "tasks/resubscribe; SDK-owned push notification config surfaces remain "
+        "(SendMessage, SendStreamingMessage), authenticated extended Agent Card "
+        "(GetExtendedAgentCard), task APIs (GetTask, CancelTask, "
+        "SubscribeToTask; SDK-owned push notification config surfaces remain "
         "exposed but currently return unsupported; REST mappings include GET "
         "/v1/tasks and GET /v1/tasks/{id}:subscribe), shared "
         "session-binding/model-selection/streaming contracts, provider-private "
@@ -211,7 +212,6 @@ def _build_workspace_control_skill_examples(*, capability_snapshot) -> list[str]
 
 def _build_agent_extensions(
     *,
-    settings: Settings,
     runtime_profile: RuntimeProfile,
     include_detailed_contracts: bool,
 ) -> list[AgentExtension]:
@@ -239,16 +239,12 @@ def _build_agent_extensions(
         runtime_profile=runtime_profile,
     )
     compatibility_profile_params = build_compatibility_profile_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
     wire_contract_params = build_wire_contract_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
 
     return [
@@ -477,11 +473,11 @@ def _build_agent_skills(
             id="opencode.chat",
             name="OpenCode Chat",
             description=(
-                "Handle core A2A message/send and message/stream requests by routing "
-                "TextPart and FilePart inputs to OpenCode sessions with shared session "
-                "binding and optional request-scoped model selection. Chat clients "
-                "should continue accepting text/plain responses; application/json is "
-                "additive structured-output support."
+                "Handle core A2A SendMessage and SendStreamingMessage requests by routing "
+                "Part.text, Part.raw, and Part.url inputs to OpenCode sessions with "
+                "shared session binding and optional request-scoped model selection. "
+                "Chat clients should continue accepting text/plain responses; "
+                "application/json is additive structured-output support."
             ),
             input_modes=list(_CHAT_INPUT_MODES),
             output_modes=list(_CHAT_OUTPUT_MODES),
@@ -605,12 +601,12 @@ def _build_agent_card(
             AgentInterface(
                 url=public_url,
                 protocol_binding="HTTP+JSON",
-                protocol_version=settings.a2a_protocol_version,
+                protocol_version=A2A_PROTOCOL_VERSION,
             ),
             AgentInterface(
                 url=public_url,
                 protocol_binding="JSONRPC",
-                protocol_version=settings.a2a_protocol_version,
+                protocol_version=A2A_PROTOCOL_VERSION,
             ),
         ],
         default_input_modes=list(_CHAT_INPUT_MODES),
@@ -619,7 +615,6 @@ def _build_agent_card(
             streaming=True,
             extended_agent_card=True,
             extensions=_build_agent_extensions(
-                settings=settings,
                 runtime_profile=runtime_profile,
                 include_detailed_contracts=include_detailed_contracts,
             ),

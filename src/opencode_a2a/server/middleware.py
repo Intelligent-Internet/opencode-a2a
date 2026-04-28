@@ -8,21 +8,20 @@ from typing import cast
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from google.protobuf.json_format import MessageToDict
 from starlette.responses import StreamingResponse
 
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
     EXTENDED_AGENT_CARD_PATH,
-    PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
-from ..a2a_utils import proto_to_dict
 from ..auth import (
     authenticate_static_credential,
     build_static_auth_credentials,
 )
 from ..execution.metrics import emit_metric
 from ..jsonrpc.error_responses import (
-    adapt_jsonrpc_error_for_protocol,
+    adapt_jsonrpc_error,
     build_http_error_body,
     version_not_supported_error,
 )
@@ -30,7 +29,6 @@ from ..jsonrpc.models import JSONRPCError
 from ..protocol_versions import (
     UnsupportedProtocolVersionError,
     negotiate_protocol_version,
-    normalize_protocol_version,
 )
 from ..trace_context import (
     TRACEPARENT_HEADER,
@@ -44,9 +42,7 @@ from .request_parsing import (
     _detect_sensitive_extension_method,
     _is_json_content_type,
     _looks_like_jsonrpc_envelope,
-    _looks_like_jsonrpc_message_payload,
     _normalize_content_type,
-    _normalize_v1_jsonrpc_method_alias,
     _parse_content_length,
     _parse_json_body,
     _request_body_too_large_response,
@@ -82,7 +78,6 @@ def add_auth_middleware(app: FastAPI, settings) -> None:  # noqa: ANN001
     async def bearer_auth(request: Request, call_next):
         if request.method == "OPTIONS" or request.url.path in {
             AGENT_CARD_WELL_KNOWN_PATH,
-            PREV_AGENT_CARD_WELL_KNOWN_PATH,
         }:
             return await call_next(request)
 
@@ -110,7 +105,7 @@ def add_auth_middleware(app: FastAPI, settings) -> None:  # noqa: ANN001
 
 
 def build_agent_card_etag(card) -> str:  # noqa: ANN001
-    payload = proto_to_dict(card)
+    payload = MessageToDict(card)
     content = json.dumps(
         payload,
         ensure_ascii=False,
@@ -142,31 +137,6 @@ def install_runtime_middlewares(
             return request_id
         return None
 
-    def _error_protocol_version(request: Request) -> str:
-        negotiated = getattr(request.state, "a2a_protocol_version", None)
-        if isinstance(negotiated, str) and negotiated.strip():
-            return negotiated
-        raw_value = request.headers.get("A2A-Version") or request.query_params.get("A2A-Version")
-        if isinstance(raw_value, str) and raw_value.strip():
-            try:
-                return normalize_protocol_version(raw_value)
-            except ValueError:
-                return raw_value.strip()
-        return cast(str, settings.a2a_protocol_version)
-
-    def _uses_v1_jsonrpc_aliases(request: Request) -> bool:
-        negotiated = getattr(request.state, "a2a_protocol_version", None)
-        if negotiated == "1.0":
-            return True
-
-        raw_value = request.headers.get("A2A-Version") or request.query_params.get("A2A-Version")
-        if not isinstance(raw_value, str) or not raw_value.strip():
-            return False
-        try:
-            return normalize_protocol_version(raw_value) == "1.0"
-        except ValueError:
-            return False
-
     @app.middleware("http")
     async def bind_trace_context(request: Request, call_next):
         trace_context = resolve_trace_context(
@@ -192,11 +162,9 @@ def install_runtime_middlewares(
             return await call_next(request)
 
         try:
-            negotiated = negotiate_protocol_version(
+            negotiated_version = negotiate_protocol_version(
                 header_value=request.headers.get("A2A-Version"),
                 query_value=request.query_params.get("A2A-Version"),
-                default_protocol_version=settings.a2a_protocol_version,
-                supported_protocol_versions=settings.a2a_supported_protocol_versions,
             )
         except UnsupportedProtocolVersionError as error:
             if request.url.path == "/" and request.method == "POST":
@@ -208,7 +176,6 @@ def install_runtime_middlewares(
                         path=request.url.path,
                         method=request.method,
                         error=request_error,
-                        protocol_version=_error_protocol_version(request),
                     )
                 return JSONResponse(
                     {
@@ -216,8 +183,7 @@ def install_runtime_middlewares(
                         "id": _extract_jsonrpc_request_id(payload),
                         "error": cast(
                             JSONRPCError,
-                            adapt_jsonrpc_error_for_protocol(
-                                error.requested_version,
+                            adapt_jsonrpc_error(
                                 version_not_supported_error(
                                     requested_version=error.requested_version,
                                     supported_protocol_versions=list(
@@ -232,17 +198,9 @@ def install_runtime_middlewares(
                 )
             return JSONResponse(
                 build_http_error_body(
-                    protocol_version=error.requested_version,
                     status_code=400,
                     status="INVALID_ARGUMENT",
                     message="Unsupported A2A version",
-                    legacy_payload={
-                        "error": "Unsupported A2A version",
-                        "type": "VERSION_NOT_SUPPORTED",
-                        "requested_version": error.requested_version,
-                        "supported_protocol_versions": list(error.supported_protocol_versions),
-                        "default_protocol_version": error.default_protocol_version,
-                    },
                     reason="VERSION_NOT_SUPPORTED",
                     metadata={
                         "requested_version": error.requested_version,
@@ -256,11 +214,9 @@ def install_runtime_middlewares(
             if token is not None:
                 _REQUEST_BODY_BYTES.reset(token)
 
-        request.state.a2a_protocol_version = negotiated.negotiated_version
-        request.state.a2a_requested_protocol_version = negotiated.requested_version
-        request.state.a2a_protocol_version_explicit = negotiated.explicit
+        request.state.a2a_protocol_version = negotiated_version
         response = await call_next(request)
-        response.headers["A2A-Version"] = negotiated.negotiated_version
+        response.headers["A2A-Version"] = negotiated_version
         return response
 
     async def _get_request_body(request: Request) -> tuple[bytes, Token | None]:
@@ -322,10 +278,7 @@ def install_runtime_middlewares(
             return await call_next(request)
 
         path = request.url.path
-        is_public_card = path in {
-            AGENT_CARD_WELL_KNOWN_PATH,
-            PREV_AGENT_CARD_WELL_KNOWN_PATH,
-        }
+        is_public_card = path == AGENT_CARD_WELL_KNOWN_PATH
         is_extended_card = path == EXTENDED_AGENT_CARD_PATH
         if not is_public_card and not is_extended_card:
             return await call_next(request)
@@ -379,7 +332,6 @@ def install_runtime_middlewares(
                 path=request.url.path,
                 method=request.method,
                 error=error,
-                protocol_version=_error_protocol_version(request),
             )
         finally:
             if token is not None:
@@ -397,26 +349,17 @@ def install_runtime_middlewares(
         try:
             body, token = await _get_request_body(request)
             payload = _parse_json_body(body)
-            if _looks_like_jsonrpc_envelope(payload) or _looks_like_jsonrpc_message_payload(
-                payload
-            ):
+            if _looks_like_jsonrpc_envelope(payload):
                 return JSONResponse(
                     build_http_error_body(
-                        protocol_version=_error_protocol_version(request),
                         status_code=400,
                         status="INVALID_ARGUMENT",
                         message=(
-                            "Invalid HTTP+JSON payload for REST endpoint. "
-                            "Use message.content with ROLE_* role values, or call "
-                            "POST / with method=message/send or method=message/stream."
+                            "Invalid JSON-RPC payload for REST endpoint. "
+                            "Call POST / for JSON-RPC methods such as SendMessage "
+                            "or SendStreamingMessage, or send ProtoJSON "
+                            "SendMessageRequest payloads to the REST endpoint."
                         ),
-                        legacy_payload={
-                            "error": (
-                                "Invalid HTTP+JSON payload for REST endpoint. "
-                                "Use message.content with ROLE_* role values, or call "
-                                "POST / with method=message/send or method=message/stream."
-                            )
-                        },
                         reason="INVALID_HTTP_JSON_PAYLOAD",
                         metadata={"path": request.url.path},
                     ),
@@ -428,49 +371,8 @@ def install_runtime_middlewares(
                 path=request.url.path,
                 method=request.method,
                 error=error,
-                protocol_version=_error_protocol_version(request),
             )
         finally:
-            if token is not None:
-                _REQUEST_BODY_BYTES.reset(token)
-
-    @app.middleware("http")
-    async def normalize_v1_jsonrpc_method_aliases(request: Request, call_next):
-        token: Token | None = None
-        rewrite_token: Token | None = None
-        if (
-            request.method != "POST"
-            or request.url.path != "/"
-            or not _uses_v1_jsonrpc_aliases(request)
-        ):
-            return await call_next(request)
-
-        try:
-            body, token = await _get_request_body(request)
-            payload = _parse_json_body(body)
-            normalized_payload = _normalize_v1_jsonrpc_method_alias(
-                payload,
-                protocol_version="1.0",
-            )
-            if normalized_payload is not None and normalized_payload is not payload:
-                normalized_body = json.dumps(
-                    normalized_payload,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-                request._body = normalized_body
-                rewrite_token = _REQUEST_BODY_BYTES.set(normalized_body)
-            return await call_next(request)
-        except _RequestBodyTooLargeError as error:
-            return _request_body_too_large_response(
-                path=request.url.path,
-                method=request.method,
-                error=error,
-                protocol_version=_error_protocol_version(request),
-            )
-        finally:
-            if rewrite_token is not None:
-                _REQUEST_BODY_BYTES.reset(rewrite_token)
             if token is not None:
                 _REQUEST_BODY_BYTES.reset(token)
 
@@ -574,7 +476,6 @@ def install_runtime_middlewares(
                 path=request.url.path,
                 method=request.method,
                 error=error,
-                protocol_version=_error_protocol_version(request),
             )
         finally:
             if token is not None:

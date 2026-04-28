@@ -49,7 +49,7 @@ def build_tool_error(
 
 def map_a2a_tool_exception(exc: Exception) -> dict[str, Any]:
     if isinstance(exc, (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError)):
-        return map_a2a_tool_exception(map_operation_error("message/send", exc))
+        return map_a2a_tool_exception(map_operation_error("SendMessage", exc))
     if isinstance(exc, A2AAuthenticationError):
         return _build_client_error_payload(
             exc,
@@ -135,6 +135,3 @@ def _build_client_error_meta(exc: A2AClientError) -> dict[str, Any] | None:
     if exc.code is not None:
         error_meta["rpc_code"] = exc.code
     return error_meta or None
-
-
-__all__ = ["build_tool_error", "map_a2a_tool_exception"]

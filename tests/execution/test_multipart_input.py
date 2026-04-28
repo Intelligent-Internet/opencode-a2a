@@ -1,6 +1,7 @@
 import pytest
-from a2a.types import DataPart, FilePart, FileWithBytes, FileWithUri, TaskState, TextPart
+from a2a.types import Part, TaskState
 
+from opencode_a2a.a2a_utils import make_data_part
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from tests.support.helpers import DummyEventQueue, make_request_context_with_parts, make_settings
@@ -82,14 +83,8 @@ async def test_execute_forwards_text_and_file_parts() -> None:
         task_id="task-1",
         context_id="ctx-1",
         parts=[
-            TextPart(text="Describe this file"),
-            FilePart(
-                file=FileWithBytes(
-                    bytes="aGVsbG8=",
-                    mimeType="text/plain",
-                    name="note.txt",
-                )
-            ),
+            Part(text="Describe this file"),
+            Part(raw=b"hello", filename="note.txt", media_type="text/plain"),
         ],
     )
 
@@ -126,12 +121,10 @@ async def test_execute_accepts_file_only_input() -> None:
         task_id="task-1",
         context_id="ctx-1",
         parts=[
-            FilePart(
-                file=FileWithUri(
-                    uri="file:///tmp/report.pdf",
-                    mimeType="application/pdf",
-                    name="report.pdf",
-                )
+            Part(
+                url="file:///tmp/report.pdf",
+                filename="report.pdf",
+                media_type="application/pdf",
             )
         ],
     )
@@ -159,7 +152,7 @@ async def test_execute_rejects_data_parts() -> None:
     context = make_request_context_with_parts(
         task_id="task-1",
         context_id="ctx-1",
-        parts=[DataPart(data={"kind": "json", "value": 1})],
+        parts=[make_data_part({"kind": "json", "value": 1})],
     )
 
     await executor.execute(context, queue)
@@ -167,7 +160,7 @@ async def test_execute_rejects_data_parts() -> None:
     assert client.sent_calls == []
     task = queue.events[-1]
     assert task.status.state == TaskState.TASK_STATE_FAILED
-    assert "DataPart input is not supported" in (
+    assert "structured data is not supported" in (
         getattr(task.status.message.parts[0], "text", None)
         or getattr(getattr(task.status.message.parts[0], "root", None), "text", "")
     )

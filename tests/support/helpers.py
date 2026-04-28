@@ -10,8 +10,12 @@ from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.types import Message, Part, Role, SendMessageConfiguration, SendMessageRequest
 
-from opencode_a2a.a2a_utils import make_data_part, make_text_part, make_url_part
 from opencode_a2a.config import Settings
+from opencode_a2a.contracts.extensions import (
+    MODEL_SELECTION_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
+    STREAMING_EXTENSION_URI,
+)
 from opencode_a2a.opencode_upstream_client import OpencodeMessage, OpencodeMessagePage
 
 
@@ -88,6 +92,22 @@ class DummyEventQueue:
         return None
 
 
+def _default_requested_extensions() -> set[str]:
+    return {
+        MODEL_SELECTION_EXTENSION_URI,
+        SESSION_BINDING_EXTENSION_URI,
+        STREAMING_EXTENSION_URI,
+    }
+
+
+def _ensure_test_call_context(call_context: Any | None) -> Any:
+    if call_context is None:
+        return ServerCallContext(requested_extensions=_default_requested_extensions())
+    if not hasattr(call_context, "requested_extensions"):
+        call_context.requested_extensions = _default_requested_extensions()
+    return call_context
+
+
 def make_request_context_mock(
     *,
     task_id: str | None,
@@ -109,6 +129,7 @@ def make_request_context_mock(
     if call_context_enabled:
         call_context = MagicMock(spec=ServerCallContext)
         call_context.state = {"identity": identity} if identity else {}
+        call_context.requested_extensions = _default_requested_extensions()
         context.call_context = call_context
     else:
         context.call_context = None
@@ -141,10 +162,11 @@ def make_request_context(
     accepted_output_modes: list[str] | None = None,
     call_context: Any = None,
 ) -> RequestContext:
+    call_context = _ensure_test_call_context(call_context)
     message = Message(
         message_id=message_id,
         role=Role.ROLE_USER,
-        parts=[make_text_part(text)],
+        parts=[Part(text=text)],
     )
     configuration = (
         SendMessageConfiguration(accepted_output_modes=accepted_output_modes)
@@ -160,36 +182,6 @@ def make_request_context(
     )
 
 
-def _normalize_test_part(part: Any) -> Part:
-    if isinstance(part, Part):
-        return part
-    text = getattr(part, "text", None)
-    if isinstance(text, str):
-        return make_text_part(text)
-    if hasattr(part, "data"):
-        return make_data_part(part.data)
-    if hasattr(part, "file"):
-        file_payload = part.file
-        mime_type = getattr(file_payload, "mimeType", None)
-        filename = getattr(file_payload, "name", None)
-        raw_bytes = getattr(file_payload, "bytes", None)
-        if isinstance(raw_bytes, str):
-            media_type = mime_type or "application/octet-stream"
-            return make_url_part(
-                f"data:{media_type};base64,{raw_bytes}",
-                filename=filename,
-                media_type=media_type,
-            )
-        uri = getattr(file_payload, "uri", None)
-        if isinstance(uri, str):
-            return make_url_part(
-                uri,
-                filename=filename,
-                media_type=mime_type,
-            )
-    raise TypeError(f"Unsupported test part payload: {type(part)!r}")
-
-
 def make_request_context_with_parts(
     *,
     task_id: str,
@@ -200,10 +192,11 @@ def make_request_context_with_parts(
     call_context: Any = None,
     accepted_output_modes: list[str] | None = None,
 ) -> RequestContext:
+    call_context = _ensure_test_call_context(call_context)
     message = Message(
         message_id=message_id,
         role=Role.ROLE_USER,
-        parts=[_normalize_test_part(part) for part in parts],
+        parts=parts,
     )
     configuration = (
         SendMessageConfiguration(accepted_output_modes=accepted_output_modes)

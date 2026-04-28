@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from a2a.client.errors import A2AClientHTTPError
 
 from opencode_a2a.client.agent_card import (
     build_agent_card_resolver,
@@ -14,6 +13,7 @@ from opencode_a2a.client.agent_card import (
 )
 from opencode_a2a.client.error_mapping import map_agent_card_error
 from opencode_a2a.client.errors import A2AAuthenticationError
+from tests.support.fake_client_errors import FakeA2AClientHTTPError
 
 
 @pytest.mark.asyncio
@@ -58,7 +58,7 @@ def test_normalize_agent_card_endpoint_requires_absolute_url() -> None:
 def test_build_resolver_http_kwargs_uses_bearer_token() -> None:
     assert build_resolver_http_kwargs(bearer_token="peer-token", timeout=7) == {
         "timeout": 7,
-        "headers": {"Authorization": "Bearer peer-token"},
+        "headers": {"A2A-Version": "1.0", "Authorization": "Bearer peer-token"},
     }
 
 
@@ -71,12 +71,12 @@ def test_build_resolver_http_kwargs_uses_basic_auth() -> None:
         timeout=7,
     ) == {
         "timeout": 7,
-        "headers": {"Authorization": f"Basic {encoded}"},
+        "headers": {"A2A-Version": "1.0", "Authorization": f"Basic {encoded}"},
     }
 
 
 def test_map_agent_card_error_http_variant() -> None:
-    mapped = map_agent_card_error(A2AClientHTTPError(401, "unauthorized"))
+    mapped = map_agent_card_error(FakeA2AClientHTTPError(401, "unauthorized"))
 
     assert isinstance(mapped, A2AAuthenticationError)
     assert mapped.http_status == 401

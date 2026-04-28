@@ -6,8 +6,8 @@ import httpx
 import pytest
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import Task, TaskArtifactUpdateEvent, TaskState, TaskStatusUpdateEvent
+from google.protobuf.json_format import MessageToDict
 
-from opencode_a2a.a2a_utils import proto_to_dict
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.opencode_upstream_client import (
     OpencodeMessage,
@@ -36,7 +36,7 @@ def _is_terminal_status_event(event: TaskStatusUpdateEvent) -> bool:
 def _metadata_dict(metadata) -> dict:  # noqa: ANN001
     if metadata is None:
         return {}
-    return proto_to_dict(metadata)
+    return MessageToDict(metadata)
 
 
 @pytest.mark.asyncio

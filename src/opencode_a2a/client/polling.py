@@ -57,6 +57,3 @@ def validate_polling_fallback_policy(policy: PollingFallbackPolicy) -> None:
             "A2A_CLIENT_POLLING_FALLBACK_MAX_INTERVAL_SECONDS must be greater than or "
             "equal to A2A_CLIENT_POLLING_FALLBACK_INITIAL_INTERVAL_SECONDS"
         )
-
-
-__all__ = ["PollingFallbackPolicy", "validate_polling_fallback_policy"]

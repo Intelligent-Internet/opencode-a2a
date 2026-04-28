@@ -5,14 +5,18 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
+from a2a.extensions.common import HTTP_EXTENSION_HEADER, get_requested_extensions
 from a2a.server.tasks.task_store import TaskStore
 from a2a.types import Task, TaskState
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from google.protobuf.json_format import MessageToDict
 
-from ..a2a_utils import proto_to_dict
+from ..extension_negotiation import (
+    filter_negotiated_extensions_from_payload,
+)
 from ..jsonrpc.error_responses import build_http_error_body
 from ..output_modes import (
     apply_accepted_output_modes,
@@ -66,14 +70,8 @@ def _validation_error(field: str, message: str) -> _ListTasksValidationError:
 def build_list_tasks_route(
     *,
     task_store: TaskStore,
-    default_protocol_version: str,
 ):
     async def list_tasks_route(request: Request) -> JSONResponse:
-        protocol_version = getattr(
-            request.state,
-            "a2a_protocol_version",
-            default_protocol_version,
-        )
         try:
             query = _parse_list_tasks_query(request)
             tasks = await list_stored_tasks(task_store)
@@ -81,19 +79,13 @@ def build_list_tasks_route(
             return _invalid_argument_response(
                 field=error.field,
                 message=error.message,
-                protocol_version=protocol_version,
             )
         except TaskStoreOperationError as error:
             return JSONResponse(
                 build_http_error_body(
-                    protocol_version=protocol_version,
                     status_code=500,
                     status="INTERNAL",
                     message="Task store unavailable while listing tasks.",
-                    legacy_payload={
-                        "error": "Task store unavailable while listing tasks.",
-                        "operation": error.operation,
-                    },
                     reason="TASK_STORE_UNAVAILABLE",
                     metadata={"operation": error.operation},
                 ),
@@ -115,6 +107,9 @@ def build_list_tasks_route(
                         task,
                         history_length=query.history_length,
                         include_artifacts=query.include_artifacts,
+                        requested_extensions=frozenset(
+                            get_requested_extensions(request.headers.getlist(HTTP_EXTENSION_HEADER))
+                        ),
                     )
                     for task in page_tasks
                 ],
@@ -159,6 +154,7 @@ def _serialize_task(
     *,
     history_length: int,
     include_artifacts: bool,
+    requested_extensions: frozenset[str],
 ) -> dict:
     negotiated = apply_accepted_output_modes(
         task,
@@ -166,8 +162,9 @@ def _serialize_task(
     )
     if isinstance(negotiated, Task):
         task = negotiated
+    task = filter_negotiated_extensions_from_payload(task, requested_extensions)
 
-    payload = proto_to_dict(task)
+    payload = cast(dict[str, Any], MessageToDict(task))
 
     history = payload.get("history")
     if history_length <= 0:
@@ -215,9 +212,7 @@ def _parse_list_tasks_query(request: Request) -> _ListTasksQuery:
     status = None
     if status_value is not None:
         try:
-            normalized_status = status_value.strip().upper()
-            if normalized_status and not normalized_status.startswith("TASK_STATE_"):
-                normalized_status = f"TASK_STATE_{normalized_status}"
+            normalized_status = status_value.strip()
             status = TaskState.Value(normalized_status)
         except ValueError as exc:
             raise _ListTasksValidationError(
@@ -347,15 +342,12 @@ def _invalid_argument_response(
     *,
     field: str,
     message: str,
-    protocol_version: str,
 ) -> JSONResponse:
     return JSONResponse(
         build_http_error_body(
-            protocol_version=protocol_version,
             status_code=400,
             status="INVALID_ARGUMENT",
             message=message,
-            legacy_payload={"error": message, "field": field},
             reason="INVALID_LIST_TASKS_REQUEST",
             metadata={"field": field},
         ),

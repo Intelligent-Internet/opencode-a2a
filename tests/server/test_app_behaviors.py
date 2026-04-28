@@ -8,16 +8,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.events import EventConsumer
+from a2a.server.routes.rest_dispatcher import RestDispatcher
 from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
+    CancelTaskRequest,
+    GetTaskRequest,
     InternalError,
     Message,
+    SendMessageRequest,
+    SubscribeToTaskRequest,
     Task,
-    TaskIdParams,
     TaskNotCancelableError,
     TaskNotFoundError,
-    TaskQueryParams,
     TaskState,
     TaskStatus,
     UnsupportedOperationError,
@@ -27,36 +31,42 @@ from fastapi import Request
 from google.protobuf.json_format import MessageToDict, ParseError
 
 import opencode_a2a.server.application as app_module
-from opencode_a2a.contracts.extensions import build_capability_snapshot
+from opencode_a2a.contracts.extensions import (
+    MODEL_SELECTION_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
+    SESSION_METHODS,
+    build_capability_snapshot,
+)
 from opencode_a2a.profile.runtime import build_runtime_profile
-from opencode_a2a.server.application import (
-    OpencodeRequestHandler,
+from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
+from opencode_a2a.server.agent_card import (
     _build_agent_card_description,
     _build_chat_examples,
+    _build_session_management_skill_examples,
+)
+from opencode_a2a.server.application import (
+    OpencodeRequestHandler,
+    _configure_logging,
+    _normalize_log_level,
+    _parse_rest_send_message_request,
+    _rest_error_response,
+    create_app,
+)
+from opencode_a2a.server.openapi import (
     _build_jsonrpc_extension_openapi_description,
     _build_jsonrpc_extension_openapi_examples,
-    _build_rest_legacy_error_payload,
     _build_rest_message_openapi_examples,
-    _build_session_management_skill_examples,
-    _configure_logging,
+)
+from opencode_a2a.server.request_parsing import (
     _decode_payload_preview,
     _detect_sensitive_extension_method,
     _is_json_content_type,
     _looks_like_jsonrpc_envelope,
-    _looks_like_jsonrpc_message_payload,
     _normalize_content_type,
-    _normalize_log_level,
-    _normalize_rest_content_part,
-    _normalize_rest_send_message_payload,
-    _normalize_v1_jsonrpc_method_alias,
     _parse_content_length,
     _parse_json_body,
-    _parse_rest_send_message_request,
     _request_body_too_large_response,
     _RequestBodyTooLargeError,
-    _rest_error_response,
-    build_agent_card,
-    create_app,
 )
 from opencode_a2a.server.task_store import TaskStoreOperationError
 from tests.support.helpers import (
@@ -64,6 +74,10 @@ from tests.support.helpers import (
     make_basic_auth_header,
     make_settings,
 )
+
+
+def _agent_card() -> AgentCard:
+    return AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True))
 
 
 def _request(
@@ -105,13 +119,13 @@ def _request(
 def test_request_payload_helpers_cover_edge_cases() -> None:
     assert _parse_json_body(b"{") is None
     assert _parse_json_body(b"[]") is None
-    assert _parse_json_body(b'{"method":"message/send"}') == {"method": "message/send"}
+    assert _parse_json_body(b'{"method":"SendMessage"}') == {"method": "SendMessage"}
 
     assert _detect_sensitive_extension_method(None) is None
-    assert _detect_sensitive_extension_method({"method": "message/send"}) is None
+    assert _detect_sensitive_extension_method({"method": "SendMessage"}) is None
     assert (
-        _detect_sensitive_extension_method({"method": app_module.SESSION_METHODS["list_sessions"]})
-        == app_module.SESSION_METHODS["list_sessions"]
+        _detect_sensitive_extension_method({"method": SESSION_METHODS["list_sessions"]})
+        == SESSION_METHODS["list_sessions"]
     )
 
     assert _parse_content_length(None) is None
@@ -126,35 +140,9 @@ def test_request_payload_helpers_cover_edge_cases() -> None:
     assert _is_json_content_type("application/problem+json") is True
     assert _decode_payload_preview(b"abcdef", limit=3) == "abc...[truncated]"
 
-    assert _looks_like_jsonrpc_message_payload(None) is False
-    assert _looks_like_jsonrpc_message_payload({"message": {"parts": []}}) is True
-    assert _looks_like_jsonrpc_message_payload({"message": {"role": "user"}}) is True
-    assert _looks_like_jsonrpc_message_payload({"message": {"role": "ROLE_USER"}}) is False
     assert _looks_like_jsonrpc_envelope(None) is False
-    assert _looks_like_jsonrpc_envelope({"jsonrpc": "2.0", "method": "message/send"}) is True
-    assert _looks_like_jsonrpc_envelope({"jsonrpc": 2, "method": "message/send"}) is False
-    assert _normalize_v1_jsonrpc_method_alias(None, protocol_version="1.0") is None
-    assert _normalize_v1_jsonrpc_method_alias(
-        {"jsonrpc": "2.0", "method": "SendMessage"},
-        protocol_version="1.0",
-    ) == {
-        "jsonrpc": "2.0",
-        "method": "message/send",
-    }
-    assert _normalize_v1_jsonrpc_method_alias(
-        {"jsonrpc": "2.0", "method": "SendMessage"},
-        protocol_version="0.3",
-    ) == {
-        "jsonrpc": "2.0",
-        "method": "SendMessage",
-    }
-    assert _normalize_v1_jsonrpc_method_alias(
-        {"jsonrpc": "2.0", "method": "message/send"},
-        protocol_version="1.0",
-    ) == {
-        "jsonrpc": "2.0",
-        "method": "message/send",
-    }
+    assert _looks_like_jsonrpc_envelope({"jsonrpc": "2.0", "method": "SendMessage"}) is True
+    assert _looks_like_jsonrpc_envelope({"jsonrpc": 2, "method": "SendMessage"}) is False
 
     response = _request_body_too_large_response(
         path="/",
@@ -162,150 +150,91 @@ def test_request_payload_helpers_cover_edge_cases() -> None:
         error=_RequestBodyTooLargeError(limit=64, actual_size=65),
     )
     assert response.status_code == 413
-    assert response.body == b'{"error":"Request body too large","max_bytes":64}'
+    payload = json.loads(response.body)
+    assert payload["error"]["code"] == 413
+    assert payload["error"]["status"] == "RESOURCE_EXHAUSTED"
+    assert payload["error"]["message"] == "Request body too large"
+    assert payload["error"]["details"][0] == {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "REQUEST_BODY_TOO_LARGE",
+        "domain": "a2a-protocol.org",
+        "metadata": {"maxBytes": "64", "actualSize": "65"},
+    }
+    assert payload["error"]["details"][1] == {
+        "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
+        "maxBytes": 64,
+        "actualSize": 65,
+    }
 
 
 def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
-    assert _build_rest_legacy_error_payload(message="boom") == {"error": "boom"}
-    assert _build_rest_legacy_error_payload(
-        message="boom",
-        reason="INVALID_REQUEST",
-        metadata={"path": "/v1/message:send"},
-    ) == {
-        "error": "boom",
-        "type": "INVALID_REQUEST",
-        "path": "/v1/message:send",
-    }
-
     request_v1 = _request("/v1/message:send")
     request_v1.state.a2a_protocol_version = "1.0"
     v1_error = _rest_error_response(
         request=request_v1,
-        default_protocol_version="0.3",
         error=InvalidRequestError(message="bad payload", data={"path": "/v1/message:send"}),
     )
     assert v1_error.status_code == 400
-    assert v1_error.body == (
-        b'{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"bad payload",'
-        b'"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"INVALID_REQUEST",'
-        b'"domain":"a2a-protocol.org","metadata":{"path":"/v1/message:send"}},'
-        b'{"@type":"type.googleapis.com/opencode_a2a.HttpErrorContext","path":"/v1/message:send"}]}}'
-    )
+    assert json.loads(v1_error.body) == {
+        "error": {
+            "code": 400,
+            "status": "INVALID_ARGUMENT",
+            "message": "bad payload",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "INVALID_REQUEST",
+                    "domain": "a2a-protocol.org",
+                    "metadata": {"path": "/v1/message:send"},
+                },
+                {
+                    "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
+                    "path": "/v1/message:send",
+                },
+            ],
+        }
+    }
 
-    request_v03 = _request("/v1/message:send")
+    request_default = _request("/v1/message:send")
     parse_error = _rest_error_response(
-        request=request_v03,
-        default_protocol_version="0.3",
+        request=request_default,
         error=ParseError("bad parse"),
     )
     assert parse_error.status_code == 400
-    assert parse_error.body == b'{"error":"bad parse","type":"INVALID_REQUEST"}'
+    assert json.loads(parse_error.body) == {
+        "error": {
+            "code": 400,
+            "status": "INVALID_ARGUMENT",
+            "message": "bad parse",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "INVALID_REQUEST",
+                    "domain": "a2a-protocol.org",
+                }
+            ],
+        }
+    }
 
     generic_error = _rest_error_response(
-        request=request_v03,
-        default_protocol_version="0.3",
+        request=request_default,
         error=RuntimeError("boom"),
     )
     assert generic_error.status_code == 500
-    assert generic_error.body == b'{"error":"unknown exception","type":"INTERNAL_ERROR"}'
-
-    with pytest.raises(InvalidRequestError, match="message.content\\[0\\] must be an object"):
-        _normalize_rest_content_part("bad", field="message.content[0]")
-
-    assert _normalize_rest_content_part(
-        {"text": "hello", "metadata": {"tag": "plain"}},
-        field="message.content[0]",
-    ) == {"metadata": {"tag": "plain"}, "text": "hello"}
-    assert _normalize_rest_content_part(
-        {"data": {"step": 1}},
-        field="message.content[1]",
-    ) == {"data": {"step": 1}}
-    assert _normalize_rest_content_part(
-        {"file": {"bytes": "aGVsbG8=", "name": "report.txt", "mimeType": "text/plain"}},
-        field="message.content[2]",
-    ) == {
-        "raw": "aGVsbG8=",
-        "filename": "report.txt",
-        "mediaType": "text/plain",
-    }
-    assert _normalize_rest_content_part(
-        {
-            "file": {
-                "uri": "file:///tmp/report.txt",
-                "name": "report.txt",
-                "mediaType": "text/plain",
-            }
-        },
-        field="message.content[3]",
-    ) == {
-        "url": "file:///tmp/report.txt",
-        "filename": "report.txt",
-        "mediaType": "text/plain",
-    }
-    assert _normalize_rest_content_part(
-        {"raw": "aGVsbG8=", "filename": "inline.bin", "mediaType": "application/octet-stream"},
-        field="message.content[4]",
-    ) == {
-        "raw": "aGVsbG8=",
-        "filename": "inline.bin",
-        "mediaType": "application/octet-stream",
-    }
-    assert _normalize_rest_content_part(
-        {
-            "url": "https://example.com/report.txt",
-            "filename": "report.txt",
-            "mediaType": "text/plain",
-        },
-        field="message.content[5]",
-    ) == {
-        "url": "https://example.com/report.txt",
-        "filename": "report.txt",
-        "mediaType": "text/plain",
-    }
-    with pytest.raises(
-        InvalidRequestError, match="message.content\\[6\\]\\.file must contain uri or bytes"
-    ):
-        _normalize_rest_content_part({"file": {"name": "report.txt"}}, field="message.content[6]")
-
-    normalized_payload = _normalize_rest_send_message_payload(
-        {
-            "message": {
-                "messageId": "msg-1",
-                "contextId": "ctx-1",
-                "role": "ROLE_USER",
-                "content": [{"text": "hello"}],
-            },
-            "metadata": {"shared": {"session": {"id": "s-1"}}},
-            "acceptedOutputModes": ["text/plain"],
-            "configuration": {"historyLength": 2},
+    assert json.loads(generic_error.body) == {
+        "error": {
+            "code": 500,
+            "status": "INTERNAL",
+            "message": "unknown exception",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "INTERNAL_ERROR",
+                    "domain": "a2a-protocol.org",
+                }
+            ],
         }
-    )
-    assert normalized_payload == {
-        "message": {
-            "messageId": "msg-1",
-            "contextId": "ctx-1",
-            "role": "ROLE_USER",
-            "parts": [{"text": "hello"}],
-        },
-        "metadata": {"shared": {"session": {"id": "s-1"}}},
-        "configuration": {
-            "historyLength": 2,
-            "acceptedOutputModes": ["text/plain"],
-        },
     }
-
-    with pytest.raises(InvalidRequestError, match="message must be an object"):
-        _normalize_rest_send_message_payload({})
-    with pytest.raises(InvalidRequestError, match="message.content must be an array"):
-        _normalize_rest_send_message_payload({"message": {"content": "bad"}})
-    with pytest.raises(InvalidRequestError, match="configuration must be an object"):
-        _normalize_rest_send_message_payload(
-            {
-                "message": {"role": "ROLE_USER", "content": [{"text": "hello"}]},
-                "configuration": "bad",
-                "acceptedOutputModes": ["text/plain"],
-            }
-        )
 
     parsed = _parse_rest_send_message_request(
         json.dumps(
@@ -313,12 +242,13 @@ def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
                 "message": {
                     "messageId": "msg-2",
                     "role": "ROLE_USER",
-                    "content": [{"text": "hello from rest"}],
+                    "parts": [{"text": "hello from rest"}],
                 },
-                "returnImmediately": True,
+                "configuration": {"returnImmediately": True},
             }
         ).encode("utf-8")
     )
+    assert isinstance(parsed, SendMessageRequest)
     assert MessageToDict(parsed) == {
         "message": {
             "messageId": "msg-2",
@@ -329,6 +259,51 @@ def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
     }
     with pytest.raises(InvalidRequestError, match="REST message payload must be a JSON object"):
         _parse_rest_send_message_request(b"[]")
+    with pytest.raises(
+        InvalidRequestError,
+        match="REST message payload must use message.parts, not message.content.",
+    ):
+        _parse_rest_send_message_request(
+            json.dumps(
+                {
+                    "message": {
+                        "messageId": "msg-legacy",
+                        "role": "ROLE_USER",
+                        "content": [{"text": "hello from rest"}],
+                    }
+                }
+            ).encode("utf-8")
+        )
+    with pytest.raises(
+        InvalidRequestError,
+        match="REST message payload must use ROLE_\\* values for message.role.",
+    ):
+        _parse_rest_send_message_request(
+            json.dumps(
+                {
+                    "message": {
+                        "messageId": "msg-legacy",
+                        "role": "user",
+                        "parts": [{"text": "hello from rest"}],
+                    }
+                }
+            ).encode("utf-8")
+        )
+    with pytest.raises(
+        InvalidRequestError,
+        match="message.parts\\[0\\] must use direct Part fields such as text, raw, url, or data.",
+    ):
+        _parse_rest_send_message_request(
+            json.dumps(
+                {
+                    "message": {
+                        "messageId": "msg-legacy",
+                        "role": "ROLE_USER",
+                        "parts": [{"file": {"uri": "file:///tmp/report.txt"}}],
+                    }
+                }
+            ).encode("utf-8")
+        )
 
 
 def test_agent_card_helper_builders_cover_optional_branches() -> None:
@@ -560,7 +535,7 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch, caplog) -> No
             "version": settings.a2a_version,
             "profile": {
                 "profile_id": "opencode-a2a-single-tenant-coding-v1",
-                "protocol_version": settings.a2a_protocol_version,
+                "protocol_version": A2A_PROTOCOL_VERSION,
                 "deployment": {
                     "id": "single_tenant_shared_workspace",
                     "single_tenant": True,
@@ -645,16 +620,13 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch, caplog) -> No
 @pytest.mark.asyncio
 async def test_rest_adapter_routes_and_preconsume_error() -> None:
     handler = MagicMock()
-    adapter = RESTAdapter(
-        agent_card=build_agent_card(make_settings(test_bearer_token="test-token")),
-        http_handler=handler,
-    )
+    adapter = RestDispatcher(request_handler=handler)
 
     async def _stream(_request: Request, _context):  # noqa: ANN001
         yield {"id": "evt-1"}
 
-    handler.on_resubscribe_to_task = _stream
-    response = await adapter.routes()[("/v1/tasks/{id}:subscribe", "GET")](
+    handler.on_subscribe_to_task = _stream
+    response = await adapter.on_subscribe_to_task(
         _request("/v1/tasks/x:subscribe", method="GET", path_params={"id": "x"})
     )
     assert response is not None
@@ -666,7 +638,7 @@ async def test_rest_adapter_routes_and_preconsume_error() -> None:
     with pytest.raises(
         InvalidRequestError, match="Failed to pre-consume request body: broken body"
     ):
-        await adapter._dispatcher._handle_streaming(  # pyright: ignore[reportAttributeAccessIssue]
+        await adapter._handle_streaming(  # pyright: ignore[reportAttributeAccessIssue]
             _BrokenRequest(),
             lambda _context: _stream(None, _context),
         )
@@ -690,7 +662,20 @@ async def test_push_notification_routes_are_explicitly_unsupported(monkeypatch) 
         )
 
     assert response.status_code == 501
-    assert response.json() == {"message": "Push notifications are not supported by the agent"}
+    assert response.json() == {
+        "error": {
+            "code": 501,
+            "status": "UNIMPLEMENTED",
+            "message": "Push notifications are not supported by the agent",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "PUSH_NOTIFICATIONS_UNSUPPORTED",
+                    "domain": "a2a-protocol.org",
+                }
+            ],
+        }
+    }
 
 
 @pytest.mark.asyncio
@@ -710,7 +695,7 @@ async def test_push_notification_jsonrpc_methods_remain_unsupported(monkeypatch)
             json={
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "tasks/pushNotificationConfig/get",
+                "method": "GetTaskPushNotificationConfig",
                 "params": {"id": "task-1"},
             },
         )
@@ -720,6 +705,13 @@ async def test_push_notification_jsonrpc_methods_remain_unsupported(monkeypatch)
         "error": {
             "code": -32004,
             "message": "This operation is not supported",
+            "data": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "UNSUPPORTED_OPERATION",
+                    "domain": "a2a-protocol.org",
+                }
+            ],
         },
         "id": 1,
         "jsonrpc": "2.0",
@@ -729,10 +721,15 @@ async def test_push_notification_jsonrpc_methods_remain_unsupported(monkeypatch)
 @pytest.mark.asyncio
 async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> None:
     task_store = MagicMock()
-    handler = OpencodeRequestHandler(agent_executor=MagicMock(), task_store=task_store)
+    handler = OpencodeRequestHandler(
+        agent_executor=MagicMock(),
+        task_store=task_store,
+        agent_card=_agent_card(),
+    )
     handler.agent_executor.cancel = AsyncMock()
     handler._queue_manager.tap = AsyncMock(return_value=MagicMock())  # noqa: SLF001
-    params = TaskIdParams(id="task-1")
+    cancel_params = CancelTaskRequest(id="task-1")
+    subscribe_params = SubscribeToTaskRequest(id="task-1")
     canceled_task = Task(
         id="task-1",
         context_id="ctx-1",
@@ -751,14 +748,14 @@ async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> N
 
     task_store.get = AsyncMock(return_value=None)
     with pytest.raises(TaskNotFoundError):
-        await handler.on_cancel_task(params)
+        await handler.on_cancel_task(cancel_params)
 
     task_store.get = AsyncMock(return_value=canceled_task)
-    assert await handler.on_cancel_task(params) is canceled_task
+    assert await handler.on_cancel_task(cancel_params) is canceled_task
 
     task_store.get = AsyncMock(return_value=completed_task)
     with pytest.raises(TaskNotCancelableError):
-        await handler.on_cancel_task(params)
+        await handler.on_cancel_task(cancel_params)
 
     task_store.get = AsyncMock(side_effect=[working_task, canceled_task])
 
@@ -766,7 +763,7 @@ async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> N
         return working_task
 
     monkeypatch.setattr(app_module.ResultAggregator, "consume_all", _consume_non_canceled)
-    assert await handler.on_cancel_task(params) is canceled_task
+    assert await handler.on_cancel_task(cancel_params) is canceled_task
 
     task_store.get = AsyncMock(return_value=working_task)
 
@@ -774,15 +771,15 @@ async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> N
         return canceled_task
 
     monkeypatch.setattr(app_module.ResultAggregator, "consume_all", _consume_canceled)
-    assert await handler.on_cancel_task(params) is canceled_task
+    assert await handler.on_cancel_task(cancel_params) is canceled_task
 
     task_store.get = AsyncMock(return_value=None)
     with pytest.raises(TaskNotFoundError):
-        events = [item async for item in handler.on_resubscribe_to_task(params)]
+        events = [item async for item in handler.on_subscribe_to_task(subscribe_params)]
         assert events == []
 
     task_store.get = AsyncMock(return_value=canceled_task)
-    events = [item async for item in handler.on_resubscribe_to_task(params)]
+    events = [item async for item in handler.on_subscribe_to_task(subscribe_params)]
     assert events == [canceled_task]
 
     task_store.get = AsyncMock(return_value=working_task)
@@ -795,7 +792,7 @@ async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> N
         "consume_and_emit",
         _consume_and_emit,
     )
-    events = [item async for item in handler.on_resubscribe_to_task(params)]
+    events = [item async for item in handler.on_subscribe_to_task(subscribe_params)]
     assert events == [working_task, "evt-1"]
 
 
@@ -814,7 +811,7 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
         return Message(
             message_id="m-server",
             role=app_module.Role.ROLE_AGENT,
-            parts=[app_module.make_text_part("server reply")],
+            parts=[app_module.Part(text="server reply")],
         )
 
     async def _stream_failure(params, context=None):  # noqa: ANN001
@@ -832,7 +829,7 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
         "message": {
             "messageId": "m-rest",
             "role": "ROLE_USER",
-            "content": [{"text": "hello"}],
+            "parts": [{"text": "hello"}],
         }
     }
 
@@ -850,22 +847,38 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
     }
     assert stream_response.status_code == 400
     assert stream_response.json() == {
-        "error": "stream bad",
-        "type": "INVALID_REQUEST",
+        "error": {
+            "code": 400,
+            "status": "INVALID_ARGUMENT",
+            "message": "stream bad",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "INVALID_REQUEST",
+                    "domain": "a2a-protocol.org",
+                }
+            ],
+        }
     }
 
 
 @pytest.mark.asyncio
 async def test_task_store_failures_map_to_stable_handler_errors() -> None:
     task_store = MagicMock()
-    handler = OpencodeRequestHandler(agent_executor=MagicMock(), task_store=task_store)
+    handler = OpencodeRequestHandler(
+        agent_executor=MagicMock(),
+        task_store=task_store,
+        agent_card=_agent_card(),
+    )
 
     task_store.get = AsyncMock(side_effect=TaskStoreOperationError("get", "task-1"))
     with pytest.raises(InternalError, match="Task store unavailable while loading task state."):
-        await handler.on_get_task(TaskQueryParams(id="task-1"))
+        await handler.on_get_task(GetTaskRequest(id="task-1"))
 
     with pytest.raises(InternalError, match="Task store unavailable while loading task state."):
-        events = [item async for item in handler.on_resubscribe_to_task(TaskIdParams(id="task-1"))]
+        events = [
+            item async for item in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-1"))
+        ]
         assert events == []
 
 
@@ -878,7 +891,11 @@ async def test_on_message_send_returns_stable_failure_task_for_task_store_error(
 
     class _Handler(OpencodeRequestHandler):
         def __init__(self) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.queue = AsyncMock()
             self.producer = MagicMock()
 
@@ -926,7 +943,11 @@ async def test_on_message_send_stream_emits_stable_failure_events_for_task_store
 
     class _Handler(OpencodeRequestHandler):
         def __init__(self) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.queue = AsyncMock()
             self.producer = MagicMock()
             self.background_tasks: list[asyncio.Task] = []
@@ -982,7 +1003,11 @@ async def test_on_message_send_covers_error_cleanup_and_internal_error(monkeypat
 
     class _Handler(OpencodeRequestHandler):
         def __init__(self, aggregator: _Aggregator) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.aggregator = aggregator
             self.queue = AsyncMock()
             self.producer = MagicMock()
@@ -1071,7 +1096,11 @@ async def test_on_message_send_non_blocking_tracks_background_work(monkeypatch) 
 
     class _Handler(OpencodeRequestHandler):
         def __init__(self, aggregator: _Aggregator) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.aggregator = aggregator
             self.queue = AsyncMock()
             self.producer = MagicMock()
@@ -1132,7 +1161,11 @@ async def test_on_message_send_non_blocking_tracks_background_work(monkeypatch) 
 async def test_on_message_send_rejects_output_modes_without_text_plain() -> None:
     class _Handler(OpencodeRequestHandler):
         def __init__(self) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.setup_called = False
 
         async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
@@ -1161,7 +1194,11 @@ async def test_on_message_send_rejects_output_modes_without_text_plain() -> None
 async def test_on_message_send_stream_rejects_incompatible_output_modes_before_execution() -> None:
     class _Handler(OpencodeRequestHandler):
         def __init__(self) -> None:
-            super().__init__(agent_executor=MagicMock(), task_store=MagicMock())
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
             self.setup_called = False
 
         async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
@@ -1181,6 +1218,102 @@ async def test_on_message_send_stream_rejects_incompatible_output_modes_before_e
     assert exc_info.value.data == {
         "accepted_output_modes": ["image/png"],
         "supported_output_modes": ["text/plain", "application/json"],
+    }
+    assert handler.setup_called is False
+
+
+@pytest.mark.asyncio
+async def test_on_message_send_rejects_shared_extension_metadata_without_negotiation() -> None:
+    class _Handler(OpencodeRequestHandler):
+        def __init__(self) -> None:
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
+            self.setup_called = False
+
+        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
+            del params, context
+            self.setup_called = True
+            raise AssertionError("_setup_message_execution should not be called")
+
+    handler = _Handler()
+    params = types.SimpleNamespace(
+        message=types.SimpleNamespace(
+            metadata={
+                "shared": {
+                    "session": {"id": "ses-1"},
+                    "model": {"providerID": "openai", "modelID": "gpt-5"},
+                }
+            }
+        ),
+        metadata={
+            "opencode": {
+                "directory": "/workspace",
+                "workspace": {"id": "wrk-1"},
+            }
+        },
+        configuration=None,
+    )
+
+    with pytest.raises(UnsupportedOperationError) as exc_info:
+        await handler.on_message_send(params)
+
+    assert exc_info.value.data == {
+        "type": "EXTENSION_NEGOTIATION_REQUIRED",
+        "fields": [
+            "metadata.shared.session.id",
+            "metadata.opencode.directory",
+            "metadata.opencode.workspace.id",
+            "metadata.shared.model",
+        ],
+        "required_extensions": sorted(
+            [SESSION_BINDING_EXTENSION_URI, MODEL_SELECTION_EXTENSION_URI]
+        ),
+        "requested_extensions": [],
+        "header": "A2A-Extensions",
+    }
+    assert handler.setup_called is False
+
+
+@pytest.mark.asyncio
+async def test_on_message_send_stream_rejects_shared_extension_metadata_without_negotiation() -> (
+    None
+):
+    class _Handler(OpencodeRequestHandler):
+        def __init__(self) -> None:
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=MagicMock(),
+                agent_card=_agent_card(),
+            )
+            self.setup_called = False
+
+        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
+            del params, context
+            self.setup_called = True
+            raise AssertionError("_setup_message_execution should not be called")
+
+    handler = _Handler()
+    params = types.SimpleNamespace(
+        message=types.SimpleNamespace(metadata={"shared": {"session": {"id": "ses-1"}}}),
+        metadata={"opencode": {"directory": "/workspace"}},
+        configuration=None,
+    )
+
+    with pytest.raises(UnsupportedOperationError) as exc_info:
+        await handler.on_message_send_stream(params).__anext__()
+
+    assert exc_info.value.data == {
+        "type": "EXTENSION_NEGOTIATION_REQUIRED",
+        "fields": [
+            "metadata.shared.session.id",
+            "metadata.opencode.directory",
+        ],
+        "required_extensions": [SESSION_BINDING_EXTENSION_URI],
+        "requested_extensions": [],
+        "header": "A2A-Extensions",
     }
     assert handler.setup_called is False
 

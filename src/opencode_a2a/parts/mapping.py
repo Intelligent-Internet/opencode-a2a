@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Sequence
-from typing import Any, Literal, TypedDict
+from typing import Literal, TypedDict
+
+from a2a.types import Part
 
 
 class UnsupportedA2AInputError(ValueError):
@@ -24,37 +26,32 @@ class OpencodeFileInputPart(TypedDict, total=False):
 OpencodeInputPart = OpencodeTextInputPart | OpencodeFileInputPart
 
 
-def extract_text_from_a2a_parts(parts: Any) -> str:
-    normalized_parts = _normalize_parts(parts)
-    if normalized_parts is None:
+def extract_text_from_a2a_parts(parts: Sequence[Part] | None) -> str:
+    if not parts:
         return ""
 
     texts: list[str] = []
-    for part in normalized_parts:
-        if _part_kind(part) != "text":
-            continue
-        text = _part_text_value(part)
-        if isinstance(text, str):
-            texts.append(text)
+    for part in parts:
+        if part.HasField("text") and part.text:
+            texts.append(part.text)
     return "\n".join(texts).strip()
 
 
-def summarize_a2a_parts(parts: Any) -> str | None:
+def summarize_a2a_parts(parts: Sequence[Part] | None) -> str | None:
     text = extract_text_from_a2a_parts(parts)
     if text:
         return text[:80]
 
-    normalized_parts = _normalize_parts(parts)
-    if normalized_parts is None:
+    if not parts:
         return None
 
     filenames: list[str] = []
-    for part in normalized_parts:
-        if _part_kind(part) != "file":
+    for part in parts:
+        if not _is_file_part(part):
             continue
-        name = _part_filename(part)
-        if isinstance(name, str) and name.strip():
-            filenames.append(name.strip())
+        name = _normalize_string(part.filename)
+        if name:
+            filenames.append(name)
         else:
             filenames.append("file")
 
@@ -65,54 +62,50 @@ def summarize_a2a_parts(parts: Any) -> str | None:
     return ", ".join(filenames[:3])[:80]
 
 
-def map_a2a_parts_to_opencode_parts(parts: Any) -> list[OpencodeInputPart]:
-    normalized_parts = _normalize_parts(parts)
-    if normalized_parts is None:
+def map_a2a_parts_to_opencode_parts(parts: Sequence[Part] | None) -> list[OpencodeInputPart]:
+    if not parts:
         return []
 
     mapped: list[OpencodeInputPart] = []
-    for index, part in enumerate(normalized_parts):
-        kind = _part_kind(part)
-
-        if kind == "text":
-            text = _part_text_value(part)
-            if isinstance(text, str):
-                mapped.append({"type": "text", "text": text})
+    for index, part in enumerate(parts):
+        if part.HasField("text") and part.text:
+            mapped.append({"type": "text", "text": part.text})
             continue
 
-        if kind == "file":
+        if _is_file_part(part):
             mapped.append(_map_file_part(part, index=index))
             continue
 
-        if kind == "data":
+        if part.HasField("data"):
             raise UnsupportedA2AInputError(
-                f"request.parts[{index}] DataPart input is not supported; use TextPart or FilePart."
+                "request.parts["
+                f"{index}"
+                "] structured data is not supported; use text, raw, or url parts."
             )
 
         raise UnsupportedA2AInputError(
-            f"request.parts[{index}] is not supported; only TextPart and FilePart are accepted."
+            f"request.parts[{index}] is not supported; only text, raw, or url parts are accepted."
         )
 
     return mapped
 
 
-def _map_file_part(part: Any, *, index: int) -> OpencodeFileInputPart:
-    raw_bytes = getattr(part, "raw", None)
-    url = _normalize_string(getattr(part, "url", None))
-    if isinstance(raw_bytes, bytes) and raw_bytes:
-        mime = _normalize_string(getattr(part, "media_type", None)) or "application/octet-stream"
-        name = _normalize_string(getattr(part, "filename", None))
+def _map_file_part(part: Part, *, index: int) -> OpencodeFileInputPart:
+    url = _normalize_string(part.url) if part.HasField("url") else None
+    if part.HasField("raw") and part.raw:
+        mime = _normalize_string(part.media_type) or "application/octet-stream"
+        name = _normalize_string(part.filename)
         mapped: OpencodeFileInputPart = {
             "type": "file",
-            "url": f"data:{mime};base64,{base64.b64encode(raw_bytes).decode('ascii')}",
+            "url": f"data:{mime};base64,{base64.b64encode(part.raw).decode('ascii')}",
             "mime": mime,
         }
         if name:
             mapped["filename"] = name
         return mapped
     if url:
-        mime = _normalize_string(getattr(part, "media_type", None)) or "application/octet-stream"
-        name = _normalize_string(getattr(part, "filename", None))
+        mime = _normalize_string(part.media_type) or "application/octet-stream"
+        name = _normalize_string(part.filename)
         mapped = {
             "type": "file",
             "url": url,
@@ -122,108 +115,19 @@ def _map_file_part(part: Any, *, index: int) -> OpencodeFileInputPart:
             mapped["filename"] = name
         return mapped
 
-    root = _unwrap_part_root(part)
-    file_value = getattr(root, "file", None)
-    if file_value is None:
-        raise UnsupportedA2AInputError(
-            f"request.parts[{index}] FilePart is missing the file payload."
-        )
-
-    mime = (
-        _normalize_string(
-            getattr(file_value, "mime_type", None) or getattr(file_value, "mimeType", None)
-        )
-        or "application/octet-stream"
-    )
-    name = _normalize_string(getattr(file_value, "name", None))
-
-    bytes_value = _normalize_string(getattr(file_value, "bytes", None))
-    if bytes_value:
-        mapped_from_bytes: OpencodeFileInputPart = {
-            "type": "file",
-            "url": f"data:{mime};base64,{bytes_value}",
-            "mime": mime,
-        }
-        if name:
-            mapped_from_bytes["filename"] = name
-        return mapped_from_bytes
-
-    uri = _normalize_string(getattr(file_value, "uri", None))
-    if uri:
-        mapped = {
-            "type": "file",
-            "url": uri,
-            "mime": mime,
-        }
-        if name:
-            mapped["filename"] = name
-        return mapped
-
     raise UnsupportedA2AInputError(
-        f"request.parts[{index}] FilePart must contain either bytes or uri."
+        f"request.parts[{index}] file input must contain either raw bytes or a url."
     )
 
 
-def _unwrap_part_root(part: Any) -> Any:
-    root = getattr(part, "root", None)
-    if root is not None:
-        return root
-    return part
+def _is_file_part(part: Part) -> bool:
+    if part.HasField("raw") and part.raw:
+        return True
+    return part.HasField("url") and _normalize_string(part.url) is not None
 
 
-def _part_kind(part: Any) -> str | None:
-    if isinstance(getattr(part, "text", None), str) and getattr(part, "text", None):
-        return "text"
-    if isinstance(getattr(part, "raw", None), bytes) and getattr(part, "raw", None):
-        return "file"
-    if _normalize_string(getattr(part, "url", None)):
-        return "file"
-    data = getattr(part, "data", None)
-    which_oneof = getattr(data, "WhichOneof", None)
-    if callable(which_oneof) and which_oneof("kind") is not None:
-        return "data"
-
-    root = _unwrap_part_root(part)
-    kind = getattr(root, "kind", None)
-    if isinstance(kind, str):
-        return kind
-    if isinstance(getattr(root, "text", None), str):
-        return "text"
-    if getattr(root, "file", None) is not None:
-        return "file"
-    if getattr(root, "data", None) is not None:
-        return "data"
-    return None
-
-
-def _part_text_value(part: Any) -> str | None:
-    text = getattr(part, "text", None)
-    if isinstance(text, str):
-        return text
-    root = _unwrap_part_root(part)
-    root_text = getattr(root, "text", None)
-    if isinstance(root_text, str):
-        return root_text
-    return None
-
-
-def _part_filename(part: Any) -> str | None:
-    filename = _normalize_string(getattr(part, "filename", None))
-    if filename:
-        return filename
-    root = _unwrap_part_root(part)
-    file_value = getattr(root, "file", None)
-    return _normalize_string(getattr(file_value, "name", None))
-
-
-def _normalize_string(value: Any) -> str | None:
+def _normalize_string(value: object) -> str | None:
     if not isinstance(value, str):
         return None
     normalized = value.strip()
     return normalized if normalized else None
-
-
-def _normalize_parts(parts: Any) -> list[Any] | None:
-    if not isinstance(parts, Sequence) or isinstance(parts, str | bytes | bytearray):
-        return None
-    return list(parts)

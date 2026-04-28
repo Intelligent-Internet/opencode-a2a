@@ -8,6 +8,7 @@ from a2a.types import Task, TaskState, TaskStatus
 
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from tests.support.helpers import make_settings
+from tests.support.session_extensions import _extension_headers
 
 
 def _task(task_id: str, *, context_id: str = "ctx-1") -> Task:
@@ -204,7 +205,7 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             query_response = await client.post(
                 "/",
-                headers={"Authorization": "Bearer test-token"},
+                headers=_extension_headers({"Authorization": "Bearer test-token"}),
                 json={
                     "jsonrpc": "2.0",
                     "id": 0,
@@ -214,7 +215,7 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
             )
             response = await client.post(
                 "/",
-                headers={"Authorization": "Bearer test-token"},
+                headers=_extension_headers({"Authorization": "Bearer test-token"}),
                 json={
                     "jsonrpc": "2.0",
                     "id": 1,

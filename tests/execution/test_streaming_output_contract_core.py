@@ -3,20 +3,15 @@ from types import SimpleNamespace
 
 import pytest
 from a2a.types import (
-    FilePart,
-    FileWithUri,
+    Part,
     Task,
     TaskState,
     TaskStatusUpdateEvent,
 )
 
-from opencode_a2a.execution.executor import (
-    BlockType,
-    OpencodeAgentExecutor,
-    _extract_token_usage,
-    _extract_tool_part_payload,
-    _StreamOutputState,
-)
+from opencode_a2a.execution.executor import OpencodeAgentExecutor
+from opencode_a2a.execution.stream_events import _extract_token_usage, _extract_tool_part_payload
+from opencode_a2a.execution.stream_state import BlockType, _StreamOutputState
 from opencode_a2a.task_states import TERMINAL_TASK_STATES
 from tests.support.helpers import (
     DummyEventQueue,
@@ -56,12 +51,10 @@ async def test_streaming_accepts_file_input_without_breaking_contract() -> None:
         task_id="task-1",
         context_id="ctx-1",
         parts=[
-            FilePart(
-                file=FileWithUri(
-                    uri="file:///tmp/report.pdf",
-                    mimeType="application/pdf",
-                    name="report.pdf",
-                )
+            Part(
+                url="file:///tmp/report.pdf",
+                filename="report.pdf",
+                media_type="application/pdf",
             )
         ],
         call_context=SimpleNamespace(state={"a2a_streaming_request": True}),

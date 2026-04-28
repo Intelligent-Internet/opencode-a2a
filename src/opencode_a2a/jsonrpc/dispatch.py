@@ -4,22 +4,25 @@ from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, TypeAlias
 
-from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 from a2a.utils.errors import A2AError
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 from starlette.responses import Response
 
-from ..a2a_protocol import V1_JSONRPC_METHOD_TO_LEGACY_METHOD
+from ..a2a_protocol import CORE_JSONRPC_METHODS as DECLARED_CORE_JSONRPC_METHODS
+from ..contracts.extensions import (
+    INTERRUPT_CALLBACK_EXTENSION_URI,
+    INTERRUPT_RECOVERY_EXTENSION_URI,
+    PROVIDER_DISCOVERY_EXTENSION_URI,
+    SESSION_MANAGEMENT_EXTENSION_URI,
+    WORKSPACE_CONTROL_EXTENSION_URI,
+)
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from .models import JSONRPCError, JSONRPCRequest
 
 # Delegate all SDK-owned JSON-RPC methods to the base app, then let the local
 # extension registry override only the OpenCode-specific methods.
-CORE_JSONRPC_METHODS = frozenset(
-    V1_JSONRPC_METHOD_TO_LEGACY_METHOD.get(method, method)
-    for method in JsonRpcDispatcher.METHOD_TO_MODEL
-)
+CORE_JSONRPC_METHODS = frozenset(DECLARED_CORE_JSONRPC_METHODS)
 
 ErrorResponseFactory: TypeAlias = Callable[[str | int | None, JSONRPCError | A2AError], Response]
 SuccessResponseFactory: TypeAlias = Callable[[str | int, Any], JSONResponse]
@@ -68,7 +71,6 @@ class ExtensionHandlerContext:
     method_reply_permission: str
     method_reply_question: str
     method_reject_question: str
-    protocol_version: str
     supported_methods: tuple[str, ...]
     directory_resolver: Callable[[str | None], str | None]
     session_claim: SessionClaimFunc
@@ -82,6 +84,7 @@ class ExtensionHandlerContext:
 class ExtensionMethodSpec:
     name: str
     methods: frozenset[str]
+    extension_uri: str
     handler: ExtensionHandlerFunc
 
 
@@ -163,6 +166,7 @@ def build_extension_method_registry(
             ExtensionMethodSpec(
                 name="session_lifecycle",
                 methods=frozenset(session_item_methods),
+                extension_uri=SESSION_MANAGEMENT_EXTENSION_URI,
                 handler=handle_session_lifecycle_request,
             ),
             ExtensionMethodSpec(
@@ -173,6 +177,7 @@ def build_extension_method_registry(
                         context.method_get_session_messages,
                     }
                 ),
+                extension_uri=SESSION_MANAGEMENT_EXTENSION_URI,
                 handler=handle_session_query_request,
             ),
             ExtensionMethodSpec(
@@ -183,6 +188,7 @@ def build_extension_method_registry(
                         context.method_list_models,
                     }
                 ),
+                extension_uri=PROVIDER_DISCOVERY_EXTENSION_URI,
                 handler=handle_provider_discovery_request,
             ),
             ExtensionMethodSpec(
@@ -193,16 +199,19 @@ def build_extension_method_registry(
                         context.method_list_questions,
                     }
                 ),
+                extension_uri=INTERRUPT_RECOVERY_EXTENSION_URI,
                 handler=handle_interrupt_query_request,
             ),
             ExtensionMethodSpec(
                 name="workspace_control",
                 methods=frozenset(workspace_control_methods),
+                extension_uri=WORKSPACE_CONTROL_EXTENSION_URI,
                 handler=handle_workspace_control_request,
             ),
             ExtensionMethodSpec(
                 name="session_control",
                 methods=frozenset(session_control_methods),
+                extension_uri=SESSION_MANAGEMENT_EXTENSION_URI,
                 handler=handle_session_control_request,
             ),
             ExtensionMethodSpec(
@@ -214,6 +223,7 @@ def build_extension_method_registry(
                         context.method_reject_question,
                     }
                 ),
+                extension_uri=INTERRUPT_CALLBACK_EXTENSION_URI,
                 handler=handle_interrupt_callback_request,
             ),
         )

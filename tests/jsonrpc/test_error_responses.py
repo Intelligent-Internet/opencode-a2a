@@ -4,7 +4,7 @@ from a2a.types import InvalidParamsError, UnsupportedOperationError
 
 from opencode_a2a.jsonrpc.error_responses import (
     GOOGLE_RPC_ERROR_INFO_TYPE,
-    adapt_jsonrpc_error_for_protocol,
+    adapt_jsonrpc_error,
     authorization_forbidden_error,
     interrupt_not_found_error,
     interrupt_type_mismatch_error,
@@ -22,8 +22,7 @@ from opencode_a2a.jsonrpc.error_responses import (
 def test_jsonrpc_error_mapping_helpers_preserve_business_contract_fields() -> None:
     unsupported = method_not_supported_error(
         method="unsupported.method",
-        supported_methods=["message/send", "tasks/get"],
-        protocol_version="0.3",
+        supported_methods=["SendMessage", "GetTask"],
     )
     assert unsupported.code == -32601
     assert unsupported.data["type"] == "METHOD_NOT_SUPPORTED"
@@ -122,8 +121,8 @@ def test_invalid_error_helper_wraps_a2a_error() -> None:
 def test_version_not_supported_error_includes_supported_versions() -> None:
     error = version_not_supported_error(
         requested_version="2.0",
-        supported_protocol_versions=["0.3", "1.0"],
-        default_protocol_version="0.3",
+        supported_protocol_versions=["1.0"],
+        default_protocol_version="1.0",
     )
 
     assert error.code == -32001
@@ -131,36 +130,33 @@ def test_version_not_supported_error_includes_supported_versions() -> None:
     assert error.data == {
         "type": "VERSION_NOT_SUPPORTED",
         "requested_version": "2.0",
-        "supported_protocol_versions": ["0.3", "1.0"],
-        "default_protocol_version": "0.3",
+        "supported_protocol_versions": ["1.0"],
+        "default_protocol_version": "1.0",
     }
 
 
 def test_adapt_standard_jsonrpc_error_for_v1_uses_standard_message_and_camel_case_data() -> None:
-    adapted = adapt_jsonrpc_error_for_protocol(
-        "1.0",
+    adapted = adapt_jsonrpc_error(
         method_not_supported_error(
             method="unsupported.method",
-            supported_methods=["message/send", "tasks/get"],
-            protocol_version="1.0",
+            supported_methods=["SendMessage", "GetTask"],
         ),
     )
 
     assert adapted.message == "Method not found"
     assert adapted.data == {
         "method": "unsupported.method",
-        "supportedMethods": ["message/send", "tasks/get"],
+        "supportedMethods": ["SendMessage", "GetTask"],
         "protocolVersion": "1.0",
     }
 
 
 def test_adapt_a2a_specific_error_for_v1_uses_error_info_details() -> None:
-    adapted = adapt_jsonrpc_error_for_protocol(
-        "1.0",
+    adapted = adapt_jsonrpc_error(
         version_not_supported_error(
             requested_version="1.1",
-            supported_protocol_versions=["0.3", "1.0"],
-            default_protocol_version="0.3",
+            supported_protocol_versions=["1.0"],
+            default_protocol_version="1.0",
         ),
     )
 
@@ -171,23 +167,20 @@ def test_adapt_a2a_specific_error_for_v1_uses_error_info_details() -> None:
         "domain": "a2a-protocol.org",
         "metadata": {
             "requestedVersion": "1.1",
-            "supportedProtocolVersions": '["0.3","1.0"]',
-            "defaultProtocolVersion": "0.3",
+            "supportedProtocolVersions": '["1.0"]',
+            "defaultProtocolVersion": "1.0",
         },
     }
     assert adapted.data[1] == {
         "@type": "type.googleapis.com/opencode_a2a.ErrorContext",
         "requestedVersion": "1.1",
-        "supportedProtocolVersions": ["0.3", "1.0"],
-        "defaultProtocolVersion": "0.3",
+        "supportedProtocolVersions": ["1.0"],
+        "defaultProtocolVersion": "1.0",
     }
 
 
 def test_adapt_a2a_root_error_for_v1_uses_error_type_reason() -> None:
-    adapted = adapt_jsonrpc_error_for_protocol(
-        "1.0",
-        UnsupportedOperationError(),
-    )
+    adapted = adapt_jsonrpc_error(UnsupportedOperationError())
 
     assert adapted.code == -32004
     assert adapted.message == "This operation is not supported"

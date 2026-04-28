@@ -8,26 +8,33 @@ from a2a.server.events import EventConsumer, EventQueue
 from a2a.server.tasks import TaskManager
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
     Artifact,
+    GetTaskRequest,
     Message,
+    Part,
     Role,
+    SubscribeToTaskRequest,
     Task,
     TaskArtifactUpdateEvent,
-    TaskIdParams,
-    TaskQueryParams,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
 )
 
-from opencode_a2a.a2a_utils import make_data_part, make_text_part, part_text
+from opencode_a2a.a2a_utils import make_data_part
+from opencode_a2a.contracts.extensions import (
+    MODEL_SELECTION_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
+    STREAMING_EXTENSION_URI,
+)
 from opencode_a2a.output_modes import (
     NegotiatingResultAggregator,
     apply_accepted_output_modes,
     build_output_negotiation_metadata,
     extract_accepted_output_modes_from_metadata,
     normalize_accepted_output_modes,
-    part_text_fallback,
 )
 from opencode_a2a.server.application import OpencodeRequestHandler
 
@@ -36,11 +43,15 @@ def _store() -> InMemoryTaskStore:
     return InMemoryTaskStore(owner_resolver=lambda _context: "test-owner")
 
 
+def _agent_card() -> AgentCard:
+    return AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True))
+
+
 def _message(*, message_id: str, text: str, task_id: str, context_id: str) -> Message:
     return Message(
         message_id=message_id,
         role=Role.ROLE_AGENT,
-        parts=[make_text_part(text)],
+        parts=[Part(text=text)],
         task_id=task_id,
         context_id=context_id,
     )
@@ -72,13 +83,41 @@ def _task_with_negotiated_outputs(*, task_id: str, context_id: str) -> Task:
         artifacts=[
             Artifact(
                 artifact_id=f"{task_id}:text",
-                parts=[make_text_part("plain result")],
+                parts=[Part(text="plain result")],
             ),
             Artifact(
                 artifact_id=f"{task_id}:json",
                 parts=[make_data_part({"tool": "bash", "status": "completed"})],
             ),
         ],
+        metadata=metadata,
+    )
+
+
+def _task_with_extension_metadata(*, task_id: str, context_id: str) -> Task:
+    metadata = build_output_negotiation_metadata(["text/plain"])
+    assert metadata is not None
+    metadata["shared"] = {
+        "session": {"id": "ses-1", "title": "Alpha"},
+        "model": {"providerID": "openai", "modelID": "gpt-5"},
+        "usage": {"input_tokens": 12},
+    }
+    metadata["opencode"] = {
+        **metadata["opencode"],
+        "directory": "/workspace",
+    }
+    return Task(
+        id=task_id,
+        context_id=context_id,
+        status=TaskStatus(
+            state=TaskState.TASK_STATE_COMPLETED,
+            message=_message(
+                message_id=f"{task_id}:status",
+                text="done",
+                task_id=task_id,
+                context_id=context_id,
+            ),
+        ),
         metadata=metadata,
     )
 
@@ -90,12 +129,6 @@ def test_normalize_accepted_output_modes_treats_wildcards_as_unrestricted() -> N
     )
     assert normalize_accepted_output_modes(["text/plain", "*/*"]) is None
     assert normalize_accepted_output_modes(["*"]) is None
-
-
-def test_part_text_fallback_serializes_data_parts_as_stable_json() -> None:
-    assert part_text_fallback(make_data_part({"tool": "bash", "status": "running"})) == (
-        '{"status":"running","tool":"bash"}'
-    )
 
 
 def test_apply_accepted_output_modes_downgrades_task_data_parts_to_text() -> None:
@@ -124,9 +157,11 @@ def test_apply_accepted_output_modes_downgrades_task_data_parts_to_text() -> Non
 
     assert isinstance(downgraded, Task)
     assert downgraded.status.message is not None
-    assert part_text(downgraded.status.message.parts[0]) == '{"status":"running","tool":"bash"}'
+    assert downgraded.status.message.parts[0].HasField("text")
+    assert downgraded.status.message.parts[0].text == '{"status":"running","tool":"bash"}'
     assert downgraded.artifacts is not None
-    assert part_text(downgraded.artifacts[0].parts[0]) == '{"status":"running","tool":"bash"}'
+    assert downgraded.artifacts[0].parts[0].HasField("text")
+    assert downgraded.artifacts[0].parts[0].text == '{"status":"running","tool":"bash"}'
 
 
 @pytest.mark.asyncio
@@ -148,7 +183,7 @@ async def test_negotiating_result_aggregator_persists_metadata_for_artifact_firs
             context_id="ctx-artifact-first",
             artifact=Artifact(
                 artifact_id="artifact-1",
-                parts=[make_text_part("hello")],
+                parts=[Part(text="hello")],
             ),
             append=False,
             last_chunk=False,
@@ -185,9 +220,13 @@ async def test_on_get_task_applies_persisted_output_negotiation() -> None:
     store = _store()
     task = _task_with_negotiated_outputs(task_id="task-get", context_id="ctx-get")
     await store.save(task, ServerCallContext())
-    handler = OpencodeRequestHandler(agent_executor=AsyncMock(), task_store=store)
+    handler = OpencodeRequestHandler(
+        agent_executor=AsyncMock(),
+        task_store=store,
+        agent_card=_agent_card(),
+    )
 
-    result = await handler.on_get_task(TaskQueryParams(id="task-get"))
+    result = await handler.on_get_task(GetTaskRequest(id="task-get"))
 
     assert result is not None
     assert extract_accepted_output_modes_from_metadata(result.metadata) == ("text/plain",)
@@ -196,7 +235,8 @@ async def test_on_get_task_applies_persisted_output_negotiation() -> None:
         "task-get:text",
         "task-get:json",
     ]
-    assert part_text(result.artifacts[1].parts[0]) == '{"status":"completed","tool":"bash"}'
+    assert result.artifacts[1].parts[0].HasField("text")
+    assert result.artifacts[1].parts[0].text == '{"status":"completed","tool":"bash"}'
 
 
 @pytest.mark.asyncio
@@ -204,10 +244,14 @@ async def test_resubscribe_terminal_task_applies_persisted_output_negotiation() 
     store = _store()
     task = _task_with_negotiated_outputs(task_id="task-resub", context_id="ctx-resub")
     await store.save(task, ServerCallContext())
-    handler = OpencodeRequestHandler(agent_executor=AsyncMock(), task_store=store)
+    handler = OpencodeRequestHandler(
+        agent_executor=AsyncMock(),
+        task_store=store,
+        agent_card=_agent_card(),
+    )
 
     events = []
-    async for event in handler.on_resubscribe_to_task(TaskIdParams(id="task-resub")):
+    async for event in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-resub")):
         events.append(event)
 
     assert len(events) == 1
@@ -217,4 +261,39 @@ async def test_resubscribe_terminal_task_applies_persisted_output_negotiation() 
         "task-resub:text",
         "task-resub:json",
     ]
-    assert part_text(events[0].artifacts[1].parts[0]) == '{"status":"completed","tool":"bash"}'
+    assert events[0].artifacts[1].parts[0].HasField("text")
+    assert events[0].artifacts[1].parts[0].text == '{"status":"completed","tool":"bash"}'
+
+
+@pytest.mark.asyncio
+async def test_on_get_task_filters_unnegotiated_shared_extension_metadata() -> None:
+    store = _store()
+    task = _task_with_extension_metadata(task_id="task-filter", context_id="ctx-filter")
+    await store.save(task, ServerCallContext())
+    handler = OpencodeRequestHandler(
+        agent_executor=AsyncMock(),
+        task_store=store,
+        agent_card=_agent_card(),
+    )
+
+    unnegotiated = await handler.on_get_task(
+        GetTaskRequest(id="task-filter"), context=ServerCallContext()
+    )
+    assert unnegotiated is not None
+    assert "shared" not in unnegotiated.metadata
+    assert unnegotiated.metadata["opencode"]["directory"] == "/workspace"
+
+    negotiated = await handler.on_get_task(
+        GetTaskRequest(id="task-filter"),
+        context=ServerCallContext(
+            requested_extensions={
+                SESSION_BINDING_EXTENSION_URI,
+                MODEL_SELECTION_EXTENSION_URI,
+                STREAMING_EXTENSION_URI,
+            }
+        ),
+    )
+    assert negotiated is not None
+    assert negotiated.metadata["shared"]["session"]["id"] == "ses-1"
+    assert negotiated.metadata["shared"]["model"]["providerID"] == "openai"
+    assert negotiated.metadata["shared"]["usage"]["input_tokens"] == 12

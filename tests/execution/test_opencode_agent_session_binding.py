@@ -6,18 +6,16 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from a2a.client.errors import A2AClientHTTPError, A2AClientJSONRPCError
 from a2a.types import (
     Artifact,
-    JSONRPCError,
-    JSONRPCErrorResponse,
+    Part,
+    StreamResponse,
     Task,
     TaskArtifactUpdateEvent,
     TaskState,
     TaskStatus,
 )
 
-from opencode_a2a.a2a_utils import make_text_part
 from opencode_a2a.client import A2AClient
 from opencode_a2a.client.errors import (
     A2AClientResetRequiredError,
@@ -33,9 +31,14 @@ from opencode_a2a.execution.tool_orchestration import (
     maybe_handle_tools,
     merge_streamed_tool_output,
 )
+from opencode_a2a.jsonrpc.models import JSONRPCError, JSONRPCErrorResponse
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from opencode_a2a.server.client_manager import A2AClientManager
 from opencode_a2a.trace_context import TraceContext, bind_trace_context
+from tests.support.fake_client_errors import (
+    FakeA2AClientHTTPError,
+    FakeA2AClientJSONRPCError,
+)
 from tests.support.helpers import (
     DummyChatOpencodeUpstreamClient,
     DummyEventQueue,
@@ -287,8 +290,6 @@ async def test_agent_handles_a2a_call_tool(monkeypatch) -> None:
         Artifact,
         Task,
         TaskArtifactUpdateEvent,
-        TaskState,
-        TaskStatus,
     )
 
     class MockA2AClient:
@@ -308,7 +309,7 @@ async def test_agent_handles_a2a_call_tool(monkeypatch) -> None:
                     artifact=Artifact(
                         artifact_id="artifact-1",
                         name="response",
-                        parts=[make_text_part(f"remote response to {text}")],
+                        parts=[Part(text=f"remote response to {text}")],
                     ),
                 ),
             )
@@ -400,7 +401,7 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
                             artifact=Artifact(
                                 artifact_id="artifact-1",
                                 name="response",
-                                parts=[make_text_part("streamed tool output")],
+                                parts=[Part(text="streamed tool output")],
                             ),
                         ),
                     )
@@ -422,8 +423,6 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
         Artifact,
         Task,
         TaskArtifactUpdateEvent,
-        TaskState,
-        TaskStatus,
     )
 
     client = ToolLoopClient()
@@ -493,7 +492,7 @@ async def test_agent_maps_a2a_call_tool_auth_errors_to_stable_payload() -> None:
             return self
 
         async def __anext__(self):
-            raise A2AClientHTTPError(401, "unauthorized")
+            raise FakeA2AClientHTTPError(401, "unauthorized")
 
     class MockA2AClient:
         def send_message(self, text: str):
@@ -542,21 +541,16 @@ async def test_agent_a2a_call_uses_server_side_basic_auth_headers(
 ) -> None:
     fake_sdk_client = _FakeOutboundClient(
         events=[
-            (
-                Task(
-                    id="remote-task",
-                    context_id="remote-ctx",
-                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-                ),
-                TaskArtifactUpdateEvent(
+            StreamResponse(
+                artifact_update=TaskArtifactUpdateEvent(
                     task_id="remote-task",
                     context_id="remote-ctx",
                     artifact=Artifact(
                         artifact_id="artifact-1",
                         name="response",
-                        parts=[make_text_part("remote response")],
+                        parts=[Part(text="remote response")],
                     ),
-                ),
+                )
             )
         ]
     )
@@ -569,8 +563,6 @@ async def test_agent_a2a_call_uses_server_side_basic_auth_headers(
             a2a_client_use_client_preference=False,
             a2a_client_bearer_token=None,
             a2a_client_basic_auth="user:pass",
-            a2a_client_protocol_version=None,
-            a2a_protocol_version="0.3",
             a2a_client_supported_transports=("JSONRPC", "HTTP+JSON"),
             a2a_client_cache_ttl_seconds=60.0,
             a2a_client_cache_maxsize=1,
@@ -610,21 +602,16 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
 ) -> None:
     fake_sdk_client = _FakeOutboundClient(
         events=[
-            (
-                Task(
-                    id="remote-task",
-                    context_id="remote-ctx",
-                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-                ),
-                TaskArtifactUpdateEvent(
+            StreamResponse(
+                artifact_update=TaskArtifactUpdateEvent(
                     task_id="remote-task",
                     context_id="remote-ctx",
                     artifact=Artifact(
                         artifact_id="artifact-1",
                         name="response",
-                        parts=[make_text_part("remote response")],
+                        parts=[Part(text="remote response")],
                     ),
-                ),
+                )
             )
         ]
     )
@@ -637,8 +624,6 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
             a2a_client_use_client_preference=False,
             a2a_client_bearer_token=None,
             a2a_client_basic_auth=None,
-            a2a_client_protocol_version=None,
-            a2a_protocol_version="0.3",
             a2a_client_supported_transports=("JSONRPC", "HTTP+JSON"),
             a2a_client_cache_ttl_seconds=60.0,
             a2a_client_cache_maxsize=1,
@@ -681,7 +666,7 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
 
 
 def test_map_a2a_tool_exception_protocol_and_unavailable_variants() -> None:
-    rpc_error = A2AClientJSONRPCError(
+    rpc_error = FakeA2AClientJSONRPCError(
         JSONRPCErrorResponse(
             error=JSONRPCError(code=-32602, message="bad params"),
             id="req-1",
@@ -717,7 +702,7 @@ def test_map_a2a_tool_exception_additional_variants() -> None:
 
 
 class _FakeOutboundClient:
-    def __init__(self, events: list[object]) -> None:
+    def __init__(self, events: list[StreamResponse]) -> None:
         self._events = list(events)
         self.send_message_inputs: list[tuple[object, object, object]] = []
 
