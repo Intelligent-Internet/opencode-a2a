@@ -15,11 +15,8 @@ def test_cli_help_does_not_require_runtime_settings(capsys: pytest.CaptureFixtur
     assert excinfo.value.code == 0
     help_text = capsys.readouterr().out
     assert "OpenCode A2A runtime for explicit service startup and peer calls." in help_text
-    assert "A2A Runtime" in help_text
-    assert (
-        "protocol: A2A 1.0 only; not compatible with legacy 0.3 clients, methods, or payloads"
-        in help_text
-    )
+    assert "OpenCode-A2A" in help_text
+    assert "A2A Protocol 1.0 only." in help_text
     assert "opencode-a2a <command> [arguments] [options]" in help_text
     assert "{call}" not in help_text
     assert "serve" in help_text
