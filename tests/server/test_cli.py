@@ -14,37 +14,46 @@ def test_cli_help_does_not_require_runtime_settings(capsys: pytest.CaptureFixtur
 
     assert excinfo.value.code == 0
     help_text = capsys.readouterr().out
-    assert "Run without a subcommand to start the service." in help_text
-    assert "{call}" in help_text
-    assert "serve" not in help_text
+    assert "OpenCode A2A runtime for explicit service startup and peer calls." in help_text
+    assert "A2A Runtime" in help_text
+    assert "opencode-a2a <command> [arguments] [options]" in help_text
+    assert "{call}" not in help_text
+    assert "serve" in help_text
     assert "deploy-release" not in help_text
     assert "init-release-system" not in help_text
     assert "uninstall-instance" not in help_text
     serve_mock.assert_not_called()
 
 
-def test_cli_serve_subcommand_is_rejected() -> None:
-    with pytest.raises(SystemExit) as excinfo:
-        cli.main(["serve"])
-
-    assert excinfo.value.code == 2
-
-
+@pytest.mark.parametrize("flag", ["-v", "--version"])
 def test_cli_version_does_not_require_runtime_settings(
+    flag: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with mock.patch("opencode_a2a.cli.serve_main") as serve_mock:
         with pytest.raises(SystemExit) as excinfo:
-            cli.main(["--version"])
+            cli.main([flag])
 
     assert excinfo.value.code == 0
     assert __version__ in capsys.readouterr().out
     serve_mock.assert_not_called()
 
 
-def test_cli_defaults_to_serve_when_no_subcommand() -> None:
+def test_cli_without_arguments_prints_help() -> None:
     with mock.patch("opencode_a2a.cli.serve_main") as serve_mock:
-        assert cli.main([]) == 0
+        with mock.patch("opencode_a2a.cli.build_parser") as build_parser_mock:
+            parser = mock.MagicMock()
+            build_parser_mock.return_value = parser
+
+            assert cli.main([]) == 0
+
+    parser.print_help.assert_called_once_with()
+    serve_mock.assert_not_called()
+
+
+def test_cli_serve_subcommand_runs_service() -> None:
+    with mock.patch("opencode_a2a.cli.serve_main") as serve_mock:
+        assert cli.main(["serve"]) == 0
 
     serve_mock.assert_called_once_with()
 

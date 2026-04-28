@@ -144,7 +144,7 @@ A2A_HOST=127.0.0.1 \
 A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
-opencode-a2a
+opencode-a2a serve
 ```
 
 By default, the service uses a SQLite-backed durable state store:
@@ -154,7 +154,7 @@ DEMO_BEARER_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \
 A2A_STATIC_AUTH_CREDENTIALS='[{"scheme":"bearer","token":"'"${DEMO_BEARER_TOKEN}"'","principal":"automation"}]' \
 A2A_TASK_STORE_DATABASE_URL=sqlite+aiosqlite:///./opencode-a2a.db \
-opencode-a2a
+opencode-a2a serve
 ```
 
 With the default `database` backend, the unified lightweight persistence layer persists:
