@@ -14,7 +14,6 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
-from google.protobuf.json_format import MessageToDict
 
 from ..a2a_utils import make_data_part
 from ..invocation import call_with_supported_kwargs
@@ -88,24 +87,6 @@ class StreamRuntime:
 
         async def _emit_chunks(chunks: list[_NormalizedStreamChunk]) -> None:
             for chunk in chunks:
-                if not allow_structured_output and chunk.part.HasField("data"):
-                    fallback_text = json.dumps(
-                        MessageToDict(chunk.part.data),
-                        ensure_ascii=True,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    )
-                    chunk = _NormalizedStreamChunk(
-                        part=Part(text=fallback_text),
-                        content_key=fallback_text,
-                        accumulate_content=False,
-                        append=chunk.append,
-                        block_type=chunk.block_type,
-                        internal_source=chunk.internal_source,
-                        shared_source=chunk.shared_source,
-                        message_id=chunk.message_id,
-                        role=chunk.role,
-                    )
                 resolved_message_id = stream_state.resolve_message_id(chunk.message_id)
                 chunk_text = chunk.part.text if chunk.part.HasField("text") else ""
                 if stream_state.should_drop_initial_user_echo(
@@ -257,8 +238,18 @@ class StreamRuntime:
             message_id: str | None,
             role: str | None,
         ) -> _NormalizedStreamChunk:
+            part = make_data_part(data)
+            if not allow_structured_output:
+                fallback_text = json.dumps(
+                    data,
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                part = Part(text=fallback_text)
+                content_key = fallback_text
             return _NormalizedStreamChunk(
-                part=make_data_part(dict(data)),
+                part=part,
                 content_key=content_key,
                 accumulate_content=False,
                 append=append,

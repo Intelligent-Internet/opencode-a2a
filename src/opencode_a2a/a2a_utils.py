@@ -4,7 +4,6 @@ from collections.abc import Mapping, Sequence
 from typing import Any, TypeVar, cast
 
 from a2a.types import Artifact, Message, Part, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
-from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message as ProtoMessage
 from google.protobuf.struct_pb2 import ListValue, Struct, Value
 
@@ -18,16 +17,7 @@ def clone_proto(message: ProtoT) -> ProtoT:
 
 
 def proto_equals(left: ProtoMessage, right: ProtoMessage) -> bool:
-    return cast(
-        dict[str, Any],
-        MessageToDict(left, preserving_proto_field_name=True),
-    ) == cast(
-        dict[str, Any],
-        MessageToDict(
-            right,
-            preserving_proto_field_name=True,
-        ),
-    )
+    return bool(left == right)
 
 
 def _to_proto_value(value: Any) -> Value:

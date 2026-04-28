@@ -29,7 +29,7 @@ from ..contracts.extensions import (
     SESSION_BINDING_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
 )
-from ..extension_negotiation import requested_extensions_from_request_context
+from ..extension_negotiation import requested_extensions_from_call_context
 from ..invocation import call_with_supported_kwargs
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..output_modes import accepts_output_mode, normalize_accepted_output_modes
@@ -142,7 +142,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         trace_id = call_context.state.get("trace_id") if call_context else None
 
         streaming_request = self._should_stream(context)
-        requested_extensions = requested_extensions_from_request_context(context)
+        requested_extensions = requested_extensions_from_call_context(context.call_context)
         accepted_output_modes = normalize_accepted_output_modes(context.configuration)
         message_parts = (
             getattr(context.message, "parts", None) if context.message is not None else None

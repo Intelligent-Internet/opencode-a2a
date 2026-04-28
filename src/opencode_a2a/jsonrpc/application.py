@@ -18,7 +18,6 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ..extension_negotiation import (
-    missing_requested_extensions,
     requested_extensions_from_call_context,
 )
 from ..opencode_upstream_client import OpencodeUpstreamClient
@@ -359,11 +358,8 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             )
 
         call_context = self._context_builder.build(request)
-        missing_extensions = missing_requested_extensions(
-            requested_extensions_from_call_context(call_context),
-            [extension_spec.extension_uri],
-        )
-        if missing_extensions:
+        requested_extensions = requested_extensions_from_call_context(call_context)
+        if extension_spec.extension_uri not in requested_extensions:
             return self._generate_protocol_error_response(
                 base_request.id,
                 UnsupportedOperationError(
@@ -375,7 +371,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                         "type": "EXTENSION_NEGOTIATION_REQUIRED",
                         "method": base_request.method,
                         "required_extensions": [extension_spec.extension_uri],
-                        "requested_extensions": sorted(call_context.requested_extensions),
+                        "requested_extensions": sorted(requested_extensions),
                         "header": "A2A-Extensions",
                     },
                 ),
