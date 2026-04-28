@@ -25,7 +25,6 @@ from .contracts.extensions import (
     WORKSPACE_CONTROL_EXTENSION_URI,
     WORKSPACE_CONTROL_METHODS,
 )
-from .metadata_access import extract_namespaced_value
 
 _STREAMING_SHARED_METADATA_KEYS = frozenset({"stream", "progress", "interrupt", "usage"})
 
@@ -50,77 +49,6 @@ def requested_extensions_from_call_context(
     if call_context is None:
         return frozenset()
     return frozenset(value.strip() for value in call_context.requested_extensions if value.strip())
-
-
-def required_extensions_for_send_message_params(
-    params: Any,
-) -> tuple[ExtensionRequirement, ...]:
-    sources: list[dict[str, Any]] = []
-    params_metadata = getattr(params, "metadata", None)
-    if isinstance(params_metadata, ProtoMessage):
-        params_metadata = MessageToDict(params_metadata, preserving_proto_field_name=True)
-    elif isinstance(params_metadata, Mapping):
-        params_metadata = dict(params_metadata)
-    else:
-        params_metadata = None
-    if params_metadata:
-        sources.append(params_metadata)
-    message = getattr(params, "message", None)
-    message_metadata = getattr(message, "metadata", None)
-    if isinstance(message_metadata, ProtoMessage):
-        message_metadata = MessageToDict(message_metadata, preserving_proto_field_name=True)
-    elif isinstance(message_metadata, Mapping):
-        message_metadata = dict(message_metadata)
-    else:
-        message_metadata = None
-    if message_metadata:
-        sources.append(message_metadata)
-
-    requirements: list[ExtensionRequirement] = []
-    if any(
-        extract_namespaced_value(source, namespace="shared", path=("session", "id")) is not None
-        for source in sources
-    ):
-        requirements.append(
-            ExtensionRequirement(
-                extension_uri=SESSION_BINDING_EXTENSION_URI,
-                field="metadata.shared.session.id",
-            )
-        )
-    if any(
-        extract_namespaced_value(source, namespace="opencode", path=("directory",)) is not None
-        for source in sources
-    ):
-        requirements.append(
-            ExtensionRequirement(
-                extension_uri=SESSION_BINDING_EXTENSION_URI,
-                field="metadata.opencode.directory",
-            )
-        )
-    if any(
-        extract_namespaced_value(source, namespace="opencode", path=("workspace", "id")) is not None
-        for source in sources
-    ):
-        requirements.append(
-            ExtensionRequirement(
-                extension_uri=SESSION_BINDING_EXTENSION_URI,
-                field="metadata.opencode.workspace.id",
-            )
-        )
-    if any(
-        extract_namespaced_value(source, namespace="shared", path=("model", "providerID"))
-        is not None
-        or extract_namespaced_value(source, namespace="shared", path=("model", "modelID"))
-        is not None
-        for source in sources
-    ):
-        requirements.append(
-            ExtensionRequirement(
-                extension_uri=MODEL_SELECTION_EXTENSION_URI,
-                field="metadata.shared.model",
-            )
-        )
-    return tuple(requirements)
 
 
 def filter_negotiated_extensions_from_payload(
@@ -166,20 +94,8 @@ def _set_filtered_metadata(
     if not metadata_dict:
         proto.ClearField("metadata")
         return
-    filtered_metadata = _filter_metadata_dict(metadata_dict, requested_extensions)
-    proto.ClearField("metadata")
-    if filtered_metadata:
-        proto.metadata.update(filtered_metadata)
-
-
-def _filter_metadata_dict(
-    metadata: dict[str, Any] | None,
-    requested_extensions: frozenset[str],
-) -> dict[str, Any] | None:
-    if not metadata:
-        return None
-    normalized = dict(metadata)
-    shared_metadata = normalized.get("shared")
+    filtered_metadata: dict[str, Any] = dict(metadata_dict)
+    shared_metadata = filtered_metadata.get("shared")
     if isinstance(shared_metadata, Mapping):
         filtered_shared = dict(shared_metadata)
         if (
@@ -193,7 +109,9 @@ def _filter_metadata_dict(
             for key in _STREAMING_SHARED_METADATA_KEYS:
                 filtered_shared.pop(key, None)
         if filtered_shared:
-            normalized["shared"] = filtered_shared
+            filtered_metadata["shared"] = filtered_shared
         else:
-            normalized.pop("shared", None)
-    return normalized or None
+            filtered_metadata.pop("shared", None)
+    proto.ClearField("metadata")
+    if filtered_metadata:
+        proto.metadata.update(filtered_metadata)

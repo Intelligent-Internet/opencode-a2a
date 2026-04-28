@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
@@ -48,6 +49,7 @@ from a2a.utils.task import apply_history_length, validate_history_length
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
+from google.protobuf.message import Message as ProtoMessage
 from pydantic_settings import BaseSettings
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -57,19 +59,22 @@ from ..a2a_protocol import (
 )
 from ..config import Settings
 from ..contracts.extensions import (
+    MODEL_SELECTION_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
     build_capability_snapshot,
 )
 from ..execution.executor import OpencodeAgentExecutor
 from ..extension_negotiation import (
+    ExtensionRequirement,
     filter_negotiated_extensions_from_payload,
     requested_extensions_from_call_context,
-    required_extensions_for_send_message_params,
 )
 from ..invocation import call_with_supported_kwargs
 from ..jsonrpc.application import (
     OpencodeSessionManagementJSONRPCApplication,
 )
 from ..jsonrpc.error_responses import build_http_error_body
+from ..metadata_access import extract_namespaced_value
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..output_modes import (
     NegotiatingResultAggregator,
@@ -358,7 +363,72 @@ class OpencodeRequestHandler(LegacyRequestHandler):
     @staticmethod
     def _validate_shared_extension_negotiation(params, context=None) -> None:  # noqa: ANN001
         requested_extensions = requested_extensions_from_call_context(context)
-        requirements = required_extensions_for_send_message_params(params)
+        sources: list[dict[str, Any]] = []
+        params_metadata = getattr(params, "metadata", None)
+        if isinstance(params_metadata, ProtoMessage):
+            params_metadata = MessageToDict(params_metadata, preserving_proto_field_name=True)
+        elif isinstance(params_metadata, Mapping):
+            params_metadata = dict(params_metadata)
+        else:
+            params_metadata = None
+        if params_metadata:
+            sources.append(params_metadata)
+        message = getattr(params, "message", None)
+        message_metadata = getattr(message, "metadata", None)
+        if isinstance(message_metadata, ProtoMessage):
+            message_metadata = MessageToDict(message_metadata, preserving_proto_field_name=True)
+        elif isinstance(message_metadata, Mapping):
+            message_metadata = dict(message_metadata)
+        else:
+            message_metadata = None
+        if message_metadata:
+            sources.append(message_metadata)
+
+        requirements: list[ExtensionRequirement] = []
+        if any(
+            extract_namespaced_value(source, namespace="shared", path=("session", "id")) is not None
+            for source in sources
+        ):
+            requirements.append(
+                ExtensionRequirement(
+                    extension_uri=SESSION_BINDING_EXTENSION_URI,
+                    field="metadata.shared.session.id",
+                )
+            )
+        if any(
+            extract_namespaced_value(source, namespace="opencode", path=("directory",)) is not None
+            for source in sources
+        ):
+            requirements.append(
+                ExtensionRequirement(
+                    extension_uri=SESSION_BINDING_EXTENSION_URI,
+                    field="metadata.opencode.directory",
+                )
+            )
+        if any(
+            extract_namespaced_value(source, namespace="opencode", path=("workspace", "id"))
+            is not None
+            for source in sources
+        ):
+            requirements.append(
+                ExtensionRequirement(
+                    extension_uri=SESSION_BINDING_EXTENSION_URI,
+                    field="metadata.opencode.workspace.id",
+                )
+            )
+        if any(
+            extract_namespaced_value(source, namespace="shared", path=("model", "providerID"))
+            is not None
+            or extract_namespaced_value(source, namespace="shared", path=("model", "modelID"))
+            is not None
+            for source in sources
+        ):
+            requirements.append(
+                ExtensionRequirement(
+                    extension_uri=MODEL_SELECTION_EXTENSION_URI,
+                    field="metadata.shared.model",
+                )
+            )
         missing_requirements = [
             requirement
             for requirement in requirements
