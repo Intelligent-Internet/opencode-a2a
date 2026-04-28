@@ -13,8 +13,6 @@
 
 `opencode-a2a` adds an A2A runtime layer to `opencode serve`, with auth, streaming, session continuity, interrupt handling, and a clear deployment boundary.
 
-> A2A Protocol `1.0` only.
-
 ## What This Is
 
 - An A2A adapter service built on `opencode serve`, with inbound runtime exposure plus outbound peer calling.
@@ -127,8 +125,6 @@ opencode-a2a call http://other-agent:8000/.well-known/agent-card.json "How are y
 A2A_CLIENT_BASIC_AUTH="user:pass" \
 opencode-a2a call http://other-agent:8000/.well-known/agent-card.json "How are you?"
 ```
-
-Service base URLs also work, but this README prefers Agent Card URLs in examples because they make the A2A discovery target explicit.
 
 ### Outbound Agent Calls (Tools)
 The server can autonomously execute `a2a_call(url, message)` tool calls emitted by the OpenCode runtime. Results are fetched via A2A and returned to the model as tool results, enabling multi-agent orchestration.
