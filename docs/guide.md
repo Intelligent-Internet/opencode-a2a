@@ -99,6 +99,15 @@ Current client facade API:
 
 Server-side outbound peer calls read outbound credentials from environment variables. Configure `A2A_CLIENT_BEARER_TOKEN` or `A2A_CLIENT_BASIC_AUTH` when the remote agent protects its runtime surface. CLI outbound calls follow the same environment-only model.
 
+CLI outbound example:
+
+```bash
+A2A_CLIENT_BEARER_TOKEN=peer-token \
+opencode-a2a call http://other-agent:8000/.well-known/agent-card.json "How are you?"
+```
+
+Service base URLs also work, but this guide prefers Agent Card URLs in CLI examples because they make the A2A discovery target explicit.
+
 `A2AClient.send()` returns the latest response event and keeps the default stream-first behavior. If a peer returns a non-terminal task snapshot and expects follow-up `GetTask` polling, enable the optional facade fallback with:
 
 - `A2A_CLIENT_POLLING_FALLBACK_ENABLED=true`
