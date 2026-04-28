@@ -68,15 +68,9 @@ def test_load_settings_accepts_base64_basic_auth() -> None:
     assert settings == A2AClientSettings(basic_auth=encoded)
 
 
-def test_load_settings_can_fallback_to_general_protocol_version() -> None:
-    settings = load_settings({"A2A_PROTOCOL_VERSION": "1.0.0"})
-
-    assert settings.protocol_version == "1.0"
-
-
 def test_load_settings_rejects_legacy_protocol_version() -> None:
     with pytest.raises(ValueError, match="only supports 1.0"):
-        load_settings({"A2A_PROTOCOL_VERSION": "0.3.0"})
+        load_settings({"A2A_CLIENT_PROTOCOL_VERSION": "0.3.0"})
 
 
 def test_load_settings_invalid_basic_auth_raises() -> None:

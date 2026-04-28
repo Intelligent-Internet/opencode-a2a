@@ -195,8 +195,6 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
             keys=(
                 "A2A_CLIENT_PROTOCOL_VERSION",
                 "a2a_client_protocol_version",
-                "A2A_PROTOCOL_VERSION",
-                "a2a_protocol_version",
             ),
             default=_SUPPORTED_CLIENT_PROTOCOL_VERSION,
         ),

@@ -55,11 +55,6 @@ def test_normalize_agent_card_endpoint_requires_absolute_url() -> None:
         normalize_agent_card_endpoint("/relative/path")
 
 
-def test_normalize_agent_card_endpoint_rejects_legacy_agent_json_url() -> None:
-    with pytest.raises(ValueError, match="Legacy agent discovery endpoint"):
-        normalize_agent_card_endpoint("https://ops.example.com/.well-known/agent.json")
-
-
 def test_build_resolver_http_kwargs_uses_bearer_token() -> None:
     assert build_resolver_http_kwargs(bearer_token="peer-token", timeout=7) == {
         "timeout": 7,

@@ -23,12 +23,6 @@ def normalize_agent_card_endpoint(agent_url: str) -> tuple[str, str]:
 
     path = parsed_url.path or ""
     normalized_no_leading = path.rstrip("/").lstrip("/")
-    legacy_card_suffix = ".well-known/agent.json"
-    if normalized_no_leading.endswith(legacy_card_suffix):
-        raise ValueError(
-            "Legacy agent discovery endpoint '/.well-known/agent.json' is unsupported; "
-            "use '/.well-known/agent-card.json'."
-        )
     candidate_paths = (
         AGENT_CARD_WELL_KNOWN_PATH,
         EXTENDED_AGENT_CARD_PATH,
