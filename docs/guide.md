@@ -175,7 +175,7 @@ With the default `database` backend, the unified lightweight persistence layer p
 
 This project is SQLite-first for local single-instance deployments. The runtime configures local durability-oriented SQLite connection settings (`WAL`, `busy_timeout`, `synchronous=NORMAL`) and creates missing parent directories for file-backed database paths.
 
-The runtime automatically applies lightweight schema migrations for its custom state tables and records the applied version in `a2a_schema_version`. Schema-version writes are idempotent across concurrent first-start races, pending preferred-session claims now persist absolute `expires_at` timestamps while remaining backward-compatible with legacy `updated_at` rows, and the built-in path currently targets the local SQLite deployment profile without requiring Alembic.
+The runtime automatically applies lightweight schema migrations for its custom state tables and records the applied version in `a2a_schema_version`. Schema-version writes are idempotent across concurrent first-start races, pending preferred-session claims now persist absolute `expires_at` timestamps, legacy rows without `expires_at` are pruned during migration instead of being reconstructed from historical TTL assumptions, and the built-in path currently targets the local SQLite deployment profile without requiring Alembic.
 
 Database-backed task persistence also keeps the existing first-terminal-state-wins contract while tightening the SQLite path with an atomic terminal-write guard instead of relying only on process-local read-before-write checks. Any wider SQLAlchemy dialect compatibility should be treated as incidental implementation latitude rather than a documented deployment target.
 
