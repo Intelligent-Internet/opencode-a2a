@@ -27,7 +27,6 @@ from ..jsonrpc.error_responses import (
 )
 from ..jsonrpc.models import JSONRPCError
 from ..protocol_versions import (
-    A2A_PROTOCOL_VERSION,
     UnsupportedProtocolVersionError,
     negotiate_protocol_version,
 )
@@ -138,12 +137,6 @@ def install_runtime_middlewares(
             return request_id
         return None
 
-    def _error_protocol_version(request: Request) -> str:
-        negotiated = getattr(request.state, "a2a_protocol_version", None)
-        if isinstance(negotiated, str) and negotiated.strip():
-            return negotiated
-        return A2A_PROTOCOL_VERSION
-
     @app.middleware("http")
     async def bind_trace_context(request: Request, call_next):
         trace_context = resolve_trace_context(
@@ -169,7 +162,7 @@ def install_runtime_middlewares(
             return await call_next(request)
 
         try:
-            negotiated = negotiate_protocol_version(
+            negotiated_version = negotiate_protocol_version(
                 header_value=request.headers.get("A2A-Version"),
                 query_value=request.query_params.get("A2A-Version"),
             )
@@ -221,11 +214,9 @@ def install_runtime_middlewares(
             if token is not None:
                 _REQUEST_BODY_BYTES.reset(token)
 
-        request.state.a2a_protocol_version = negotiated.negotiated_version
-        request.state.a2a_requested_protocol_version = negotiated.requested_version
-        request.state.a2a_protocol_version_explicit = negotiated.explicit
+        request.state.a2a_protocol_version = negotiated_version
         response = await call_next(request)
-        response.headers["A2A-Version"] = negotiated.negotiated_version
+        response.headers["A2A-Version"] = negotiated_version
         return response
 
     async def _get_request_body(request: Request) -> tuple[bytes, Token | None]:

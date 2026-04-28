@@ -7,6 +7,10 @@ from pydantic import ValidationError
 
 from opencode_a2a import __version__
 from opencode_a2a.config import Settings
+from opencode_a2a.protocol_versions import (
+    A2A_PROTOCOL_VERSION,
+    A2A_SUPPORTED_PROTOCOL_VERSIONS,
+)
 
 
 def test_settings_missing_required():
@@ -85,8 +89,8 @@ def test_settings_valid():
         assert settings.a2a_task_store_backend == "database"
         assert settings.a2a_task_store_database_url == "sqlite+aiosqlite:///./opencode-a2a.db"
         assert settings.a2a_version == __version__
-        assert settings.a2a_protocol_version == "1.0"
-        assert settings.a2a_supported_protocol_versions == ("1.0",)
+        assert A2A_PROTOCOL_VERSION == "1.0"
+        assert A2A_SUPPORTED_PROTOCOL_VERSIONS == ("1.0",)
 
 
 def test_settings_allow_explicit_memory_backend() -> None:

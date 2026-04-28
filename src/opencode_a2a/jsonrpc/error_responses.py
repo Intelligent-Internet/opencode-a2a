@@ -10,6 +10,7 @@ from a2a.utils.errors import (
     InvalidParamsError,
 )
 
+from ..protocol_versions import A2A_PROTOCOL_VERSION
 from .models import JSONRPCError
 
 A2A_ERROR_DOMAIN = "a2a-protocol.org"
@@ -189,7 +190,6 @@ def method_not_supported_error(
     *,
     method: str,
     supported_methods: list[str],
-    protocol_version: str,
 ) -> JSONRPCError:
     return JSONRPCError(
         code=-32601,
@@ -198,7 +198,7 @@ def method_not_supported_error(
             "type": "METHOD_NOT_SUPPORTED",
             "method": method,
             "supported_methods": supported_methods,
-            "protocol_version": protocol_version,
+            "protocol_version": A2A_PROTOCOL_VERSION,
         },
     )
 

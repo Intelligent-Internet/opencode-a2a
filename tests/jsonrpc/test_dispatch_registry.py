@@ -46,8 +46,8 @@ async def test_core_jsonrpc_methods_delegate_to_base_app(
     monkeypatch,
     method: str,
 ) -> None:
-    async def _fake_core_handle(self, request, body, base_request, *, protocol_version):  # noqa: ANN001
-        del self, request, body, protocol_version
+    async def _fake_core_handle(self, request, body, base_request):  # noqa: ANN001
+        del self, request, body
         return JSONResponse({"delegated_method": base_request.method})
 
     monkeypatch.setattr(
@@ -71,8 +71,8 @@ async def test_core_jsonrpc_methods_delegate_to_base_app(
 
 @pytest.mark.asyncio
 async def test_sdk_owned_non_chat_jsonrpc_methods_delegate_to_base_app(monkeypatch) -> None:
-    async def _fake_core_handle(self, request, body, base_request, *, protocol_version):  # noqa: ANN001
-        del self, request, body, protocol_version
+    async def _fake_core_handle(self, request, body, base_request):  # noqa: ANN001
+        del self, request, body
         return JSONResponse({"delegated_method": base_request.method})
 
     monkeypatch.setattr(
@@ -119,8 +119,8 @@ async def test_extension_methods_stay_on_local_registry(monkeypatch) -> None:
         )
     )
 
-    async def _unexpected_delegate(self, request, body, base_request, *, protocol_version):  # noqa: ANN001
-        del self, request, body, base_request, protocol_version
+    async def _unexpected_delegate(self, request, body, base_request):  # noqa: ANN001
+        del self, request, body, base_request
         raise AssertionError("extension method should not delegate to base JSON-RPC app")
 
     monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 
 _PROTOCOL_VERSION_PATTERN = re.compile(r"^(?P<major>\d+)\.(?P<minor>\d+)(?:\.\d+)?$")
 A2A_PROTOCOL_VERSION = "1.0"
@@ -19,13 +18,6 @@ class UnsupportedProtocolVersionError(ValueError):
         )
 
 
-@dataclass(frozen=True)
-class NegotiatedProtocolVersion:
-    requested_version: str
-    negotiated_version: str
-    explicit: bool
-
-
 def normalize_protocol_version(value: str) -> str:
     normalized = value.strip()
     if not normalized:
@@ -40,10 +32,9 @@ def negotiate_protocol_version(
     *,
     header_value: str | None,
     query_value: str | None,
-) -> NegotiatedProtocolVersion:
+) -> str:
     raw_header = (header_value or "").strip()
     raw_query = (query_value or "").strip()
-    explicit = bool(raw_header or raw_query)
     raw_requested = raw_header or raw_query or A2A_PROTOCOL_VERSION
 
     try:
@@ -54,8 +45,4 @@ def negotiate_protocol_version(
     if normalized_requested != A2A_PROTOCOL_VERSION:
         raise UnsupportedProtocolVersionError(normalized_requested)
 
-    return NegotiatedProtocolVersion(
-        requested_version=normalized_requested,
-        negotiated_version=normalized_requested,
-        explicit=explicit,
-    )
+    return normalized_requested

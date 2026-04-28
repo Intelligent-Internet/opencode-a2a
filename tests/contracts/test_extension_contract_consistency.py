@@ -29,6 +29,7 @@ from opencode_a2a.contracts.extensions import (
 )
 from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from opencode_a2a.profile.runtime import build_runtime_profile
+from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
 from opencode_a2a.server.agent_card import build_authenticated_extended_agent_card
 from opencode_a2a.server.application import create_app
 from tests.support.helpers import (
@@ -80,16 +81,12 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
         runtime_profile=runtime_profile,
     )
     expected_compatibility_profile = build_compatibility_profile_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
     expected_wire_contract = build_wire_contract_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
 
     assert session_binding.params == expected_session_binding, (
@@ -174,16 +171,12 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
         runtime_profile=runtime_profile,
     )
     expected_compatibility_profile = build_compatibility_profile_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
     expected_wire_contract = build_wire_contract_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
 
     assert session_binding == expected_session_binding, (
@@ -279,7 +272,7 @@ async def test_runtime_supported_methods_align_with_capability_snapshot(
     runtime_profile = build_runtime_profile(settings)
     capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
     wire_contract = build_wire_contract_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
     )
     transport = httpx.ASGITransport(app=app)

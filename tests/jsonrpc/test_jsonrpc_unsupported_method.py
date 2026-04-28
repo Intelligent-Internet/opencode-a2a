@@ -1,6 +1,7 @@
 import httpx
 import pytest
 
+from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
 from opencode_a2a.server.application import create_app
 from tests.support.helpers import make_settings
 
@@ -32,7 +33,7 @@ async def test_unsupported_method_returns_unified_error() -> None:
     assert "supportedMethods" in data
     assert "SendMessage" in data["supportedMethods"]
     assert "opencode.sessions.list" in data["supportedMethods"]
-    assert data["protocolVersion"] == settings.a2a_protocol_version
+    assert data["protocolVersion"] == A2A_PROTOCOL_VERSION
 
 
 @pytest.mark.asyncio

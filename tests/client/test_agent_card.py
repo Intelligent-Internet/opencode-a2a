@@ -58,7 +58,7 @@ def test_normalize_agent_card_endpoint_requires_absolute_url() -> None:
 def test_build_resolver_http_kwargs_uses_bearer_token() -> None:
     assert build_resolver_http_kwargs(bearer_token="peer-token", timeout=7) == {
         "timeout": 7,
-        "headers": {"Authorization": "Bearer peer-token"},
+        "headers": {"A2A-Version": "1.0", "Authorization": "Bearer peer-token"},
     }
 
 
@@ -71,7 +71,7 @@ def test_build_resolver_http_kwargs_uses_basic_auth() -> None:
         timeout=7,
     ) == {
         "timeout": 7,
-        "headers": {"Authorization": f"Basic {encoded}"},
+        "headers": {"A2A-Version": "1.0", "Authorization": f"Basic {encoded}"},
     }
 
 

@@ -34,19 +34,28 @@ def test_split_request_metadata_and_default_headers() -> None:
         "https://example.com/ext-b",
         "https://example.com/ext-a",
     )
-    assert build_default_headers("peer-token") == {"Authorization": "Bearer peer-token"}
+    assert build_default_headers("peer-token") == {
+        "Authorization": "Bearer peer-token",
+        "A2A-Version": "1.0",
+    }
 
 
 def test_build_default_headers_encodes_basic_auth_credentials() -> None:
     encoded = b64encode(b"user:pass").decode()
 
-    assert build_default_headers(None, "user:pass") == {"Authorization": f"Basic {encoded}"}
+    assert build_default_headers(None, "user:pass") == {
+        "Authorization": f"Basic {encoded}",
+        "A2A-Version": "1.0",
+    }
 
 
 def test_build_default_headers_accepts_pre_encoded_basic_auth() -> None:
     encoded = b64encode(b"user:pass").decode()
 
-    assert build_default_headers(None, encoded) == {"Authorization": f"Basic {encoded}"}
+    assert build_default_headers(None, encoded) == {
+        "Authorization": f"Basic {encoded}",
+        "A2A-Version": "1.0",
+    }
 
 
 def test_build_default_headers_rejects_invalid_basic_auth() -> None:
@@ -56,12 +65,13 @@ def test_build_default_headers_rejects_invalid_basic_auth() -> None:
 
 def test_build_default_headers_prefers_bearer_over_basic_auth() -> None:
     assert build_default_headers("peer-token", "user:pass") == {
-        "Authorization": "Bearer peer-token"
+        "Authorization": "Bearer peer-token",
+        "A2A-Version": "1.0",
     }
 
 
-def test_build_default_headers_includes_protocol_version() -> None:
-    assert build_default_headers("peer-token", protocol_version="1.0.0") == {
+def test_build_default_headers_always_include_fixed_protocol_version() -> None:
+    assert build_default_headers("peer-token") == {
         "Authorization": "Bearer peer-token",
         "A2A-Version": "1.0",
     }

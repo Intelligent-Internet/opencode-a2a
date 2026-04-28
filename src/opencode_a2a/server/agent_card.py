@@ -42,6 +42,7 @@ from ..contracts.extensions import (
 )
 from ..jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from ..profile.runtime import RuntimeProfile, build_runtime_profile
+from ..protocol_versions import A2A_PROTOCOL_VERSION
 
 _CHAT_INPUT_MODES = ["text/plain", "application/octet-stream"]
 _CHAT_OUTPUT_MODES = ["text/plain", "application/json"]
@@ -211,7 +212,6 @@ def _build_workspace_control_skill_examples(*, capability_snapshot) -> list[str]
 
 def _build_agent_extensions(
     *,
-    settings: Settings,
     runtime_profile: RuntimeProfile,
     include_detailed_contracts: bool,
 ) -> list[AgentExtension]:
@@ -239,16 +239,12 @@ def _build_agent_extensions(
         runtime_profile=runtime_profile,
     )
     compatibility_profile_params = build_compatibility_profile_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
     wire_contract_params = build_wire_contract_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
 
     return [
@@ -605,12 +601,12 @@ def _build_agent_card(
             AgentInterface(
                 url=public_url,
                 protocol_binding="HTTP+JSON",
-                protocol_version=settings.a2a_protocol_version,
+                protocol_version=A2A_PROTOCOL_VERSION,
             ),
             AgentInterface(
                 url=public_url,
                 protocol_binding="JSONRPC",
-                protocol_version=settings.a2a_protocol_version,
+                protocol_version=A2A_PROTOCOL_VERSION,
             ),
         ],
         default_input_modes=list(_CHAT_INPUT_MODES),
@@ -619,7 +615,6 @@ def _build_agent_card(
             streaming=True,
             extended_agent_card=True,
             extensions=_build_agent_extensions(
-                settings=settings,
                 runtime_profile=runtime_profile,
                 include_detailed_contracts=include_detailed_contracts,
             ),

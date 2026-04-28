@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import replace
-from functools import partial
 from typing import Any, cast
 
 from a2a.server.events import Event
@@ -54,7 +53,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         http_handler,
         upstream_client: OpencodeUpstreamClient,
         methods: dict[str, str],
-        protocol_version: str,
         supported_methods: list[str],
         directory_resolver: Callable[[str | None], str | None] | None = None,
         session_claim: Callable[..., Awaitable[bool]] | None = None,
@@ -98,7 +96,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         self._method_reply_permission = methods["reply_permission"]
         self._method_reply_question = methods["reply_question"]
         self._method_reject_question = methods["reject_question"]
-        self._protocol_version = protocol_version
         self._supported_methods = list(supported_methods)
         missing_control_hooks = [
             name
@@ -153,7 +150,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             method_reply_permission=self._method_reply_permission,
             method_reply_question=self._method_reply_question,
             method_reject_question=self._method_reject_question,
-            protocol_version=self._protocol_version,
             supported_methods=tuple(self._supported_methods),
             directory_resolver=self._directory_resolver,
             session_claim=self._session_claim,
@@ -179,10 +175,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         self,
         request_id: str | int | None,
         error: JSONRPCError | A2AError,
-        *,
-        protocol_version: str,
     ) -> JSONResponse:
-        del protocol_version
         adapted = adapt_jsonrpc_error(error)
         if isinstance(adapted, A2AError):
             error_payload = {
@@ -279,15 +272,12 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         request: Request,
         body: dict[str, Any],
         base_request: JSONRPCRequest,
-        *,
-        protocol_version: str,
     ) -> Response:
         canonical_method = base_request.method
         if canonical_method in _PUSH_NOTIFICATION_METHODS:
             return self._generate_protocol_error_response(
                 base_request.id,
                 UnsupportedOperationError(),
-                protocol_version=protocol_version,
             )
         if canonical_method == "GetExtendedAgentCard":
             if base_request.id is None:
@@ -299,7 +289,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                     UnsupportedOperationError(
                         message="The agent does not support authenticated extended cards"
                     ),
-                    protocol_version=protocol_version,
                 )
             return self._jsonrpc_success_response(
                 base_request.id,
@@ -314,9 +303,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                 method_not_supported_error(
                     method=base_request.method,
                     supported_methods=self._supported_methods,
-                    protocol_version=protocol_version,
                 ),
-                protocol_version=protocol_version,
             )
 
         try:
@@ -326,7 +313,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             return self._generate_protocol_error_response(
                 base_request.id,
                 invalid_params_error(str(exc)),
-                protocol_version=protocol_version,
             )
 
         call_context = self._context_builder.build(request)
@@ -350,16 +336,10 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             return self._generate_protocol_error_response(
                 base_request.id,
                 exc,
-                protocol_version=protocol_version,
             )
 
     async def handle_requests(self, request: Request) -> Response:
         request_id: str | int | None = None
-        negotiated_protocol_version = getattr(
-            request.state,
-            "a2a_protocol_version",
-            self._protocol_version,
-        )
         try:
             body = await request.json()
             if isinstance(body, dict):
@@ -376,7 +356,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                 request,
                 body,
                 base_request,
-                protocol_version=negotiated_protocol_version,
             )
 
         call_context = self._context_builder.build(request)
@@ -400,7 +379,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                         "header": "A2A-Extensions",
                     },
                 ),
-                protocol_version=negotiated_protocol_version,
             )
 
         params = base_request.params or {}
@@ -408,15 +386,10 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             return self._generate_protocol_error_response(
                 base_request.id,
                 invalid_params_error("params must be an object"),
-                protocol_version=negotiated_protocol_version,
             )
         request_context = replace(
             self._extension_handler_context,
-            protocol_version=negotiated_protocol_version,
-            error_response=partial(
-                self._generate_protocol_error_response,
-                protocol_version=negotiated_protocol_version,
-            ),
+            error_response=self._generate_protocol_error_response,
         )
         return await extension_spec.handler(
             request_context,

@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, ClassVar, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from opencode_a2a import __version__
-from opencode_a2a.protocol_versions import (
-    A2A_PROTOCOL_VERSION,
-    A2A_SUPPORTED_PROTOCOL_VERSIONS,
-)
 from opencode_a2a.sandbox_policy import SandboxPolicy
 
 SandboxMode = Literal[
@@ -279,9 +275,6 @@ class Settings(BaseSettings):
         default=("JSONRPC", "HTTP+JSON"),
         alias="A2A_CLIENT_SUPPORTED_TRANSPORTS",
     )
-    a2a_protocol_version: ClassVar[str] = A2A_PROTOCOL_VERSION
-    a2a_supported_protocol_versions: ClassVar[tuple[str, ...]] = A2A_SUPPORTED_PROTOCOL_VERSIONS
-
     # Task store settings
     a2a_task_store_backend: TaskStoreBackend = Field(
         default="database",

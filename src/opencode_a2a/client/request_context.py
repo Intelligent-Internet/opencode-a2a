@@ -8,7 +8,7 @@ from typing import Any
 from a2a.client.client import ClientCallContext
 
 from ..extension_negotiation import merge_extension_service_parameters
-from ..protocol_versions import A2A_PROTOCOL_VERSION, normalize_protocol_version
+from ..protocol_versions import A2A_PROTOCOL_VERSION
 from ..trace_context import current_trace_headers
 from .auth import encode_basic_auth
 
@@ -16,15 +16,12 @@ from .auth import encode_basic_auth
 def build_default_headers(
     bearer_token: str | None,
     basic_auth: str | None = None,
-    protocol_version: str | None = None,
 ) -> dict[str, str]:
-    headers: dict[str, str] = {}
+    headers: dict[str, str] = {"A2A-Version": A2A_PROTOCOL_VERSION}
     if bearer_token:
         headers["Authorization"] = f"Bearer {bearer_token}"
     elif basic_auth:
         headers["Authorization"] = f"Basic {encode_basic_auth(basic_auth)}"
-    if protocol_version:
-        headers["A2A-Version"] = normalize_protocol_version(protocol_version)
     return headers
 
 
@@ -76,14 +73,12 @@ def build_call_context(
     extra_headers: Mapping[str, str] | None,
     extensions: tuple[str, ...] | None = None,
     basic_auth: str | None = None,
-) -> ClientCallContext | None:
-    merged_headers = build_default_headers(bearer_token, basic_auth, A2A_PROTOCOL_VERSION)
+) -> ClientCallContext:
+    merged_headers = build_default_headers(bearer_token, basic_auth)
     merged_headers.update(current_trace_headers())
     if extra_headers:
         merged_headers.update(extra_headers)
     service_parameters = merge_extension_service_parameters(None, extensions)
-    if not merged_headers and not service_parameters:
-        return None
     return ClientCallContext(
         state={
             "headers": dict(merged_headers),

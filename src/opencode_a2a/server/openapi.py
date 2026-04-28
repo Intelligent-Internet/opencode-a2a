@@ -28,6 +28,7 @@ from ..contracts.extensions import (
 from ..jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from ..jsonrpc.models import JSONRPCRequest
 from ..profile.runtime import RuntimeProfile
+from ..protocol_versions import A2A_PROTOCOL_VERSION
 
 
 def _build_jsonrpc_extension_openapi_description(
@@ -601,16 +602,12 @@ def _patch_jsonrpc_openapi_contract(
         runtime_profile=runtime_profile,
     )
     compatibility_profile = build_compatibility_profile_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
     wire_contract = build_wire_contract_params(
-        protocol_version=settings.a2a_protocol_version,
+        protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
-        supported_protocol_versions=settings.a2a_supported_protocol_versions,
-        default_protocol_version=settings.a2a_protocol_version,
     )
     capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
     original_openapi = app.openapi

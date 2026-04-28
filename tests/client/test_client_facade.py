@@ -160,7 +160,7 @@ async def test_build_client_uses_settings_and_transport_config(
     assert config.supported_protocol_bindings == ["HTTP+JSON"]
     assert create_calls["resolver_http_kwargs"] == {
         "timeout": 3,
-        "headers": {"Authorization": "Bearer peer-token"},
+        "headers": {"A2A-Version": "1.0", "Authorization": "Bearer peer-token"},
     }
     assert actual is fake_sdk_client
 
@@ -494,7 +494,10 @@ async def test_get_agent_card_passes_basic_auth_to_resolver(
     assert resolver_http_kwargs == {
         "http_kwargs": {
             "timeout": 7,
-            "headers": {"Authorization": f"Basic {b64encode(b'user:pass').decode()}"},
+            "headers": {
+                "A2A-Version": "1.0",
+                "Authorization": f"Basic {b64encode(b'user:pass').decode()}",
+            },
         }
     }
 

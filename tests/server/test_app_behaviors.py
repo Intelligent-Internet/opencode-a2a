@@ -38,6 +38,7 @@ from opencode_a2a.contracts.extensions import (
     build_capability_snapshot,
 )
 from opencode_a2a.profile.runtime import build_runtime_profile
+from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
 from opencode_a2a.server.agent_card import (
     _build_agent_card_description,
     _build_chat_examples,
@@ -534,7 +535,7 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch, caplog) -> No
             "version": settings.a2a_version,
             "profile": {
                 "profile_id": "opencode-a2a-single-tenant-coding-v1",
-                "protocol_version": settings.a2a_protocol_version,
+                "protocol_version": A2A_PROTOCOL_VERSION,
                 "deployment": {
                     "id": "single_tenant_shared_workspace",
                     "single_tenant": True,

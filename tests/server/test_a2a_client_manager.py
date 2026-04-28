@@ -14,7 +14,6 @@ def _make_settings(**overrides: object) -> SimpleNamespace:
         "a2a_client_use_client_preference": False,
         "a2a_client_bearer_token": None,
         "a2a_client_basic_auth": None,
-        "a2a_protocol_version": "1.0",
         "a2a_client_supported_transports": ("JSONRPC", "HTTP+JSON"),
         "a2a_client_cache_ttl_seconds": 60.0,
         "a2a_client_cache_maxsize": 2,

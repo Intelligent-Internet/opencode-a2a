@@ -78,6 +78,7 @@ from ..output_modes import (
     normalize_accepted_output_modes,
 )
 from ..profile.runtime import build_runtime_profile
+from ..protocol_versions import A2A_PROTOCOL_VERSION
 from ..trace_context import install_log_record_factory
 from .agent_card import (
     _CHAT_OUTPUT_MODES,
@@ -708,12 +709,6 @@ class IdentityAwareCallContextBuilder(DefaultServerCallContextBuilder):
         trace_id = getattr(request.state, "trace_id", None)
         if trace_id:
             context.state["trace_id"] = trace_id
-        negotiated_protocol_version = getattr(request.state, "a2a_protocol_version", None)
-        if negotiated_protocol_version:
-            context.state["a2a_protocol_version"] = negotiated_protocol_version
-        requested_protocol_version = getattr(request.state, "a2a_requested_protocol_version", None)
-        if requested_protocol_version:
-            context.state["a2a_requested_protocol_version"] = requested_protocol_version
 
         return context
 
@@ -774,7 +769,6 @@ def create_app(settings: Settings) -> FastAPI:
         http_handler=handler,
         context_builder=context_builder,
         upstream_client=upstream_client,
-        protocol_version=settings.a2a_protocol_version,
         supported_methods=capability_snapshot.supported_jsonrpc_methods(),
         directory_resolver=(
             partial(
@@ -938,7 +932,7 @@ def create_app(settings: Settings) -> FastAPI:
         return runtime_profile.health_payload(
             service="opencode-a2a",
             version=settings.a2a_version,
-            protocol_version=settings.a2a_protocol_version,
+            protocol_version=A2A_PROTOCOL_VERSION,
         )
 
     return app

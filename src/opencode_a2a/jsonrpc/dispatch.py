@@ -71,7 +71,6 @@ class ExtensionHandlerContext:
     method_reply_permission: str
     method_reply_question: str
     method_reject_question: str
-    protocol_version: str
     supported_methods: tuple[str, ...]
     directory_resolver: Callable[[str | None], str | None]
     session_claim: SessionClaimFunc

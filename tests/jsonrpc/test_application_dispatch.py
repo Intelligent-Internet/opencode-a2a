@@ -182,7 +182,6 @@ async def test_generate_protocol_error_response_supports_a2a_error_payloads(
     response = dispatcher._generate_protocol_error_response(
         12,
         UnsupportedOperationError(),
-        protocol_version="1.0",
     )
 
     assert response.status_code == 200
@@ -205,7 +204,6 @@ async def test_handle_core_request_supports_extended_card_notification_and_missi
         MagicMock(),
         {"params": {}},
         notification,
-        protocol_version="1.0",
     )
     assert response.status_code == 204
 
@@ -217,7 +215,6 @@ async def test_handle_core_request_supports_extended_card_notification_and_missi
         MagicMock(),
         {"params": {}},
         request,
-        protocol_version="1.0",
     )
 
     assert error_response.status_code == 200
@@ -237,7 +234,6 @@ async def test_handle_core_request_returns_204_for_unknown_notification(
         MagicMock(),
         {"params": {}},
         base_request,
-        protocol_version="1.0",
     )
 
     assert response.status_code == 204
@@ -257,7 +253,6 @@ async def test_handle_core_request_invalid_params_and_handler_errors(
         MagicMock(),
         {"params": "bad"},
         base_request,
-        protocol_version="1.0",
     )
     assert invalid_response.status_code == 200
     assert b'"code":-32602' in invalid_response.body
@@ -271,7 +266,6 @@ async def test_handle_core_request_invalid_params_and_handler_errors(
         MagicMock(),
         {"params": {"id": "task-1"}},
         base_request,
-        protocol_version="1.0",
     )
     assert error_response.status_code == 200
     assert error_response.body == (
@@ -320,7 +314,6 @@ async def test_handle_core_request_streaming_and_non_streaming_notifications(
             }
         },
         streaming_request,
-        protocol_version="1.0",
     )
 
     assert streaming_response.body == b'{"stream":"ok"}'
@@ -338,7 +331,6 @@ async def test_handle_core_request_streaming_and_non_streaming_notifications(
         MagicMock(),
         {"params": {"id": "task-1"}},
         notification,
-        protocol_version="1.0",
     )
 
     assert response.status_code == 204
@@ -363,7 +355,7 @@ async def test_handle_requests_normalizes_invalid_request_id_and_extension_param
 
     class _Request:
         def __init__(self) -> None:
-            self.state = SimpleNamespace(a2a_protocol_version="1.0")
+            self.state = SimpleNamespace()
 
         async def json(self) -> dict[str, object]:
             return {

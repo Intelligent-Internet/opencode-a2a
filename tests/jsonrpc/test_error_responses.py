@@ -23,7 +23,6 @@ def test_jsonrpc_error_mapping_helpers_preserve_business_contract_fields() -> No
     unsupported = method_not_supported_error(
         method="unsupported.method",
         supported_methods=["SendMessage", "GetTask"],
-        protocol_version="1.0",
     )
     assert unsupported.code == -32601
     assert unsupported.data["type"] == "METHOD_NOT_SUPPORTED"
@@ -141,7 +140,6 @@ def test_adapt_standard_jsonrpc_error_for_v1_uses_standard_message_and_camel_cas
         method_not_supported_error(
             method="unsupported.method",
             supported_methods=["SendMessage", "GetTask"],
-            protocol_version="1.0",
         ),
     )
 
