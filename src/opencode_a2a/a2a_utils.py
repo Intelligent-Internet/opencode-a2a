@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from typing import Any, TypeVar, cast
 
@@ -18,24 +17,16 @@ def clone_proto(message: ProtoT) -> ProtoT:
     return cloned
 
 
-def proto_to_dict(
-    message: ProtoMessage,
-    *,
-    preserving_proto_field_name: bool = False,
-) -> dict[str, Any]:
+def proto_equals(left: ProtoMessage, right: ProtoMessage) -> bool:
     return cast(
         dict[str, Any],
+        MessageToDict(left, preserving_proto_field_name=True),
+    ) == cast(
+        dict[str, Any],
         MessageToDict(
-            message,
-            preserving_proto_field_name=preserving_proto_field_name,
+            right,
+            preserving_proto_field_name=True,
         ),
-    )
-
-
-def proto_equals(left: ProtoMessage, right: ProtoMessage) -> bool:
-    return proto_to_dict(left, preserving_proto_field_name=True) == proto_to_dict(
-        right,
-        preserving_proto_field_name=True,
     )
 
 
@@ -78,35 +69,6 @@ def make_data_part(
     if metadata:
         part.metadata.update(dict(metadata))
     return part
-
-
-def part_kind(part: Part) -> str | None:
-    if cast(bool, part.HasField("text")):
-        return "text"
-    if cast(bool, part.HasField("data")):
-        return "data"
-    if cast(bool, part.HasField("raw")) or cast(bool, part.HasField("url")):
-        return "file"
-    return None
-
-
-def part_text(part: Part) -> str | None:
-    if part.HasField("text"):
-        return part.text
-    return None
-
-
-def part_text_fallback(part: Part) -> str | None:
-    if part.HasField("text"):
-        return part.text
-    if part.HasField("data"):
-        return json.dumps(
-            MessageToDict(part.data),
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    return None
 
 
 def replace_message_parts(message: Message, parts: Sequence[Part]) -> Message:

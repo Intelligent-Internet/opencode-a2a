@@ -6,7 +6,7 @@ This document defines the compatibility promises `opencode-a2a` currently uphold
 
 - Python versions: 3.11, 3.12, 3.13
 - A2A SDK line: `1.x.y`
-- Supported protocol line: `1.0`
+- Supported A2A protocol line: `1.0`
 
 The repository currently pins one concrete SDK release in `pyproject.toml` within that v1 line. Upgrade the SDK deliberately rather than relying on floating dependency resolution.
 

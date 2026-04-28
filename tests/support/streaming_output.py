@@ -6,7 +6,6 @@ from a2a.types import (
 )
 from google.protobuf.json_format import MessageToDict
 
-from opencode_a2a.a2a_utils import proto_to_dict
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from tests.support.helpers import (
     DummyEventQueue,
@@ -268,11 +267,11 @@ def _part_data(event: TaskArtifactUpdateEvent) -> dict:
 
 
 def _artifact_stream_meta(event: TaskArtifactUpdateEvent) -> dict:
-    return proto_to_dict(event.artifact.metadata).get("shared", {}).get("stream", {})
+    return MessageToDict(event.artifact.metadata).get("shared", {}).get("stream", {})
 
 
 def _status_shared_meta(event: TaskStatusUpdateEvent) -> dict:
-    return proto_to_dict(event.metadata).get("shared", {})
+    return MessageToDict(event.metadata).get("shared", {})
 
 
 def _interrupt_meta(event: TaskStatusUpdateEvent) -> dict:

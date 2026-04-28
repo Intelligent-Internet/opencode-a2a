@@ -12,12 +12,13 @@ from a2a.server.tasks.database_task_store import DatabaseTaskStore
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.server.tasks.task_store import TaskStore
 from a2a.types import ListTasksRequest, ListTasksResponse, Task, TaskState
+from google.protobuf.json_format import MessageToDict
 from sqlalchemy import event, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import make_url
 
-from ..a2a_utils import proto_equals, proto_to_dict
+from ..a2a_utils import proto_equals
 from ..config import Settings
 from ..task_states import TERMINAL_TASK_STATES
 
@@ -462,10 +463,10 @@ def _task_row_values(task: Task, *, owner: str | None) -> dict[str, Any]:
         "last_updated": (
             task.status.timestamp.ToDatetime() if task.status.HasField("timestamp") else None
         ),
-        "status": proto_to_dict(task.status),
-        "artifacts": [proto_to_dict(artifact) for artifact in task.artifacts],
-        "history": [proto_to_dict(message) for message in task.history],
-        "metadata": proto_to_dict(task.metadata),
+        "status": MessageToDict(task.status),
+        "artifacts": [MessageToDict(artifact) for artifact in task.artifacts],
+        "history": [MessageToDict(message) for message in task.history],
+        "metadata": MessageToDict(task.metadata),
         "protocol_version": "1.0",
     }
 

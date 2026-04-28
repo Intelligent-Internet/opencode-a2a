@@ -6,9 +6,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from a2a.types import Message, Part, StreamResponse
+from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message as ProtoMessage
-
-from ..a2a_utils import part_text, proto_to_dict
 
 
 def extract_text(payload: Any) -> str | None:
@@ -27,7 +26,7 @@ def extract_text(payload: Any) -> str | None:
         collected: list[str] = []
         for part in parts:
             if isinstance(part, Part):
-                text_value = part_text(part)
+                text_value = part.text if part.HasField("text") else None
                 if text_value:
                     collected.append(text_value)
                 continue
@@ -166,7 +165,7 @@ def extract_text(payload: Any) -> str | None:
 
     mapping_payload: Mapping[str, Any] | None = None
     if isinstance(payload, ProtoMessage):
-        payload_dict = proto_to_dict(payload)
+        payload_dict = MessageToDict(payload)
         if isinstance(payload_dict, Mapping):
             mapping_payload = payload_dict
     elif hasattr(payload, "model_dump") and callable(payload.model_dump):

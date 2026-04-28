@@ -3,9 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message as ProtoMessage
-
-from .a2a_utils import proto_to_dict
 
 
 def extract_namespaced_value(
@@ -49,7 +48,7 @@ def extract_first_namespaced_string(
 
 def _normalize_mapping(value: Any) -> Mapping[str, Any] | None:
     if isinstance(value, ProtoMessage):
-        normalized = proto_to_dict(value)
+        normalized = MessageToDict(value)
         return normalized if isinstance(normalized, Mapping) else None
     if isinstance(value, Mapping):
         try:

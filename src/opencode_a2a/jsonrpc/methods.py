@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any, cast
 
 from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus
+from google.protobuf.json_format import MessageToDict
 
-from ..a2a_utils import proto_to_dict
 from ..contracts.extensions import (
     COMMAND_REQUEST_ALLOWED_FIELDS,
     PROMPT_ASYNC_REQUEST_ALLOWED_FIELDS,
@@ -344,7 +344,7 @@ def _as_a2a_session_task(session: Any) -> dict[str, Any] | None:
         status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
         metadata={"shared": {"session": {"id": session_id, "title": title}}},
     )
-    return proto_to_dict(task)
+    return cast(dict[str, Any], MessageToDict(task))
 
 
 def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
@@ -381,7 +381,7 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
         context_id=context_id,
         metadata={"shared": {"session": {"id": session_id}}},
     )
-    return proto_to_dict(msg)
+    return cast(dict[str, Any], MessageToDict(msg))
 
 
 def _extract_raw_items(raw_result: Any, *, kind: str) -> list[Any]:

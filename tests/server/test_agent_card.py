@@ -1,6 +1,7 @@
 import json
 
-from opencode_a2a.a2a_utils import proto_to_dict
+from google.protobuf.json_format import MessageToDict
+
 from opencode_a2a.contracts.extensions import (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
@@ -26,7 +27,7 @@ from tests.support.helpers import make_settings
 
 
 def _security_requirements(card) -> list[dict[str, dict[str, list[str]]]]:
-    return [proto_to_dict(requirement)["schemes"] for requirement in card.security_requirements]
+    return [MessageToDict(requirement)["schemes"] for requirement in card.security_requirements]
 
 
 def test_agent_card_description_reflects_actual_transport_capabilities() -> None:
@@ -179,18 +180,18 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
         COMPATIBILITY_PROFILE_EXTENSION_URI,
         WIRE_CONTRACT_EXTENSION_URI,
     ):
-        assert proto_to_dict(ext_by_uri[uri]).get("params") in (None, {})
+        assert MessageToDict(ext_by_uri[uri]).get("params") in (None, {})
 
     public_size = len(
         json.dumps(
-            proto_to_dict(public_card),
+            MessageToDict(public_card),
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")
     )
     extended_size = len(
         json.dumps(
-            proto_to_dict(extended_card),
+            MessageToDict(extended_card),
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")

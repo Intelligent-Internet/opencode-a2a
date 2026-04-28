@@ -23,7 +23,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from opencode_a2a.a2a_utils import make_data_part, part_text
+from opencode_a2a.a2a_utils import make_data_part
 from opencode_a2a.contracts.extensions import (
     MODEL_SELECTION_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
@@ -35,7 +35,6 @@ from opencode_a2a.output_modes import (
     build_output_negotiation_metadata,
     extract_accepted_output_modes_from_metadata,
     normalize_accepted_output_modes,
-    part_text_fallback,
 )
 from opencode_a2a.server.application import OpencodeRequestHandler
 
@@ -132,12 +131,6 @@ def test_normalize_accepted_output_modes_treats_wildcards_as_unrestricted() -> N
     assert normalize_accepted_output_modes(["*"]) is None
 
 
-def test_part_text_fallback_serializes_data_parts_as_stable_json() -> None:
-    assert part_text_fallback(make_data_part({"tool": "bash", "status": "running"})) == (
-        '{"status":"running","tool":"bash"}'
-    )
-
-
 def test_apply_accepted_output_modes_downgrades_task_data_parts_to_text() -> None:
     task = Task(
         id="task-send",
@@ -164,9 +157,11 @@ def test_apply_accepted_output_modes_downgrades_task_data_parts_to_text() -> Non
 
     assert isinstance(downgraded, Task)
     assert downgraded.status.message is not None
-    assert part_text(downgraded.status.message.parts[0]) == '{"status":"running","tool":"bash"}'
+    assert downgraded.status.message.parts[0].HasField("text")
+    assert downgraded.status.message.parts[0].text == '{"status":"running","tool":"bash"}'
     assert downgraded.artifacts is not None
-    assert part_text(downgraded.artifacts[0].parts[0]) == '{"status":"running","tool":"bash"}'
+    assert downgraded.artifacts[0].parts[0].HasField("text")
+    assert downgraded.artifacts[0].parts[0].text == '{"status":"running","tool":"bash"}'
 
 
 @pytest.mark.asyncio
@@ -240,7 +235,8 @@ async def test_on_get_task_applies_persisted_output_negotiation() -> None:
         "task-get:text",
         "task-get:json",
     ]
-    assert part_text(result.artifacts[1].parts[0]) == '{"status":"completed","tool":"bash"}'
+    assert result.artifacts[1].parts[0].HasField("text")
+    assert result.artifacts[1].parts[0].text == '{"status":"completed","tool":"bash"}'
 
 
 @pytest.mark.asyncio
@@ -265,7 +261,8 @@ async def test_resubscribe_terminal_task_applies_persisted_output_negotiation() 
         "task-resub:text",
         "task-resub:json",
     ]
-    assert part_text(events[0].artifacts[1].parts[0]) == '{"status":"completed","tool":"bash"}'
+    assert events[0].artifacts[1].parts[0].HasField("text")
+    assert events[0].artifacts[1].parts[0].text == '{"status":"completed","tool":"bash"}'
 
 
 @pytest.mark.asyncio

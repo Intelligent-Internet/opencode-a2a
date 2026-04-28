@@ -9,7 +9,6 @@ from collections.abc import Sequence
 from a2a.types import TaskState
 
 from . import __version__
-from .a2a_utils import part_text
 from .client import A2AClient, load_settings
 from .server.application import main as serve_main
 
@@ -22,14 +21,14 @@ async def run_call(agent_url: str, text: str) -> int:
         async for event in client.send_message(text):
             if event.HasField("message"):
                 for part in event.message.parts:
-                    text_val = part_text(part)
+                    text_val = part.text if part.HasField("text") else None
                     if isinstance(text_val, str):
                         print(text_val, end="", flush=True)
             elif event.HasField("artifact_update"):
                 artifact = event.artifact_update.artifact
                 if artifact and artifact.parts:
                     for part in artifact.parts:
-                        text_val = part_text(part)
+                        text_val = part.text if part.HasField("text") else None
                         if isinstance(text_val, str):
                             print(text_val, end="", flush=True)
             elif (

@@ -14,8 +14,9 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
+from google.protobuf.json_format import MessageToDict
 
-from ..a2a_utils import make_data_part, part_kind, part_text, part_text_fallback
+from ..a2a_utils import make_data_part
 from ..invocation import call_with_supported_kwargs
 from .event_helpers import _enqueue_artifact_update
 from .stream_events import (
@@ -87,10 +88,13 @@ class StreamRuntime:
 
         async def _emit_chunks(chunks: list[_NormalizedStreamChunk]) -> None:
             for chunk in chunks:
-                if not allow_structured_output and part_kind(chunk.part) == "data":
-                    fallback_text = part_text_fallback(chunk.part)
-                    if fallback_text is None:
-                        continue
+                if not allow_structured_output and chunk.part.HasField("data"):
+                    fallback_text = json.dumps(
+                        MessageToDict(chunk.part.data),
+                        ensure_ascii=True,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
                     chunk = _NormalizedStreamChunk(
                         part=Part(text=fallback_text),
                         content_key=fallback_text,
@@ -103,7 +107,7 @@ class StreamRuntime:
                         role=chunk.role,
                     )
                 resolved_message_id = stream_state.resolve_message_id(chunk.message_id)
-                chunk_text = part_text(chunk.part) or ""
+                chunk_text = chunk.part.text if chunk.part.HasField("text") else ""
                 if stream_state.should_drop_initial_user_echo(
                     chunk_text,
                     block_type=chunk.block_type,

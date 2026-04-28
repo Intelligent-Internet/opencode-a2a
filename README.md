@@ -94,7 +94,7 @@ curl http://127.0.0.1:8000/.well-known/agent-card.json
 
 ## A2A Protocol Support
 
-- Supported protocol line: `1.0`
+- Supported A2A protocol line: `1.0`
 - The runtime is now v1-only across HTTP+JSON, JSON-RPC, Agent Card discovery, and protocol-aware error contracts.
 - Legacy `0.3` method aliases and payload shapes are rejected instead of being normalized at runtime.
 - The detailed runtime contract and machine-readable support boundary are documented in [`docs/guide.md`](docs/guide.md) and [`docs/compatibility.md`](docs/compatibility.md).

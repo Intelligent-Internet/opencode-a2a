@@ -5,14 +5,14 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
 from a2a.server.tasks.task_store import TaskStore
 from a2a.types import Task, TaskState
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from google.protobuf.json_format import MessageToDict
 
-from ..a2a_utils import proto_to_dict
 from ..extension_negotiation import (
     filter_negotiated_extensions_from_payload,
     requested_extensions_from_headers,
@@ -162,7 +162,7 @@ def _serialize_task(
         task = negotiated
     task = filter_negotiated_extensions_from_payload(task, requested_extensions)
 
-    payload = proto_to_dict(task)
+    payload = cast(dict[str, Any], MessageToDict(task))
 
     history = payload.get("history")
     if history_length <= 0:

@@ -9,9 +9,10 @@ from a2a.extensions.common import HTTP_EXTENSION_HEADER, get_requested_extension
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.types import Artifact, Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
+from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message as ProtoMessage
 
-from .a2a_utils import clone_proto, proto_to_dict
+from .a2a_utils import clone_proto
 from .contracts.extensions import (
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
@@ -246,7 +247,7 @@ def _metadata_to_dict(metadata: Mapping[str, Any] | ProtoMessage | None) -> dict
     if metadata is None:
         return None
     if isinstance(metadata, ProtoMessage):
-        normalized = proto_to_dict(metadata, preserving_proto_field_name=True)
+        normalized = MessageToDict(metadata, preserving_proto_field_name=True)
         return normalized if normalized else None
     if isinstance(metadata, Mapping):
         normalized = dict(metadata)

@@ -8,13 +8,13 @@ from typing import cast
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from google.protobuf.json_format import MessageToDict
 from starlette.responses import StreamingResponse
 
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
     EXTENDED_AGENT_CARD_PATH,
 )
-from ..a2a_utils import proto_to_dict
 from ..auth import (
     authenticate_static_credential,
     build_static_auth_credentials,
@@ -106,7 +106,7 @@ def add_auth_middleware(app: FastAPI, settings) -> None:  # noqa: ANN001
 
 
 def build_agent_card_etag(card) -> str:  # noqa: ANN001
-    payload = proto_to_dict(card)
+    payload = MessageToDict(card)
     content = json.dumps(
         payload,
         ensure_ascii=False,
