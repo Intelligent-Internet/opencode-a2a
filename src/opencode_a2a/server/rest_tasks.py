@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
+from a2a.extensions.common import HTTP_EXTENSION_HEADER, get_requested_extensions
 from a2a.server.tasks.task_store import TaskStore
 from a2a.types import Task, TaskState
 from fastapi import Request
@@ -15,7 +16,6 @@ from google.protobuf.json_format import MessageToDict
 
 from ..extension_negotiation import (
     filter_negotiated_extensions_from_payload,
-    requested_extensions_from_headers,
 )
 from ..jsonrpc.error_responses import build_http_error_body
 from ..output_modes import (
@@ -107,7 +107,9 @@ def build_list_tasks_route(
                         task,
                         history_length=query.history_length,
                         include_artifacts=query.include_artifacts,
-                        requested_extensions=requested_extensions_from_headers(request.headers),
+                        requested_extensions=frozenset(
+                            get_requested_extensions(request.headers.getlist(HTTP_EXTENSION_HEADER))
+                        ),
                     )
                     for task in page_tasks
                 ],

@@ -6,8 +6,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from a2a.client.client import ClientCallContext
+from a2a.client.service_parameters import ServiceParametersFactory, with_a2a_extensions
 
-from ..extension_negotiation import merge_extension_service_parameters
 from ..protocol_versions import A2A_PROTOCOL_VERSION
 from ..trace_context import current_trace_headers
 from .auth import encode_basic_auth
@@ -78,7 +78,13 @@ def build_call_context(
     merged_headers.update(current_trace_headers())
     if extra_headers:
         merged_headers.update(extra_headers)
-    service_parameters = merge_extension_service_parameters(None, extensions)
+    normalized_extensions = [value for value in (extensions or ()) if value]
+    service_parameters = None
+    if normalized_extensions:
+        service_parameters = ServiceParametersFactory.create_from(
+            None,
+            [with_a2a_extensions(normalized_extensions)],
+        )
     return ClientCallContext(
         state={
             "headers": dict(merged_headers),

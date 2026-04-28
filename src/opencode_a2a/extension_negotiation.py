@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from a2a.client.service_parameters import ServiceParametersFactory, with_a2a_extensions
-from a2a.extensions.common import HTTP_EXTENSION_HEADER, get_requested_extensions
 from a2a.server.context import ServerCallContext
 from a2a.types import Artifact, Message, Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message as ProtoMessage
-from starlette.datastructures import Headers
 
 from .a2a_utils import clone_proto
 from .contracts.extensions import (
@@ -47,23 +44,6 @@ class ExtensionRequirement:
     field: str
 
 
-def merge_extension_service_parameters(
-    service_parameters: Mapping[str, str] | None,
-    extensions: Sequence[str] | None,
-) -> dict[str, str] | None:
-    normalized_extensions = [value for value in (extensions or ()) if value]
-    base = dict(service_parameters or {})
-    if not base and not normalized_extensions:
-        return None
-    updates = [with_a2a_extensions(normalized_extensions)] if normalized_extensions else []
-    merged = ServiceParametersFactory.create_from(base or None, updates)
-    return merged or None
-
-
-def requested_extensions_from_headers(headers: Headers) -> frozenset[str]:
-    return frozenset(get_requested_extensions(headers.getlist(HTTP_EXTENSION_HEADER)))
-
-
 def requested_extensions_from_call_context(
     call_context: ServerCallContext | None,
 ) -> frozenset[str]:
@@ -76,11 +56,23 @@ def required_extensions_for_send_message_params(
     params: Any,
 ) -> tuple[ExtensionRequirement, ...]:
     sources: list[dict[str, Any]] = []
-    params_metadata = _normalize_metadata(getattr(params, "metadata", None))
+    params_metadata = getattr(params, "metadata", None)
+    if isinstance(params_metadata, ProtoMessage):
+        params_metadata = MessageToDict(params_metadata, preserving_proto_field_name=True)
+    elif isinstance(params_metadata, Mapping):
+        params_metadata = dict(params_metadata)
+    else:
+        params_metadata = None
     if params_metadata:
         sources.append(params_metadata)
     message = getattr(params, "message", None)
-    message_metadata = _normalize_metadata(getattr(message, "metadata", None))
+    message_metadata = getattr(message, "metadata", None)
+    if isinstance(message_metadata, ProtoMessage):
+        message_metadata = MessageToDict(message_metadata, preserving_proto_field_name=True)
+    elif isinstance(message_metadata, Mapping):
+        message_metadata = dict(message_metadata)
+    else:
+        message_metadata = None
     if message_metadata:
         sources.append(message_metadata)
 
@@ -137,67 +129,47 @@ def filter_negotiated_extensions_from_payload(
 ) -> Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent:
     requested = frozenset(value for value in requested_extensions if value)
     if isinstance(payload, Task):
-        return _filter_task(payload, requested)
+        updated = clone_proto(payload)
+        _set_filtered_metadata(updated, requested)
+        if updated.status.HasField("message"):
+            _set_filtered_metadata(updated.status.message, requested)
+        for history_item in updated.history:
+            _set_filtered_metadata(history_item, requested)
+        for artifact in updated.artifacts:
+            _set_filtered_metadata(artifact, requested)
+        return updated
     if isinstance(payload, TaskStatusUpdateEvent):
-        return _filter_status_update(payload, requested)
+        updated = clone_proto(payload)
+        _set_filtered_metadata(updated, requested)
+        if updated.status.HasField("message"):
+            _set_filtered_metadata(updated.status.message, requested)
+        return updated
     if isinstance(payload, TaskArtifactUpdateEvent):
-        return _filter_artifact_update(payload, requested)
+        updated = clone_proto(payload)
+        _set_filtered_metadata(updated.artifact, requested)
+        return updated
     return payload
-
-
-def _filter_task(task: Task, requested_extensions: frozenset[str]) -> Task:
-    updated = clone_proto(task)
-    _set_filtered_metadata(updated, requested_extensions)
-    if updated.status.HasField("message"):
-        _set_filtered_metadata(updated.status.message, requested_extensions)
-    for history_item in updated.history:
-        _set_filtered_metadata(history_item, requested_extensions)
-    for artifact in updated.artifacts:
-        _set_filtered_metadata(artifact, requested_extensions)
-    return updated
-
-
-def _filter_status_update(
-    event: TaskStatusUpdateEvent,
-    requested_extensions: frozenset[str],
-) -> TaskStatusUpdateEvent:
-    updated = clone_proto(event)
-    _set_filtered_metadata(updated, requested_extensions)
-    if updated.status.HasField("message"):
-        _set_filtered_metadata(updated.status.message, requested_extensions)
-    return updated
-
-
-def _filter_artifact_update(
-    event: TaskArtifactUpdateEvent,
-    requested_extensions: frozenset[str],
-) -> TaskArtifactUpdateEvent:
-    updated = clone_proto(event)
-    _set_filtered_metadata(updated.artifact, requested_extensions)
-    return updated
 
 
 def _set_filtered_metadata(
     proto: Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent | Artifact | Message,
     requested_extensions: frozenset[str],
 ) -> None:
-    metadata_dict = _normalize_metadata(getattr(proto, "metadata", None))
+    metadata = getattr(proto, "metadata", None)
+    metadata_dict: dict[str, Any] | None
+    if isinstance(metadata, ProtoMessage):
+        metadata_dict = MessageToDict(metadata, preserving_proto_field_name=True)
+    elif isinstance(metadata, Mapping):
+        metadata_dict = dict(metadata)
+    else:
+        metadata_dict = None
+    if not metadata_dict:
+        proto.ClearField("metadata")
+        return
     filtered_metadata = _filter_metadata_dict(metadata_dict, requested_extensions)
     proto.ClearField("metadata")
     if filtered_metadata:
         proto.metadata.update(filtered_metadata)
-
-
-def _normalize_metadata(metadata: Mapping[str, Any] | ProtoMessage | None) -> dict[str, Any] | None:
-    if metadata is None:
-        return None
-    if isinstance(metadata, ProtoMessage):
-        normalized = MessageToDict(metadata, preserving_proto_field_name=True)
-        return normalized if normalized else None
-    if isinstance(metadata, Mapping):
-        normalized = dict(metadata)
-        return normalized if normalized else None
-    return None
 
 
 def _filter_metadata_dict(
