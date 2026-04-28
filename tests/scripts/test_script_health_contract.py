@@ -89,6 +89,7 @@ def test_smoke_test_imports_installed_package_before_health_check() -> None:
 
 
 def test_smoke_test_waits_quietly_for_health_and_surfaces_early_exit() -> None:
+    assert '"${tool_bin_dir}/opencode-a2a" serve >"${server_log}" 2>&1 &' in SMOKE_TEST_TEXT
     assert "wait_for_health()" in SMOKE_TEST_TEXT
     assert 'if ! kill -0 "${server_pid}" >/dev/null 2>&1; then' in SMOKE_TEST_TEXT
     assert "curl --silent --fail --output /dev/null \\" in SMOKE_TEST_TEXT

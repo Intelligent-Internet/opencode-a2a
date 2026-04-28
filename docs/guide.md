@@ -99,6 +99,15 @@ Current client facade API:
 
 Server-side outbound peer calls read outbound credentials from environment variables. Configure `A2A_CLIENT_BEARER_TOKEN` or `A2A_CLIENT_BASIC_AUTH` when the remote agent protects its runtime surface. CLI outbound calls follow the same environment-only model.
 
+CLI outbound example:
+
+```bash
+A2A_CLIENT_BEARER_TOKEN=peer-token \
+opencode-a2a call http://other-agent:8000/.well-known/agent-card.json "How are you?"
+```
+
+Service base URLs also work, but this guide prefers Agent Card URLs in CLI examples because they make the A2A discovery target explicit.
+
 `A2AClient.send()` returns the latest response event and keeps the default stream-first behavior. If a peer returns a non-terminal task snapshot and expects follow-up `GetTask` polling, enable the optional facade fallback with:
 
 - `A2A_CLIENT_POLLING_FALLBACK_ENABLED=true`
@@ -144,7 +153,7 @@ A2A_HOST=127.0.0.1 \
 A2A_PORT=8000 \
 A2A_PUBLIC_URL=http://127.0.0.1:8000 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
-opencode-a2a
+opencode-a2a serve
 ```
 
 By default, the service uses a SQLite-backed durable state store:
@@ -154,7 +163,7 @@ DEMO_BEARER_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \
 A2A_STATIC_AUTH_CREDENTIALS='[{"scheme":"bearer","token":"'"${DEMO_BEARER_TOKEN}"'","principal":"automation"}]' \
 A2A_TASK_STORE_DATABASE_URL=sqlite+aiosqlite:///./opencode-a2a.db \
-opencode-a2a
+opencode-a2a serve
 ```
 
 With the default `database` backend, the unified lightweight persistence layer persists:
@@ -166,7 +175,7 @@ With the default `database` backend, the unified lightweight persistence layer p
 
 This project is SQLite-first for local single-instance deployments. The runtime configures local durability-oriented SQLite connection settings (`WAL`, `busy_timeout`, `synchronous=NORMAL`) and creates missing parent directories for file-backed database paths.
 
-The runtime automatically applies lightweight schema migrations for its custom state tables and records the applied version in `a2a_schema_version`. Schema-version writes are idempotent across concurrent first-start races, pending preferred-session claims now persist absolute `expires_at` timestamps while remaining backward-compatible with legacy `updated_at` rows, and the built-in path currently targets the local SQLite deployment profile without requiring Alembic.
+The runtime automatically applies lightweight schema migrations for its custom state tables and records the applied version in `a2a_schema_version`. Schema-version writes are idempotent across concurrent first-start races, pending preferred-session claims now persist absolute `expires_at` timestamps, legacy rows without `expires_at` are pruned during migration instead of being reconstructed from historical TTL assumptions, and the built-in path currently targets the local SQLite deployment profile without requiring Alembic.
 
 Database-backed task persistence also keeps the existing first-terminal-state-wins contract while tightening the SQLite path with an atomic terminal-write guard instead of relying only on process-local read-before-write checks. Any wider SQLAlchemy dialect compatibility should be treated as incidental implementation latitude rather than a documented deployment target.
 

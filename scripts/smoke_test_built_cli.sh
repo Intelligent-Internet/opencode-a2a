@@ -104,7 +104,7 @@ bearer_token="smoke-test-token"
 A2A_STATIC_AUTH_CREDENTIALS="[{\"scheme\":\"bearer\",\"token\":\"${bearer_token}\",\"principal\":\"automation\"}]" \
 A2A_PORT="${port}" \
 A2A_HOST="127.0.0.1" \
-"${tool_bin_dir}/opencode-a2a" >"${server_log}" 2>&1 &
+"${tool_bin_dir}/opencode-a2a" serve >"${server_log}" 2>&1 &
 server_pid="$!"
 
 health_url="http://127.0.0.1:${port}/health"

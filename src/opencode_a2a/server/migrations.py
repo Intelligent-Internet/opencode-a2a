@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
 STATE_STORE_SCHEMA_NAME = "state_store"
-CURRENT_STATE_STORE_SCHEMA_VERSION = 4
+CURRENT_STATE_STORE_SCHEMA_VERSION = 5
 
 _SCHEMA_VERSION_METADATA = MetaData()
 
@@ -121,6 +121,18 @@ def _migration_4_add_interrupt_credential_id(
         connection,
         table=interrupt_requests_table,
         column_name="credential_id",
+    )
+
+
+def _migration_5_drop_legacy_pending_claim_rows(
+    connection: Connection,
+    *,
+    pending_session_claims_table: Table,
+) -> None:
+    connection.execute(
+        pending_session_claims_table.delete().where(
+            pending_session_claims_table.c.expires_at.is_(None)
+        )
     )
 
 
@@ -229,6 +241,10 @@ def migrate_state_store_schema(
         4: lambda conn: _migration_4_add_interrupt_credential_id(
             conn,
             interrupt_requests_table=interrupt_requests_table,
+        ),
+        5: lambda conn: _migration_5_drop_legacy_pending_claim_rows(
+            conn,
+            pending_session_claims_table=pending_session_claims_table,
         ),
     }
     return _apply_schema_migrations(
