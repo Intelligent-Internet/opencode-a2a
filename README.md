@@ -1,17 +1,25 @@
 # opencode-a2a
 
 ```text
-___                  ____          _        _      _
-/ _ \ _ __   ___ _ __/ ___|___   __| | ___  / \    | |_
-| | | | '_ \ / _ \ '_ \ |   / _ \ / _` |/ _ \/ _ \   | __|
-| |_| | |_) |  __/ | | | |__| (_) | (_| |  __/ ___ \  | |_
-\___/| .__/ \___|_| |_|\____\___/ \__,_|\___/_/   \_\  \__|
-     |_|                                 A2A Runtime
+  ___                   ____          _
+ / _ \ _ __   ___ _ __ / ___|___   __| | ___
+| | | | '_ \ / _ \ '_ \\___ / _ \ / _` |/ _ \
+| |_| | |_) |  __/ | | |__) | (_) | (_| |  __/
+ \___/| .__/ \___|_| |_|____/ \___/ \__,_|\___|
+      |_|
+    _    ____    _
+   / \  |___ \  / \
+  / _ \   __) |/ _ \
+ / ___ \ / __// ___ \
+/_/   \_\_____/_/   \_\
+                    A2A Runtime
 ```
 
 > Expose OpenCode through A2A.
 
 `opencode-a2a` adds an A2A runtime layer to `opencode serve`, with auth, streaming, session continuity, interrupt handling, and a clear deployment boundary.
+
+> Protocol boundary: A2A `1.0` only. Legacy `0.3` clients, method aliases, and payload shapes are not supported.
 
 ## What This Is
 

@@ -12,15 +12,19 @@ from . import __version__
 from .client import A2AClient, load_settings
 from .server.application import main as serve_main
 
-CLI_BRAND_BANNER = "\n".join(
-    [
-        "___                  ____          _        _      _",
-        "/ _ \\ _ __   ___ _ __/ ___|___   __| | ___  / \\    | |_",
-        "| | | | '_ \\ / _ \\ '_ \\ |   / _ \\ / _` |/ _ \\/ _ \\   | __|",
-        "| |_| | |_) |  __/ | | | |__| (_) | (_| |  __/ ___ \\  | |_",
-        "\\___/| .__/ \\___|_| |_|\\____\\___/ \\__,_|\\___/_/   \\_\\  \\__|",
-        "     |_|                                 A2A Runtime",
-    ]
+CLI_BRAND_BANNER = (
+    "  ___                   ____          _\n"
+    " / _ \\ _ __   ___ _ __ / ___|___   __| | ___\n"
+    "| | | | '_ \\ / _ \\ '_ \\\\___ / _ \\ / _` |/ _ \\\n"
+    "| |_| | |_) |  __/ | | |__) | (_) | (_| |  __/\n"
+    " \\___/| .__/ \\___|_| |_|____/ \\___/ \\__,_|\\___|\n"
+    "      |_|\n"
+    "    _    ____    _\n"
+    "   / \\  |___ \\  / \\\n"
+    "  / _ \\   __) |/ _ \\\n"
+    " / ___ \\ / __// ___ \\\n"
+    "/_/   \\_\\_____/_/   \\_\\\n"
+    "                    A2A Runtime"
 )
 PROJECT_REPOSITORY_URL = "https://github.com/Intelligent-Internet/opencode-a2a"
 
@@ -83,7 +87,11 @@ def build_parser() -> argparse.ArgumentParser:
             CLI_BRAND_BANNER
             + "\n\n"
             + f"repo: {PROJECT_REPOSITORY_URL}\n"
-            + "uv tool install --upgrade opencode-a2a\n\n"
+            + "uv tool install --upgrade opencode-a2a\n"
+            + (
+                "protocol: A2A 1.0 only; "
+                "not compatible with legacy 0.3 clients, methods, or payloads\n\n"
+            )
             + "OpenCode A2A runtime for explicit service startup and peer calls.\n"
             + "  opencode-a2a <command> [arguments] [options]"
         ),
