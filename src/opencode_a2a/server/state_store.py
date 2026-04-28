@@ -125,7 +125,7 @@ def _initialize_state_store_schema(connection) -> None:  # noqa: ANN001
 def _pending_claim_expires_at(
     row: Mapping[str, Any],
     *,
-    fallback_ttl_seconds: float,
+    ttl_seconds: float,
 ) -> float | None:
     expires_at = row.get("expires_at")
     if expires_at is not None:
@@ -133,7 +133,7 @@ def _pending_claim_expires_at(
     updated_at = row.get("updated_at")
     if updated_at is None:
         return None
-    return float(updated_at) + max(0.0, fallback_ttl_seconds)
+    return float(updated_at) + max(0.0, ttl_seconds)
 
 
 class SessionStateRepository(ABC):
@@ -394,7 +394,7 @@ class DatabaseSessionStateRepository(SessionStateRepository):
                 return None
             expires_at = _pending_claim_expires_at(
                 row,
-                fallback_ttl_seconds=self._pending_claim_ttl_seconds,
+                ttl_seconds=self._pending_claim_ttl_seconds,
             )
             if expires_at is None or expires_at <= now:
                 await session.execute(
