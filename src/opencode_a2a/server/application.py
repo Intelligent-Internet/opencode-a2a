@@ -57,22 +57,6 @@ from ..a2a_protocol import (
 )
 from ..config import Settings
 from ..contracts.extensions import (
-    COMPATIBILITY_PROFILE_EXTENSION_URI,
-    INTERRUPT_CALLBACK_EXTENSION_URI,
-    INTERRUPT_CALLBACK_METHODS,
-    INTERRUPT_RECOVERY_EXTENSION_URI,
-    INTERRUPT_RECOVERY_METHODS,
-    MODEL_SELECTION_EXTENSION_URI,
-    PROVIDER_DISCOVERY_EXTENSION_URI,
-    PROVIDER_DISCOVERY_METHODS,
-    SESSION_BINDING_EXTENSION_URI,
-    SESSION_CONTROL_METHODS,
-    SESSION_MANAGEMENT_EXTENSION_URI,
-    SESSION_METHODS,
-    STREAMING_EXTENSION_URI,
-    WIRE_CONTRACT_EXTENSION_URI,
-    WORKSPACE_CONTROL_EXTENSION_URI,
-    WORKSPACE_CONTROL_METHODS,
     build_capability_snapshot,
 )
 from ..execution.executor import OpencodeAgentExecutor
@@ -97,37 +81,21 @@ from ..profile.runtime import build_runtime_profile
 from ..trace_context import install_log_record_factory
 from .agent_card import (
     _CHAT_OUTPUT_MODES,
-    _build_agent_card_description,
-    _build_chat_examples,
-    _build_session_management_skill_examples,
     build_agent_card,
     build_authenticated_extended_agent_card,
 )
 from .client_manager import A2AClientManager
 from .lifespan import build_lifespan
 from .middleware import (
-    AUTHENTICATED_EXTENDED_CARD_CACHE_CONTROL,
-    PUBLIC_AGENT_CARD_CACHE_CONTROL,
     build_agent_card_etag,
     emit_stream_request_metrics,
     install_runtime_middlewares,
 )
 from .openapi import (
-    _build_jsonrpc_extension_openapi_description,
-    _build_jsonrpc_extension_openapi_examples,
-    _build_rest_message_openapi_examples,
     _patch_jsonrpc_openapi_contract,
 )
 from .request_parsing import (
-    _decode_payload_preview,
-    _detect_sensitive_extension_method,
-    _is_json_content_type,
-    _looks_like_jsonrpc_envelope,
-    _normalize_content_type,
-    _parse_content_length,
     _parse_json_body,
-    _request_body_too_large_response,
-    _RequestBodyTooLargeError,
 )
 from .rest_tasks import build_list_tasks_route
 from .state_store import (
@@ -156,14 +124,9 @@ def _are_modalities_compatible(
 def _rest_error_response(
     *,
     request: Request,
-    default_protocol_version: str,
     error: Exception,
 ) -> JSONResponse:
-    protocol_version = getattr(
-        request.state,
-        "a2a_protocol_version",
-        default_protocol_version,
-    )
+    del request
     logger_fn = logger.exception
     logger_message = "Unexpected REST message route failure"
 
@@ -182,11 +145,9 @@ def _rest_error_response(
         logger_fn(logger_message)
         return JSONResponse(
             build_http_error_body(
-                protocol_version=protocol_version,
                 status_code=mapping.http_code,
                 status=mapping.grpc_status,
                 message=message,
-                legacy_payload={"error": message},
                 reason=mapping.reason,
                 metadata=metadata,
             ),
@@ -200,11 +161,9 @@ def _rest_error_response(
         logger_fn(logger_message)
         return JSONResponse(
             build_http_error_body(
-                protocol_version=protocol_version,
                 status_code=400,
                 status="INVALID_ARGUMENT",
                 message=message,
-                legacy_payload={"error": message},
                 reason="INVALID_REQUEST",
             ),
             status_code=400,
@@ -213,11 +172,9 @@ def _rest_error_response(
     logger_fn(logger_message)
     return JSONResponse(
         build_http_error_body(
-            protocol_version=protocol_version,
             status_code=500,
             status="INTERNAL",
             message="unknown exception",
-            legacy_payload={"error": "unknown exception"},
             reason="INTERNAL_ERROR",
         ),
         status_code=500,
@@ -251,46 +208,6 @@ def _parse_rest_send_message_request(body: bytes):
                     )
     return ParseDict(payload, SendMessageRequest())
 
-
-__all__ = [
-    "_RequestBodyTooLargeError",
-    "COMPATIBILITY_PROFILE_EXTENSION_URI",
-    "INTERRUPT_CALLBACK_EXTENSION_URI",
-    "INTERRUPT_CALLBACK_METHODS",
-    "INTERRUPT_RECOVERY_EXTENSION_URI",
-    "INTERRUPT_RECOVERY_METHODS",
-    "MODEL_SELECTION_EXTENSION_URI",
-    "PUBLIC_AGENT_CARD_CACHE_CONTROL",
-    "AUTHENTICATED_EXTENDED_CARD_CACHE_CONTROL",
-    "PROVIDER_DISCOVERY_EXTENSION_URI",
-    "PROVIDER_DISCOVERY_METHODS",
-    "SESSION_MANAGEMENT_EXTENSION_URI",
-    "SESSION_BINDING_EXTENSION_URI",
-    "SESSION_CONTROL_METHODS",
-    "SESSION_METHODS",
-    "STREAMING_EXTENSION_URI",
-    "WIRE_CONTRACT_EXTENSION_URI",
-    "WORKSPACE_CONTROL_EXTENSION_URI",
-    "WORKSPACE_CONTROL_METHODS",
-    "_build_agent_card_description",
-    "_build_chat_examples",
-    "_build_jsonrpc_extension_openapi_description",
-    "_build_jsonrpc_extension_openapi_examples",
-    "_build_rest_message_openapi_examples",
-    "_build_session_management_skill_examples",
-    "build_authenticated_extended_agent_card",
-    "_configure_logging",
-    "_decode_payload_preview",
-    "_detect_sensitive_extension_method",
-    "_is_json_content_type",
-    "_looks_like_jsonrpc_envelope",
-    "_normalize_content_type",
-    "_normalize_log_level",
-    "_parse_content_length",
-    "_parse_json_body",
-    "_request_body_too_large_response",
-    "build_agent_card",
-]
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -922,7 +839,6 @@ def create_app(settings: Settings) -> FastAPI:
         except Exception as error:  # noqa: BLE001
             return _rest_error_response(
                 request=request,
-                default_protocol_version=settings.a2a_protocol_version,
                 error=error,
             )
 
@@ -938,7 +854,6 @@ def create_app(settings: Settings) -> FastAPI:
         except Exception as error:  # noqa: BLE001
             return _rest_error_response(
                 request=request,
-                default_protocol_version=settings.a2a_protocol_version,
                 error=error,
             )
 
@@ -961,18 +876,12 @@ def create_app(settings: Settings) -> FastAPI:
     app.add_api_route("/v1/tasks/{id}", rest_dispatcher.on_get_task, methods=["GET"])
 
     async def push_notifications_unsupported_route(request: Request) -> JSONResponse:
-        protocol_version = getattr(
-            request.state,
-            "a2a_protocol_version",
-            settings.a2a_protocol_version,
-        )
+        del request
         return JSONResponse(
             build_http_error_body(
-                protocol_version=protocol_version,
                 status_code=501,
                 status="UNIMPLEMENTED",
                 message=PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE,
-                legacy_payload={"message": PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE},
                 reason="PUSH_NOTIFICATIONS_UNSUPPORTED",
             ),
             status_code=501,
@@ -1002,7 +911,6 @@ def create_app(settings: Settings) -> FastAPI:
         "/v1/tasks",
         build_list_tasks_route(
             task_store=task_store,
-            default_protocol_version=settings.a2a_protocol_version,
         ),
         methods=["GET"],
     )

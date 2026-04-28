@@ -92,7 +92,6 @@ def _request_body_too_large_response(
     path: str,
     method: str,
     error: _RequestBodyTooLargeError,
-    protocol_version: str = "1.0",
 ) -> JSONResponse:
     logger.warning(
         "A2A request %s %s rejected: body_size=%s exceeds max_request_body_bytes=%s",
@@ -103,11 +102,9 @@ def _request_body_too_large_response(
     )
     return JSONResponse(
         build_http_error_body(
-            protocol_version=protocol_version,
             status_code=413,
             status="RESOURCE_EXHAUSTED",
             message="Request body too large",
-            legacy_payload={"error": "Request body too large", "max_bytes": error.limit},
             reason="REQUEST_BODY_TOO_LARGE",
             metadata={"max_bytes": error.limit, "actual_size": error.actual_size},
         ),

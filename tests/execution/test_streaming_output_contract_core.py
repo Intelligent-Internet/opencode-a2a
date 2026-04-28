@@ -9,13 +9,9 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from opencode_a2a.execution.executor import (
-    BlockType,
-    OpencodeAgentExecutor,
-    _extract_token_usage,
-    _extract_tool_part_payload,
-    _StreamOutputState,
-)
+from opencode_a2a.execution.executor import OpencodeAgentExecutor
+from opencode_a2a.execution.stream_events import _extract_token_usage, _extract_tool_part_payload
+from opencode_a2a.execution.stream_state import BlockType, _StreamOutputState
 from opencode_a2a.task_states import TERMINAL_TASK_STATES
 from tests.support.helpers import (
     DummyEventQueue,

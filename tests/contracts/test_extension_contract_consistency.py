@@ -2,9 +2,19 @@ import httpx
 import pytest
 
 from opencode_a2a.contracts.extensions import (
+    COMPATIBILITY_PROFILE_EXTENSION_URI,
+    INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
+    INTERRUPT_RECOVERY_EXTENSION_URI,
+    MODEL_SELECTION_EXTENSION_URI,
+    PROVIDER_DISCOVERY_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
+    SESSION_MANAGEMENT_EXTENSION_URI,
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_MAX_LIMIT,
+    STREAMING_EXTENSION_URI,
+    WIRE_CONTRACT_EXTENSION_URI,
+    WORKSPACE_CONTROL_EXTENSION_URI,
     build_capability_snapshot,
     build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
@@ -17,22 +27,10 @@ from opencode_a2a.contracts.extensions import (
     build_wire_contract_params,
     build_workspace_control_extension_params,
 )
-from opencode_a2a.jsonrpc.application import SESSION_CONTEXT_PREFIX
+from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from opencode_a2a.profile.runtime import build_runtime_profile
 from opencode_a2a.server.agent_card import build_authenticated_extended_agent_card
-from opencode_a2a.server.application import (
-    COMPATIBILITY_PROFILE_EXTENSION_URI,
-    INTERRUPT_CALLBACK_EXTENSION_URI,
-    INTERRUPT_RECOVERY_EXTENSION_URI,
-    MODEL_SELECTION_EXTENSION_URI,
-    PROVIDER_DISCOVERY_EXTENSION_URI,
-    SESSION_BINDING_EXTENSION_URI,
-    SESSION_MANAGEMENT_EXTENSION_URI,
-    STREAMING_EXTENSION_URI,
-    WIRE_CONTRACT_EXTENSION_URI,
-    WORKSPACE_CONTROL_EXTENSION_URI,
-    create_app,
-)
+from opencode_a2a.server.application import create_app
 from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )

@@ -8,10 +8,8 @@ from a2a.utils.errors import (
     JSON_RPC_ERROR_CODE_MAP,
     A2AError,
     InvalidParamsError,
-    UnsupportedOperationError,
 )
 
-from ..protocol_versions import normalize_protocol_version
 from .models import JSONRPCError
 
 A2A_ERROR_DOMAIN = "a2a-protocol.org"
@@ -24,12 +22,6 @@ STANDARD_JSONRPC_ERROR_MESSAGES = {
     -32603: "Internal error",
 }
 STANDARD_JSONRPC_ERROR_CODES = frozenset(STANDARD_JSONRPC_ERROR_MESSAGES)
-
-
-def protocol_uses_v1_error_format(protocol_version: str | None) -> bool:
-    if protocol_version is None:
-        return False
-    return normalize_protocol_version(protocol_version).startswith("1.")
 
 
 def _to_upper_snake_case(name: str) -> str:
@@ -115,13 +107,7 @@ def _metadata_from_error(error: object) -> dict[str, Any]:
     return {str(key): value for key, value in data.items() if key != "type"}
 
 
-def adapt_jsonrpc_error_for_protocol(
-    protocol_version: str,
-    error: JSONRPCError | A2AError,
-) -> JSONRPCError | A2AError:
-    if not protocol_uses_v1_error_format(protocol_version):
-        return error
-
+def adapt_jsonrpc_error(error: JSONRPCError | A2AError) -> JSONRPCError | A2AError:
     reason_source: object = error
     if isinstance(error, A2AError):
         root_error = JSONRPCError(
@@ -169,17 +155,12 @@ def adapt_jsonrpc_error_for_protocol(
 
 def build_http_error_body(
     *,
-    protocol_version: str,
     status_code: int,
     status: str,
     message: str,
-    legacy_payload: dict[str, Any],
     reason: str | None = None,
     metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if not protocol_uses_v1_error_format(protocol_version):
-        return legacy_payload
-
     details: list[dict[str, Any]] = []
     if reason is not None:
         details.append(_build_error_info_detail(reason=reason, metadata=metadata))
@@ -202,27 +183,6 @@ def invalid_params_error(
     data: dict[str, Any] | None = None,
 ) -> A2AError:
     return InvalidParamsError(message=message, data=data)
-
-
-def extension_negotiation_required_error(
-    *,
-    method: str,
-    extension_uri: str,
-    requested_extensions: list[str],
-) -> A2AError:
-    return UnsupportedOperationError(
-        message=(
-            f"Method {method} requires explicit A2A extension negotiation via "
-            "the A2A-Extensions header."
-        ),
-        data={
-            "type": "EXTENSION_NEGOTIATION_REQUIRED",
-            "method": method,
-            "required_extensions": [extension_uri],
-            "requested_extensions": requested_extensions,
-            "header": "A2A-Extensions",
-        },
-    )
 
 
 def method_not_supported_error(
@@ -396,23 +356,3 @@ def upstream_payload_error(
     if request_id is not None:
         data["request_id"] = request_id
     return JSONRPCError(code=code, message="Upstream OpenCode payload mismatch", data=data)
-
-
-__all__ = [
-    "A2A_ERROR_DOMAIN",
-    "GOOGLE_RPC_ERROR_INFO_TYPE",
-    "adapt_jsonrpc_error_for_protocol",
-    "authorization_forbidden_error",
-    "build_http_error_body",
-    "interrupt_not_found_error",
-    "interrupt_type_mismatch_error",
-    "invalid_params_error",
-    "method_not_supported_error",
-    "protocol_uses_v1_error_format",
-    "session_forbidden_error",
-    "session_not_found_error",
-    "upstream_http_error",
-    "upstream_payload_error",
-    "upstream_unreachable_error",
-    "version_not_supported_error",
-]

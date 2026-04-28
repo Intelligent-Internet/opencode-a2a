@@ -34,31 +34,38 @@ import opencode_a2a.server.application as app_module
 from opencode_a2a.contracts.extensions import (
     MODEL_SELECTION_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
+    SESSION_METHODS,
     build_capability_snapshot,
 )
 from opencode_a2a.profile.runtime import build_runtime_profile
-from opencode_a2a.server.application import (
-    OpencodeRequestHandler,
+from opencode_a2a.server.agent_card import (
     _build_agent_card_description,
     _build_chat_examples,
+    _build_session_management_skill_examples,
+)
+from opencode_a2a.server.application import (
+    OpencodeRequestHandler,
+    _configure_logging,
+    _normalize_log_level,
+    _parse_rest_send_message_request,
+    _rest_error_response,
+    create_app,
+)
+from opencode_a2a.server.openapi import (
     _build_jsonrpc_extension_openapi_description,
     _build_jsonrpc_extension_openapi_examples,
     _build_rest_message_openapi_examples,
-    _build_session_management_skill_examples,
-    _configure_logging,
+)
+from opencode_a2a.server.request_parsing import (
     _decode_payload_preview,
     _detect_sensitive_extension_method,
     _is_json_content_type,
     _looks_like_jsonrpc_envelope,
     _normalize_content_type,
-    _normalize_log_level,
     _parse_content_length,
     _parse_json_body,
-    _parse_rest_send_message_request,
     _request_body_too_large_response,
     _RequestBodyTooLargeError,
-    _rest_error_response,
-    create_app,
 )
 from opencode_a2a.server.task_store import TaskStoreOperationError
 from tests.support.helpers import (
@@ -116,8 +123,8 @@ def test_request_payload_helpers_cover_edge_cases() -> None:
     assert _detect_sensitive_extension_method(None) is None
     assert _detect_sensitive_extension_method({"method": "SendMessage"}) is None
     assert (
-        _detect_sensitive_extension_method({"method": app_module.SESSION_METHODS["list_sessions"]})
-        == app_module.SESSION_METHODS["list_sessions"]
+        _detect_sensitive_extension_method({"method": SESSION_METHODS["list_sessions"]})
+        == SESSION_METHODS["list_sessions"]
     )
 
     assert _parse_content_length(None) is None
@@ -164,7 +171,6 @@ def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
     request_v1.state.a2a_protocol_version = "1.0"
     v1_error = _rest_error_response(
         request=request_v1,
-        default_protocol_version="1.0",
         error=InvalidRequestError(message="bad payload", data={"path": "/v1/message:send"}),
     )
     assert v1_error.status_code == 400
@@ -191,7 +197,6 @@ def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
     request_default = _request("/v1/message:send")
     parse_error = _rest_error_response(
         request=request_default,
-        default_protocol_version="1.0",
         error=ParseError("bad parse"),
     )
     assert parse_error.status_code == 400
@@ -212,7 +217,6 @@ def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
 
     generic_error = _rest_error_response(
         request=request_default,
-        default_protocol_version="1.0",
         error=RuntimeError("boom"),
     )
     assert generic_error.status_code == 500

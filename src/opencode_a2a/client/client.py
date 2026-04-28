@@ -141,7 +141,6 @@ class A2AClient:
                 extra_headers,
                 requested_extensions,
                 self._settings.basic_auth,
-                self._settings.protocol_version,
             )
             try:
                 async for event in call_with_supported_kwargs(
@@ -221,7 +220,6 @@ class A2AClient:
                 extra_headers,
                 requested_extensions,
                 self._settings.basic_auth,
-                self._settings.protocol_version,
             )
             try:
                 return cast(
@@ -257,7 +255,6 @@ class A2AClient:
                 extra_headers,
                 requested_extensions,
                 self._settings.basic_auth,
-                self._settings.protocol_version,
             )
             try:
                 return cast(
@@ -293,7 +290,6 @@ class A2AClient:
                 extra_headers,
                 requested_extensions,
                 self._settings.basic_auth,
-                self._settings.protocol_version,
             )
             try:
                 async for event in call_with_supported_kwargs(
@@ -404,6 +400,3 @@ class A2AClient:
 
     async def _sleep(self, delay_seconds: float) -> None:
         await asyncio.sleep(delay_seconds)
-
-
-__all__ = ["A2AClient"]

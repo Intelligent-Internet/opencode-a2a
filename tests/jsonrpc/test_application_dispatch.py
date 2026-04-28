@@ -172,8 +172,8 @@ async def test_generate_protocol_error_response_supports_a2a_error_payloads(
 ) -> None:
     dispatcher = _build_dispatcher(monkeypatch)
     monkeypatch.setattr(
-        "opencode_a2a.jsonrpc.application.adapt_jsonrpc_error_for_protocol",
-        lambda _protocol, _error: InvalidParamsError(
+        "opencode_a2a.jsonrpc.application.adapt_jsonrpc_error",
+        lambda _error: InvalidParamsError(
             message="bad request",
             data={"field": "params"},
         ),

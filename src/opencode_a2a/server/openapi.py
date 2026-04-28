@@ -25,7 +25,7 @@ from ..contracts.extensions import (
     build_wire_contract_params,
     build_workspace_control_extension_params,
 )
-from ..jsonrpc.application import SESSION_CONTEXT_PREFIX
+from ..jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from ..jsonrpc.models import JSONRPCRequest
 from ..profile.runtime import RuntimeProfile
 

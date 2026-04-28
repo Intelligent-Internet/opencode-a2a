@@ -89,49 +89,6 @@ def test_settings_valid():
         assert settings.a2a_supported_protocol_versions == ("1.0",)
 
 
-def test_settings_normalize_protocol_versions() -> None:
-    env = {
-        "A2A_STATIC_AUTH_CREDENTIALS": json.dumps(
-            [
-                {
-                    "scheme": "bearer",
-                    "token": "test-token",
-                    "principal": "automation",
-                }
-            ]
-        ),
-        "A2A_PROTOCOL_VERSION": "1.0.0",
-        "A2A_SUPPORTED_PROTOCOL_VERSIONS": "1.0.0,1.0",
-        "A2A_CLIENT_PROTOCOL_VERSION": "1.0.0",
-    }
-    with mock.patch.dict(os.environ, env, clear=True):
-        settings = Settings()
-
-    assert settings.a2a_protocol_version == "1.0"
-    assert settings.a2a_supported_protocol_versions == ("1.0",)
-    assert settings.a2a_client_protocol_version == "1.0"
-
-
-def test_settings_reject_legacy_protocol_configuration() -> None:
-    env = {
-        "A2A_STATIC_AUTH_CREDENTIALS": json.dumps(
-            [
-                {
-                    "scheme": "bearer",
-                    "token": "test-token",
-                    "principal": "automation",
-                }
-            ]
-        ),
-        "A2A_PROTOCOL_VERSION": "0.3.0",
-    }
-    with mock.patch.dict(os.environ, env, clear=True):
-        with pytest.raises(ValidationError) as excinfo:
-            Settings()
-
-    assert "Only A2A v1.0 is supported" in str(excinfo.value)
-
-
 def test_settings_allow_explicit_memory_backend() -> None:
     env = {
         "A2A_STATIC_AUTH_CREDENTIALS": json.dumps(

@@ -4,7 +4,7 @@ This document summarizes the current interpretation rules for external TCK runs 
 
 ## Current Runtime Baseline
 
-- `opencode-a2a` now targets `a2a-sdk 1.0.x`
+- `opencode-a2a` now targets the `a2a-sdk 1.x.y` line
 - the runtime is v1-only
 - canonical JSON-RPC core methods are `SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`, and `SubscribeToTask`
 - legacy `0.3` aliases and payload shapes are intentionally rejected rather than normalized

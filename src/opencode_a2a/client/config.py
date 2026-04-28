@@ -6,11 +6,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from ..protocol_versions import normalize_protocol_version
 from .auth import validate_basic_auth
 from .polling import PollingFallbackPolicy, validate_polling_fallback_policy
-
-_SUPPORTED_CLIENT_PROTOCOL_VERSION = "1.0"
 
 
 def _read_setting(
@@ -73,18 +70,6 @@ def _coerce_optional_str(name: str, value: Any) -> str | None:
     raise ValueError(f"{name} must be a string, got {value!r}")
 
 
-def _coerce_optional_protocol_version(name: str, value: Any) -> str | None:
-    normalized = _coerce_optional_str(name, value)
-    if normalized is None:
-        return None
-    protocol_version = normalize_protocol_version(normalized)
-    if protocol_version != _SUPPORTED_CLIENT_PROTOCOL_VERSION:
-        raise ValueError(
-            f"{name} only supports {_SUPPORTED_CLIENT_PROTOCOL_VERSION}, got {normalized!r}"
-        )
-    return protocol_version
-
-
 def _normalize_transport(value: str) -> str:
     normalized = value.strip().lower()
     if normalized in {"jsonrpc", "json-rpc", "json_rpc"}:
@@ -125,7 +110,6 @@ class A2AClientSettings:
     card_fetch_timeout: float = 5.0
     bearer_token: str | None = None
     basic_auth: str | None = None
-    protocol_version: str | None = _SUPPORTED_CLIENT_PROTOCOL_VERSION
     supported_transports: tuple[str, ...] = (
         "JSONRPC",
         "HTTP+JSON",
@@ -188,17 +172,6 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
     )
     if basic_auth is not None:
         validate_basic_auth(basic_auth)
-    protocol_version = _coerce_optional_protocol_version(
-        "A2A_CLIENT_PROTOCOL_VERSION",
-        _read_setting(
-            raw_settings,
-            keys=(
-                "A2A_CLIENT_PROTOCOL_VERSION",
-                "a2a_client_protocol_version",
-            ),
-            default=_SUPPORTED_CLIENT_PROTOCOL_VERSION,
-        ),
-    )
     supported_transports = _parse_transports(
         _read_setting(
             raw_settings,
@@ -287,7 +260,6 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
         card_fetch_timeout=card_fetch_timeout,
         bearer_token=bearer_token,
         basic_auth=basic_auth,
-        protocol_version=protocol_version,
         supported_transports=supported_transports,
         polling_fallback_enabled=polling_fallback_enabled,
         polling_fallback_initial_interval_seconds=polling_fallback_initial_interval_seconds,
@@ -295,6 +267,3 @@ def load_settings(raw_settings: Any) -> A2AClientSettings:
         polling_fallback_backoff_multiplier=polling_fallback_backoff_multiplier,
         polling_fallback_timeout_seconds=polling_fallback_timeout_seconds,
     )
-
-
-__all__ = ["A2AClientSettings", "load_settings"]

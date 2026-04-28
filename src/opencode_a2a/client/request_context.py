@@ -8,7 +8,7 @@ from typing import Any
 from a2a.client.client import ClientCallContext
 
 from ..extension_negotiation import merge_extension_service_parameters
-from ..protocol_versions import normalize_protocol_version
+from ..protocol_versions import A2A_PROTOCOL_VERSION, normalize_protocol_version
 from ..trace_context import current_trace_headers
 from .auth import encode_basic_auth
 
@@ -34,32 +34,34 @@ def split_request_metadata(
     request_metadata: dict[str, Any] = {}
     extra_headers: dict[str, str] = {}
     requested_extensions: list[str] = []
-    for key, value in dict(metadata or {}).items():
-        if isinstance(key, str) and key.lower() == "authorization":
+    for key, value in (metadata or {}).items():
+        normalized_key = key.lower()
+        if normalized_key == "authorization":
             if value is not None:
-                extra_headers["Authorization"] = str(value)
+                if not isinstance(value, str):
+                    raise ValueError("Authorization metadata header must be a string.")
+                extra_headers["Authorization"] = value
             continue
-        if isinstance(key, str) and key.lower() == "a2a-version":
+        if normalized_key == "a2a-version":
+            raise ValueError("A2A-Version is fixed to 1.0 and must not be overridden.")
+        if normalized_key == "traceparent":
             if value is not None:
-                extra_headers["A2A-Version"] = normalize_protocol_version(str(value))
+                if not isinstance(value, str):
+                    raise ValueError("traceparent metadata header must be a string.")
+                extra_headers["traceparent"] = value
             continue
-        if isinstance(key, str) and key.lower() == "traceparent":
+        if normalized_key == "tracestate":
             if value is not None:
-                extra_headers["traceparent"] = str(value)
+                if not isinstance(value, str):
+                    raise ValueError("tracestate metadata header must be a string.")
+                extra_headers["tracestate"] = value
             continue
-        if isinstance(key, str) and key.lower() == "tracestate":
-            if value is not None:
-                extra_headers["tracestate"] = str(value)
-            continue
-        if isinstance(key, str) and key.lower() == "a2a-extensions":
-            if isinstance(value, str):
-                requested_extensions.extend(
-                    item.strip() for item in value.split(",") if item.strip()
-                )
-            elif isinstance(value, list | tuple | set):
-                requested_extensions.extend(
-                    str(item).strip() for item in value if isinstance(item, str) and item.strip()
-                )
+        if normalized_key == "a2a-extensions":
+            if value is None:
+                continue
+            if not isinstance(value, str):
+                raise ValueError("A2A-Extensions metadata header must be a string.")
+            requested_extensions.extend(item.strip() for item in value.split(",") if item.strip())
             continue
         request_metadata[key] = value
     return (
@@ -74,9 +76,8 @@ def build_call_context(
     extra_headers: Mapping[str, str] | None,
     extensions: tuple[str, ...] | None = None,
     basic_auth: str | None = None,
-    protocol_version: str | None = None,
 ) -> ClientCallContext | None:
-    merged_headers = build_default_headers(bearer_token, basic_auth, protocol_version)
+    merged_headers = build_default_headers(bearer_token, basic_auth, A2A_PROTOCOL_VERSION)
     merged_headers.update(current_trace_headers())
     if extra_headers:
         merged_headers.update(extra_headers)
@@ -90,10 +91,3 @@ def build_call_context(
         },
         service_parameters=service_parameters,
     )
-
-
-__all__ = [
-    "build_call_context",
-    "build_default_headers",
-    "split_request_metadata",
-]

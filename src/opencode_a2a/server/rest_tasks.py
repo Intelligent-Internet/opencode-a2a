@@ -70,14 +70,8 @@ def _validation_error(field: str, message: str) -> _ListTasksValidationError:
 def build_list_tasks_route(
     *,
     task_store: TaskStore,
-    default_protocol_version: str,
 ):
     async def list_tasks_route(request: Request) -> JSONResponse:
-        protocol_version = getattr(
-            request.state,
-            "a2a_protocol_version",
-            default_protocol_version,
-        )
         try:
             query = _parse_list_tasks_query(request)
             tasks = await list_stored_tasks(task_store)
@@ -85,19 +79,13 @@ def build_list_tasks_route(
             return _invalid_argument_response(
                 field=error.field,
                 message=error.message,
-                protocol_version=protocol_version,
             )
         except TaskStoreOperationError as error:
             return JSONResponse(
                 build_http_error_body(
-                    protocol_version=protocol_version,
                     status_code=500,
                     status="INTERNAL",
                     message="Task store unavailable while listing tasks.",
-                    legacy_payload={
-                        "error": "Task store unavailable while listing tasks.",
-                        "operation": error.operation,
-                    },
                     reason="TASK_STORE_UNAVAILABLE",
                     metadata={"operation": error.operation},
                 ),
@@ -352,15 +340,12 @@ def _invalid_argument_response(
     *,
     field: str,
     message: str,
-    protocol_version: str,
 ) -> JSONResponse:
     return JSONResponse(
         build_http_error_body(
-            protocol_version=protocol_version,
             status_code=400,
             status="INVALID_ARGUMENT",
             message=message,
-            legacy_payload={"error": message, "field": field},
             reason="INVALID_LIST_TASKS_REQUEST",
             metadata={"field": field},
         ),

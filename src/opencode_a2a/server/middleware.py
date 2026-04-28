@@ -21,12 +21,13 @@ from ..auth import (
 )
 from ..execution.metrics import emit_metric
 from ..jsonrpc.error_responses import (
-    adapt_jsonrpc_error_for_protocol,
+    adapt_jsonrpc_error,
     build_http_error_body,
     version_not_supported_error,
 )
 from ..jsonrpc.models import JSONRPCError
 from ..protocol_versions import (
+    A2A_PROTOCOL_VERSION,
     UnsupportedProtocolVersionError,
     negotiate_protocol_version,
 )
@@ -141,7 +142,7 @@ def install_runtime_middlewares(
         negotiated = getattr(request.state, "a2a_protocol_version", None)
         if isinstance(negotiated, str) and negotiated.strip():
             return negotiated
-        return cast(str, settings.a2a_protocol_version)
+        return A2A_PROTOCOL_VERSION
 
     @app.middleware("http")
     async def bind_trace_context(request: Request, call_next):
@@ -171,8 +172,6 @@ def install_runtime_middlewares(
             negotiated = negotiate_protocol_version(
                 header_value=request.headers.get("A2A-Version"),
                 query_value=request.query_params.get("A2A-Version"),
-                default_protocol_version=settings.a2a_protocol_version,
-                supported_protocol_versions=settings.a2a_supported_protocol_versions,
             )
         except UnsupportedProtocolVersionError as error:
             if request.url.path == "/" and request.method == "POST":
@@ -184,7 +183,6 @@ def install_runtime_middlewares(
                         path=request.url.path,
                         method=request.method,
                         error=request_error,
-                        protocol_version=_error_protocol_version(request),
                     )
                 return JSONResponse(
                     {
@@ -192,8 +190,7 @@ def install_runtime_middlewares(
                         "id": _extract_jsonrpc_request_id(payload),
                         "error": cast(
                             JSONRPCError,
-                            adapt_jsonrpc_error_for_protocol(
-                                settings.a2a_protocol_version,
+                            adapt_jsonrpc_error(
                                 version_not_supported_error(
                                     requested_version=error.requested_version,
                                     supported_protocol_versions=list(
@@ -208,17 +205,9 @@ def install_runtime_middlewares(
                 )
             return JSONResponse(
                 build_http_error_body(
-                    protocol_version=settings.a2a_protocol_version,
                     status_code=400,
                     status="INVALID_ARGUMENT",
                     message="Unsupported A2A version",
-                    legacy_payload={
-                        "error": "Unsupported A2A version",
-                        "type": "VERSION_NOT_SUPPORTED",
-                        "requested_version": error.requested_version,
-                        "supported_protocol_versions": list(error.supported_protocol_versions),
-                        "default_protocol_version": error.default_protocol_version,
-                    },
                     reason="VERSION_NOT_SUPPORTED",
                     metadata={
                         "requested_version": error.requested_version,
@@ -352,7 +341,6 @@ def install_runtime_middlewares(
                 path=request.url.path,
                 method=request.method,
                 error=error,
-                protocol_version=_error_protocol_version(request),
             )
         finally:
             if token is not None:
@@ -373,7 +361,6 @@ def install_runtime_middlewares(
             if _looks_like_jsonrpc_envelope(payload):
                 return JSONResponse(
                     build_http_error_body(
-                        protocol_version=_error_protocol_version(request),
                         status_code=400,
                         status="INVALID_ARGUMENT",
                         message=(
@@ -382,14 +369,6 @@ def install_runtime_middlewares(
                             "or SendStreamingMessage, or send ProtoJSON "
                             "SendMessageRequest payloads to the REST endpoint."
                         ),
-                        legacy_payload={
-                            "error": (
-                                "Invalid JSON-RPC payload for REST endpoint. "
-                                "Call POST / for JSON-RPC methods such as SendMessage "
-                                "or SendStreamingMessage, or send ProtoJSON "
-                                "SendMessageRequest payloads to the REST endpoint."
-                            )
-                        },
                         reason="INVALID_HTTP_JSON_PAYLOAD",
                         metadata={"path": request.url.path},
                     ),
@@ -401,7 +380,6 @@ def install_runtime_middlewares(
                 path=request.url.path,
                 method=request.method,
                 error=error,
-                protocol_version=_error_protocol_version(request),
             )
         finally:
             if token is not None:
@@ -507,7 +485,6 @@ def install_runtime_middlewares(
                 path=request.url.path,
                 method=request.method,
                 error=error,
-                protocol_version=_error_protocol_version(request),
             )
         finally:
             if token is not None:

@@ -14,7 +14,6 @@ def _make_settings(**overrides: object) -> SimpleNamespace:
         "a2a_client_use_client_preference": False,
         "a2a_client_bearer_token": None,
         "a2a_client_basic_auth": None,
-        "a2a_client_protocol_version": None,
         "a2a_protocol_version": "1.0",
         "a2a_client_supported_transports": ("JSONRPC", "HTTP+JSON"),
         "a2a_client_cache_ttl_seconds": 60.0,
@@ -212,9 +211,3 @@ def test_client_manager_loads_basic_auth_into_client_settings() -> None:
     )
 
     assert manager.client_settings.basic_auth == "user:pass"
-
-
-def test_client_manager_defaults_protocol_version_from_runtime_setting() -> None:
-    manager = client_manager_module.A2AClientManager(_make_settings(a2a_protocol_version="1.0"))
-
-    assert manager.client_settings.protocol_version == "1.0"

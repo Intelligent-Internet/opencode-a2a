@@ -292,8 +292,8 @@ Consumer guidance:
 ## Protocol Version Negotiation
 
 - The runtime accepts `A2A-Version` from either the HTTP header or the query parameter of A2A transport requests.
-- If both are omitted, the runtime falls back to the configured default protocol version.
-- Current defaults declare `default_protocol_version=1.0` and `supported_protocol_versions=["1.0"]`.
+- If both are omitted, the runtime uses the fixed v1 protocol version `1.0`.
+- Machine-readable discovery still declares `default_protocol_version=1.0` and `supported_protocol_versions=["1.0"]`, but those values are runtime constants rather than operator-configurable settings.
 - Unsupported or invalid versions are rejected before request routing:
   - JSON-RPC returns a unified `VERSION_NOT_SUPPORTED` error envelope.
   - REST returns HTTP `400` with the same contract fields.

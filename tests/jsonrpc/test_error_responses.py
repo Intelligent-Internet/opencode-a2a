@@ -4,7 +4,7 @@ from a2a.types import InvalidParamsError, UnsupportedOperationError
 
 from opencode_a2a.jsonrpc.error_responses import (
     GOOGLE_RPC_ERROR_INFO_TYPE,
-    adapt_jsonrpc_error_for_protocol,
+    adapt_jsonrpc_error,
     authorization_forbidden_error,
     interrupt_not_found_error,
     interrupt_type_mismatch_error,
@@ -137,8 +137,7 @@ def test_version_not_supported_error_includes_supported_versions() -> None:
 
 
 def test_adapt_standard_jsonrpc_error_for_v1_uses_standard_message_and_camel_case_data() -> None:
-    adapted = adapt_jsonrpc_error_for_protocol(
-        "1.0",
+    adapted = adapt_jsonrpc_error(
         method_not_supported_error(
             method="unsupported.method",
             supported_methods=["SendMessage", "GetTask"],
@@ -155,8 +154,7 @@ def test_adapt_standard_jsonrpc_error_for_v1_uses_standard_message_and_camel_cas
 
 
 def test_adapt_a2a_specific_error_for_v1_uses_error_info_details() -> None:
-    adapted = adapt_jsonrpc_error_for_protocol(
-        "1.0",
+    adapted = adapt_jsonrpc_error(
         version_not_supported_error(
             requested_version="1.1",
             supported_protocol_versions=["1.0"],
@@ -184,10 +182,7 @@ def test_adapt_a2a_specific_error_for_v1_uses_error_info_details() -> None:
 
 
 def test_adapt_a2a_root_error_for_v1_uses_error_type_reason() -> None:
-    adapted = adapt_jsonrpc_error_for_protocol(
-        "1.0",
-        UnsupportedOperationError(),
-    )
+    adapted = adapt_jsonrpc_error(UnsupportedOperationError())
 
     assert adapted.code == -32004
     assert adapted.message == "This operation is not supported"

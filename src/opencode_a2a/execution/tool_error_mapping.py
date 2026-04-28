@@ -135,6 +135,3 @@ def _build_client_error_meta(exc: A2AClientError) -> dict[str, Any] | None:
     if exc.code is not None:
         error_meta["rpc_code"] = exc.code
     return error_meta or None
-
-
-__all__ = ["build_tool_error", "map_a2a_tool_exception"]

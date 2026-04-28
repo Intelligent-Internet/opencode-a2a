@@ -28,23 +28,9 @@ from .dispatch import (
     build_extension_method_registry,
 )
 from .error_responses import (
-    adapt_jsonrpc_error_for_protocol,
-    extension_negotiation_required_error,
+    adapt_jsonrpc_error,
     invalid_params_error,
     method_not_supported_error,
-)
-from .methods import (
-    SESSION_CONTEXT_PREFIX,
-    _extract_provider_catalog,
-    _normalize_model_summaries,
-    _normalize_permission_reply,
-    _normalize_provider_summaries,
-    _parse_question_answers,
-    _PromptAsyncValidationError,
-    _validate_command_request_payload,
-    _validate_prompt_async_format,
-    _validate_prompt_async_part,
-    _validate_shell_request_payload,
 )
 from .models import JSONRPCError, JSONRPCRequest
 
@@ -57,20 +43,6 @@ _PUSH_NOTIFICATION_METHODS = frozenset(
         "ListTaskPushNotificationConfigs",
     }
 )
-
-__all__ = [
-    "SESSION_CONTEXT_PREFIX",
-    "_extract_provider_catalog",
-    "_normalize_model_summaries",
-    "_normalize_permission_reply",
-    "_normalize_provider_summaries",
-    "_parse_question_answers",
-    "_PromptAsyncValidationError",
-    "_validate_command_request_payload",
-    "_validate_prompt_async_format",
-    "_validate_prompt_async_part",
-    "_validate_shell_request_payload",
-]
 
 
 class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
@@ -210,7 +182,8 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         *,
         protocol_version: str,
     ) -> JSONResponse:
-        adapted = adapt_jsonrpc_error_for_protocol(protocol_version, error)
+        del protocol_version
+        adapted = adapt_jsonrpc_error(error)
         if isinstance(adapted, A2AError):
             error_payload = {
                 "code": JSON_RPC_ERROR_CODE_MAP.get(type(adapted), -32603),
@@ -414,10 +387,18 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         if missing_extensions:
             return self._generate_protocol_error_response(
                 base_request.id,
-                extension_negotiation_required_error(
-                    method=base_request.method,
-                    extension_uri=extension_spec.extension_uri,
-                    requested_extensions=sorted(call_context.requested_extensions),
+                UnsupportedOperationError(
+                    message=(
+                        f"Method {base_request.method} requires explicit A2A extension "
+                        "negotiation via the A2A-Extensions header."
+                    ),
+                    data={
+                        "type": "EXTENSION_NEGOTIATION_REQUIRED",
+                        "method": base_request.method,
+                        "required_extensions": [extension_spec.extension_uri],
+                        "requested_extensions": sorted(call_context.requested_extensions),
+                        "header": "A2A-Extensions",
+                    },
                 ),
                 protocol_version=negotiated_protocol_version,
             )

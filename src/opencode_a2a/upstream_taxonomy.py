@@ -86,10 +86,3 @@ def extract_upstream_error_detail(response: httpx.Response | None) -> str | None
     if text:
         return text[:512]
     return None
-
-
-__all__ = [
-    "UpstreamHTTPErrorProfile",
-    "extract_upstream_error_detail",
-    "resolve_upstream_http_error_profile",
-]

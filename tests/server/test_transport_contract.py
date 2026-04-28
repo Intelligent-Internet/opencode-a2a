@@ -20,16 +20,18 @@ from opencode_a2a.a2a_utils import make_data_part
 from opencode_a2a.contracts.extensions import (
     MODEL_SELECTION_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
+    SESSION_MANAGEMENT_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
 )
 from opencode_a2a.output_modes import build_output_negotiation_metadata
+from opencode_a2a.server.agent_card import build_agent_card
 from opencode_a2a.server.application import (
+    _normalize_log_level,
+    create_app,
+)
+from opencode_a2a.server.middleware import (
     AUTHENTICATED_EXTENDED_CARD_CACHE_CONTROL,
     PUBLIC_AGENT_CARD_CACHE_CONTROL,
-    SESSION_MANAGEMENT_EXTENSION_URI,
-    _normalize_log_level,
-    build_agent_card,
-    create_app,
 )
 from opencode_a2a.trace_context import parse_traceparent
 from tests.support.helpers import (

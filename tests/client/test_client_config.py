@@ -20,7 +20,6 @@ def test_load_settings_from_mapping() -> None:
         "A2A_CLIENT_USE_CLIENT_PREFERENCE": "true",
         "A2A_CLIENT_BEARER_TOKEN": "peer-token",
         "A2A_CLIENT_BASIC_AUTH": "user:pass",
-        "A2A_CLIENT_PROTOCOL_VERSION": "1.0.0",
         "A2A_CLIENT_SUPPORTED_TRANSPORTS": "json-rpc,http-json",
         "A2A_CLIENT_POLLING_FALLBACK_ENABLED": "true",
         "A2A_CLIENT_POLLING_FALLBACK_INITIAL_INTERVAL_SECONDS": "0.75",
@@ -36,7 +35,6 @@ def test_load_settings_from_mapping() -> None:
     assert settings.use_client_preference is True
     assert settings.bearer_token == "peer-token"
     assert settings.basic_auth == "user:pass"
-    assert settings.protocol_version == "1.0"
     assert settings.supported_transports == ("JSONRPC", "HTTP+JSON")
     assert settings.polling_fallback_enabled is True
     assert settings.polling_fallback_initial_interval_seconds == 0.75
@@ -66,11 +64,6 @@ def test_load_settings_accepts_base64_basic_auth() -> None:
     settings = load_settings({"A2A_CLIENT_BASIC_AUTH": encoded})
 
     assert settings == A2AClientSettings(basic_auth=encoded)
-
-
-def test_load_settings_rejects_legacy_protocol_version() -> None:
-    with pytest.raises(ValueError, match="only supports 1.0"):
-        load_settings({"A2A_CLIENT_PROTOCOL_VERSION": "0.3.0"})
 
 
 def test_load_settings_invalid_basic_auth_raises() -> None:
