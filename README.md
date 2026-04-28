@@ -120,13 +120,15 @@ Interact with other A2A agents directly from the command line:
 ```bash
 # Using the target peer agent's Bearer token via environment injection
 A2A_CLIENT_BEARER_TOKEN=your-outbound-token \
-opencode-a2a call http://other-agent:8000 "How are you?"
+opencode-a2a call http://other-agent:8000/.well-known/agent-card.json "How are you?"
 
 # Using the target peer agent's Basic auth via environment injection
 # Accepts raw user:pass or its base64-encoded value
 A2A_CLIENT_BASIC_AUTH="user:pass" \
-opencode-a2a call http://other-agent:8000 "How are you?"
+opencode-a2a call http://other-agent:8000/.well-known/agent-card.json "How are you?"
 ```
+
+Service base URLs also work, but this README prefers Agent Card URLs in examples because they make the A2A discovery target explicit.
 
 ### Outbound Agent Calls (Tools)
 The server can autonomously execute `a2a_call(url, message)` tool calls emitted by the OpenCode runtime. Results are fetched via A2A and returned to the model as tool results, enabling multi-agent orchestration.

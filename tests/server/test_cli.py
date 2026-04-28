@@ -23,6 +23,7 @@ def test_cli_help_does_not_require_runtime_settings(capsys: pytest.CaptureFixtur
     assert "A2A_STATIC_AUTH_CREDENTIALS" in help_text
     assert "opencode serve --hostname 127.0.0.1 --port 4096" in help_text
     assert "A2A_CLIENT_BEARER_TOKEN=peer-token" in help_text
+    assert "/.well-known/agent-card.json" in help_text
     assert "{call}" not in help_text
     assert "serve" in help_text
     assert "deploy-release" not in help_text
@@ -92,6 +93,7 @@ def test_cli_call_without_required_arguments_prints_help(
     help_text = capsys.readouterr().out
     assert "Call an A2A agent using the A2A protocol. A2A Protocol 1.0 only." in help_text
     assert "A2A_CLIENT_BEARER_TOKEN=peer-token" in help_text
+    assert "Service base URLs also work, but card URLs are the preferred example form." in help_text
     serve_mock.assert_not_called()
 
 
@@ -103,7 +105,7 @@ def test_cli_call_with_partial_required_arguments_prints_help(
 
     help_text = capsys.readouterr().out
     assert "usage: opencode-a2a call" in help_text
-    assert "Text message to send." in help_text
+    assert "Agent card URL or service base URL of the agent to call." in help_text
     serve_mock.assert_not_called()
 
 

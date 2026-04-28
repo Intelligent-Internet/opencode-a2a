@@ -85,13 +85,14 @@ SERVE_ENVIRONMENT_HELP = (
 CALL_HELP = (
     "Call examples:\n"
     "  A2A_CLIENT_BEARER_TOKEN=peer-token \\\n"
-    '  opencode-a2a call http://other-agent:8000 "How are you?"\n'
+    '  opencode-a2a call http://other-agent:8000/.well-known/agent-card.json "How are you?"\n'
     "\n"
     '  A2A_CLIENT_BASIC_AUTH="user:pass" \\\n'
-    '  opencode-a2a call http://other-agent:8000 "How are you?"\n'
+    '  opencode-a2a call http://other-agent:8000/.well-known/agent-card.json "How are you?"\n'
     "\n"
     "Call note:\n"
-    "  Outbound peer credentials are read from environment variables only."
+    "  Outbound peer credentials are read from environment variables only.\n"
+    "  Service base URLs also work, but card URLs are the preferred example form."
 )
 
 ROOT_HELP_EPILOG = f"{OPENCODE_SETUP_HELP}\n\n{SERVE_ENVIRONMENT_HELP}\n\n{CALL_HELP}"
@@ -243,7 +244,10 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=CALL_HELP_EPILOG,
     )
-    call_parser.add_argument("agent_url", help="URL of the agent to call.")
+    call_parser.add_argument(
+        "agent_url",
+        help="Agent card URL or service base URL of the agent to call.",
+    )
     call_parser.add_argument("text", help="Text message to send.")
 
     return parser
