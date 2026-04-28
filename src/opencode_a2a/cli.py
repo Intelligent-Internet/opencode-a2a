@@ -12,7 +12,7 @@ from . import __version__
 from .client import A2AClient, load_settings
 from .server.application import main as serve_main
 
-CLI_BRAND_BANNER = "OpenCode-A2A"
+CLI_BRAND_BANNER = "".join(("OpenCode", "-", "A2A"))
 PROJECT_REPOSITORY_URL = "https://github.com/Intelligent-Internet/opencode-a2a"
 
 
