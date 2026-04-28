@@ -256,6 +256,7 @@ async def test_database_pending_session_claim_keeps_absolute_expiry_when_runtime
 
     stored_row = await _read_pending_claim_row(engine, "ses-1")
     assert stored_row is not None
+    assert stored_row["updated_at"] is None
     assert stored_row["expires_at"] == pytest.approx(105.0)
 
     reader = DatabaseSessionStateRepository(
@@ -270,6 +271,95 @@ async def test_database_pending_session_claim_keeps_absolute_expiry_when_runtime
 
     now = 106.0
     assert await reader.get_pending_claim(session_id="ses-1") is None
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_database_state_store_drops_legacy_pending_claim_rows_during_migration(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'legacy-pending-claim.db'}"
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=database_url,
+    )
+    engine = build_database_engine(settings)
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE a2a_session_bindings (
+                    identity VARCHAR NOT NULL,
+                    context_id VARCHAR NOT NULL,
+                    session_id VARCHAR NOT NULL,
+                    PRIMARY KEY (identity, context_id)
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE a2a_session_owners (
+                    session_id VARCHAR NOT NULL PRIMARY KEY,
+                    identity VARCHAR NOT NULL
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE a2a_pending_session_claims (
+                    session_id VARCHAR NOT NULL PRIMARY KEY,
+                    identity VARCHAR NOT NULL,
+                    updated_at FLOAT NOT NULL
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO a2a_pending_session_claims (
+                    session_id,
+                    identity,
+                    updated_at
+                ) VALUES (
+                    'ses-legacy',
+                    'user-legacy',
+                    100.0
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE a2a_interrupt_requests (
+                    request_id VARCHAR NOT NULL PRIMARY KEY,
+                    session_id VARCHAR,
+                    interrupt_type VARCHAR,
+                    identity VARCHAR,
+                    credential_id VARCHAR,
+                    task_id VARCHAR,
+                    context_id VARCHAR,
+                    details_json VARCHAR,
+                    expires_at FLOAT,
+                    tombstone_expires_at FLOAT
+                )
+                """
+            )
+        )
+
+    repository = build_session_state_repository(settings, engine=engine)
+    await initialize_state_repository(repository)
+
+    assert await repository.get_pending_claim(session_id="ses-legacy") is None
+    assert await _read_pending_claim_row(engine, "ses-legacy") is None
+    assert await _read_state_store_schema_version(engine) == CURRENT_STATE_STORE_SCHEMA_VERSION
 
     await engine.dispose()
 
