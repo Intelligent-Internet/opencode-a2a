@@ -33,12 +33,8 @@ _STREAMING_SHARED_METADATA_KEYS = frozenset({"stream", "progress", "interrupt", 
 
 JSONRPC_EXTENSION_URI_BY_METHOD: dict[str, str] = {
     **{method: SESSION_MANAGEMENT_EXTENSION_URI for method in SESSION_METHODS.values()},
-    **{
-        method: PROVIDER_DISCOVERY_EXTENSION_URI for method in PROVIDER_DISCOVERY_METHODS.values()
-    },
-    **{
-        method: INTERRUPT_RECOVERY_EXTENSION_URI for method in INTERRUPT_RECOVERY_METHODS.values()
-    },
+    **{method: PROVIDER_DISCOVERY_EXTENSION_URI for method in PROVIDER_DISCOVERY_METHODS.values()},
+    **{method: INTERRUPT_RECOVERY_EXTENSION_URI for method in INTERRUPT_RECOVERY_METHODS.values()},
     **{method: INTERRUPT_CALLBACK_EXTENSION_URI for method in INTERRUPT_CALLBACK_METHODS.values()},
     **{method: WORKSPACE_CONTROL_EXTENSION_URI for method in WORKSPACE_CONTROL_METHODS.values()},
 }
@@ -54,7 +50,9 @@ def merge_extension_service_parameters(
     service_parameters: Mapping[str, str] | None,
     extensions: Sequence[str] | None,
 ) -> dict[str, str] | None:
-    normalized_extensions = [value for value in list(extensions or []) if isinstance(value, str) and value]
+    normalized_extensions = [
+        value for value in list(extensions or []) if isinstance(value, str) and value
+    ]
     base = dict(service_parameters or {})
     if not base and not normalized_extensions:
         return None
@@ -133,10 +131,9 @@ def required_extensions_for_send_message_params(
                 field="metadata.opencode.workspace.id",
             )
         )
-    if (
-        _metadata_field_present(sources, namespace="shared", path=("model", "providerID"))
-        or _metadata_field_present(sources, namespace="shared", path=("model", "modelID"))
-    ):
+    if _metadata_field_present(
+        sources, namespace="shared", path=("model", "providerID")
+    ) or _metadata_field_present(sources, namespace="shared", path=("model", "modelID")):
         requirements.append(
             ExtensionRequirement(
                 extension_uri=MODEL_SELECTION_EXTENSION_URI,
@@ -150,7 +147,9 @@ def filter_negotiated_extensions_from_payload(
     payload: Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent,
     requested_extensions: Iterable[str],
 ) -> Task | TaskStatusUpdateEvent | TaskArtifactUpdateEvent:
-    requested = frozenset(value for value in requested_extensions if isinstance(value, str) and value)
+    requested = frozenset(
+        value for value in requested_extensions if isinstance(value, str) and value
+    )
     if isinstance(payload, Task):
         return _filter_task(payload, requested)
     if isinstance(payload, TaskStatusUpdateEvent):
