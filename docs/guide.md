@@ -70,7 +70,7 @@ Key variables to understand protocol behavior:
   - `opencode.worktrees.create`
   - `opencode.worktrees.remove`
   - `opencode.worktrees.reset`
-- Runtime authentication also applies to `/health`; the public unauthenticated discovery surface remains `/.well-known/agent-card.json` and `/.well-known/agent.json`.
+- Runtime authentication also applies to `/health`; the public unauthenticated discovery surface remains `/.well-known/agent-card.json`.
 - The authenticated extended card endpoint `/agent/authenticatedExtendedCard` accepts the same configured bearer/basic auth modes.
 - The same outbound client flags are also honored by the server-side embedded A2A client used for peer calls and `a2a_call` tool execution:
   - `A2A_CLIENT_TIMEOUT_SECONDS`
@@ -591,8 +591,8 @@ This service exposes OpenCode session read, mutation, and control methods via A2
   - `opencode.sessions.list` / `opencode.sessions.children` => A2A `Task[]`
   - `opencode.sessions.get` => A2A `Task`
   - `opencode.sessions.todo` / `opencode.sessions.diff` => provider-private summaries in `result.items`
-  - `opencode.sessions.messages.list` => A2A `Message[]`
-  - `opencode.sessions.messages.get` => A2A `Message`
+  - `opencode.sessions.messages.list` => adapter-normalized A2A `Message` projections
+  - `opencode.sessions.messages.get` => adapter-normalized A2A `Message` projection
   - `opencode.sessions.fork` / `opencode.sessions.share` / `opencode.sessions.unshare` => provider-private session summary in `result.item`
   - `opencode.sessions.summarize` => provider-private completion result in `result.ok` plus `result.session_id`
   - `opencode.sessions.revert` / `opencode.sessions.unrevert` => provider-private session summary in `result.item`
@@ -674,7 +674,9 @@ curl -sS http://127.0.0.1:8000/ \
 
 Message history responses include:
 
-- `result.items`: normalized A2A `Message[]`
+- `result.items`: adapter-normalized A2A `Message[]`
+- `role`: canonical v1 enum values such as `ROLE_USER` / `ROLE_AGENT`
+- `parts`: current projection is text-focused; text parts are aggregated into a single `Part(text=...)` rather than preserving arbitrary upstream part structure
 - `result.next_cursor`: opaque cursor for the next older page, or `null` when no older page is available
 
 ### Session Get / Children / Todo / Diff / Message Get
@@ -683,7 +685,7 @@ Message history responses include:
 - `opencode.sessions.children` => read child sessions and map them to A2A `Task[]`
 - `opencode.sessions.todo` => read provider-private todo summaries
 - `opencode.sessions.diff` => read provider-private diff summaries; optional `message_id`
-- `opencode.sessions.messages.get` => read one message and map it to A2A `Message`
+- `opencode.sessions.messages.get` => read one message and map it to the same adapter-normalized A2A `Message` projection
 
 Example (`opencode.sessions.messages.get`):
 

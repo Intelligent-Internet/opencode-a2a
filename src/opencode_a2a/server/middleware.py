@@ -13,7 +13,6 @@ from starlette.responses import StreamingResponse
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
     EXTENDED_AGENT_CARD_PATH,
-    PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
 from ..a2a_utils import proto_to_dict
 from ..auth import (
@@ -79,7 +78,6 @@ def add_auth_middleware(app: FastAPI, settings) -> None:  # noqa: ANN001
     async def bearer_auth(request: Request, call_next):
         if request.method == "OPTIONS" or request.url.path in {
             AGENT_CARD_WELL_KNOWN_PATH,
-            PREV_AGENT_CARD_WELL_KNOWN_PATH,
         }:
             return await call_next(request)
 
@@ -300,10 +298,7 @@ def install_runtime_middlewares(
             return await call_next(request)
 
         path = request.url.path
-        is_public_card = path in {
-            AGENT_CARD_WELL_KNOWN_PATH,
-            PREV_AGENT_CARD_WELL_KNOWN_PATH,
-        }
+        is_public_card = path == AGENT_CARD_WELL_KNOWN_PATH
         is_extended_card = path == EXTENDED_AGENT_CARD_PATH
         if not is_public_card and not is_extended_card:
             return await call_next(request)

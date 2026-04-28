@@ -858,7 +858,7 @@ async def test_session_query_extension_message_role_and_id_from_info(monkeypatch
         payload = resp.json()
         message = payload["result"]["items"][0]
         assert message["messageId"] == "msg-1"
-        assert message["role"] == "user"
+        assert message["role"] == "ROLE_USER"
         assert message["parts"][0]["text"] == "hello"
 
 
@@ -908,6 +908,7 @@ async def test_session_query_extension_accepts_top_level_list_payload(monkeypatc
         payload = resp.json()
         assert payload["result"]["items"][0]["contextId"] == "ctx:opencode-session:s-1"
         assert _session_meta(payload["result"]["items"][0])["id"] == "s-1"
+        assert payload["result"]["items"][0]["role"] == "ROLE_AGENT"
         assert payload["result"]["items"][0]["parts"][0]["text"] == "SECRET_HISTORY"
 
 

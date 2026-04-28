@@ -107,7 +107,7 @@ async def test_public_agent_card_response_echoes_supplied_traceparent() -> None:
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
-            "/.well-known/agent.json",
+            "/.well-known/agent-card.json",
             headers={"traceparent": traceparent, "tracestate": "vendor=value"},
         )
 
@@ -121,12 +121,26 @@ async def test_public_agent_card_response_generates_traceparent_when_missing() -
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/.well-known/agent.json")
+        response = await client.get("/.well-known/agent-card.json")
 
     assert response.status_code == 200
     generated = response.headers.get("traceparent")
     assert isinstance(generated, str)
     assert parse_traceparent(generated) is not None
+
+
+@pytest.mark.asyncio
+async def test_legacy_public_agent_card_path_is_not_exposed() -> None:
+    app = create_app(make_settings(test_bearer_token="test-token"))
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/.well-known/agent.json",
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert response.status_code == 404
 
 
 def test_rest_subscription_route_matches_current_sdk_contract() -> None:
@@ -353,7 +367,7 @@ async def test_list_tasks_route_supports_history_artifacts_and_filters(monkeypat
             headers=headers,
             params={
                 "contextId": "ctx-filtered",
-                "status": "completed",
+                "status": "TASK_STATE_COMPLETED",
                 "historyLength": "2",
                 "includeArtifacts": "true",
                 "statusTimestampAfter": now.isoformat(),
@@ -560,6 +574,11 @@ async def test_list_tasks_route_validates_query_parameters(monkeypatch) -> None:
             headers=headers,
             params={"pageToken": "invalid-token"},
         )
+        status_error = await client.get(
+            "/v1/tasks",
+            headers=headers,
+            params={"status": "completed"},
+        )
 
     assert page_size_error.status_code == 400
     assert page_size_error.json() == {
@@ -597,6 +616,26 @@ async def test_list_tasks_route_validates_query_parameters(monkeypatch) -> None:
                 {
                     "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
                     "field": "pageToken",
+                },
+            ],
+        }
+    }
+    assert status_error.status_code == 400
+    assert status_error.json() == {
+        "error": {
+            "code": 400,
+            "status": "INVALID_ARGUMENT",
+            "message": "Unsupported task status 'completed'.",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "INVALID_LIST_TASKS_REQUEST",
+                    "domain": "a2a-protocol.org",
+                    "metadata": {"field": "status"},
+                },
+                {
+                    "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
+                    "field": "status",
                 },
             ],
         }

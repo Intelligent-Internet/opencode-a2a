@@ -54,7 +54,6 @@ from starlette.middleware.gzip import GZipMiddleware
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
     EXTENDED_AGENT_CARD_PATH,
-    PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
 from ..config import Settings
 from ..contracts.extensions import (
@@ -944,7 +943,6 @@ def create_app(settings: Settings) -> FastAPI:
             )
 
     app.add_api_route(AGENT_CARD_WELL_KNOWN_PATH, public_agent_card_route, methods=["GET"])
-    app.add_api_route(PREV_AGENT_CARD_WELL_KNOWN_PATH, public_agent_card_route, methods=["GET"])
     app.add_api_route("/v1/message:send", rest_message_send_route, methods=["POST"])
     app.add_api_route("/v1/message:stream", rest_message_send_stream_route, methods=["POST"])
     app.add_api_route("/v1/tasks/{id}:cancel", rest_dispatcher.on_cancel_task, methods=["POST"])

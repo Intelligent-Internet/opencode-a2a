@@ -15,12 +15,6 @@ from ..parts.text import extract_text_from_parts
 SESSION_CONTEXT_PREFIX = "ctx:opencode-session:"
 
 
-def _jsonrpc_role_name(role: Role) -> str:
-    if role == Role.ROLE_USER:
-        return "user"
-    return "agent"
-
-
 class _PromptAsyncValidationError(ValueError):
     def __init__(self, *, field: str, message: str) -> None:
         super().__init__(message)
@@ -387,9 +381,7 @@ def _as_a2a_message(session_id: str, item: Any) -> dict[str, Any] | None:
         context_id=context_id,
         metadata={"shared": {"session": {"id": session_id}}},
     )
-    message = proto_to_dict(msg)
-    message["role"] = _jsonrpc_role_name(role)
-    return message
+    return proto_to_dict(msg)
 
 
 def _extract_raw_items(raw_result: Any, *, kind: str) -> list[Any]:

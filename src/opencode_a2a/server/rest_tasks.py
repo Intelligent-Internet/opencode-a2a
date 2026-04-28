@@ -222,9 +222,7 @@ def _parse_list_tasks_query(request: Request) -> _ListTasksQuery:
     status = None
     if status_value is not None:
         try:
-            normalized_status = status_value.strip().upper()
-            if normalized_status and not normalized_status.startswith("TASK_STATE_"):
-                normalized_status = f"TASK_STATE_{normalized_status}"
+            normalized_status = status_value.strip()
             status = TaskState.Value(normalized_status)
         except ValueError as exc:
             raise _ListTasksValidationError(

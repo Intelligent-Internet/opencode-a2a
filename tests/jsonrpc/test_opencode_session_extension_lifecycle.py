@@ -158,6 +158,7 @@ async def test_session_lifecycle_todo_diff_and_message_get_success(monkeypatch):
 
     message_item = message_response.json()["result"]["item"]
     assert message_item["messageId"] == "m-1"
+    assert message_item["role"] == "ROLE_AGENT"
     assert message_item["parts"][0]["text"] == "One message payload"
     assert _session_meta(message_item)["id"] == "s-1"
 
