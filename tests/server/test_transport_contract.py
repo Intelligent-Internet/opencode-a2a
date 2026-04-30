@@ -18,7 +18,6 @@ from a2a.types import (
 
 from opencode_a2a.a2a_protocol import (
     EXTENDED_AGENT_CARD_PATH,
-    LEGACY_EXTENDED_AGENT_CARD_PATH,
 )
 from opencode_a2a.a2a_utils import make_data_part
 from opencode_a2a.contracts.extensions import (
@@ -814,10 +813,6 @@ async def test_agent_card_routes_split_public_and_authenticated_extended_contrac
             },
         )
         assert extended_cached.status_code == 304
-
-        legacy_extended = await client.get(LEGACY_EXTENDED_AGENT_CARD_PATH, headers=headers)
-        assert legacy_extended.status_code == 200
-        assert legacy_extended.json() == extended_card.json()
 
         public_extensions = {
             item["uri"]: item for item in public_card.json()["capabilities"]["extensions"]

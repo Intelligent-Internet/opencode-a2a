@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -8,7 +7,8 @@ import pytest
 from opencode_a2a.contracts.extensions import (
     ALL_EXTENSION_URIS,
     COMPATIBILITY_PROFILE_EXTENSION_URI,
-    EXTENSION_SPECIFICATION_BASE_URL,
+    EXTENSION_SPEC_DOCUMENT_PATHS_BY_URI,
+    EXTENSION_URI_NAMESPACE,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
     INTERRUPT_RECOVERY_EXTENSION_URI,
@@ -86,23 +86,16 @@ def _build_public_streaming_extension_params(
     }
 
 
-def test_extension_uris_resolve_to_repository_spec_documents() -> None:
+def test_extension_uris_map_to_repository_spec_documents() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     index_path = repo_root / "docs" / "extension-specifications.md"
     index_text = index_path.read_text(encoding="utf-8")
 
-    prefix = "/Intelligent-Internet/opencode-a2a/main/"
     for uri in ALL_EXTENSION_URIS:
-        assert uri.startswith(EXTENSION_SPECIFICATION_BASE_URL), (
-            "Extension URI drifted away from the repository-owned HTTPS spec namespace."
+        assert uri.startswith(EXTENSION_URI_NAMESPACE), (
+            "Extension URI drifted away from the permanent URN namespace."
         )
-        parsed = urlsplit(uri)
-        assert parsed.scheme == "https"
-        assert parsed.netloc == "raw.githubusercontent.com"
-        assert parsed.path.startswith(prefix)
-
-        relative_path = parsed.path.removeprefix(prefix)
-        local_spec_path = repo_root / relative_path
+        local_spec_path = repo_root / EXTENSION_SPEC_DOCUMENT_PATHS_BY_URI[uri]
         assert local_spec_path.is_file(), (
             f"Extension URI {uri!r} does not map to a checked-in spec document."
         )

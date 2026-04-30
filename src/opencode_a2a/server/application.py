@@ -56,7 +56,6 @@ from starlette.middleware.gzip import GZipMiddleware
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
     EXTENDED_AGENT_CARD_PATH,
-    LEGACY_EXTENDED_AGENT_CARD_PATH,
 )
 from ..config import Settings
 from ..contracts.extensions import (
@@ -983,12 +982,6 @@ def create_app(settings: Settings) -> FastAPI:
         EXTENDED_AGENT_CARD_PATH,
         authenticated_extended_agent_card_route,
         methods=["GET"],
-    )
-    app.add_api_route(
-        LEGACY_EXTENDED_AGENT_CARD_PATH,
-        authenticated_extended_agent_card_route,
-        methods=["GET"],
-        include_in_schema=False,
     )
     app.state._jsonrpc_app = jsonrpc_app
     app.state.task_store = task_store

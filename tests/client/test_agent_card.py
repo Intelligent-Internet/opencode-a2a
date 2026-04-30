@@ -54,10 +54,6 @@ async def test_build_agent_card_resolver_strips_explicit_well_known_path(
     ("url", "expected_path"),
     [
         ("https://ops.example.com/tenant/extendedAgentCard", "/extendedAgentCard"),
-        (
-            "https://ops.example.com/tenant/agent/authenticatedExtendedCard",
-            "/agent/authenticatedExtendedCard",
-        ),
     ],
 )
 def test_normalize_agent_card_endpoint_strips_extended_card_paths(

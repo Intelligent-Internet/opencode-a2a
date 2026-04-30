@@ -9,7 +9,7 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
   - JSON-RPC (`POST /`)
 - Agent Card exposes both HTTP+JSON and JSON-RPC through `supportedInterfaces`.
 - The public Agent Card is intentionally slimmed to the minimum discovery surface; per-extension disclosure policy is defined in [`extension-specifications.md`](./extension-specifications.md).
-- Detailed provider-private contracts are served through the authenticated extended card endpoint `/extendedAgentCard` (legacy alias: `/agent/authenticatedExtendedCard`).
+- Detailed provider-private contracts are served through the authenticated extended card endpoint `/extendedAgentCard`.
 - Agent Card responses emit weak `ETag` and `Cache-Control`; clients should revalidate cached cards instead of repeatedly fetching full payloads.
 - Global HTTP gzip compression is enabled for eligible non-streaming HTTP responses larger than `A2A_HTTP_GZIP_MINIMUM_SIZE` bytes when clients send `Accept-Encoding: gzip`; the default threshold is `8192`, so the main benefit currently lands on larger responses such as the authenticated extended card.
 - A2A v1.0 Agent Cards expose extended-card availability through `AgentCard.capabilities.extendedAgentCard`. This service emits that field and does not emit the removed top-level `supportsAuthenticatedExtendedCard` field.
@@ -71,7 +71,7 @@ Key variables to understand protocol behavior:
   - `opencode.worktrees.remove`
   - `opencode.worktrees.reset`
 - Runtime authentication also applies to `/health`; the public unauthenticated discovery surface remains `/.well-known/agent-card.json`.
-- The authenticated extended card endpoints `/extendedAgentCard` and `/agent/authenticatedExtendedCard` accept the same configured bearer/basic auth modes; `/extendedAgentCard` is the canonical v1.0 path.
+- The authenticated extended card endpoint `/extendedAgentCard` accepts the same configured bearer/basic auth modes as the rest of the authenticated runtime surface.
 - The same outbound client flags are also honored by the server-side embedded A2A client used for peer calls and `a2a_call` tool execution:
   - `A2A_CLIENT_TIMEOUT_SECONDS`
   - `A2A_CLIENT_CARD_FETCH_TIMEOUT_SECONDS`
@@ -449,7 +449,7 @@ Important distinction:
 
 Stable specification URI:
 
-- `https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/shared/session-binding/v1.md`
+- `urn:opencode-a2a:extension:shared:session-binding:v1`
 
 This section focuses on how clients should use the binding at runtime. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
@@ -496,7 +496,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 Stable specification URI:
 
-- `https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/shared/model-selection/v1.md`
+- `urn:opencode-a2a:extension:shared:model-selection:v1`
 
 This section focuses on request-scoped usage. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
@@ -549,7 +549,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 Stable specification URI:
 
-- `https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/shared/stream-hints/v1.md`
+- `urn:opencode-a2a:extension:shared:stream-hints:v1`
 
 This section focuses on how clients should interpret runtime metadata. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
@@ -575,7 +575,7 @@ Consumer guidance:
 - Use the extension declaration to know the server emits canonical shared stream hints.
 - Use runtime metadata to render block timelines, token usage, and interactive interruptions.
 - Do not infer capability support only from seeing one runtime field on one response; rely on Agent Card discovery first when possible.
-- Treat `metadata.shared.interrupt` as observation data. Callback operations are a separate shared capability declared by `https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/shared/interactive-interrupt/v1.md`.
+- Treat `metadata.shared.interrupt` as observation data. Callback operations are a separate shared capability declared by `urn:opencode-a2a:extension:shared:interactive-interrupt:v1`.
 
 Minimal stream semantics summary:
 

@@ -1,7 +1,10 @@
 # Extension Specifications
 
 This index records the repository-governed extension URIs published by `opencode-a2a`.
-Each published URI resolves directly to the specification document for that extension.
+Each published URI is a stable extension identifier. The repository-hosted specification
+documents in `docs/extensions/**` are the current human-readable publication path for
+those identifiers; the extension identity itself is intentionally decoupled from the
+GitHub document location.
 For runtime behavior, request/response examples, and consumer guidance, see
 [`guide.md`](./guide.md). For compatibility-sensitive promises, see
 [`compatibility.md`](./compatibility.md).
@@ -22,20 +25,18 @@ Anonymous discovery surfaces intentionally stay minimal:
   extended cards; it does not emit the removed top-level
   `supportsAuthenticatedExtendedCard` field.
 - The canonical authenticated extended Agent Card HTTP endpoint is `GET /extendedAgentCard`.
-- The legacy `GET /agent/authenticatedExtendedCard` path remains available as a
-  compatibility alias for older clients.
 
 ## URI Index
 
-| Extension | Scope | Disclosure | URI |
-| --- | --- | --- | --- |
-| Shared Session Binding v1 | Shared request metadata | Public + extended | <https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/shared/session-binding/v1.md> |
-| Shared Model Selection v1 | Shared request metadata | Public + extended | <https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/shared/model-selection/v1.md> |
-| Shared Stream Hints v1 | Shared response/stream metadata | Public + extended | <https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/shared/stream-hints/v1.md> |
-| Shared Interactive Interrupt v1 | Shared JSON-RPC callback methods | Public + extended | <https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/shared/interactive-interrupt/v1.md> |
-| OpenCode Session Management v1 | Provider-private JSON-RPC methods | Extended only | <https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/private/session-management/v1.md> |
-| OpenCode Provider Discovery v1 | Provider-private JSON-RPC methods | Extended only | <https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/private/provider-discovery/v1.md> |
-| OpenCode Workspace Control v1 | Provider-private JSON-RPC methods | Extended only | <https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/private/workspace-control/v1.md> |
-| OpenCode Interrupt Recovery v1 | Provider-private JSON-RPC methods | Extended only | <https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/private/interrupt-recovery/v1.md> |
-| A2A Compatibility Profile v1 | Authenticated discovery metadata | Extended only | <https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/private/compatibility-profile/v1.md> |
-| A2A Wire Contract v1 | Authenticated discovery metadata | Extended only | <https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions/private/wire-contract/v1.md> |
+| Extension | Scope | Disclosure | URI | Repository Spec |
+| --- | --- | --- | --- | --- |
+| Shared Session Binding v1 | Shared request metadata | Public + extended | `urn:opencode-a2a:extension:shared:session-binding:v1` | [docs/extensions/shared/session-binding/v1.md](./extensions/shared/session-binding/v1.md) |
+| Shared Model Selection v1 | Shared request metadata | Public + extended | `urn:opencode-a2a:extension:shared:model-selection:v1` | [docs/extensions/shared/model-selection/v1.md](./extensions/shared/model-selection/v1.md) |
+| Shared Stream Hints v1 | Shared response/stream metadata | Public + extended | `urn:opencode-a2a:extension:shared:stream-hints:v1` | [docs/extensions/shared/stream-hints/v1.md](./extensions/shared/stream-hints/v1.md) |
+| Shared Interactive Interrupt v1 | Shared JSON-RPC callback methods | Public + extended | `urn:opencode-a2a:extension:shared:interactive-interrupt:v1` | [docs/extensions/shared/interactive-interrupt/v1.md](./extensions/shared/interactive-interrupt/v1.md) |
+| OpenCode Session Management v1 | Provider-private JSON-RPC methods | Extended only | `urn:opencode-a2a:extension:private:session-management:v1` | [docs/extensions/private/session-management/v1.md](./extensions/private/session-management/v1.md) |
+| OpenCode Provider Discovery v1 | Provider-private JSON-RPC methods | Extended only | `urn:opencode-a2a:extension:private:provider-discovery:v1` | [docs/extensions/private/provider-discovery/v1.md](./extensions/private/provider-discovery/v1.md) |
+| OpenCode Workspace Control v1 | Provider-private JSON-RPC methods | Extended only | `urn:opencode-a2a:extension:private:workspace-control:v1` | [docs/extensions/private/workspace-control/v1.md](./extensions/private/workspace-control/v1.md) |
+| OpenCode Interrupt Recovery v1 | Provider-private JSON-RPC methods | Extended only | `urn:opencode-a2a:extension:private:interrupt-recovery:v1` | [docs/extensions/private/interrupt-recovery/v1.md](./extensions/private/interrupt-recovery/v1.md) |
+| A2A Compatibility Profile v1 | Authenticated discovery metadata | Extended only | `urn:opencode-a2a:extension:private:compatibility-profile:v1` | [docs/extensions/private/compatibility-profile/v1.md](./extensions/private/compatibility-profile/v1.md) |
+| A2A Wire Contract v1 | Authenticated discovery metadata | Extended only | `urn:opencode-a2a:extension:private:wire-contract:v1` | [docs/extensions/private/wire-contract/v1.md](./extensions/private/wire-contract/v1.md) |
