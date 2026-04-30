@@ -420,15 +420,11 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
             capability_snapshot=capability_snapshot
         )
     )
-    assert "opencode.sessions.shell" in _build_jsonrpc_extension_openapi_description(
-        capability_snapshot=capability_snapshot
-    )
-    assert "session_shell" in _build_jsonrpc_extension_openapi_examples(
-        capability_snapshot=capability_snapshot
-    )
-    assert "worktrees_create" not in _build_jsonrpc_extension_openapi_examples(
-        capability_snapshot=capability_snapshot
-    )
+    assert "authenticated extended Agent Card" in _build_jsonrpc_extension_openapi_description()
+    assert "opencode.sessions.shell" not in _build_jsonrpc_extension_openapi_description()
+    assert "message_send_session_binding" in _build_jsonrpc_extension_openapi_examples()
+    assert "session_shell" not in _build_jsonrpc_extension_openapi_examples()
+    assert "worktrees_create" not in _build_jsonrpc_extension_openapi_examples()
     assert "continue_session" in _build_rest_message_openapi_examples()
 
 
@@ -612,9 +608,10 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch, caplog) -> No
     root_examples = openapi_first["paths"]["/"]["post"]["requestBody"]["content"][
         "application/json"
     ]["examples"]
-    assert "session_shell" in root_examples
+    assert "message_send_session_binding" in root_examples
+    assert "session_shell" not in root_examples
     assert "worktrees_create" not in root_examples
-    assert "opencode.sessions.shell" in openapi_first["paths"]["/"]["post"]["description"]
+    assert "authenticated extended Agent Card" in openapi_first["paths"]["/"]["post"]["description"]
 
 
 @pytest.mark.asyncio

@@ -18,7 +18,9 @@ from a2a.types import (
 
 from opencode_a2a.a2a_utils import make_data_part
 from opencode_a2a.contracts.extensions import (
+    AUTHENTICATED_ONLY_EXTENSION_URIS,
     MODEL_SELECTION_EXTENSION_URI,
+    PUBLIC_EXTENSION_URIS,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_MANAGEMENT_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
@@ -733,7 +735,11 @@ async def test_agent_card_routes_split_public_and_authenticated_extended_contrac
         extended_extensions = {
             item["uri"]: item for item in extended_card.json()["capabilities"]["extensions"]
         }
-        assert public_extensions[SESSION_MANAGEMENT_EXTENSION_URI].get("params") is None
+        assert tuple(public_extensions.keys()) == PUBLIC_EXTENSION_URIS
+        assert set(extended_extensions.keys()) == set(PUBLIC_EXTENSION_URIS) | set(
+            AUTHENTICATED_ONLY_EXTENSION_URIS
+        )
+        assert SESSION_MANAGEMENT_EXTENSION_URI not in public_extensions
         assert extended_extensions[SESSION_MANAGEMENT_EXTENSION_URI]["params"]["methods"][
             "status"
         ] == ("opencode.sessions.status")
@@ -750,10 +756,10 @@ async def test_agent_card_routes_split_public_and_authenticated_extended_contrac
             },
         )
         assert rpc_card.status_code == 200
-        assert (
-            rpc_card.json()["result"]["capabilities"]["extensions"][3]["uri"]
-            == SESSION_MANAGEMENT_EXTENSION_URI
-        )
+        rpc_extensions = {
+            item["uri"]: item for item in rpc_card.json()["result"]["capabilities"]["extensions"]
+        }
+        assert SESSION_MANAGEMENT_EXTENSION_URI in rpc_extensions
 
 
 @pytest.mark.asyncio
@@ -881,7 +887,8 @@ async def test_global_http_gzip_applies_to_eligible_non_streaming_responses(monk
     import opencode_a2a.server.application as app_module
 
     monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
-    app = app_module.create_app(make_settings(test_bearer_token="test-token"))
+    settings = make_settings(test_bearer_token="test-token")
+    app = app_module.create_app(settings)
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -907,7 +914,7 @@ async def test_global_http_gzip_applies_to_eligible_non_streaming_responses(monk
     assert extended_response.status_code == 200
     assert extended_response.headers.get("content-encoding") == "gzip"
     assert public_response.status_code == 200
-    if len(public_response.content) >= 2048:
+    if len(public_response.content) >= settings.a2a_http_gzip_minimum_size:
         assert public_response.headers.get("content-encoding") == "gzip"
     else:
         assert public_response.headers.get("content-encoding") is None

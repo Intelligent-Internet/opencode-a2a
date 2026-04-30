@@ -7,62 +7,76 @@ from fastapi import FastAPI
 from ..config import Settings
 from ..contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
-    INTERRUPT_RECOVERY_METHODS,
-    PROVIDER_DISCOVERY_METHODS,
-    SESSION_METHODS,
-    SESSION_QUERY_DEFAULT_LIMIT,
-    WORKSPACE_CONTROL_METHODS,
-    JsonRpcCapabilitySnapshot,
-    build_capability_snapshot,
-    build_compatibility_profile_params,
     build_interrupt_callback_extension_params,
-    build_interrupt_recovery_extension_params,
     build_model_selection_extension_params,
-    build_provider_discovery_extension_params,
     build_session_binding_extension_params,
-    build_session_management_extension_params,
     build_streaming_extension_params,
-    build_wire_contract_params,
-    build_workspace_control_extension_params,
 )
-from ..jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from ..jsonrpc.models import JSONRPCRequest
 from ..profile.runtime import RuntimeProfile
-from ..protocol_versions import A2A_PROTOCOL_VERSION
 
 
-def _build_jsonrpc_extension_openapi_description(
+def _select_public_extension_params(
+    params: dict[str, Any],
     *,
-    capability_snapshot: JsonRpcCapabilitySnapshot,
-) -> str:
-    session_methods = list(capability_snapshot.session_management_methods().values())
-    provider_methods = ", ".join(sorted(PROVIDER_DISCOVERY_METHODS.values()))
-    workspace_methods = ", ".join(sorted(capability_snapshot.workspace_control_methods().values()))
-    interrupt_recovery_methods = ", ".join(sorted(INTERRUPT_RECOVERY_METHODS.values()))
+    keys: tuple[str, ...],
+) -> dict[str, Any]:
+    return {key: params[key] for key in keys if key in params}
+
+
+def _build_public_streaming_extension_params(
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "artifact_metadata_field": params["artifact_metadata_field"],
+        "progress_metadata_field": params["progress_metadata_field"],
+        "interrupt_metadata_field": params["interrupt_metadata_field"],
+        "session_metadata_field": params["session_metadata_field"],
+        "usage_metadata_field": params["usage_metadata_field"],
+        "block_types": params["block_types"],
+        "stream_fields": _select_public_extension_params(
+            params["stream_fields"],
+            keys=("block_type", "message_id", "sequence"),
+        ),
+        "progress_fields": _select_public_extension_params(
+            params["progress_fields"],
+            keys=("type", "status"),
+        ),
+        "interrupt_fields": _select_public_extension_params(
+            params["interrupt_fields"],
+            keys=("request_id", "type", "phase"),
+        ),
+        "session_fields": _select_public_extension_params(
+            params["session_fields"],
+            keys=("id", "title"),
+        ),
+        "usage_fields": _select_public_extension_params(
+            params["usage_fields"],
+            keys=("input_tokens", "output_tokens", "total_tokens"),
+        ),
+    }
+
+
+def _build_jsonrpc_extension_openapi_description() -> str:
     interrupt_methods = ", ".join(sorted(INTERRUPT_CALLBACK_METHODS.values()))
     return (
         "A2A JSON-RPC entrypoint. Supports core A2A methods "
         "(SendMessage, SendStreamingMessage, GetTask, CancelTask, SubscribeToTask) "
-        "plus shared model-selection metadata, OpenCode session/provider extensions, "
-        "interrupt recovery extensions, and shared interrupt callback methods.\n\n"
-        f"OpenCode session read/mutation/control methods: {', '.join(session_methods)}.\n"
-        "The existing prompt_async extension also accepts provider-private OpenCode "
-        "request.parts[] item types such as text, file, agent, and subtask; subtask "
-        "execution remains upstream runtime behavior rather than a separate A2A "
-        "orchestration API.\n"
-        f"OpenCode provider/model discovery methods: {provider_methods}.\n"
-        f"OpenCode project/workspace/worktree control methods: {workspace_methods}.\n"
-        f"OpenCode interrupt recovery methods: {interrupt_recovery_methods}.\n"
+        "plus shared session binding, shared model-selection metadata, shared stream "
+        "hints, and shared interrupt callback methods.\n\n"
+        "Anonymous discovery intentionally exposes only the minimal shared extension "
+        "contract surface needed for interoperable clients.\n"
+        "Deployment-specific provider-private JSON-RPC methods are documented through "
+        "the authenticated extended Agent Card instead of this anonymous OpenAPI "
+        "surface.\n"
         f"Shared interrupt callback methods: {interrupt_methods}.\n\n"
-        "Notification semantics: extension requests without JSON-RPC id return HTTP 204."
+        "Notification semantics: shared interrupt callback requests without JSON-RPC id "
+        "return HTTP 204."
     )
 
 
-def _build_jsonrpc_extension_openapi_examples(
-    *,
-    capability_snapshot: JsonRpcCapabilitySnapshot,
-) -> dict[str, Any]:
-    examples = {
+def _build_jsonrpc_extension_openapi_examples() -> dict[str, Any]:
+    return {
         "message_send": {
             "summary": "Send message via JSON-RPC core method",
             "value": {
@@ -116,11 +130,33 @@ def _build_jsonrpc_extension_openapi_examples(
                 },
             },
         },
+        "message_send_session_binding": {
+            "summary": "Continue a session with shared session binding metadata",
+            "value": {
+                "jsonrpc": "2.0",
+                "id": 104,
+                "method": "SendMessage",
+                "params": {
+                    "message": {
+                        "messageId": "msg-continue-1",
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "Continue previous work and summarize next steps."}],
+                    },
+                    "metadata": {
+                        "shared": {
+                            "session": {
+                                "id": "s-1",
+                            }
+                        }
+                    },
+                },
+            },
+        },
         "message_send_file_input": {
             "summary": "Send message with text + file input",
             "value": {
                 "jsonrpc": "2.0",
-                "id": 104,
+                "id": 105,
                 "method": "SendMessage",
                 "params": {
                     "message": {
@@ -136,277 +172,6 @@ def _build_jsonrpc_extension_openapi_examples(
                         ],
                     }
                 },
-            },
-        },
-        "session_list": {
-            "summary": "List OpenCode sessions",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": SESSION_METHODS["list_sessions"],
-                "params": {
-                    "directory": "services/api",
-                    "roots": True,
-                    "search": "planner",
-                    "limit": SESSION_QUERY_DEFAULT_LIMIT,
-                },
-            },
-        },
-        "session_status": {
-            "summary": "Get OpenCode session status snapshots",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 11,
-                "method": SESSION_METHODS["status"],
-                "params": {"directory": "services/api"},
-            },
-        },
-        "session_get": {
-            "summary": "Get one OpenCode session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 12,
-                "method": SESSION_METHODS["get_session"],
-                "params": {"session_id": "s-1"},
-            },
-        },
-        "session_children": {
-            "summary": "List child sessions for one OpenCode session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 13,
-                "method": SESSION_METHODS["get_session_children"],
-                "params": {"session_id": "s-1"},
-            },
-        },
-        "session_todo": {
-            "summary": "Read todo items for one OpenCode session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 14,
-                "method": SESSION_METHODS["get_session_todo"],
-                "params": {"session_id": "s-1"},
-            },
-        },
-        "session_diff": {
-            "summary": "Read diff summary for one OpenCode session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 15,
-                "method": SESSION_METHODS["get_session_diff"],
-                "params": {"session_id": "s-1", "message_id": "msg-1"},
-            },
-        },
-        "session_messages": {
-            "summary": "List session messages",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": SESSION_METHODS["get_session_messages"],
-                "params": {
-                    "session_id": "s-1",
-                    "before": "cursor-1",
-                    "limit": SESSION_QUERY_DEFAULT_LIMIT,
-                },
-            },
-        },
-        "session_message_get": {
-            "summary": "Get one session message",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 16,
-                "method": SESSION_METHODS["get_session_message"],
-                "params": {"session_id": "s-1", "message_id": "msg-1"},
-            },
-        },
-        "session_prompt_async": {
-            "summary": "Send async prompt to an existing session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 21,
-                "method": SESSION_METHODS["prompt_async"],
-                "params": {
-                    "session_id": "s-1",
-                    "request": {
-                        "parts": [{"type": "text", "text": "Continue and summarize next steps."}]
-                    },
-                },
-            },
-        },
-        "session_prompt_async_subtask": {
-            "summary": "Send a provider-private subtask part to an existing session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 211,
-                "method": SESSION_METHODS["prompt_async"],
-                "params": {
-                    "session_id": "s-1",
-                    "request": {
-                        "parts": [
-                            {
-                                "type": "subtask",
-                                "prompt": "Inspect the auth middleware and list gaps.",
-                                "description": "Security-focused pass over request auth flow",
-                                "agent": "explore",
-                                "command": "review",
-                            }
-                        ]
-                    },
-                },
-            },
-        },
-        "session_command": {
-            "summary": "Send command to an existing session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 22,
-                "method": SESSION_METHODS["command"],
-                "params": {
-                    "session_id": "s-1",
-                    "request": {
-                        "command": "/review",
-                        "arguments": "focus on security findings",
-                    },
-                },
-            },
-        },
-        "session_fork": {
-            "summary": "Fork one OpenCode session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 221,
-                "method": SESSION_METHODS["fork"],
-                "params": {
-                    "session_id": "s-1",
-                    "request": {"messageID": "msg-1"},
-                },
-            },
-        },
-        "session_share": {
-            "summary": "Share one OpenCode session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 222,
-                "method": SESSION_METHODS["share"],
-                "params": {"session_id": "s-1"},
-            },
-        },
-        "session_unshare": {
-            "summary": "Unshare one OpenCode session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 223,
-                "method": SESSION_METHODS["unshare"],
-                "params": {"session_id": "s-1"},
-            },
-        },
-        "session_summarize": {
-            "summary": "Summarize one OpenCode session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 224,
-                "method": SESSION_METHODS["summarize"],
-                "params": {
-                    "session_id": "s-1",
-                    "request": {
-                        "providerID": "openai",
-                        "modelID": "gpt-5",
-                        "auto": True,
-                    },
-                },
-            },
-        },
-        "session_revert": {
-            "summary": "Revert one OpenCode session to a message boundary",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 225,
-                "method": SESSION_METHODS["revert"],
-                "params": {
-                    "session_id": "s-1",
-                    "request": {"messageID": "msg-1", "partID": "part-1"},
-                },
-            },
-        },
-        "session_unrevert": {
-            "summary": "Restore reverted content in one OpenCode session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 226,
-                "method": SESSION_METHODS["unrevert"],
-                "params": {"session_id": "s-1"},
-            },
-        },
-        "providers_list": {
-            "summary": "List available OpenCode providers",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 24,
-                "method": PROVIDER_DISCOVERY_METHODS["list_providers"],
-                "params": {},
-            },
-        },
-        "models_list": {
-            "summary": "List available models for one provider",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 25,
-                "method": PROVIDER_DISCOVERY_METHODS["list_models"],
-                "params": {"provider_id": "openai"},
-            },
-        },
-        "projects_list": {
-            "summary": "List OpenCode projects",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 28,
-                "method": WORKSPACE_CONTROL_METHODS["list_projects"],
-                "params": {},
-            },
-        },
-        "projects_current": {
-            "summary": "Get the current OpenCode project",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 281,
-                "method": WORKSPACE_CONTROL_METHODS["get_current_project"],
-                "params": {},
-            },
-        },
-        "workspaces_list": {
-            "summary": "List workspaces for the active project",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 29,
-                "method": WORKSPACE_CONTROL_METHODS["list_workspaces"],
-                "params": {},
-            },
-        },
-        "worktrees_list": {
-            "summary": "List worktrees for the active project",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 293,
-                "method": WORKSPACE_CONTROL_METHODS["list_worktrees"],
-                "params": {},
-            },
-        },
-        "permissions_list": {
-            "summary": "List pending permission interrupts for the current caller",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 26,
-                "method": INTERRUPT_RECOVERY_METHODS["list_permissions"],
-                "params": {},
-            },
-        },
-        "questions_list": {
-            "summary": "List pending question interrupts for the current caller",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 27,
-                "method": INTERRUPT_RECOVERY_METHODS["list_questions"],
-                "params": {},
             },
         },
         "permission_reply": {
@@ -437,74 +202,6 @@ def _build_jsonrpc_extension_openapi_examples(
             },
         },
     }
-    if capability_snapshot.is_method_enabled(SESSION_METHODS["shell"]):
-        examples["session_shell"] = {
-            "summary": "Run shell command in an existing session",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 23,
-                "method": SESSION_METHODS["shell"],
-                "params": {
-                    "session_id": "s-1",
-                    "request": {
-                        "agent": "code-reviewer",
-                        "command": "git status --short",
-                    },
-                },
-            },
-        }
-    if capability_snapshot.is_method_enabled(WORKSPACE_CONTROL_METHODS["create_workspace"]):
-        examples["workspaces_create"] = {
-            "summary": "Create a workspace for the active project",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 291,
-                "method": WORKSPACE_CONTROL_METHODS["create_workspace"],
-                "params": {"request": {"type": "git", "branch": "main"}},
-            },
-        }
-        examples["workspaces_remove"] = {
-            "summary": "Remove a workspace",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 292,
-                "method": WORKSPACE_CONTROL_METHODS["remove_workspace"],
-                "params": {"workspace_id": "wrk-1"},
-            },
-        }
-        examples["worktrees_create"] = {
-            "summary": "Create a new worktree",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 30,
-                "method": WORKSPACE_CONTROL_METHODS["create_worktree"],
-                "params": {
-                    "request": {
-                        "name": "feature-branch",
-                        "startCommand": "pnpm install",
-                    }
-                },
-            },
-        }
-        examples["worktrees_remove"] = {
-            "summary": "Remove a worktree",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 301,
-                "method": WORKSPACE_CONTROL_METHODS["remove_worktree"],
-                "params": {"request": {"directory": "/tmp/worktrees/feature-branch"}},
-            },
-        }
-        examples["worktrees_reset"] = {
-            "summary": "Reset a worktree branch",
-            "value": {
-                "jsonrpc": "2.0",
-                "id": 302,
-                "method": WORKSPACE_CONTROL_METHODS["reset_worktree"],
-                "params": {"request": {"directory": "/tmp/worktrees/feature-branch"}},
-            },
-        }
-    return examples
 
 
 def _build_rest_message_openapi_examples() -> dict[str, Any]:
@@ -578,6 +275,7 @@ def _patch_jsonrpc_openapi_contract(
     *,
     runtime_profile: RuntimeProfile,
 ) -> None:
+    del settings
     session_binding = build_session_binding_extension_params(
         runtime_profile=runtime_profile,
     )
@@ -585,31 +283,9 @@ def _patch_jsonrpc_openapi_contract(
         runtime_profile=runtime_profile,
     )
     streaming = build_streaming_extension_params()
-    session_management = build_session_management_extension_params(
-        runtime_profile=runtime_profile,
-        context_id_prefix=SESSION_CONTEXT_PREFIX,
-    )
-    provider_discovery = build_provider_discovery_extension_params(
-        runtime_profile=runtime_profile,
-    )
-    workspace_control = build_workspace_control_extension_params(
-        runtime_profile=runtime_profile,
-    )
-    interrupt_recovery = build_interrupt_recovery_extension_params(
-        runtime_profile=runtime_profile,
-    )
     interrupt_callback = build_interrupt_callback_extension_params(
         runtime_profile=runtime_profile,
     )
-    compatibility_profile = build_compatibility_profile_params(
-        protocol_version=A2A_PROTOCOL_VERSION,
-        runtime_profile=runtime_profile,
-    )
-    wire_contract = build_wire_contract_params(
-        protocol_version=A2A_PROTOCOL_VERSION,
-        runtime_profile=runtime_profile,
-    )
-    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
     original_openapi = app.openapi
 
     def custom_openapi() -> dict[str, Any]:
@@ -631,20 +307,33 @@ def _patch_jsonrpc_openapi_contract(
                 post = root_path.get("post")
                 if isinstance(post, dict):
                     post["summary"] = "Handle A2A JSON-RPC Requests"
-                    post["description"] = _build_jsonrpc_extension_openapi_description(
-                        capability_snapshot=capability_snapshot,
-                    )
+                    post["description"] = _build_jsonrpc_extension_openapi_description()
                     post["x-a2a-extension-contracts"] = {
-                        "session_binding": session_binding,
-                        "model_selection": model_selection,
-                        "streaming": streaming,
-                        "session_management": session_management,
-                        "provider_discovery": provider_discovery,
-                        "workspace_control": workspace_control,
-                        "interrupt_recovery": interrupt_recovery,
-                        "interrupt_callback": interrupt_callback,
-                        "compatibility_profile": compatibility_profile,
-                        "wire_contract": wire_contract,
+                        "session_binding": _select_public_extension_params(
+                            session_binding,
+                            keys=(
+                                "metadata_field",
+                                "behavior",
+                                "supported_metadata",
+                                "provider_private_metadata",
+                            ),
+                        ),
+                        "model_selection": _select_public_extension_params(
+                            model_selection,
+                            keys=(
+                                "metadata_field",
+                                "behavior",
+                                "applies_to_methods",
+                                "supported_metadata",
+                                "provider_private_metadata",
+                                "fields",
+                            ),
+                        ),
+                        "streaming": _build_public_streaming_extension_params(streaming),
+                        "interrupt_callback": _select_public_extension_params(
+                            interrupt_callback,
+                            keys=("methods", "supported_interrupt_events", "request_id_field"),
+                        ),
                     }
 
                     request_body = post.setdefault("requestBody", {})
@@ -655,9 +344,7 @@ def _patch_jsonrpc_openapi_contract(
                             app_json = content.setdefault("application/json", {})
                             if isinstance(app_json, dict):
                                 app_json["schema"] = {"$ref": "#/components/schemas/A2ARequest"}
-                                app_json["examples"] = _build_jsonrpc_extension_openapi_examples(
-                                    capability_snapshot=capability_snapshot,
-                                )
+                                app_json["examples"] = _build_jsonrpc_extension_openapi_examples()
 
             rest_post_contracts: dict[str, dict[str, Any]] = {
                 "/v1/message:send": {

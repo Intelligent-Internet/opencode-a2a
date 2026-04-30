@@ -443,12 +443,13 @@ Important distinction:
 - [`extension-specifications.md`](./extension-specifications.md) owns the stable URI catalog plus public-vs-extended disclosure policy.
 - This guide owns runtime usage, request/response semantics, and client-facing examples.
 - The authenticated extended card is the detailed deployment-specific contract view.
+- Anonymous OpenAPI mirrors the public shared-discovery subset only; detailed provider-private extension contracts are intentionally authenticated-only.
 
 ## Shared Session Binding Contract
 
 Stable specification URI:
 
-- `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#shared-session-binding-v1`
+- `urn:a2a:opencode-a2a:shared:session-binding:v1`
 
 This section focuses on how clients should use the binding at runtime. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
@@ -495,7 +496,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 Stable specification URI:
 
-- `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#shared-model-selection-v1`
+- `urn:a2a:opencode-a2a:shared:model-selection:v1`
 
 This section focuses on request-scoped usage. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
@@ -548,7 +549,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 Stable specification URI:
 
-- `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#shared-stream-hints-v1`
+- `urn:a2a:opencode-a2a:shared:stream-hints:v1`
 
 This section focuses on how clients should interpret runtime metadata. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
@@ -574,7 +575,7 @@ Consumer guidance:
 - Use the extension declaration to know the server emits canonical shared stream hints.
 - Use runtime metadata to render block timelines, token usage, and interactive interruptions.
 - Do not infer capability support only from seeing one runtime field on one response; rely on Agent Card discovery first when possible.
-- Treat `metadata.shared.interrupt` as observation data. Callback operations are a separate shared capability declared by `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#shared-interactive-interrupt-v1`.
+- Treat `metadata.shared.interrupt` as observation data. Callback operations are a separate shared capability declared by `urn:a2a:opencode-a2a:shared:interactive-interrupt:v1`.
 
 Minimal stream semantics summary:
 
@@ -587,6 +588,8 @@ Minimal stream semantics summary:
 ## OpenCode Session Management A2A Extension
 
 This service exposes OpenCode session read, mutation, and control methods via A2A JSON-RPC extension methods (default endpoint: `POST /`). No extra custom REST endpoint is introduced.
+
+Detailed contract discovery for this provider-private surface is intentionally authenticated-only. Public Agent Card and anonymous OpenAPI do not expand this method matrix.
 
 - Trigger: call extension methods through A2A JSON-RPC
 - Auth: same runtime auth as the main endpoint (`Bearer` or configured `Basic`)

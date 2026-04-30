@@ -25,7 +25,7 @@ If runtime support is not implemented, do not publish it as a supported machine-
 Consumer guidance:
 
 - Treat the v1 core A2A methods (`SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`, `SubscribeToTask`) as the portable baseline.
-- Treat `urn:a2a:*` entries in this repository as shared repo-family conventions, not as a claim that they are part of the A2A core baseline.
+- Treat `urn:a2a:opencode-a2a:*` entries in this repository as repository-governed extension identifiers, not as a claim that they are part of the A2A core baseline.
 - Treat `opencode.*` methods and `metadata.opencode.*` fields as provider-private OpenCode control and discovery surfaces layered on top of the portable A2A baseline.
 - Treat [extension-specifications.md](./extension-specifications.md) as the stable URI/spec index, not as the main usage guide.
 
@@ -132,7 +132,7 @@ This repository distinguishes between three layers:
 
 Important note:
 
-- `urn:a2a:*` extension URIs used here should be read as shared conventions in this repository family.
+- `urn:a2a:opencode-a2a:*` extension URIs used here are stable identifiers governed by this repository family.
 - They are not a claim that those extensions are part of the A2A core baseline.
 - `opencode.*` methods are intentionally product-specific. They improve OpenCode-aware workflows but should not be assumed to transfer unchanged to unrelated A2A agents.
 

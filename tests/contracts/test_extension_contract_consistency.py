@@ -1,3 +1,5 @@
+from typing import Any
+
 import httpx
 import pytest
 
@@ -37,6 +39,47 @@ from tests.support.helpers import (
 )
 from tests.support.helpers import make_settings
 from tests.support.session_extensions import _extension_headers
+
+
+def _select_public_extension_params(
+    params: dict[str, Any],
+    *,
+    keys: tuple[str, ...],
+) -> dict[str, Any]:
+    return {key: params[key] for key in keys if key in params}
+
+
+def _build_public_streaming_extension_params(
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "artifact_metadata_field": params["artifact_metadata_field"],
+        "progress_metadata_field": params["progress_metadata_field"],
+        "interrupt_metadata_field": params["interrupt_metadata_field"],
+        "session_metadata_field": params["session_metadata_field"],
+        "usage_metadata_field": params["usage_metadata_field"],
+        "block_types": params["block_types"],
+        "stream_fields": _select_public_extension_params(
+            params["stream_fields"],
+            keys=("block_type", "message_id", "sequence"),
+        ),
+        "progress_fields": _select_public_extension_params(
+            params["progress_fields"],
+            keys=("type", "status"),
+        ),
+        "interrupt_fields": _select_public_extension_params(
+            params["interrupt_fields"],
+            keys=("request_id", "type", "phase"),
+        ),
+        "session_fields": _select_public_extension_params(
+            params["session_fields"],
+            keys=("id", "title"),
+        ),
+        "usage_fields": _select_public_extension_params(
+            params["usage_fields"],
+            keys=("input_tokens", "output_tokens", "total_tokens"),
+        ),
+    }
 
 
 def test_extension_ssot_matches_agent_card_contracts() -> None:
@@ -125,7 +168,7 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
     ), "Protocol compatibility summary drifted between compatibility profile and wire contract."
 
 
-def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
+def test_openapi_jsonrpc_contract_extension_matches_public_disclosure_policy() -> None:
     app = create_app(make_settings(test_bearer_token="test-token"))
     openapi = app.openapi()
     post = openapi["paths"]["/"]["post"]
@@ -138,80 +181,55 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     session_binding = contract["session_binding"]
     model_selection = contract["model_selection"]
     streaming = contract["streaming"]
-    session_management = contract["session_management"]
-    provider_discovery = contract["provider_discovery"]
-    workspace_control = contract["workspace_control"]
-    interrupt_recovery = contract["interrupt_recovery"]
     interrupt_callback = contract["interrupt_callback"]
-    compatibility_profile = contract["compatibility_profile"]
-    wire_contract = contract["wire_contract"]
+    assert set(contract.keys()) == {
+        "session_binding",
+        "model_selection",
+        "streaming",
+        "interrupt_callback",
+    }
     settings = make_settings(test_bearer_token="test-token")
     runtime_profile = build_runtime_profile(settings)
-    expected_session_binding = build_session_binding_extension_params(
-        runtime_profile=runtime_profile,
+    expected_session_binding = _select_public_extension_params(
+        build_session_binding_extension_params(runtime_profile=runtime_profile),
+        keys=(
+            "metadata_field",
+            "behavior",
+            "supported_metadata",
+            "provider_private_metadata",
+        ),
     )
-    expected_model_selection = build_model_selection_extension_params(
-        runtime_profile=runtime_profile,
+    expected_model_selection = _select_public_extension_params(
+        build_model_selection_extension_params(runtime_profile=runtime_profile),
+        keys=(
+            "metadata_field",
+            "behavior",
+            "applies_to_methods",
+            "supported_metadata",
+            "provider_private_metadata",
+            "fields",
+        ),
     )
-    expected_streaming = build_streaming_extension_params()
-    expected_session_management = build_session_management_extension_params(
-        runtime_profile=runtime_profile,
-        context_id_prefix=SESSION_CONTEXT_PREFIX,
+    expected_streaming = _build_public_streaming_extension_params(
+        build_streaming_extension_params()
     )
-    expected_provider_discovery = build_provider_discovery_extension_params(
-        runtime_profile=runtime_profile,
-    )
-    expected_workspace_control = build_workspace_control_extension_params(
-        runtime_profile=runtime_profile,
-    )
-    expected_interrupt_recovery = build_interrupt_recovery_extension_params(
-        runtime_profile=runtime_profile,
-    )
-    expected_interrupt_callback = build_interrupt_callback_extension_params(
-        runtime_profile=runtime_profile,
-    )
-    expected_compatibility_profile = build_compatibility_profile_params(
-        protocol_version=A2A_PROTOCOL_VERSION,
-        runtime_profile=runtime_profile,
-    )
-    expected_wire_contract = build_wire_contract_params(
-        protocol_version=A2A_PROTOCOL_VERSION,
-        runtime_profile=runtime_profile,
+    expected_interrupt_callback = _select_public_extension_params(
+        build_interrupt_callback_extension_params(runtime_profile=runtime_profile),
+        keys=("methods", "supported_interrupt_events", "request_id_field"),
     )
 
     assert session_binding == expected_session_binding, (
-        "OpenAPI session binding contract drifted from contracts.extensions SSOT."
+        "OpenAPI public session binding contract drifted from disclosure policy."
     )
     assert model_selection == expected_model_selection, (
-        "OpenAPI model selection contract drifted from contracts.extensions SSOT."
+        "OpenAPI public model selection contract drifted from disclosure policy."
     )
     assert streaming == expected_streaming, (
-        "OpenAPI streaming contract drifted from contracts.extensions SSOT."
-    )
-    assert session_management == expected_session_management, (
-        "OpenAPI session management contract drifted from contracts.extensions SSOT."
-    )
-    assert provider_discovery == expected_provider_discovery, (
-        "OpenAPI provider discovery contract drifted from contracts.extensions SSOT."
-    )
-    assert workspace_control == expected_workspace_control, (
-        "OpenAPI workspace control contract drifted from contracts.extensions SSOT."
-    )
-    assert interrupt_recovery == expected_interrupt_recovery, (
-        "OpenAPI interrupt recovery contract drifted from contracts.extensions SSOT."
+        "OpenAPI public streaming contract drifted from disclosure policy."
     )
     assert interrupt_callback == expected_interrupt_callback, (
-        "OpenAPI interrupt callback contract drifted from contracts.extensions SSOT."
+        "OpenAPI public interrupt callback contract drifted from disclosure policy."
     )
-    assert compatibility_profile == expected_compatibility_profile, (
-        "OpenAPI compatibility profile contract drifted from contracts.extensions SSOT."
-    )
-    assert wire_contract == expected_wire_contract, (
-        "OpenAPI wire contract drifted from contracts.extensions SSOT."
-    )
-    assert (
-        compatibility_profile["protocol_compatibility"] == wire_contract["protocol_compatibility"]
-    ), "OpenAPI protocol compatibility summary drifted between profile and wire contract."
 
     json_request_schema = (
         post.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema", {})
@@ -230,30 +248,29 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     example_methods = {
         value.get("value", {}).get("method") for value in example_values if isinstance(value, dict)
     }
-    expected_methods = set(session_management["methods"].values()) | set(
-        INTERRUPT_CALLBACK_METHODS.values()
-    )
-    expected_methods |= {
-        "opencode.providers.list",
-        "opencode.models.list",
-        *workspace_control["methods"].values(),
-        "opencode.permissions.list",
-        "opencode.questions.list",
-    }
-    missing_methods = sorted(method for method in expected_methods if method not in example_methods)
-    assert not missing_methods, (
-        "OpenAPI JSON-RPC examples are missing extension methods: " + ", ".join(missing_methods)
-    )
+    assert {"SendMessage", "SendStreamingMessage"} <= example_methods
+    assert set(INTERRUPT_CALLBACK_METHODS.values()) <= example_methods
+    assert "opencode.sessions.list" not in example_methods
+    assert "opencode.providers.list" not in example_methods
+    assert "opencode.projects.list" not in example_methods
+    assert "opencode.permissions.list" not in example_methods
 
 
-def test_openapi_jsonrpc_examples_use_declared_default_session_limit() -> None:
+def test_openapi_jsonrpc_examples_cover_shared_discovery_paths() -> None:
     app = create_app(make_settings(test_bearer_token="test-token"))
     examples = app.openapi()["paths"]["/"]["post"]["requestBody"]["content"]["application/json"][
         "examples"
     ]
 
-    assert examples["session_list"]["value"]["params"]["limit"] == SESSION_QUERY_DEFAULT_LIMIT
-    assert examples["session_messages"]["value"]["params"]["limit"] == SESSION_QUERY_DEFAULT_LIMIT
+    assert examples["message_send_model_override"]["value"]["params"]["metadata"]["shared"] == {
+        "model": {
+            "providerID": "google",
+            "modelID": "gemini-2.5-flash",
+        }
+    }
+    assert examples["message_send_session_binding"]["value"]["params"]["metadata"]["shared"] == {
+        "session": {"id": "s-1"}
+    }
 
 
 @pytest.mark.asyncio
