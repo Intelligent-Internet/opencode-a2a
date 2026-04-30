@@ -780,6 +780,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert "GetExtendedAgentCard" in wire_contract.params["all_jsonrpc_methods"]
     assert "GetTaskPushNotificationConfig" in wire_contract.params["all_jsonrpc_methods"]
     assert "GET /v1/tasks" in wire_contract.params["core"]["http_endpoints"]
+    assert "GET /extendedAgentCard" in wire_contract.params["core"]["http_endpoints"]
     assert (
         "GET /v1/tasks/{id}/pushNotificationConfigs"
         in wire_contract.params["core"]["http_endpoints"]

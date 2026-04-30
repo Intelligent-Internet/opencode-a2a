@@ -1,10 +1,14 @@
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
 
 from opencode_a2a.contracts.extensions import (
+    ALL_EXTENSION_URIS,
     COMPATIBILITY_PROFILE_EXTENSION_URI,
+    EXTENSION_SPECIFICATION_BASE_URL,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
     INTERRUPT_RECOVERY_EXTENSION_URI,
@@ -80,6 +84,30 @@ def _build_public_streaming_extension_params(
             keys=("input_tokens", "output_tokens", "total_tokens"),
         ),
     }
+
+
+def test_extension_uris_resolve_to_repository_spec_documents() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    index_path = repo_root / "docs" / "extension-specifications.md"
+    index_text = index_path.read_text(encoding="utf-8")
+
+    prefix = "/Intelligent-Internet/opencode-a2a/main/"
+    for uri in ALL_EXTENSION_URIS:
+        assert uri.startswith(EXTENSION_SPECIFICATION_BASE_URL), (
+            "Extension URI drifted away from the repository-owned HTTPS spec namespace."
+        )
+        parsed = urlsplit(uri)
+        assert parsed.scheme == "https"
+        assert parsed.netloc == "raw.githubusercontent.com"
+        assert parsed.path.startswith(prefix)
+
+        relative_path = parsed.path.removeprefix(prefix)
+        local_spec_path = repo_root / relative_path
+        assert local_spec_path.is_file(), (
+            f"Extension URI {uri!r} does not map to a checked-in spec document."
+        )
+        assert f"Extension URI:\n`{uri}`" in local_spec_path.read_text(encoding="utf-8")
+        assert uri in index_text
 
 
 def test_extension_ssot_matches_agent_card_contracts() -> None:

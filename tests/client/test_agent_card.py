@@ -50,6 +50,26 @@ async def test_build_agent_card_resolver_strips_explicit_well_known_path(
     assert captured["agent_card_path"] == "/.well-known/agent-card.json"
 
 
+@pytest.mark.parametrize(
+    ("url", "expected_path"),
+    [
+        ("https://ops.example.com/tenant/extendedAgentCard", "/extendedAgentCard"),
+        (
+            "https://ops.example.com/tenant/agent/authenticatedExtendedCard",
+            "/agent/authenticatedExtendedCard",
+        ),
+    ],
+)
+def test_normalize_agent_card_endpoint_strips_extended_card_paths(
+    url: str,
+    expected_path: str,
+) -> None:
+    base_url, agent_card_path = normalize_agent_card_endpoint(url)
+
+    assert base_url == "https://ops.example.com/tenant"
+    assert agent_card_path == expected_path
+
+
 def test_normalize_agent_card_endpoint_requires_absolute_url() -> None:
     with pytest.raises(ValueError, match="absolute URL"):
         normalize_agent_card_endpoint("/relative/path")

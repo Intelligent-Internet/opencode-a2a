@@ -6,6 +6,7 @@ import logging
 from contextvars import ContextVar, Token
 from typing import cast
 
+from a2a.extensions.common import HTTP_EXTENSION_HEADER, get_requested_extensions
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from google.protobuf.json_format import MessageToDict
@@ -13,12 +14,13 @@ from starlette.responses import StreamingResponse
 
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
-    EXTENDED_AGENT_CARD_PATH,
+    EXTENDED_AGENT_CARD_PATHS,
 )
 from ..auth import (
     authenticate_static_credential,
     build_static_auth_credentials,
 )
+from ..contracts.extensions import ALL_EXTENSION_URIS, PUBLIC_EXTENSION_URIS
 from ..execution.metrics import emit_metric
 from ..jsonrpc.error_responses import (
     adapt_jsonrpc_error,
@@ -217,6 +219,7 @@ def install_runtime_middlewares(
         request.state.a2a_protocol_version = negotiated_version
         response = await call_next(request)
         response.headers["A2A-Version"] = negotiated_version
+        _set_activated_extensions_header(response, request)
         return response
 
     async def _get_request_body(request: Request) -> tuple[bytes, Token | None]:
@@ -272,6 +275,38 @@ def install_runtime_middlewares(
                 ordered.append(normalized)
         return ", ".join(ordered)
 
+    def _requested_extensions(request: Request) -> tuple[str, ...]:
+        return tuple(get_requested_extensions(request.headers.getlist(HTTP_EXTENSION_HEADER)))
+
+    def _resolve_activated_extensions(request: Request) -> tuple[str, ...]:
+        explicit = getattr(request.state, "activated_extensions", None)
+        if explicit is not None:
+            return tuple(value for value in explicit if value)
+
+        requested_extensions = _requested_extensions(request)
+        if not requested_extensions:
+            return ()
+
+        path = request.url.path
+        if path == AGENT_CARD_WELL_KNOWN_PATH:
+            supported_extensions = PUBLIC_EXTENSION_URIS
+        elif path in EXTENDED_AGENT_CARD_PATHS:
+            supported_extensions = ALL_EXTENSION_URIS
+        elif path == "/" or path.startswith("/v1/"):
+            supported_extensions = PUBLIC_EXTENSION_URIS
+        else:
+            return ()
+
+        requested = frozenset(requested_extensions)
+        return tuple(value for value in supported_extensions if value in requested)
+
+    def _set_activated_extensions_header(response: Response, request: Request) -> None:
+        if not (200 <= response.status_code < 400):
+            return
+        activated_extensions = _resolve_activated_extensions(request)
+        if activated_extensions:
+            response.headers[HTTP_EXTENSION_HEADER] = ",".join(activated_extensions)
+
     @app.middleware("http")
     async def cache_agent_card_responses(request: Request, call_next):
         if request.method != "GET":
@@ -279,12 +314,12 @@ def install_runtime_middlewares(
 
         path = request.url.path
         is_public_card = path == AGENT_CARD_WELL_KNOWN_PATH
-        is_extended_card = path == EXTENDED_AGENT_CARD_PATH
+        is_extended_card = path in EXTENDED_AGENT_CARD_PATHS
         if not is_public_card and not is_extended_card:
             return await call_next(request)
 
         if is_public_card and _etag_matches(request.headers.get("if-none-match"), public_card_etag):
-            return Response(
+            response = Response(
                 status_code=304,
                 headers={
                     "ETag": public_card_etag,
@@ -292,6 +327,8 @@ def install_runtime_middlewares(
                     "Vary": "Accept-Encoding",
                 },
             )
+            _set_activated_extensions_header(response, request)
+            return response
 
         response = await call_next(request)
         if response.status_code != 200:
@@ -304,6 +341,7 @@ def install_runtime_middlewares(
                 response.headers.get("Vary", ""),
                 "Accept-Encoding",
             )
+            _set_activated_extensions_header(response, request)
             return response
 
         response.headers["ETag"] = extended_card_etag
@@ -314,7 +352,10 @@ def install_runtime_middlewares(
             "Accept-Encoding",
         )
         if _etag_matches(request.headers.get("if-none-match"), extended_card_etag):
-            return Response(status_code=304, headers=dict(response.headers))
+            cached_response = Response(status_code=304, headers=dict(response.headers))
+            _set_activated_extensions_header(cached_response, request)
+            return cached_response
+        _set_activated_extensions_header(response, request)
         return response
 
     @app.middleware("http")

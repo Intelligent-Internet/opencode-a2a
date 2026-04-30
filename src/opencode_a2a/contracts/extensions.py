@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..a2a_protocol import CORE_JSONRPC_METHODS as DECLARED_CORE_JSONRPC_METHODS
+from ..a2a_protocol import (
+    CORE_JSONRPC_METHODS as DECLARED_CORE_JSONRPC_METHODS,
+)
+from ..a2a_protocol import (
+    EXTENDED_AGENT_CARD_PATH,
+)
 from ..profile.runtime import (
     SESSION_SHELL_TOGGLE,
     WORKSPACE_MUTATIONS_TOGGLE,
@@ -20,16 +25,66 @@ SHARED_USAGE_METADATA_FIELD = "metadata.shared.usage"
 OPENCODE_DIRECTORY_METADATA_FIELD = "metadata.opencode.directory"
 OPENCODE_WORKSPACE_METADATA_FIELD = "metadata.opencode.workspace.id"
 
-SESSION_BINDING_EXTENSION_URI = "urn:a2a:opencode-a2a:shared:session-binding:v1"
-MODEL_SELECTION_EXTENSION_URI = "urn:a2a:opencode-a2a:shared:model-selection:v1"
-STREAMING_EXTENSION_URI = "urn:a2a:opencode-a2a:shared:stream-hints:v1"
-SESSION_MANAGEMENT_EXTENSION_URI = "urn:a2a:opencode-a2a:private:session-management:v1"
-PROVIDER_DISCOVERY_EXTENSION_URI = "urn:a2a:opencode-a2a:private:provider-discovery:v1"
-INTERRUPT_CALLBACK_EXTENSION_URI = "urn:a2a:opencode-a2a:shared:interactive-interrupt:v1"
-INTERRUPT_RECOVERY_EXTENSION_URI = "urn:a2a:opencode-a2a:private:interrupt-recovery:v1"
-WORKSPACE_CONTROL_EXTENSION_URI = "urn:a2a:opencode-a2a:private:workspace-control:v1"
-COMPATIBILITY_PROFILE_EXTENSION_URI = "urn:a2a:opencode-a2a:private:compatibility-profile:v1"
-WIRE_CONTRACT_EXTENSION_URI = "urn:a2a:opencode-a2a:private:wire-contract:v1"
+EXTENSION_SPECIFICATION_BASE_URL = (
+    "https://raw.githubusercontent.com/Intelligent-Internet/opencode-a2a/main/docs/extensions"
+)
+
+
+def _extension_specification_uri(*segments: str) -> str:
+    normalized_segments = [segment.strip("/") for segment in segments if segment.strip("/")]
+    return f"{EXTENSION_SPECIFICATION_BASE_URL}/{'/'.join(normalized_segments)}.md"
+
+
+SESSION_BINDING_EXTENSION_URI = _extension_specification_uri(
+    "shared",
+    "session-binding",
+    "v1",
+)
+MODEL_SELECTION_EXTENSION_URI = _extension_specification_uri(
+    "shared",
+    "model-selection",
+    "v1",
+)
+STREAMING_EXTENSION_URI = _extension_specification_uri(
+    "shared",
+    "stream-hints",
+    "v1",
+)
+SESSION_MANAGEMENT_EXTENSION_URI = _extension_specification_uri(
+    "private",
+    "session-management",
+    "v1",
+)
+PROVIDER_DISCOVERY_EXTENSION_URI = _extension_specification_uri(
+    "private",
+    "provider-discovery",
+    "v1",
+)
+INTERRUPT_CALLBACK_EXTENSION_URI = _extension_specification_uri(
+    "shared",
+    "interactive-interrupt",
+    "v1",
+)
+INTERRUPT_RECOVERY_EXTENSION_URI = _extension_specification_uri(
+    "private",
+    "interrupt-recovery",
+    "v1",
+)
+WORKSPACE_CONTROL_EXTENSION_URI = _extension_specification_uri(
+    "private",
+    "workspace-control",
+    "v1",
+)
+COMPATIBILITY_PROFILE_EXTENSION_URI = _extension_specification_uri(
+    "private",
+    "compatibility-profile",
+    "v1",
+)
+WIRE_CONTRACT_EXTENSION_URI = _extension_specification_uri(
+    "private",
+    "wire-contract",
+    "v1",
+)
 PUBLIC_EXTENSION_URIS: tuple[str, ...] = (
     SESSION_BINDING_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
@@ -44,6 +99,7 @@ AUTHENTICATED_ONLY_EXTENSION_URIS: tuple[str, ...] = (
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     WIRE_CONTRACT_EXTENSION_URI,
 )
+ALL_EXTENSION_URIS: tuple[str, ...] = PUBLIC_EXTENSION_URIS + AUTHENTICATED_ONLY_EXTENSION_URIS
 SERVICE_BEHAVIOR_CLASSIFICATION = "service-level-semantic-enhancement"
 CANCEL_IDEMPOTENCY_BEHAVIOR = "return_current_terminal_task"
 TERMINAL_RESUBSCRIBE_BEHAVIOR = "replay_terminal_task_once_then_close"
@@ -427,6 +483,7 @@ CORE_HTTP_ENDPOINTS: tuple[str, ...] = (
     "GET /v1/tasks/{id}/pushNotificationConfigs",
     "POST /v1/tasks/{id}/pushNotificationConfigs",
     "GET /v1/tasks/{id}/pushNotificationConfigs/{push_id}",
+    f"GET {EXTENDED_AGENT_CARD_PATH}",
 )
 WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS: tuple[str, ...] = (
     "type",

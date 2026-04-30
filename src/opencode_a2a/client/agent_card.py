@@ -11,6 +11,7 @@ from a2a.client.card_resolver import A2ACardResolver
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
     EXTENDED_AGENT_CARD_PATH,
+    LEGACY_EXTENDED_AGENT_CARD_PATH,
 )
 from ..trace_context import current_trace_headers
 from .request_context import build_default_headers
@@ -26,6 +27,7 @@ def normalize_agent_card_endpoint(agent_url: str) -> tuple[str, str]:
     candidate_paths = (
         AGENT_CARD_WELL_KNOWN_PATH,
         EXTENDED_AGENT_CARD_PATH,
+        LEGACY_EXTENDED_AGENT_CARD_PATH,
     )
 
     base_path = normalized_no_leading

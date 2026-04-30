@@ -17,6 +17,7 @@ from jsonrpc.jsonrpc2 import JSONRPC20Response
 from starlette.requests import Request
 from starlette.responses import Response
 
+from ..contracts.extensions import ALL_EXTENSION_URIS
 from ..extension_negotiation import (
     requested_extensions_from_call_context,
 )
@@ -289,6 +290,12 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                         message="The agent does not support authenticated extended cards"
                     ),
                 )
+            requested_extensions = requested_extensions_from_call_context(
+                self._context_builder.build(request)
+            )
+            request.state.activated_extensions = tuple(
+                value for value in requested_extensions if value in ALL_EXTENSION_URIS
+            )
             return self._jsonrpc_success_response(
                 base_request.id,
                 agent_card_to_dict(extended_agent_card),
@@ -387,6 +394,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             self._extension_handler_context,
             error_response=self._generate_protocol_error_response,
         )
+        request.state.activated_extensions = (extension_spec.extension_uri,)
         return await extension_spec.handler(
             request_context,
             base_request,
