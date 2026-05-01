@@ -33,6 +33,7 @@ from .catalog import (
     WORKSPACE_CONTROL_METHODS,
     WORKSPACE_MUTATION_METHODS,
 )
+from .contract_docs import build_method_contract_docs
 from .identifiers import (
     OPENCODE_DIRECTORY_METADATA_FIELD,
     OPENCODE_WORKSPACE_METADATA_FIELD,
@@ -41,8 +42,14 @@ from .identifiers import (
 from .public_params import (
     PROMPT_ASYNC_PART_CONTRACT_DOC,
     PROMPT_ASYNC_SUBTASK_SUPPORT,
-    _build_method_contract_params,
 )
+
+
+def _build_prompt_async_contract_doc() -> dict[str, Any]:
+    return {
+        "request_parts": PROMPT_ASYNC_PART_CONTRACT_DOC,
+        "subtask_support": PROMPT_ASYNC_SUBTASK_SUPPORT,
+    }
 
 
 def build_session_management_extension_params(
@@ -56,35 +63,11 @@ def build_session_management_extension_params(
     mutation_methods = dict(SESSION_MUTATION_METHODS)
     control_methods = capability_snapshot.session_control_methods()
     active_session_methods = set(methods.values())
-
-    method_contracts: dict[str, Any] = {}
     pagination_applies_to: list[str] = []
 
     for method_contract in SESSION_METHOD_CONTRACTS.values():
         if method_contract.method not in active_session_methods:
             continue
-        params_contract = _build_method_contract_params(
-            required=method_contract.required_params,
-            optional=method_contract.optional_params,
-            unsupported=method_contract.unsupported_params,
-        )
-        result_contract: dict[str, Any] = {"fields": list(method_contract.result_fields)}
-        if method_contract.items_type:
-            result_contract["items_type"] = method_contract.items_type
-
-        contract_doc: dict[str, Any] = {
-            "params": params_contract,
-            "result": result_contract,
-        }
-        if method_contract.method == SESSION_METHODS["prompt_async"]:
-            contract_doc["request_parts"] = PROMPT_ASYNC_PART_CONTRACT_DOC
-            contract_doc["subtask_support"] = PROMPT_ASYNC_SUBTASK_SUPPORT
-        if method_contract.notification_response_status is not None:
-            contract_doc["notification_response_status"] = (
-                method_contract.notification_response_status
-            )
-        method_contracts[method_contract.method] = contract_doc
-
         if method_contract.pagination_mode == SESSION_QUERY_PAGINATION_MODE:
             pagination_applies_to.append(method_contract.method)
 
@@ -106,7 +89,13 @@ def build_session_management_extension_params(
             "applies_to": pagination_applies_to,
             "cursor_applies_to": [SESSION_METHODS["get_session_messages"]],
         },
-        "method_contracts": method_contracts,
+        "method_contracts": build_method_contract_docs(
+            SESSION_METHOD_CONTRACTS.values(),
+            active_methods=active_session_methods,
+            extra_fields_by_method={
+                SESSION_METHODS["prompt_async"]: _build_prompt_async_contract_doc(),
+            },
+        ),
         "errors": {
             "business_codes": dict(SESSION_QUERY_ERROR_BUSINESS_CODES),
             "error_data_fields": list(SESSION_QUERY_ERROR_DATA_FIELDS),
@@ -124,30 +113,11 @@ def build_interrupt_recovery_extension_params(
     *,
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
-    method_contracts: dict[str, Any] = {}
-
-    for method_contract in INTERRUPT_RECOVERY_METHOD_CONTRACTS.values():
-        params_contract = _build_method_contract_params(
-            required=method_contract.required_params,
-            optional=method_contract.optional_params,
-            unsupported=(),
-        )
-        result_contract: dict[str, Any] = {"fields": list(method_contract.result_fields)}
-        if method_contract.items_type:
-            result_contract["items_type"] = method_contract.items_type
-        contract_doc: dict[str, Any] = {
-            "params": params_contract,
-            "result": result_contract,
-        }
-        if method_contract.notification_response_status is not None:
-            contract_doc["notification_response_status"] = (
-                method_contract.notification_response_status
-            )
-        method_contracts[method_contract.method] = contract_doc
-
     return {
         "methods": dict(INTERRUPT_RECOVERY_METHODS),
-        "method_contracts": method_contracts,
+        "method_contracts": build_method_contract_docs(
+            INTERRUPT_RECOVERY_METHOD_CONTRACTS.values()
+        ),
         "supported_metadata": [],
         "provider_private_metadata": [],
         "recovery_scope": {
@@ -193,31 +163,11 @@ def build_provider_discovery_extension_params(
     *,
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
-    method_contracts: dict[str, Any] = {}
-
-    for method_contract in PROVIDER_DISCOVERY_METHOD_CONTRACTS.values():
-        params_contract = _build_method_contract_params(
-            required=method_contract.required_params,
-            optional=method_contract.optional_params,
-            unsupported=(),
-        )
-        result_contract: dict[str, Any] = {"fields": list(method_contract.result_fields)}
-        if method_contract.items_type:
-            result_contract["items_type"] = method_contract.items_type
-
-        contract_doc: dict[str, Any] = {
-            "params": params_contract,
-            "result": result_contract,
-        }
-        if method_contract.notification_response_status is not None:
-            contract_doc["notification_response_status"] = (
-                method_contract.notification_response_status
-            )
-        method_contracts[method_contract.method] = contract_doc
-
     return {
         "methods": dict(PROVIDER_DISCOVERY_METHODS),
-        "method_contracts": method_contracts,
+        "method_contracts": build_method_contract_docs(
+            PROVIDER_DISCOVERY_METHOD_CONTRACTS.values()
+        ),
         "supported_metadata": ["opencode.directory", "opencode.workspace.id"],
         "provider_private_metadata": ["opencode.directory", "opencode.workspace.id"],
         "context_fields": {
@@ -275,35 +225,16 @@ def build_workspace_control_extension_params(
     capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
     methods = capability_snapshot.workspace_control_methods()
     active_workspace_methods = set(methods.values())
-    method_contracts: dict[str, Any] = {}
-
-    for method_contract in WORKSPACE_CONTROL_METHOD_CONTRACTS.values():
-        if method_contract.method not in active_workspace_methods:
-            continue
-        params_contract = _build_method_contract_params(
-            required=method_contract.required_params,
-            optional=method_contract.optional_params,
-            unsupported=(),
-        )
-        result_contract: dict[str, Any] = {"fields": list(method_contract.result_fields)}
-        if method_contract.items_type:
-            result_contract["items_type"] = method_contract.items_type
-        contract_doc: dict[str, Any] = {
-            "params": params_contract,
-            "result": result_contract,
-        }
-        if method_contract.notification_response_status is not None:
-            contract_doc["notification_response_status"] = (
-                method_contract.notification_response_status
-            )
-        method_contracts[method_contract.method] = contract_doc
 
     return {
         "methods": methods,
         "control_method_flags": capability_snapshot.method_flags(
             WORKSPACE_MUTATION_METHODS.values()
         ),
-        "method_contracts": method_contracts,
+        "method_contracts": build_method_contract_docs(
+            WORKSPACE_CONTROL_METHOD_CONTRACTS.values(),
+            active_methods=active_workspace_methods,
+        ),
         "upstream_stability": {
             WORKSPACE_CONTROL_METHODS["list_projects"]: "stable",
             WORKSPACE_CONTROL_METHODS["get_current_project"]: "stable",

@@ -14,6 +14,7 @@ from .catalog import (
     PROMPT_ASYNC_PART_CONTRACTS,
     PROMPT_ASYNC_SUPPORTED_PART_TYPES,
 )
+from .contract_docs import build_method_contract_docs
 from .identifiers import (
     OPENCODE_DIRECTORY_METADATA_FIELD,
     OPENCODE_WORKSPACE_METADATA_FIELD,
@@ -63,22 +64,6 @@ PROMPT_ASYNC_SUBTASK_SUPPORT = {
         ),
     ],
 }
-
-
-def _build_method_contract_params(
-    *,
-    required: tuple[str, ...],
-    optional: tuple[str, ...],
-    unsupported: tuple[str, ...],
-) -> dict[str, list[str]]:
-    params: dict[str, list[str]] = {}
-    if required:
-        params["required"] = list(required)
-    if optional:
-        params["optional"] = list(optional)
-    if unsupported:
-        params["unsupported"] = list(unsupported)
-    return params
 
 
 def select_public_extension_params(
@@ -265,25 +250,12 @@ def build_interrupt_callback_extension_params(
     *,
     runtime_profile: RuntimeProfile,
 ) -> dict[str, Any]:
-    method_contracts: dict[str, Any] = {}
-    for contract in INTERRUPT_CALLBACK_METHOD_CONTRACTS.values():
-        method_contract_doc: dict[str, Any] = {
-            "params": _build_method_contract_params(
-                required=contract.required_params,
-                optional=contract.optional_params,
-                unsupported=(),
-            ),
-            "result": {"fields": list(INTERRUPT_SUCCESS_RESULT_FIELDS)},
-        }
-        if contract.notification_response_status is not None:
-            method_contract_doc["notification_response_status"] = (
-                contract.notification_response_status
-            )
-        method_contracts[contract.method] = method_contract_doc
-
     return {
         "methods": dict(INTERRUPT_CALLBACK_METHODS),
-        "method_contracts": method_contracts,
+        "method_contracts": build_method_contract_docs(
+            INTERRUPT_CALLBACK_METHOD_CONTRACTS.values(),
+            default_result_fields=INTERRUPT_SUCCESS_RESULT_FIELDS,
+        ),
         "supported_interrupt_events": [
             "permission.asked",
             "question.asked",
