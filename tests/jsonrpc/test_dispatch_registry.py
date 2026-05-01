@@ -123,7 +123,7 @@ async def test_extension_methods_stay_on_local_registry(monkeypatch) -> None:
         del self, request, body, base_request
         raise AssertionError("extension method should not delegate to base JSON-RPC app")
 
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     monkeypatch.setattr(
         OpencodeSessionManagementJSONRPCApplication,
         "_handle_core_request",

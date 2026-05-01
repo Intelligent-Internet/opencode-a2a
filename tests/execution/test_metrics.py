@@ -71,7 +71,7 @@ async def test_stream_request_metrics_track_total_and_active(caplog) -> None:
 
     with caplog.at_level(logging.DEBUG, logger="opencode_a2a.execution.executor"):
         stream = handler.on_message_send_stream(_make_message_send_params())
-        first_event = await stream.__anext__()
+        first_event = await anext(stream)
         assert isinstance(first_event, Task)
         await stream.aclose()
         await asyncio.sleep(0)

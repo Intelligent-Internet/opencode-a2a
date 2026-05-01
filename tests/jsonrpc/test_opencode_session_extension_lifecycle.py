@@ -28,7 +28,7 @@ async def test_session_lifecycle_status_get_and_children_success(monkeypatch):
     dummy = DummyOpencodeUpstreamClient(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -98,7 +98,7 @@ async def test_session_lifecycle_todo_diff_and_message_get_success(monkeypatch):
     dummy = DummyOpencodeUpstreamClient(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -185,7 +185,7 @@ async def test_session_lifecycle_mutations_succeed_and_claim_owner(
     dummy = DummyOpencodeUpstreamClient(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -232,7 +232,7 @@ async def test_session_lifecycle_summarize_succeeds_and_claims_owner(monkeypatch
     dummy = DummyOpencodeUpstreamClient(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -283,7 +283,7 @@ async def test_session_lifecycle_mutation_rejects_owner_mismatch(monkeypatch):
     dummy = DummyOpencodeUpstreamClient(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )

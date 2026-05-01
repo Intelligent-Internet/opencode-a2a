@@ -69,6 +69,7 @@ from opencode_a2a.server.request_parsing import (
     _RequestBodyTooLargeError,
 )
 from opencode_a2a.server.task_store import TaskStoreOperationError
+from tests.support.async_iterators import iter_async
 from tests.support.helpers import (
     DummyChatOpencodeUpstreamClient,
     make_basic_auth_header,
@@ -420,15 +421,11 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
             capability_snapshot=capability_snapshot
         )
     )
-    assert "opencode.sessions.shell" in _build_jsonrpc_extension_openapi_description(
-        capability_snapshot=capability_snapshot
-    )
-    assert "session_shell" in _build_jsonrpc_extension_openapi_examples(
-        capability_snapshot=capability_snapshot
-    )
-    assert "worktrees_create" not in _build_jsonrpc_extension_openapi_examples(
-        capability_snapshot=capability_snapshot
-    )
+    assert "authenticated extended Agent Card" in _build_jsonrpc_extension_openapi_description()
+    assert "opencode.sessions.shell" not in _build_jsonrpc_extension_openapi_description()
+    assert "message_send_session_binding" in _build_jsonrpc_extension_openapi_examples()
+    assert "session_shell" not in _build_jsonrpc_extension_openapi_examples()
+    assert "worktrees_create" not in _build_jsonrpc_extension_openapi_examples()
     assert "continue_session" in _build_rest_message_openapi_examples()
 
 
@@ -511,7 +508,11 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch, caplog) -> No
             self.closed = True
 
     closable = _ClosableClient(make_settings(test_bearer_token="test-token"))
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: closable)
+    monkeypatch.setattr(
+        app_module,
+        "OpencodeUpstreamClient",
+        lambda _settings, **_kwargs: closable,
+    )
 
     settings = make_settings(test_bearer_token="test-token", a2a_enable_session_shell=True)
     app = create_app(settings)
@@ -612,9 +613,10 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch, caplog) -> No
     root_examples = openapi_first["paths"]["/"]["post"]["requestBody"]["content"][
         "application/json"
     ]["examples"]
-    assert "session_shell" in root_examples
+    assert "message_send_session_binding" in root_examples
+    assert "session_shell" not in root_examples
     assert "worktrees_create" not in root_examples
-    assert "opencode.sessions.shell" in openapi_first["paths"]["/"]["post"]["description"]
+    assert "authenticated extended Agent Card" in openapi_first["paths"]["/"]["post"]["description"]
 
 
 @pytest.mark.asyncio
@@ -814,11 +816,9 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
             parts=[app_module.Part(text="server reply")],
         )
 
-    async def _stream_failure(params, context=None):  # noqa: ANN001
+    def _stream_failure(params, context=None):  # noqa: ANN001
         del params, context
-        if False:  # pragma: no cover
-            yield None
-        raise InvalidRequestError(message="stream bad")
+        return iter_async(terminal_error=InvalidRequestError(message="stream bad"))
 
     handler.on_message_send = _message_response
     handler.on_message_send_stream = _stream_failure
@@ -936,10 +936,9 @@ async def test_on_message_send_returns_stable_failure_task_for_task_store_error(
 @pytest.mark.asyncio
 async def test_on_message_send_stream_emits_stable_failure_events_for_task_store_error() -> None:
     class _Aggregator:
-        async def consume_and_emit(self, _consumer):
-            if _consumer is None:  # pragma: no cover
-                yield None
-            raise TaskStoreOperationError("save", "task-1")
+        def consume_and_emit(self, _consumer):
+            del _consumer
+            return iter_async(terminal_error=TaskStoreOperationError("save", "task-1"))
 
     class _Handler(OpencodeRequestHandler):
         def __init__(self) -> None:
@@ -1212,7 +1211,7 @@ async def test_on_message_send_stream_rejects_incompatible_output_modes_before_e
     )
 
     with pytest.raises(UnsupportedOperationError) as exc_info:
-        await handler.on_message_send_stream(params).__anext__()
+        await anext(handler.on_message_send_stream(params))
 
     assert "not compatible" in exc_info.value.message
     assert exc_info.value.data == {
@@ -1303,7 +1302,7 @@ async def test_on_message_send_stream_rejects_shared_extension_metadata_without_
     )
 
     with pytest.raises(UnsupportedOperationError) as exc_info:
-        await handler.on_message_send_stream(params).__anext__()
+        await anext(handler.on_message_send_stream(params))
 
     assert exc_info.value.data == {
         "type": "EXTENSION_NEGOTIATION_REQUIRED",

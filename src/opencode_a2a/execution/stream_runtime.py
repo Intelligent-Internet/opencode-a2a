@@ -16,7 +16,6 @@ from a2a.types import (
 )
 
 from ..a2a_utils import make_data_part
-from ..invocation import call_with_supported_kwargs
 from .event_helpers import _enqueue_artifact_update
 from .stream_events import (
     BlockType,
@@ -27,7 +26,7 @@ from .stream_events import (
     _extract_progress_metadata,
     _extract_stream_message_id,
     _extract_stream_part_id,
-    _extract_stream_role,
+    _extract_stream_part_type,
     _extract_stream_session_id,
     _extract_stream_snapshot_text,
     _extract_stream_terminal_signal,
@@ -35,7 +34,8 @@ from .stream_events import (
     _extract_tool_part_payload,
     _extract_upstream_error_from_event,
     _log_stream_event_debug,
-    _resolve_stream_block_type,
+    _map_part_type_to_block_type,
+    _normalize_role,
 )
 from .stream_state import (
     _build_output_metadata,
@@ -179,32 +179,6 @@ class StreamRuntime:
             elif phase == "resolved":
                 self._emit_metric("interrupt_resolved_total")
 
-        async def _emit_progress_status(
-            *,
-            message_id: str | None,
-            progress: Mapping[str, Any],
-        ) -> None:
-            sequence = stream_state.next_sequence()
-            await event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    task_id=task_id,
-                    context_id=context_id,
-                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-                    metadata=_build_output_metadata(
-                        session_id=session_id,
-                        stream={
-                            "message_id": stream_state.resolve_message_id(message_id),
-                            "event_id": stream_state.build_event_id(sequence),
-                            "source": "progress",
-                            "sequence": sequence,
-                        },
-                        progress=dict(progress),
-                        include_session_metadata=emit_session_metadata,
-                        include_streaming_metadata=emit_streaming_metadata,
-                    ),
-                )
-            )
-
         def _new_text_chunk(
             *,
             text: str,
@@ -268,7 +242,7 @@ class StreamRuntime:
             role: str | None,
             message_id: str | None,
         ) -> _StreamPartState | None:
-            block_type = _resolve_stream_block_type(part, props)
+            block_type = _map_part_type_to_block_type(_extract_stream_part_type(part, props))
             if block_type is None:
                 return None
             state = part_states.get(part_id)
@@ -389,12 +363,12 @@ class StreamRuntime:
         try:
             while not stop_event.is_set():
                 try:
-                    async for event in call_with_supported_kwargs(
-                        self._client.stream_events,
-                        stop_event=stop_event,
-                        directory=directory,
-                        workspace_id=workspace_id,
-                    ):
+                    stream_kwargs: dict[str, Any] = {"stop_event": stop_event}
+                    if directory is not None:
+                        stream_kwargs["directory"] = directory
+                    if workspace_id is not None:
+                        stream_kwargs["workspace_id"] = workspace_id
+                    async for event in self._client.stream_events(**stream_kwargs):
                         if stop_event.is_set():
                             break
                         _log_stream_event_debug(
@@ -424,9 +398,39 @@ class StreamRuntime:
                                         identity=progress_identity,
                                         content_key=progress_key,
                                     ):
-                                        await _emit_progress_status(
-                                            message_id=_extract_stream_message_id(part, props),
-                                            progress=progress,
+                                        sequence = stream_state.next_sequence()
+                                        await event_queue.enqueue_event(
+                                            TaskStatusUpdateEvent(
+                                                task_id=task_id,
+                                                context_id=context_id,
+                                                status=TaskStatus(
+                                                    state=TaskState.TASK_STATE_WORKING
+                                                ),
+                                                metadata=_build_output_metadata(
+                                                    session_id=session_id,
+                                                    stream={
+                                                        "message_id": (
+                                                            stream_state.resolve_message_id(
+                                                                _extract_stream_message_id(
+                                                                    part, props
+                                                                )
+                                                            )
+                                                        ),
+                                                        "event_id": stream_state.build_event_id(
+                                                            sequence
+                                                        ),
+                                                        "source": "progress",
+                                                        "sequence": sequence,
+                                                    },
+                                                    progress=dict(progress),
+                                                    include_session_metadata=(
+                                                        emit_session_metadata
+                                                    ),
+                                                    include_streaming_metadata=(
+                                                        emit_streaming_metadata
+                                                    ),
+                                                ),
+                                            )
                                         )
                             upstream_error = _extract_upstream_error_from_event(event)
                             if upstream_error is not None and stream_state.upstream_error is None:
@@ -524,7 +528,7 @@ class StreamRuntime:
                                 await _emit_chunks(delta_chunks)
                             continue
 
-                        role = _extract_stream_role(part, props)
+                        role = _normalize_role(part.get("role") or props.get("role"))
                         state = _upsert_part_state(
                             part_id=part_id,
                             part=part,

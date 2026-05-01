@@ -19,8 +19,8 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
     import opencode_a2a.server.application as app_module
 
     class InterruptClient(DummyOpencodeUpstreamClient):
-        def __init__(self, _settings: Settings) -> None:
-            super().__init__(_settings)
+        def __init__(self, _settings: Settings, **kwargs) -> None:
+            super().__init__(_settings, **kwargs)
             self.permission_reply_calls: list[dict] = []
 
         async def permission_reply(
@@ -53,7 +53,7 @@ async def test_interrupt_callback_extension_permission_reply(monkeypatch):
         task_id="task-perm",
         context_id="ctx-perm",
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -100,7 +100,7 @@ async def test_interrupt_callback_extension_rejects_legacy_permission_fields(mon
     dummy = DummyOpencodeUpstreamClient(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -129,7 +129,7 @@ async def test_interrupt_callback_extension_rejects_legacy_metadata_directory(mo
     dummy = DummyOpencodeUpstreamClient(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -163,8 +163,8 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
     import opencode_a2a.server.application as app_module
 
     class InterruptClient(DummyOpencodeUpstreamClient):
-        def __init__(self, _settings: Settings) -> None:
-            super().__init__(_settings)
+        def __init__(self, _settings: Settings, **kwargs) -> None:
+            super().__init__(_settings, **kwargs)
             self.question_reply_calls: list[dict] = []
             self.question_reject_calls: list[dict] = []
 
@@ -215,7 +215,7 @@ async def test_interrupt_callback_extension_question_reply_and_reject(monkeypatc
         session_id="ses-1",
         interrupt_type="question",
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -297,7 +297,7 @@ async def test_interrupt_callback_extension_maps_404_to_interrupt_not_found(monk
         session_id="ses-1",
         interrupt_type="permission",
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -365,8 +365,8 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
     import opencode_a2a.server.application as app_module
 
     class InterruptClient(DummyOpencodeUpstreamClient):
-        def __init__(self, _settings: Settings) -> None:
-            super().__init__(_settings)
+        def __init__(self, _settings: Settings, **kwargs) -> None:
+            super().__init__(_settings, **kwargs)
             self.permission_reply_calls: list[str] = []
 
         async def permission_reply(
@@ -385,7 +385,7 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
     dummy = InterruptClient(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -428,7 +428,7 @@ async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monk
         session_id="ses-1",
         interrupt_type="question",
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -475,7 +475,7 @@ async def test_interrupt_callback_extension_rejects_identity_mismatch(monkeypatc
         interrupt_type="permission",
         identity="bearer:other-identity",
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -531,7 +531,7 @@ async def test_interrupt_callback_extension_rejects_credential_id_mismatch(monke
         identity="automation",
         credential_id="cred-original",
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(
             test_bearer_token=None,
@@ -599,7 +599,7 @@ async def test_interrupt_callback_extension_maps_concurrency_limit_to_unreachabl
         session_id="ses-1",
         interrupt_type="permission",
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )

@@ -12,7 +12,6 @@ from ...auth import (
     request_has_capability,
 )
 from ...contracts.extensions import SESSION_QUERY_ERROR_BUSINESS_CODES
-from ...invocation import call_with_supported_kwargs
 from ...opencode_upstream_client import UpstreamConcurrencyLimitError, UpstreamContractError
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import invalid_params_error, session_not_found_error
@@ -25,11 +24,11 @@ from ..methods import (
 )
 from ..models import JSONRPCRequest
 from .common import (
+    SessionClaimGuard,
     build_authorization_forbidden_response,
     build_session_forbidden_response,
     build_success_response,
     build_upstream_exception_response,
-    claim_session,
     reject_unknown_fields,
     resolve_routing_context,
 )
@@ -161,9 +160,14 @@ async def handle_session_control_request(
     )
     if routing_error is not None:
         return routing_error
+    routing_kwargs: dict[str, Any] = {}
+    if directory is not None:
+        routing_kwargs["directory"] = directory
+    if workspace_id is not None:
+        routing_kwargs["workspace_id"] = workspace_id
 
     try:
-        async with claim_session(
+        async with SessionClaimGuard(
             context,
             identity=identity,
             session_id=session_id,
@@ -171,21 +175,17 @@ async def handle_session_control_request(
         ) as session_claim:
             result: dict[str, Any]
             if base_request.method == context.method_prompt_async:
-                await call_with_supported_kwargs(
-                    context.upstream_client.session_prompt_async,
+                await context.upstream_client.session_prompt_async(
                     session_id,
                     request=dict(raw_request),
-                    directory=directory,
-                    workspace_id=workspace_id,
+                    **routing_kwargs,
                 )
                 result = {"ok": True, "session_id": session_id}
             elif base_request.method == context.method_command:
-                raw_result = await call_with_supported_kwargs(
-                    context.upstream_client.session_command,
+                raw_result = await context.upstream_client.session_command(
                     session_id,
                     request=dict(raw_request),
-                    directory=directory,
-                    workspace_id=workspace_id,
+                    **routing_kwargs,
                 )
                 item = _as_a2a_message(session_id, raw_result)
                 if item is None:
@@ -195,12 +195,10 @@ async def handle_session_control_request(
                     )
                 result = {"item": item}
             else:
-                raw_result = await call_with_supported_kwargs(
-                    context.upstream_client.session_shell,
+                raw_result = await context.upstream_client.session_shell(
                     session_id,
                     request=dict(raw_request),
-                    directory=directory,
-                    workspace_id=workspace_id,
+                    **routing_kwargs,
                 )
                 item = _as_a2a_message(session_id, raw_result)
                 if item is None:

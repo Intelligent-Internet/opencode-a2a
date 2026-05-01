@@ -22,7 +22,6 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from ..invocation import call_with_supported_kwargs
 from ..opencode_upstream_client import UpstreamConcurrencyLimitError, UpstreamContractError
 from .event_helpers import _enqueue_artifact_update
 from .stream_events import _extract_token_usage, _extract_upstream_error_from_response
@@ -115,30 +114,36 @@ class ExecutionCoordinator:
 
         try:
             await self._bind_session()
-            await self._enqueue_working_status()
+            await self._event_queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    task_id=self._task_id,
+                    context_id=self._context_id,
+                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+                )
+            )
 
             turn_request_parts = list(self._prepared.request_parts)
             user_text = self._prepared.user_text
 
             while True:
-                send_kwargs: dict[str, Any] = {
-                    "directory": self._prepared.directory,
-                    "workspace_id": self._prepared.workspace_id,
-                    "model_override": self._prepared.model_override,
-                }
+                send_kwargs: dict[str, Any] = {}
+                if self._prepared.directory is not None:
+                    send_kwargs["directory"] = self._prepared.directory
+                if self._prepared.workspace_id is not None:
+                    send_kwargs["workspace_id"] = self._prepared.workspace_id
+                if self._prepared.model_override is not None:
+                    send_kwargs["model_override"] = self._prepared.model_override
                 if self._prepared.streaming_request:
                     send_kwargs["timeout_override"] = self._executor._client.stream_timeout
 
                 if not self._prepared.use_structured_parts and not turn_request_parts:
-                    response = await call_with_supported_kwargs(
-                        self._executor._client.send_message,
+                    response = await self._executor._client.send_message(
                         self._session_id,
                         user_text,
                         **send_kwargs,
                     )
                 else:
-                    response = await call_with_supported_kwargs(
-                        self._executor._client.send_message,
+                    response = await self._executor._client.send_message(
                         self._session_id,
                         user_text or None,
                         parts=turn_request_parts,
@@ -295,15 +300,6 @@ class ExecutionCoordinator:
                 )
             )
 
-    async def _enqueue_working_status(self) -> None:
-        await self._event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                task_id=self._task_id,
-                context_id=self._context_id,
-                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-            )
-        )
-
     async def _handle_response(self, response: Any) -> None:
         response_text = response.text or ""
         resolved_message_id = self._stream_state.resolve_message_id(response.message_id)
@@ -443,20 +439,24 @@ class ExecutionCoordinator:
         resolved_token_usage: Mapping[str, Any] | None,
     ) -> None:
         response_text = response_text or "(No text content returned by OpenCode.)"
-        assistant_message = build_assistant_message(
+        assistant_message = Message(
+            message_id=resolved_message_id or str(uuid.uuid4()),
+            role=Role.ROLE_AGENT,
+            parts=[Part(text=response_text)],
             task_id=self._task_id,
             context_id=self._context_id,
-            text=response_text,
-            message_id=resolved_message_id,
         )
         artifact = Artifact(
             artifact_id=str(uuid.uuid4()),
             name="response",
             parts=[Part(text=response_text)],
         )
-        from .request_context import _build_history
-
-        history = _build_history(self._context)
+        if self._context.current_task and self._context.current_task.history:
+            history = list(self._context.current_task.history)
+        else:
+            history = []
+            if self._context.message:
+                history.append(self._context.message)
         task = Task(
             id=self._task_id,
             context_id=self._context_id,
@@ -495,19 +495,3 @@ class ExecutionCoordinator:
             self._executor._running_directories.pop(self._execution_key, None)
             self._executor._running_workspace_ids.pop(self._execution_key, None)
             self._executor._running_binding_context_ids.pop(self._execution_key, None)
-
-
-def build_assistant_message(
-    task_id: str,
-    context_id: str,
-    text: str,
-    *,
-    message_id: str | None = None,
-) -> Message:
-    return Message(
-        message_id=message_id or str(uuid.uuid4()),
-        role=Role.ROLE_AGENT,
-        parts=[Part(text=text)],
-        task_id=task_id,
-        context_id=context_id,
-    )

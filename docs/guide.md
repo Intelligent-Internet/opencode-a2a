@@ -9,10 +9,10 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
   - JSON-RPC (`POST /`)
 - Agent Card exposes both HTTP+JSON and JSON-RPC through `supportedInterfaces`.
 - The public Agent Card is intentionally slimmed to the minimum discovery surface; per-extension disclosure policy is defined in [`extension-specifications.md`](./extension-specifications.md).
-- Detailed provider-private contracts are served through the authenticated extended card endpoint `/agent/authenticatedExtendedCard`.
+- Detailed provider-private contracts are served through the authenticated extended card endpoint `/extendedAgentCard`.
 - Agent Card responses emit weak `ETag` and `Cache-Control`; clients should revalidate cached cards instead of repeatedly fetching full payloads.
 - Global HTTP gzip compression is enabled for eligible non-streaming HTTP responses larger than `A2A_HTTP_GZIP_MINIMUM_SIZE` bytes when clients send `Accept-Encoding: gzip`; the default threshold is `8192`, so the main benefit currently lands on larger responses such as the authenticated extended card.
-- The current A2A prose specification may refer to `AgentCard.capabilities.extendedAgentCard`, but the official JSON schema and SDK types use the top-level `supportsAuthenticatedExtendedCard` field. This service follows the shipped schema/SDK surface.
+- A2A v1.0 Agent Cards expose extended-card availability through `AgentCard.capabilities.extendedAgentCard`. This service emits that field and does not emit the removed top-level `supportsAuthenticatedExtendedCard` field.
 - Payload schema is transport-specific and should not be mixed:
   - REST and JSON-RPC both use v1 `message.parts` payloads and enum values such as `ROLE_USER`
   - JSON-RPC uses canonical PascalCase core methods such as `SendMessage` and `SubscribeToTask`
@@ -71,7 +71,7 @@ Key variables to understand protocol behavior:
   - `opencode.worktrees.remove`
   - `opencode.worktrees.reset`
 - Runtime authentication also applies to `/health`; the public unauthenticated discovery surface remains `/.well-known/agent-card.json`.
-- The authenticated extended card endpoint `/agent/authenticatedExtendedCard` accepts the same configured bearer/basic auth modes.
+- The authenticated extended card endpoint `/extendedAgentCard` accepts the same configured bearer/basic auth modes as the rest of the authenticated runtime surface.
 - The same outbound client flags are also honored by the server-side embedded A2A client used for peer calls and `a2a_call` tool execution:
   - `A2A_CLIENT_TIMEOUT_SECONDS`
   - `A2A_CLIENT_CARD_FETCH_TIMEOUT_SECONDS`
@@ -275,7 +275,7 @@ Current behavior:
 - Deployment-conditional methods are declared under `extensions.conditionally_available_methods`.
 - Shared metadata extension URIs such as session binding and streaming are listed under `extensions.extension_uris`.
 - `all_jsonrpc_methods` is the runtime truth for the current deployment.
-- The current SDK-owned core JSON-RPC surface includes `agent/getAuthenticatedExtendedCard` and `tasks/pushNotificationConfig/*`.
+- The current SDK-owned core JSON-RPC surface includes `GetExtendedAgentCard` and `tasks/pushNotificationConfig/*`.
 - The current SDK-owned REST surface also includes `GET /v1/tasks` and the task push notification config routes.
 - Push notification config routes/methods are currently exposed only because they are part of the SDK-owned core surface. This runtime does not configure a push config store or push sender, so push notification operations remain unsupported. REST routes currently return HTTP `501`, while JSON-RPC methods surface SDK-owned unsupported error envelopes.
 
@@ -443,12 +443,13 @@ Important distinction:
 - [`extension-specifications.md`](./extension-specifications.md) owns the stable URI catalog plus public-vs-extended disclosure policy.
 - This guide owns runtime usage, request/response semantics, and client-facing examples.
 - The authenticated extended card is the detailed deployment-specific contract view.
+- Anonymous OpenAPI mirrors the public shared-discovery subset only; detailed provider-private extension contracts are intentionally authenticated-only.
 
 ## Shared Session Binding Contract
 
 Stable specification URI:
 
-- `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#shared-session-binding-v1`
+- `urn:opencode-a2a:extension:shared:session-binding:v1`
 
 This section focuses on how clients should use the binding at runtime. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
@@ -479,7 +480,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
     "message": {
       "messageId": "msg-continue-1",
       "role": "ROLE_USER",
-      "content": [{"text": "Continue the previous session and restate the key conclusion."}]
+      "parts": [{"text": "Continue the previous session and restate the key conclusion."}]
     },
     "metadata": {
       "shared": {
@@ -495,7 +496,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 Stable specification URI:
 
-- `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#shared-model-selection-v1`
+- `urn:opencode-a2a:extension:shared:model-selection:v1`
 
 This section focuses on request-scoped usage. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
@@ -531,7 +532,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
     "message": {
       "messageId": "msg-model-1",
       "role": "ROLE_USER",
-      "content": [{"text": "Explain the current branch status."}]
+      "parts": [{"text": "Explain the current branch status."}]
     },
     "metadata": {
       "shared": {
@@ -548,7 +549,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 Stable specification URI:
 
-- `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#shared-stream-hints-v1`
+- `urn:opencode-a2a:extension:shared:stream-hints:v1`
 
 This section focuses on how clients should interpret runtime metadata. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
@@ -574,7 +575,7 @@ Consumer guidance:
 - Use the extension declaration to know the server emits canonical shared stream hints.
 - Use runtime metadata to render block timelines, token usage, and interactive interruptions.
 - Do not infer capability support only from seeing one runtime field on one response; rely on Agent Card discovery first when possible.
-- Treat `metadata.shared.interrupt` as observation data. Callback operations are a separate shared capability declared by `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#shared-interactive-interrupt-v1`.
+- Treat `metadata.shared.interrupt` as observation data. Callback operations are a separate shared capability declared by `urn:opencode-a2a:extension:shared:interactive-interrupt:v1`.
 
 Minimal stream semantics summary:
 
@@ -588,11 +589,13 @@ Minimal stream semantics summary:
 
 This service exposes OpenCode session read, mutation, and control methods via A2A JSON-RPC extension methods (default endpoint: `POST /`). No extra custom REST endpoint is introduced.
 
+Detailed contract discovery for this provider-private surface is intentionally authenticated-only. Public Agent Card and anonymous OpenAPI do not expand this method matrix.
+
 - Trigger: call extension methods through A2A JSON-RPC
 - Auth: same runtime auth as the main endpoint (`Bearer` or configured `Basic`)
 - Privacy guard: when `A2A_LOG_PAYLOADS=true`, request/response bodies are still suppressed for `method=opencode.sessions.*`
 - Endpoint discovery: prefer `supportedInterfaces[]` with `protocolBinding=JSONRPC` from Agent Card
-- The runtime still delegates SDK-owned JSON-RPC methods such as `agent/getAuthenticatedExtendedCard` and `tasks/pushNotificationConfig/*` to the base A2A implementation; they are not OpenCode-specific extensions.
+- The runtime still delegates SDK-owned JSON-RPC methods such as `GetExtendedAgentCard` and `tasks/pushNotificationConfig/*` to the base A2A implementation; they are not OpenCode-specific extensions.
 - Push notification config methods remain effectively unsupported in the current runtime because no push config store or push sender is configured; REST routes return HTTP `501`, while JSON-RPC methods stay on SDK-owned unsupported error handling.
 - Notification behavior: for `opencode.sessions.*`, requests without `id` return HTTP `204 No Content`
 - Result format:
@@ -1217,7 +1220,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
     "message": {
       "messageId": "msg-1",
       "role": "ROLE_USER",
-      "content": [{"text": "Explain what this repository does."}]
+      "parts": [{"text": "Explain what this repository does."}]
     }
   }'
 ```

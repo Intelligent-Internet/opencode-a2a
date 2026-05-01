@@ -159,11 +159,6 @@ def _normalize_role(role: Any) -> str | None:
     return None
 
 
-def _extract_stream_role(part: Mapping[str, Any], props: Mapping[str, Any]) -> str | None:
-    role = part.get("role") or props.get("role")
-    return _normalize_role(role)
-
-
 def _extract_first_nonempty_string(
     source: Mapping[str, Any] | None,
     keys: tuple[str, ...],
@@ -395,14 +390,6 @@ def _normalize_interrupt_questions(value: Any) -> list[dict[str, Any]]:
     return questions
 
 
-def _extract_interrupt_asked_request_id(props: Mapping[str, Any]) -> str | None:
-    return _extract_first_nonempty_string(props, ("id",))
-
-
-def _extract_interrupt_resolved_request_id(props: Mapping[str, Any]) -> str | None:
-    return _extract_first_nonempty_string(props, ("requestID",))
-
-
 def _extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] | None:
     event_type = event.get("type")
     if event_type not in _INTERRUPT_ASKED_EVENT_TYPES:
@@ -410,7 +397,7 @@ def _extract_interrupt_asked_event(event: Mapping[str, Any]) -> dict[str, Any] |
     props = event.get("properties")
     if not isinstance(props, Mapping):
         return None
-    request_id = _extract_interrupt_asked_request_id(props)
+    request_id = _extract_first_nonempty_string(props, ("id",))
     if not request_id:
         return None
     if event_type == "permission.asked":
@@ -438,7 +425,7 @@ def _extract_interrupt_resolved_event(event: Mapping[str, Any]) -> dict[str, str
     props = event.get("properties")
     if not isinstance(props, Mapping):
         return None
-    request_id = _extract_interrupt_resolved_request_id(props)
+    request_id = _extract_first_nonempty_string(props, ("requestID",))
     if not request_id:
         return None
     interrupt_type = "permission" if event_type.startswith("permission.") else "question"
@@ -482,17 +469,13 @@ def _extract_stream_snapshot_text(part: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _is_sensitive_log_field(key: str) -> bool:
-    normalized = key.strip().lower().replace("_", "-")
-    return any(marker in normalized for marker in _SENSITIVE_LOG_FIELD_MARKERS)
-
-
 def _sanitize_log_value(value: Any) -> Any:
     if isinstance(value, Mapping):
         sanitized: dict[str, Any] = {}
         for key, item in value.items():
             key_text = str(key)
-            if _is_sensitive_log_field(key_text):
+            normalized_key = key_text.strip().lower().replace("_", "-")
+            if any(marker in normalized_key for marker in _SENSITIVE_LOG_FIELD_MARKERS):
                 sanitized[key_text] = "[redacted]"
                 continue
             sanitized[key_text] = _sanitize_log_value(item)
@@ -538,12 +521,6 @@ def _map_part_type_to_block_type(part_type: str | None) -> BlockType | None:
     if part_type == "tool":
         return BlockType.TOOL_CALL
     return None
-
-
-def _resolve_stream_block_type(
-    part: Mapping[str, Any], props: Mapping[str, Any]
-) -> BlockType | None:
-    return _map_part_type_to_block_type(_extract_stream_part_type(part, props))
 
 
 def _extract_tool_part_payload(part: Mapping[str, Any]) -> dict[str, Any] | None:

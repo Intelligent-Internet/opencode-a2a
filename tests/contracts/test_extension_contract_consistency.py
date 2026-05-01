@@ -1,8 +1,13 @@
+from pathlib import Path
+
 import httpx
 import pytest
 
 from opencode_a2a.contracts.extensions import (
+    ALL_EXTENSION_URIS,
     COMPATIBILITY_PROFILE_EXTENSION_URI,
+    EXTENSION_SPEC_DOCUMENT_PATHS_BY_URI,
+    EXTENSION_URI_NAMESPACE,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
     INTERRUPT_RECOVERY_EXTENSION_URI,
@@ -21,16 +26,18 @@ from opencode_a2a.contracts.extensions import (
     build_interrupt_recovery_extension_params,
     build_model_selection_extension_params,
     build_provider_discovery_extension_params,
+    build_public_streaming_extension_params,
     build_session_binding_extension_params,
     build_session_management_extension_params,
     build_streaming_extension_params,
     build_wire_contract_params,
     build_workspace_control_extension_params,
+    select_public_extension_params,
 )
 from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from opencode_a2a.profile.runtime import build_runtime_profile
 from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
-from opencode_a2a.server.agent_card import build_authenticated_extended_agent_card
+from opencode_a2a.server.agent_card import build_agent_card
 from opencode_a2a.server.application import create_app
 from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
@@ -39,8 +46,30 @@ from tests.support.helpers import make_settings
 from tests.support.session_extensions import _extension_headers
 
 
+def test_extension_uris_map_to_repository_spec_documents() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    index_path = repo_root / "docs" / "extension-specifications.md"
+    index_text = index_path.read_text(encoding="utf-8")
+
+    spec_paths = {repo_root / path for path in EXTENSION_SPEC_DOCUMENT_PATHS_BY_URI.values()}
+    assert spec_paths == {index_path}
+
+    for uri in ALL_EXTENSION_URIS:
+        assert uri.startswith(EXTENSION_URI_NAMESPACE), (
+            "Extension URI drifted away from the permanent URN namespace."
+        )
+        local_spec_path = repo_root / EXTENSION_SPEC_DOCUMENT_PATHS_BY_URI[uri]
+        assert local_spec_path.is_file(), (
+            f"Extension URI {uri!r} does not map to a checked-in spec document."
+        )
+        assert uri in index_text
+
+
 def test_extension_ssot_matches_agent_card_contracts() -> None:
-    card = build_authenticated_extended_agent_card(make_settings(test_bearer_token="test-token"))
+    card = build_agent_card(
+        make_settings(test_bearer_token="test-token"),
+        include_detailed_contracts=True,
+    )
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
     session_binding = ext_by_uri[SESSION_BINDING_EXTENSION_URI]
@@ -125,7 +154,7 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
     ), "Protocol compatibility summary drifted between compatibility profile and wire contract."
 
 
-def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
+def test_openapi_jsonrpc_contract_extension_matches_public_disclosure_policy() -> None:
     app = create_app(make_settings(test_bearer_token="test-token"))
     openapi = app.openapi()
     post = openapi["paths"]["/"]["post"]
@@ -138,80 +167,53 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     session_binding = contract["session_binding"]
     model_selection = contract["model_selection"]
     streaming = contract["streaming"]
-    session_management = contract["session_management"]
-    provider_discovery = contract["provider_discovery"]
-    workspace_control = contract["workspace_control"]
-    interrupt_recovery = contract["interrupt_recovery"]
     interrupt_callback = contract["interrupt_callback"]
-    compatibility_profile = contract["compatibility_profile"]
-    wire_contract = contract["wire_contract"]
+    assert set(contract.keys()) == {
+        "session_binding",
+        "model_selection",
+        "streaming",
+        "interrupt_callback",
+    }
     settings = make_settings(test_bearer_token="test-token")
     runtime_profile = build_runtime_profile(settings)
-    expected_session_binding = build_session_binding_extension_params(
-        runtime_profile=runtime_profile,
+    expected_session_binding = select_public_extension_params(
+        build_session_binding_extension_params(runtime_profile=runtime_profile),
+        keys=(
+            "metadata_field",
+            "behavior",
+            "supported_metadata",
+            "provider_private_metadata",
+        ),
     )
-    expected_model_selection = build_model_selection_extension_params(
-        runtime_profile=runtime_profile,
+    expected_model_selection = select_public_extension_params(
+        build_model_selection_extension_params(runtime_profile=runtime_profile),
+        keys=(
+            "metadata_field",
+            "behavior",
+            "applies_to_methods",
+            "supported_metadata",
+            "provider_private_metadata",
+            "fields",
+        ),
     )
-    expected_streaming = build_streaming_extension_params()
-    expected_session_management = build_session_management_extension_params(
-        runtime_profile=runtime_profile,
-        context_id_prefix=SESSION_CONTEXT_PREFIX,
-    )
-    expected_provider_discovery = build_provider_discovery_extension_params(
-        runtime_profile=runtime_profile,
-    )
-    expected_workspace_control = build_workspace_control_extension_params(
-        runtime_profile=runtime_profile,
-    )
-    expected_interrupt_recovery = build_interrupt_recovery_extension_params(
-        runtime_profile=runtime_profile,
-    )
-    expected_interrupt_callback = build_interrupt_callback_extension_params(
-        runtime_profile=runtime_profile,
-    )
-    expected_compatibility_profile = build_compatibility_profile_params(
-        protocol_version=A2A_PROTOCOL_VERSION,
-        runtime_profile=runtime_profile,
-    )
-    expected_wire_contract = build_wire_contract_params(
-        protocol_version=A2A_PROTOCOL_VERSION,
-        runtime_profile=runtime_profile,
+    expected_streaming = build_public_streaming_extension_params(build_streaming_extension_params())
+    expected_interrupt_callback = select_public_extension_params(
+        build_interrupt_callback_extension_params(runtime_profile=runtime_profile),
+        keys=("methods", "supported_interrupt_events", "request_id_field"),
     )
 
     assert session_binding == expected_session_binding, (
-        "OpenAPI session binding contract drifted from contracts.extensions SSOT."
+        "OpenAPI public session binding contract drifted from disclosure policy."
     )
     assert model_selection == expected_model_selection, (
-        "OpenAPI model selection contract drifted from contracts.extensions SSOT."
+        "OpenAPI public model selection contract drifted from disclosure policy."
     )
     assert streaming == expected_streaming, (
-        "OpenAPI streaming contract drifted from contracts.extensions SSOT."
-    )
-    assert session_management == expected_session_management, (
-        "OpenAPI session management contract drifted from contracts.extensions SSOT."
-    )
-    assert provider_discovery == expected_provider_discovery, (
-        "OpenAPI provider discovery contract drifted from contracts.extensions SSOT."
-    )
-    assert workspace_control == expected_workspace_control, (
-        "OpenAPI workspace control contract drifted from contracts.extensions SSOT."
-    )
-    assert interrupt_recovery == expected_interrupt_recovery, (
-        "OpenAPI interrupt recovery contract drifted from contracts.extensions SSOT."
+        "OpenAPI public streaming contract drifted from disclosure policy."
     )
     assert interrupt_callback == expected_interrupt_callback, (
-        "OpenAPI interrupt callback contract drifted from contracts.extensions SSOT."
+        "OpenAPI public interrupt callback contract drifted from disclosure policy."
     )
-    assert compatibility_profile == expected_compatibility_profile, (
-        "OpenAPI compatibility profile contract drifted from contracts.extensions SSOT."
-    )
-    assert wire_contract == expected_wire_contract, (
-        "OpenAPI wire contract drifted from contracts.extensions SSOT."
-    )
-    assert (
-        compatibility_profile["protocol_compatibility"] == wire_contract["protocol_compatibility"]
-    ), "OpenAPI protocol compatibility summary drifted between profile and wire contract."
 
     json_request_schema = (
         post.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema", {})
@@ -230,30 +232,29 @@ def test_openapi_jsonrpc_contract_extension_matches_ssot() -> None:
     example_methods = {
         value.get("value", {}).get("method") for value in example_values if isinstance(value, dict)
     }
-    expected_methods = set(session_management["methods"].values()) | set(
-        INTERRUPT_CALLBACK_METHODS.values()
-    )
-    expected_methods |= {
-        "opencode.providers.list",
-        "opencode.models.list",
-        *workspace_control["methods"].values(),
-        "opencode.permissions.list",
-        "opencode.questions.list",
-    }
-    missing_methods = sorted(method for method in expected_methods if method not in example_methods)
-    assert not missing_methods, (
-        "OpenAPI JSON-RPC examples are missing extension methods: " + ", ".join(missing_methods)
-    )
+    assert {"SendMessage", "SendStreamingMessage"} <= example_methods
+    assert set(INTERRUPT_CALLBACK_METHODS.values()) <= example_methods
+    assert "opencode.sessions.list" not in example_methods
+    assert "opencode.providers.list" not in example_methods
+    assert "opencode.projects.list" not in example_methods
+    assert "opencode.permissions.list" not in example_methods
 
 
-def test_openapi_jsonrpc_examples_use_declared_default_session_limit() -> None:
+def test_openapi_jsonrpc_examples_cover_shared_discovery_paths() -> None:
     app = create_app(make_settings(test_bearer_token="test-token"))
     examples = app.openapi()["paths"]["/"]["post"]["requestBody"]["content"]["application/json"][
         "examples"
     ]
 
-    assert examples["session_list"]["value"]["params"]["limit"] == SESSION_QUERY_DEFAULT_LIMIT
-    assert examples["session_messages"]["value"]["params"]["limit"] == SESSION_QUERY_DEFAULT_LIMIT
+    assert examples["message_send_model_override"]["value"]["params"]["metadata"]["shared"] == {
+        "model": {
+            "providerID": "google",
+            "modelID": "gemini-2.5-flash",
+        }
+    }
+    assert examples["message_send_session_binding"]["value"]["params"]["metadata"]["shared"] == {
+        "session": {"id": "s-1"}
+    }
 
 
 @pytest.mark.asyncio
@@ -393,7 +394,11 @@ async def test_extension_notification_contracts_return_204(
             interrupt_type=interrupt_type,
         )
 
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(
+        app_module,
+        "OpencodeUpstreamClient",
+        lambda _settings, **_kwargs: dummy,
+    )
     app = app_module.create_app(make_settings(test_bearer_token="t-1", a2a_log_payloads=False))
     transport = httpx.ASGITransport(app=app)
 

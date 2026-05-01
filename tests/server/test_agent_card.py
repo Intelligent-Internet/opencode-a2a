@@ -3,11 +3,13 @@ import json
 from google.protobuf.json_format import MessageToDict
 
 from opencode_a2a.contracts.extensions import (
+    AUTHENTICATED_ONLY_EXTENSION_URIS,
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_RECOVERY_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
     PROVIDER_DISCOVERY_EXTENSION_URI,
+    PUBLIC_EXTENSION_URIS,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_MANAGEMENT_EXTENSION_URI,
     SESSION_QUERY_DEFAULT_LIMIT,
@@ -21,7 +23,6 @@ from opencode_a2a.contracts.extensions import (
 from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from opencode_a2a.server.agent_card import (
     build_agent_card,
-    build_authenticated_extended_agent_card,
 )
 from tests.support.helpers import make_settings
 
@@ -52,10 +53,9 @@ def test_agent_card_description_reflects_actual_transport_capabilities() -> None
     assert card.default_output_modes == ["text/plain", "application/json"]
     assert set(card.security_schemes.keys()) == {"bearerAuth"}
     assert _security_requirements(card) == [{"bearerAuth": {}}]
+    assert set(skills_by_id.keys()) == {"opencode.chat", "opencode.interrupt.callback"}
     assert skills_by_id["opencode.chat"].input_modes == ["text/plain", "application/octet-stream"]
     assert skills_by_id["opencode.chat"].output_modes == ["text/plain", "application/json"]
-    assert skills_by_id["opencode.sessions.management"].input_modes == ["application/json"]
-    assert skills_by_id["opencode.sessions.management"].output_modes == ["application/json"]
     assert skills_by_id["opencode.interrupt.callback"].input_modes == ["application/json"]
     assert skills_by_id["opencode.interrupt.callback"].output_modes == ["application/json"]
 
@@ -93,13 +93,16 @@ def test_agent_card_reflects_registry_declared_auth_schemes() -> None:
 
 def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> None:
     public_card = build_agent_card(make_settings(test_bearer_token="test-token"))
-    extended_card = build_authenticated_extended_agent_card(
-        make_settings(test_bearer_token="test-token")
+    extended_card = build_agent_card(
+        make_settings(test_bearer_token="test-token"),
+        include_detailed_contracts=True,
     )
     ext_by_uri = {ext.uri: ext for ext in public_card.capabilities.extensions or []}
-
-    for uri in ext_by_uri:
-        assert uri.startswith("https://github.com/Intelligent-Internet/opencode-a2a/blob/main/")
+    extended_ext_by_uri = {ext.uri: ext for ext in extended_card.capabilities.extensions or []}
+    assert tuple(ext_by_uri.keys()) == PUBLIC_EXTENSION_URIS
+    assert set(extended_ext_by_uri.keys()) == set(PUBLIC_EXTENSION_URIS) | set(
+        AUTHENTICATED_ONLY_EXTENSION_URIS
+    )
 
     assert ext_by_uri[SESSION_BINDING_EXTENSION_URI].params == {
         "metadata_field": "metadata.shared.session.id",
@@ -172,15 +175,9 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
         "request_id_field": "metadata.shared.interrupt.request_id",
     }
 
-    for uri in (
-        SESSION_MANAGEMENT_EXTENSION_URI,
-        PROVIDER_DISCOVERY_EXTENSION_URI,
-        WORKSPACE_CONTROL_EXTENSION_URI,
-        INTERRUPT_RECOVERY_EXTENSION_URI,
-        COMPATIBILITY_PROFILE_EXTENSION_URI,
-        WIRE_CONTRACT_EXTENSION_URI,
-    ):
-        assert MessageToDict(ext_by_uri[uri]).get("params") in (None, {})
+    for uri in AUTHENTICATED_ONLY_EXTENSION_URIS:
+        assert uri not in ext_by_uri
+        assert MessageToDict(extended_ext_by_uri[uri]).get("params") not in (None, {})
 
     public_size = len(
         json.dumps(
@@ -201,7 +198,7 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
 
 
 def test_agent_card_injects_profile_into_extensions() -> None:
-    card = build_authenticated_extended_agent_card(
+    card = build_agent_card(
         make_settings(
             test_bearer_token="test-token",
             a2a_project="alpha",
@@ -218,7 +215,8 @@ def test_agent_card_injects_profile_into_extensions() -> None:
             a2a_approval_escalation_behavior="unsupported",
             a2a_write_access_scope="workspace_and_declared_roots",
             a2a_write_access_outside_workspace="disallowed",
-        )
+        ),
+        include_detailed_contracts=True,
     )
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
@@ -783,6 +781,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert "GetExtendedAgentCard" in wire_contract.params["all_jsonrpc_methods"]
     assert "GetTaskPushNotificationConfig" in wire_contract.params["all_jsonrpc_methods"]
     assert "GET /v1/tasks" in wire_contract.params["core"]["http_endpoints"]
+    assert "GET /extendedAgentCard" in wire_contract.params["core"]["http_endpoints"]
     assert (
         "GET /v1/tasks/{id}/pushNotificationConfigs"
         in wire_contract.params["core"]["http_endpoints"]
@@ -829,8 +828,9 @@ def test_agent_card_chat_examples_include_project_hint_when_configured() -> None
 
 
 def test_agent_card_contracts_include_shell_when_enabled() -> None:
-    card = build_authenticated_extended_agent_card(
-        make_settings(test_bearer_token="test-token", a2a_enable_session_shell=True)
+    card = build_agent_card(
+        make_settings(test_bearer_token="test-token", a2a_enable_session_shell=True),
+        include_detailed_contracts=True,
     )
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
@@ -879,8 +879,9 @@ def test_agent_card_contracts_include_shell_when_enabled() -> None:
 
 
 def test_agent_card_contracts_include_workspace_mutations_when_enabled() -> None:
-    card = build_authenticated_extended_agent_card(
-        make_settings(test_bearer_token="test-token", a2a_enable_workspace_mutations=True)
+    card = build_agent_card(
+        make_settings(test_bearer_token="test-token", a2a_enable_workspace_mutations=True),
+        include_detailed_contracts=True,
     )
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
@@ -914,35 +915,24 @@ def test_agent_card_contracts_include_workspace_mutations_when_enabled() -> None
 
 def test_agent_card_skills_hide_shell_when_disabled_by_default() -> None:
     card = build_agent_card(make_settings(test_bearer_token="test-token"))
+    skill_ids = {skill.id for skill in card.skills}
 
-    session_skill = next(
-        skill for skill in card.skills if skill.id == "opencode.sessions.management"
-    )
-    provider_skill = next(skill for skill in card.skills if skill.id == "opencode.providers.query")
-    workspace_skill = next(
-        skill for skill in card.skills if skill.id == "opencode.workspace.control"
-    )
-
-    assert "provider-private" in session_skill.tags
-    assert "provider-private" in session_skill.description
-    assert list(session_skill.examples) == []
-    assert "provider-private" in provider_skill.tags
-    assert list(provider_skill.examples) == []
-    assert list(workspace_skill.examples) == []
-    interrupt_recovery_skill = next(
-        skill for skill in card.skills if skill.id == "opencode.interrupt.recovery"
-    )
-    assert list(interrupt_recovery_skill.examples) == []
+    assert skill_ids == {"opencode.chat", "opencode.interrupt.callback"}
+    assert "opencode.sessions.management" not in skill_ids
+    assert "opencode.providers.query" not in skill_ids
+    assert "opencode.workspace.control" not in skill_ids
+    assert "opencode.interrupt.recovery" not in skill_ids
 
 
 def test_agent_card_hides_shell_when_policy_disables_it() -> None:
-    card = build_authenticated_extended_agent_card(
+    card = build_agent_card(
         make_settings(
             test_bearer_token="test-token",
             a2a_enable_session_shell=True,
             a2a_sandbox_mode="read-only",
             a2a_write_access_scope="workspace_only",
-        )
+        ),
+        include_detailed_contracts=True,
     )
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 

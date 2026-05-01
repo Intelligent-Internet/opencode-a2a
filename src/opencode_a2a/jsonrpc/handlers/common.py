@@ -74,21 +74,6 @@ class SessionClaimGuard:
         return False
 
 
-def claim_session(
-    context: ExtensionHandlerContext,
-    *,
-    identity: str | None,
-    session_id: str | None,
-    logger: logging.Logger,
-) -> SessionClaimGuard:
-    return SessionClaimGuard(
-        context,
-        identity=identity,
-        session_id=session_id,
-        logger=logger,
-    )
-
-
 def build_success_response(
     context: ExtensionHandlerContext,
     request_id: str | int | None,
@@ -367,21 +352,6 @@ def resolve_directory(
                 data={"type": "INVALID_FIELD", "field": "metadata.opencode.directory"},
             ),
         )
-
-
-def extract_interrupt_callback_directory_hint(
-    context: ExtensionHandlerContext,
-    *,
-    request_id: str | int | None,
-    params: dict[str, Any],
-) -> tuple[str | None, Response | None]:
-    # Historical contract: interrupt callbacks accept raw metadata.opencode.directory
-    # and do not run it through the directory resolver used by session methods.
-    return extract_directory_from_metadata(
-        context,
-        request_id=request_id,
-        params=params,
-    )
 
 
 async def invoke_upstream_or_error(

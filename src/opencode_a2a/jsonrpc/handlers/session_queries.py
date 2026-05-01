@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 from starlette.requests import Request
 from starlette.responses import Response
 
 from ...contracts.extensions import SESSION_QUERY_ERROR_BUSINESS_CODES
-from ...invocation import call_with_supported_kwargs
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import invalid_params_error, session_not_found_error
 from ..methods import (
@@ -85,27 +86,33 @@ async def handle_session_query_request(
         if routing_error is not None:
             return routing_error
 
-    def _session_not_found_response() -> Response:
-        assert session_id is not None
-        return context.error_response(
-            base_request.id,
-            session_not_found_error(ERR_SESSION_NOT_FOUND, session_id=session_id),
-        )
-
     async def _invoke_session_query() -> Any:
         if base_request.method == context.method_list_sessions:
-            return await call_with_supported_kwargs(
-                context.upstream_client.list_sessions,
+            routing_kwargs: dict[str, Any] = {}
+            if directory is not None:
+                routing_kwargs["directory"] = directory
+            if workspace_id is not None:
+                routing_kwargs["workspace_id"] = workspace_id
+            return await context.upstream_client.list_sessions(
                 params=query,
-                directory=directory,
-                workspace_id=workspace_id,
+                **routing_kwargs,
             )
         assert session_id is not None
-        return await call_with_supported_kwargs(
-            context.upstream_client.list_messages,
+        list_messages_kwargs: dict[str, Any] = {"params": query}
+        if workspace_id is not None:
+            list_messages_kwargs["workspace_id"] = workspace_id
+        return await context.upstream_client.list_messages(
             session_id,
-            params=query,
-            workspace_id=workspace_id,
+            **list_messages_kwargs,
+        )
+
+    on_not_found: Callable[[], Response] | None = None
+    if base_request.method == context.method_get_session_messages:
+        assert session_id is not None
+        on_not_found = partial(
+            context.error_response,
+            base_request.id,
+            session_not_found_error(ERR_SESSION_NOT_FOUND, session_id=session_id),
         )
 
     raw_result, upstream_error = await invoke_upstream_or_error(
@@ -115,11 +122,7 @@ async def handle_session_query_request(
         upstream_http_error_code=ERR_UPSTREAM_HTTP_ERROR,
         upstream_unreachable_error_code=ERR_UPSTREAM_UNREACHABLE,
         internal_log_message="OpenCode session query JSON-RPC method failed",
-        on_not_found=(
-            _session_not_found_response
-            if base_request.method == context.method_get_session_messages
-            else None
-        ),
+        on_not_found=on_not_found,
     )
     if upstream_error is not None:
         return upstream_error

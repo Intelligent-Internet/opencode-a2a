@@ -7,7 +7,6 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ...contracts.extensions import PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES
-from ...invocation import call_with_supported_kwargs
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import invalid_params_error
 from ..methods import (
@@ -75,14 +74,17 @@ async def handle_provider_discovery_request(
     )
     if routing_error is not None:
         return routing_error
+    routing_kwargs: dict[str, Any] = {}
+    if directory is not None:
+        routing_kwargs["directory"] = directory
+    if workspace_id is not None:
+        routing_kwargs["workspace_id"] = workspace_id
 
     raw_result, upstream_error = await invoke_upstream_or_error(
         context,
         base_request.id,
-        invoke=lambda: call_with_supported_kwargs(
-            context.upstream_client.list_provider_catalog,
-            directory=directory,
-            workspace_id=workspace_id,
+        invoke=lambda: context.upstream_client.list_provider_catalog(
+            **routing_kwargs,
         ),
         upstream_http_error_code=ERR_DISCOVERY_UPSTREAM_HTTP_ERROR,
         upstream_unreachable_error_code=ERR_DISCOVERY_UPSTREAM_UNREACHABLE,

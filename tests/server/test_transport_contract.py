@@ -16,9 +16,14 @@ from a2a.types import (
     TaskStatus,
 )
 
+from opencode_a2a.a2a_protocol import (
+    EXTENDED_AGENT_CARD_PATH,
+)
 from opencode_a2a.a2a_utils import make_data_part
 from opencode_a2a.contracts.extensions import (
+    AUTHENTICATED_ONLY_EXTENSION_URIS,
     MODEL_SELECTION_EXTENSION_URI,
+    PUBLIC_EXTENSION_URIS,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_MANAGEMENT_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
@@ -36,6 +41,7 @@ from opencode_a2a.server.middleware import (
 from opencode_a2a.trace_context import parse_traceparent
 from tests.support.helpers import (
     DummyChatOpencodeUpstreamClient,
+    DummySessionQueryOpencodeUpstreamClient,
     make_basic_auth_header,
     make_settings,
 )
@@ -506,6 +512,87 @@ async def test_list_tasks_route_filters_unnegotiated_shared_extension_metadata(m
         "model": {"providerID": "openai", "modelID": "gpt-5"},
         "usage": {"input_tokens": 7.0},
     }
+    assert with_extensions.headers["A2A-Extensions"] == ",".join(
+        [
+            SESSION_BINDING_EXTENSION_URI,
+            MODEL_SELECTION_EXTENSION_URI,
+            STREAMING_EXTENSION_URI,
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_rest_message_route_echoes_only_activated_shared_extensions_header(
+    monkeypatch,
+) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(make_settings(test_bearer_token="test-token"))
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/message:send",
+            headers={
+                "Authorization": "Bearer test-token",
+                "A2A-Extensions": ",".join(
+                    [
+                        SESSION_BINDING_EXTENSION_URI,
+                        MODEL_SELECTION_EXTENSION_URI,
+                        STREAMING_EXTENSION_URI,
+                        SESSION_MANAGEMENT_EXTENSION_URI,
+                    ]
+                ),
+            },
+            json={
+                "message": {
+                    "messageId": "req-echo-1",
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "hello"}],
+                }
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["A2A-Extensions"] == ",".join(
+        [
+            SESSION_BINDING_EXTENSION_URI,
+            MODEL_SELECTION_EXTENSION_URI,
+            STREAMING_EXTENSION_URI,
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_jsonrpc_extension_method_echoes_activated_extensions_header(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(
+        app_module,
+        "OpencodeUpstreamClient",
+        DummySessionQueryOpencodeUpstreamClient,
+    )
+    app = app_module.create_app(make_settings(test_bearer_token="test-token"))
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers={
+                "Authorization": "Bearer test-token",
+                "A2A-Extensions": SESSION_MANAGEMENT_EXTENSION_URI,
+            },
+            json={
+                "jsonrpc": "2.0",
+                "id": "ext-echo-1",
+                "method": "opencode.sessions.status",
+                "params": {},
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["A2A-Extensions"] == SESSION_MANAGEMENT_EXTENSION_URI
 
 
 @pytest.mark.asyncio
@@ -707,10 +794,10 @@ async def test_agent_card_routes_split_public_and_authenticated_extended_contrac
         )
         assert public_cached.status_code == 304
 
-        unauthorized_extended = await client.get("/agent/authenticatedExtendedCard")
+        unauthorized_extended = await client.get(EXTENDED_AGENT_CARD_PATH)
         assert unauthorized_extended.status_code == 401
 
-        extended_card = await client.get("/agent/authenticatedExtendedCard", headers=headers)
+        extended_card = await client.get(EXTENDED_AGENT_CARD_PATH, headers=headers)
         assert extended_card.status_code == 200
         assert extended_card.headers["cache-control"] == AUTHENTICATED_EXTENDED_CARD_CACHE_CONTROL
         assert {
@@ -719,7 +806,7 @@ async def test_agent_card_routes_split_public_and_authenticated_extended_contrac
         assert extended_card.headers["etag"]
 
         extended_cached = await client.get(
-            "/agent/authenticatedExtendedCard",
+            EXTENDED_AGENT_CARD_PATH,
             headers={
                 **headers,
                 "If-None-Match": extended_card.headers["etag"],
@@ -733,7 +820,11 @@ async def test_agent_card_routes_split_public_and_authenticated_extended_contrac
         extended_extensions = {
             item["uri"]: item for item in extended_card.json()["capabilities"]["extensions"]
         }
-        assert public_extensions[SESSION_MANAGEMENT_EXTENSION_URI].get("params") is None
+        assert tuple(public_extensions.keys()) == PUBLIC_EXTENSION_URIS
+        assert set(extended_extensions.keys()) == set(PUBLIC_EXTENSION_URIS) | set(
+            AUTHENTICATED_ONLY_EXTENSION_URIS
+        )
+        assert SESSION_MANAGEMENT_EXTENSION_URI not in public_extensions
         assert extended_extensions[SESSION_MANAGEMENT_EXTENSION_URI]["params"]["methods"][
             "status"
         ] == ("opencode.sessions.status")
@@ -750,10 +841,10 @@ async def test_agent_card_routes_split_public_and_authenticated_extended_contrac
             },
         )
         assert rpc_card.status_code == 200
-        assert (
-            rpc_card.json()["result"]["capabilities"]["extensions"][3]["uri"]
-            == SESSION_MANAGEMENT_EXTENSION_URI
-        )
+        rpc_extensions = {
+            item["uri"]: item for item in rpc_card.json()["result"]["capabilities"]["extensions"]
+        }
+        assert SESSION_MANAGEMENT_EXTENSION_URI in rpc_extensions
 
 
 @pytest.mark.asyncio
@@ -774,7 +865,7 @@ async def test_authenticated_extended_card_accepts_basic_auth_when_configured(
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
-            "/agent/authenticatedExtendedCard",
+            EXTENDED_AGENT_CARD_PATH,
             headers=make_basic_auth_header("operator", "op-pass"),
         )
 
@@ -881,7 +972,8 @@ async def test_global_http_gzip_applies_to_eligible_non_streaming_responses(monk
     import opencode_a2a.server.application as app_module
 
     monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
-    app = app_module.create_app(make_settings(test_bearer_token="test-token"))
+    settings = make_settings(test_bearer_token="test-token")
+    app = app_module.create_app(settings)
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -890,7 +982,7 @@ async def test_global_http_gzip_applies_to_eligible_non_streaming_responses(monk
             headers={"Accept-Encoding": "gzip"},
         )
         extended_response = await client.get(
-            "/agent/authenticatedExtendedCard",
+            EXTENDED_AGENT_CARD_PATH,
             headers={
                 "Authorization": "Bearer test-token",
                 "Accept-Encoding": "gzip",
@@ -907,7 +999,7 @@ async def test_global_http_gzip_applies_to_eligible_non_streaming_responses(monk
     assert extended_response.status_code == 200
     assert extended_response.headers.get("content-encoding") == "gzip"
     assert public_response.status_code == 200
-    if len(public_response.content) >= 2048:
+    if len(public_response.content) >= settings.a2a_http_gzip_minimum_size:
         assert public_response.headers.get("content-encoding") == "gzip"
     else:
         assert public_response.headers.get("content-encoding") is None
@@ -1617,7 +1709,8 @@ def test_create_app_builds_configured_task_store(monkeypatch) -> None:
 
     captured: dict[str, object] = {}
 
-    def _build_task_store(settings):  # noqa: ANN001
+    def _build_task_store(settings, *, engine=None):  # noqa: ANN001
+        del engine
         captured["backend"] = settings.a2a_task_store_backend
         captured["database_url"] = settings.a2a_task_store_database_url
         return MagicMock()

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import httpx
 from a2a.client import Client, ClientConfig, create_client
+from a2a.client.card_resolver import A2ACardResolver
 from a2a.client.errors import (
     A2AClientError as SDKClientError,
 )
@@ -29,8 +30,8 @@ from a2a.types import (
 )
 from a2a.utils.errors import A2AError
 
-from ..invocation import call_with_supported_kwargs
-from .agent_card import build_agent_card_resolver, build_resolver_http_kwargs
+from ..trace_context import current_trace_headers
+from .agent_card import normalize_agent_card_endpoint
 from .config import A2AClientSettings, load_settings
 from .error_mapping import (
     map_agent_card_error,
@@ -38,7 +39,7 @@ from .error_mapping import (
 )
 from .errors import A2ATimeoutError, A2AUnsupportedBindingError
 from .polling import PollingFallbackPolicy
-from .request_context import build_call_context, split_request_metadata
+from .request_context import build_call_context, build_default_headers, split_request_metadata
 
 
 def _merge_requested_extensions(
@@ -98,18 +99,26 @@ class A2AClient:
         if self._agent_card is not None:
             return self._agent_card
 
-        resolver = build_agent_card_resolver(
-            self.agent_url,
-            await self._get_httpx_client(),
+        base_url, agent_card_path = normalize_agent_card_endpoint(self.agent_url)
+        resolver = A2ACardResolver(
+            httpx_client=await self._get_httpx_client(),
+            base_url=base_url,
+            agent_card_path=agent_card_path,
         )
+        resolver_http_kwargs: dict[str, Any] = {
+            "timeout": self._settings.card_fetch_timeout,
+        }
+        resolver_headers = build_default_headers(
+            self._settings.bearer_token,
+            self._settings.basic_auth,
+        )
+        trace_headers = current_trace_headers()
+        if trace_headers:
+            resolver_headers.update(trace_headers)
+        if resolver_headers:
+            resolver_http_kwargs["headers"] = resolver_headers
         try:
-            card = await resolver.get_agent_card(
-                http_kwargs=build_resolver_http_kwargs(
-                    bearer_token=self._settings.bearer_token,
-                    timeout=self._settings.card_fetch_timeout,
-                    basic_auth=self._settings.basic_auth,
-                )
-            )
+            card = await resolver.get_agent_card(http_kwargs=resolver_http_kwargs)
         except (
             AgentCardResolutionError,
             SDKClientError,
@@ -143,8 +152,7 @@ class A2AClient:
                 self._settings.basic_auth,
             )
             try:
-                async for event in call_with_supported_kwargs(
-                    client.send_message,
+                async for event in client.send_message(
                     SendMessageRequest(
                         message=Message(
                             role=Role.ROLE_USER,
@@ -157,8 +165,6 @@ class A2AClient:
                         metadata=request_metadata or {},
                     ),
                     context=call_context,
-                    call_context=call_context,
-                    request_metadata=request_metadata,
                 ):
                     yield event
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
@@ -222,15 +228,9 @@ class A2AClient:
                 self._settings.basic_auth,
             )
             try:
-                return cast(
-                    Task,
-                    await call_with_supported_kwargs(
-                        client.get_task,
-                        GetTaskRequest(id=task_id, history_length=history_length),
-                        context=call_context,
-                        call_context=call_context,
-                        request_metadata=request_metadata,
-                    ),
+                return await client.get_task(
+                    GetTaskRequest(id=task_id, history_length=history_length),
+                    context=call_context,
                 )
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
                 raise map_operation_error("GetTask", exc) from exc
@@ -257,15 +257,9 @@ class A2AClient:
                 self._settings.basic_auth,
             )
             try:
-                return cast(
-                    Task,
-                    await call_with_supported_kwargs(
-                        client.cancel_task,
-                        CancelTaskRequest(id=task_id, metadata=request_metadata or {}),
-                        context=call_context,
-                        call_context=call_context,
-                        request_metadata=request_metadata,
-                    ),
+                return await client.cancel_task(
+                    CancelTaskRequest(id=task_id, metadata=request_metadata or {}),
+                    context=call_context,
                 )
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
                 raise map_operation_error("CancelTask", exc) from exc
@@ -292,12 +286,9 @@ class A2AClient:
                 self._settings.basic_auth,
             )
             try:
-                async for event in call_with_supported_kwargs(
-                    client.subscribe,
+                async for event in client.subscribe(
                     SubscribeToTaskRequest(id=task_id),
                     context=call_context,
-                    call_context=call_context,
-                    request_metadata=request_metadata,
                 ):
                     yield event
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
@@ -319,15 +310,23 @@ class A2AClient:
             supported_protocol_bindings=list(self._settings.supported_transports),
             use_client_preference=self._settings.use_client_preference,
         )
+        resolver_http_kwargs: dict[str, Any] = {
+            "timeout": self._settings.card_fetch_timeout,
+        }
+        resolver_headers = build_default_headers(
+            self._settings.bearer_token,
+            self._settings.basic_auth,
+        )
+        trace_headers = current_trace_headers()
+        if trace_headers:
+            resolver_headers.update(trace_headers)
+        if resolver_headers:
+            resolver_http_kwargs["headers"] = resolver_headers
         try:
             client = await create_client(
                 self.agent_url,
                 client_config=config,
-                resolver_http_kwargs=build_resolver_http_kwargs(
-                    bearer_token=self._settings.bearer_token,
-                    timeout=self._settings.card_fetch_timeout,
-                    basic_auth=self._settings.basic_auth,
-                ),
+                resolver_http_kwargs=resolver_http_kwargs,
             )
         except ValueError as exc:
             raise A2AUnsupportedBindingError(

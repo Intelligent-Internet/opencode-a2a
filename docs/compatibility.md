@@ -25,7 +25,7 @@ If runtime support is not implemented, do not publish it as a supported machine-
 Consumer guidance:
 
 - Treat the v1 core A2A methods (`SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`, `SubscribeToTask`) as the portable baseline.
-- Treat `urn:a2a:*` entries in this repository as shared repo-family conventions, not as a claim that they are part of the A2A core baseline.
+- Treat `urn:opencode-a2a:extension:...` entries in this repository as repository-governed extension identifiers, not as a claim that they are part of the A2A core baseline.
 - Treat `opencode.*` methods and `metadata.opencode.*` fields as provider-private OpenCode control and discovery surfaces layered on top of the portable A2A baseline.
 - Treat [extension-specifications.md](./extension-specifications.md) as the stable URI/spec index, not as the main usage guide.
 
@@ -92,7 +92,7 @@ The default SQLite-first profile is intended for local or controlled single-inst
 ## Extension Stability
 
 - Shared metadata and extension contracts should stay synchronized across Agent Card, OpenAPI, and runtime behavior.
-- Public Agent Card should stay intentionally minimal. Detailed extension params belong in the authenticated extended card and OpenAPI, not back in the anonymous discovery surface.
+- Public Agent Card should stay intentionally minimal. Detailed extension params belong in the authenticated extended card, while anonymous OpenAPI should mirror only the shared public disclosure subset.
 - Deployment-conditional methods must be declared as conditional rather than silently disappearing.
 - `opencode.sessions.prompt_async` input-part passthrough is compatibility-sensitive. Changes to supported part types, passthrough field semantics, or rejection behavior should be treated as wire-level changes.
 - `opencode.sessions.shell` is compatibility-sensitive as a deployment-conditional shell snapshot surface. It should not silently widen into a general interactive shell API.
@@ -132,7 +132,7 @@ This repository distinguishes between three layers:
 
 Important note:
 
-- `urn:a2a:*` extension URIs used here should be read as shared conventions in this repository family.
+- `urn:opencode-a2a:extension:...` extension URIs used here are repository-governed, versioned permanent identifiers.
 - They are not a claim that those extensions are part of the A2A core baseline.
 - `opencode.*` methods are intentionally product-specific. They improve OpenCode-aware workflows but should not be assumed to transfer unchanged to unrelated A2A agents.
 

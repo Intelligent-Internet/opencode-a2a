@@ -19,7 +19,7 @@ async def test_workspace_control_extension_supports_read_only_methods(monkeypatc
     dummy = DummyOpencodeUpstreamClient(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
@@ -70,7 +70,7 @@ async def test_workspace_control_extension_supports_mutating_methods(monkeypatch
     dummy = DummyOpencodeUpstreamClient(
         make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
     )
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
     app = app_module.create_app(
         make_settings(
             test_bearer_token="t-1",

@@ -59,7 +59,10 @@ from ..a2a_protocol import (
 )
 from ..config import Settings
 from ..contracts.extensions import (
+    INTERRUPT_CALLBACK_METHODS,
+    INTERRUPT_RECOVERY_METHODS,
     MODEL_SELECTION_EXTENSION_URI,
+    PROVIDER_DISCOVERY_METHODS,
     SESSION_BINDING_EXTENSION_URI,
     build_capability_snapshot,
 )
@@ -69,7 +72,6 @@ from ..extension_negotiation import (
     filter_negotiated_extensions_from_payload,
     requested_extensions_from_call_context,
 )
-from ..invocation import call_with_supported_kwargs
 from ..jsonrpc.application import (
     OpencodeSessionManagementJSONRPCApplication,
 )
@@ -88,7 +90,6 @@ from ..trace_context import install_log_record_factory
 from .agent_card import (
     _CHAT_OUTPUT_MODES,
     build_agent_card,
-    build_authenticated_extended_agent_card,
 )
 from .client_manager import A2AClientManager
 from .lifespan import build_lifespan
@@ -118,13 +119,6 @@ from .task_store import (
 logger = logging.getLogger(__name__)
 TASK_STORE_ERROR_TYPE = "TASK_STORE_UNAVAILABLE"
 PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE = "Push notifications are not supported by the agent"
-
-
-def _are_modalities_compatible(
-    supported_output_modes: list[str],
-    accepted_output_modes: list[str],
-) -> bool:
-    return bool(set(supported_output_modes) & set(accepted_output_modes))
 
 
 def _rest_error_response(
@@ -472,7 +466,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         if not accepted_output_modes:
             return
 
-        if not _are_modalities_compatible(list(_CHAT_OUTPUT_MODES), accepted_output_modes):
+        if not (set(_CHAT_OUTPUT_MODES) & set(accepted_output_modes)):
             raise UnsupportedOperationError(
                 message=(
                     "Requested acceptedOutputModes are not compatible with OpenCode chat responses."
@@ -793,16 +787,14 @@ def create_app(settings: Settings) -> FastAPI:
         settings,
         engine=database_engine,
     )
-    upstream_client = call_with_supported_kwargs(
-        OpencodeUpstreamClient,
+    upstream_client = OpencodeUpstreamClient(
         settings,
         interrupt_request_repository=interrupt_request_repository,
     )
     client_manager = A2AClientManager(settings)
     agent_card = build_agent_card(settings)
-    extended_agent_card = build_authenticated_extended_agent_card(settings)
-    executor = call_with_supported_kwargs(
-        OpencodeAgentExecutor,
+    extended_agent_card = build_agent_card(settings, include_detailed_contracts=True)
+    executor = OpencodeAgentExecutor(
         upstream_client,
         streaming_enabled=True,
         cancel_abort_timeout_seconds=settings.a2a_cancel_abort_timeout_seconds,
@@ -810,8 +802,7 @@ def create_app(settings: Settings) -> FastAPI:
         a2a_client_manager=client_manager,
         session_state_repository=session_state_repository,
     )
-    task_store = call_with_supported_kwargs(
-        build_task_store,
+    task_store = build_task_store(
         settings,
         engine=database_engine,
     )
@@ -828,10 +819,10 @@ def create_app(settings: Settings) -> FastAPI:
 
     jsonrpc_methods = {
         **capability_snapshot.session_management_methods(),
-        **capability_snapshot.provider_discovery_methods(),
+        **dict(PROVIDER_DISCOVERY_METHODS),
         **capability_snapshot.workspace_control_methods(),
-        **capability_snapshot.interrupt_recovery_methods(),
-        **capability_snapshot.interrupt_callback_methods(),
+        **dict(INTERRUPT_RECOVERY_METHODS),
+        **dict(INTERRUPT_CALLBACK_METHODS),
     }
 
     # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.

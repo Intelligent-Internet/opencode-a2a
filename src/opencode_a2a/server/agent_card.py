@@ -16,11 +16,13 @@ from a2a.types import (
 from ..auth import has_configured_auth_scheme
 from ..config import Settings
 from ..contracts.extensions import (
+    AUTHENTICATED_ONLY_EXTENSION_URIS,
     COMPATIBILITY_PROFILE_EXTENSION_URI,
     INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_RECOVERY_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
     PROVIDER_DISCOVERY_EXTENSION_URI,
+    PUBLIC_EXTENSION_URIS,
     SESSION_BINDING_EXTENSION_URI,
     SESSION_MANAGEMENT_EXTENSION_URI,
     SESSION_METHODS,
@@ -34,11 +36,13 @@ from ..contracts.extensions import (
     build_interrupt_recovery_extension_params,
     build_model_selection_extension_params,
     build_provider_discovery_extension_params,
+    build_public_streaming_extension_params,
     build_session_binding_extension_params,
     build_session_management_extension_params,
     build_streaming_extension_params,
     build_wire_contract_params,
     build_workspace_control_extension_params,
+    select_public_extension_params,
 )
 from ..jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from ..profile.runtime import RuntimeProfile, build_runtime_profile
@@ -47,47 +51,10 @@ from ..protocol_versions import A2A_PROTOCOL_VERSION
 _CHAT_INPUT_MODES = ["text/plain", "application/octet-stream"]
 _CHAT_OUTPUT_MODES = ["text/plain", "application/json"]
 _JSON_RPC_MODES = ["application/json"]
-
-
-def _select_public_extension_params(
-    params: dict[str, Any],
-    *,
-    keys: tuple[str, ...],
-) -> dict[str, Any]:
-    return {key: params[key] for key in keys if key in params}
-
-
-def _build_public_streaming_extension_params(
-    params: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        "artifact_metadata_field": params["artifact_metadata_field"],
-        "progress_metadata_field": params["progress_metadata_field"],
-        "interrupt_metadata_field": params["interrupt_metadata_field"],
-        "session_metadata_field": params["session_metadata_field"],
-        "usage_metadata_field": params["usage_metadata_field"],
-        "block_types": params["block_types"],
-        "stream_fields": _select_public_extension_params(
-            params["stream_fields"],
-            keys=("block_type", "message_id", "sequence"),
-        ),
-        "progress_fields": _select_public_extension_params(
-            params["progress_fields"],
-            keys=("type", "status"),
-        ),
-        "interrupt_fields": _select_public_extension_params(
-            params["interrupt_fields"],
-            keys=("request_id", "type", "phase"),
-        ),
-        "session_fields": _select_public_extension_params(
-            params["session_fields"],
-            keys=("id", "title"),
-        ),
-        "usage_fields": _select_public_extension_params(
-            params["usage_fields"],
-            keys=("input_tokens", "output_tokens", "total_tokens"),
-        ),
-    }
+_INTERRUPT_RECOVERY_SKILL_EXAMPLES = [
+    "List pending permission interrupts (method opencode.permissions.list).",
+    "List pending question interrupts (method opencode.questions.list).",
+]
 
 
 def _build_agent_card_description(
@@ -193,13 +160,6 @@ def _build_session_management_skill_examples(
     return examples
 
 
-def _build_interrupt_recovery_skill_examples() -> list[str]:
-    return [
-        "List pending permission interrupts (method opencode.permissions.list).",
-        "List pending question interrupts (method opencode.questions.list).",
-    ]
-
-
 def _build_workspace_control_skill_examples(*, capability_snapshot) -> list[str]:  # noqa: ANN001
     examples = [
         "List OpenCode projects (method opencode.projects.list).",
@@ -247,7 +207,7 @@ def _build_agent_extensions(
         runtime_profile=runtime_profile,
     )
 
-    return [
+    public_extensions = [
         AgentExtension(
             uri=SESSION_BINDING_EXTENSION_URI,
             required=False,
@@ -261,7 +221,7 @@ def _build_agent_extensions(
             params=(
                 session_binding_extension_params
                 if include_detailed_contracts
-                else _select_public_extension_params(
+                else select_public_extension_params(
                     session_binding_extension_params,
                     keys=(
                         "metadata_field",
@@ -283,7 +243,7 @@ def _build_agent_extensions(
             params=(
                 model_selection_extension_params
                 if include_detailed_contracts
-                else _select_public_extension_params(
+                else select_public_extension_params(
                     model_selection_extension_params,
                     keys=(
                         "metadata_field",
@@ -306,48 +266,8 @@ def _build_agent_extensions(
             params=(
                 streaming_extension_params
                 if include_detailed_contracts
-                else _build_public_streaming_extension_params(streaming_extension_params)
+                else build_public_streaming_extension_params(streaming_extension_params)
             ),
-        ),
-        AgentExtension(
-            uri=SESSION_MANAGEMENT_EXTENSION_URI,
-            required=False,
-            description=(
-                "Support OpenCode session read, mutation, and control methods through "
-                "provider-private JSON-RPC extensions on the agent's A2A JSON-RPC "
-                "interface."
-            ),
-            params=session_management_extension_params if include_detailed_contracts else None,
-        ),
-        AgentExtension(
-            uri=PROVIDER_DISCOVERY_EXTENSION_URI,
-            required=False,
-            description=(
-                "Expose OpenCode-specific provider/model discovery methods through "
-                "JSON-RPC extensions."
-            ),
-            params=provider_discovery_extension_params if include_detailed_contracts else None,
-        ),
-        AgentExtension(
-            uri=WORKSPACE_CONTROL_EXTENSION_URI,
-            required=False,
-            description=(
-                "Expose OpenCode-specific project discovery plus workspace/worktree "
-                "discovery and deployment-conditional control-plane mutations through "
-                "JSON-RPC extensions. Workspace/worktree surfaces depend on upstream "
-                "experimental endpoints."
-            ),
-            params=workspace_control_extension_params if include_detailed_contracts else None,
-        ),
-        AgentExtension(
-            uri=INTERRUPT_RECOVERY_EXTENSION_URI,
-            required=False,
-            description=(
-                "Expose adapter-local, identity-scoped interrupt recovery methods so "
-                "clients can rediscover pending permission/question requests after "
-                "reconnecting."
-            ),
-            params=interrupt_recovery_extension_params if include_detailed_contracts else None,
         ),
         AgentExtension(
             uri=INTERRUPT_CALLBACK_EXTENSION_URI,
@@ -359,11 +279,57 @@ def _build_agent_extensions(
             params=(
                 interrupt_callback_extension_params
                 if include_detailed_contracts
-                else _select_public_extension_params(
+                else select_public_extension_params(
                     interrupt_callback_extension_params,
                     keys=("methods", "supported_interrupt_events", "request_id_field"),
                 )
             ),
+        ),
+    ]
+    assert tuple(ext.uri for ext in public_extensions) == PUBLIC_EXTENSION_URIS
+    if not include_detailed_contracts:
+        return public_extensions
+
+    authenticated_only_extensions = [
+        AgentExtension(
+            uri=SESSION_MANAGEMENT_EXTENSION_URI,
+            required=False,
+            description=(
+                "Support OpenCode session read, mutation, and control methods through "
+                "provider-private JSON-RPC extensions on the agent's A2A JSON-RPC "
+                "interface."
+            ),
+            params=session_management_extension_params,
+        ),
+        AgentExtension(
+            uri=PROVIDER_DISCOVERY_EXTENSION_URI,
+            required=False,
+            description=(
+                "Expose OpenCode-specific provider/model discovery methods through "
+                "JSON-RPC extensions."
+            ),
+            params=provider_discovery_extension_params,
+        ),
+        AgentExtension(
+            uri=WORKSPACE_CONTROL_EXTENSION_URI,
+            required=False,
+            description=(
+                "Expose OpenCode-specific project discovery plus workspace/worktree "
+                "discovery and deployment-conditional control-plane mutations through "
+                "JSON-RPC extensions. Workspace/worktree surfaces depend on upstream "
+                "experimental endpoints."
+            ),
+            params=workspace_control_extension_params,
+        ),
+        AgentExtension(
+            uri=INTERRUPT_RECOVERY_EXTENSION_URI,
+            required=False,
+            description=(
+                "Expose adapter-local, identity-scoped interrupt recovery methods so "
+                "clients can rediscover pending permission/question requests after "
+                "reconnecting."
+            ),
+            params=interrupt_recovery_extension_params,
         ),
         AgentExtension(
             uri=COMPATIBILITY_PROFILE_EXTENSION_URI,
@@ -373,7 +339,7 @@ def _build_agent_extensions(
                 "extension retention policies, declared service behaviors, and "
                 "deployment-conditional methods."
             ),
-            params=compatibility_profile_params if include_detailed_contracts else None,
+            params=compatibility_profile_params,
         ),
         AgentExtension(
             uri=WIRE_CONTRACT_EXTENSION_URI,
@@ -383,9 +349,13 @@ def _build_agent_extensions(
                 "HTTP endpoints, declared service behaviors, and unified error "
                 "contracts."
             ),
-            params=wire_contract_params if include_detailed_contracts else None,
+            params=wire_contract_params,
         ),
     ]
+    assert (
+        tuple(ext.uri for ext in authenticated_only_extensions) == AUTHENTICATED_ONLY_EXTENSION_URIS
+    )
+    return [*public_extensions, *authenticated_only_extensions]
 
 
 def _build_agent_skills(
@@ -408,52 +378,6 @@ def _build_agent_skills(
                 input_modes=list(_CHAT_INPUT_MODES),
                 output_modes=list(_CHAT_OUTPUT_MODES),
                 tags=["assistant", "coding", "opencode", "core-a2a", "portable"],
-            ),
-            AgentSkill(
-                id="opencode.sessions.management",
-                name="OpenCode Session Management",
-                description=(
-                    "Read, mutate, and control OpenCode sessions through provider-private "
-                    "JSON-RPC extensions."
-                ),
-                input_modes=list(_JSON_RPC_MODES),
-                output_modes=list(_JSON_RPC_MODES),
-                tags=["opencode", "sessions", "history", "provider-private"],
-            ),
-            AgentSkill(
-                id="opencode.providers.query",
-                name="OpenCode Provider Catalog",
-                description=(
-                    "Discover available upstream providers and models through provider-private "
-                    "JSON-RPC extensions."
-                ),
-                input_modes=list(_JSON_RPC_MODES),
-                output_modes=list(_JSON_RPC_MODES),
-                tags=["opencode", "providers", "models", "provider-private"],
-            ),
-            AgentSkill(
-                id="opencode.workspace.control",
-                name="OpenCode Workspace Control",
-                description=(
-                    "Discover OpenCode projects, workspaces, and worktrees through "
-                    "provider-private JSON-RPC extensions. Mutation methods are "
-                    "deployment-conditional and workspace/worktree surfaces depend on "
-                    "upstream experimental endpoints."
-                ),
-                input_modes=list(_JSON_RPC_MODES),
-                output_modes=list(_JSON_RPC_MODES),
-                tags=["opencode", "project", "workspace", "worktree", "provider-private"],
-            ),
-            AgentSkill(
-                id="opencode.interrupt.recovery",
-                name="OpenCode Interrupt Recovery",
-                description=(
-                    "Recover pending permission and question interrupts from the "
-                    "adapter-local interrupt registry for the current caller."
-                ),
-                input_modes=list(_JSON_RPC_MODES),
-                output_modes=list(_JSON_RPC_MODES),
-                tags=["interrupt", "permission", "question", "provider-private"],
             ),
             AgentSkill(
                 id="opencode.interrupt.callback",
@@ -539,7 +463,7 @@ def _build_agent_skills(
             input_modes=list(_JSON_RPC_MODES),
             output_modes=list(_JSON_RPC_MODES),
             tags=["interrupt", "permission", "question", "provider-private"],
-            examples=_build_interrupt_recovery_skill_examples(),
+            examples=list(_INTERRUPT_RECOVERY_SKILL_EXAMPLES),
         ),
         AgentSkill(
             id="opencode.interrupt.callback",
@@ -560,10 +484,10 @@ def _build_agent_skills(
     ]
 
 
-def _build_agent_card(
+def build_agent_card(
     settings: Settings,
     *,
-    include_detailed_contracts: bool,
+    include_detailed_contracts: bool = False,
 ) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     runtime_profile = build_runtime_profile(settings)
@@ -627,11 +551,3 @@ def _build_agent_card(
         security_schemes=security_schemes,
         security_requirements=security_requirements,
     )
-
-
-def build_agent_card(settings: Settings) -> AgentCard:
-    return _build_agent_card(settings, include_detailed_contracts=False)
-
-
-def build_authenticated_extended_agent_card(settings: Settings) -> AgentCard:
-    return _build_agent_card(settings, include_detailed_contracts=True)
