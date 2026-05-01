@@ -9,20 +9,7 @@ from ...profile.runtime import (
     WORKSPACE_MUTATIONS_TOGGLE,
     RuntimeProfile,
 )
-from .catalog import (
-    CORE_JSONRPC_METHODS,
-    INTERRUPT_CALLBACK_METHODS,
-    INTERRUPT_RECOVERY_METHODS,
-    PROVIDER_DISCOVERY_METHODS,
-    SESSION_CONTROL_METHODS,
-    SESSION_METHODS,
-    WORKSPACE_DISCOVERY_METHODS,
-    WORKSPACE_MUTATION_METHODS,
-)
-from .identifiers import (
-    SESSION_MANAGEMENT_EXTENSION_URI,
-    WORKSPACE_CONTROL_EXTENSION_URI,
-)
+from . import catalog, identifiers
 
 
 @dataclass(frozen=True)
@@ -68,47 +55,47 @@ class JsonRpcCapabilitySnapshot:
         return conditional_method.enabled
 
     def session_management_methods(self) -> dict[str, str]:
-        methods = dict(SESSION_METHODS)
-        if not self.is_method_enabled(SESSION_METHODS["shell"]):
+        methods = dict(catalog.SESSION_METHODS)
+        if not self.is_method_enabled(catalog.SESSION_METHODS["shell"]):
             methods.pop("shell", None)
         return methods
 
     def session_control_methods(self) -> dict[str, str]:
-        methods = dict(SESSION_CONTROL_METHODS)
-        if not self.is_method_enabled(SESSION_CONTROL_METHODS["shell"]):
+        methods = dict(catalog.SESSION_CONTROL_METHODS)
+        if not self.is_method_enabled(catalog.SESSION_CONTROL_METHODS["shell"]):
             methods.pop("shell", None)
         return methods
 
     def workspace_control_methods(self) -> dict[str, str]:
-        methods = dict(WORKSPACE_DISCOVERY_METHODS)
-        for key, method in WORKSPACE_MUTATION_METHODS.items():
+        methods = dict(catalog.WORKSPACE_DISCOVERY_METHODS)
+        for key, method in catalog.WORKSPACE_MUTATION_METHODS.items():
             if self.is_method_enabled(method):
                 methods[key] = method
         return methods
 
     def supported_jsonrpc_methods(self) -> list[str]:
         methods = [
-            *CORE_JSONRPC_METHODS,
-            *(method for key, method in SESSION_METHODS.items() if key != "shell"),
-            *PROVIDER_DISCOVERY_METHODS.values(),
+            *catalog.CORE_JSONRPC_METHODS,
+            *(method for key, method in catalog.SESSION_METHODS.items() if key != "shell"),
+            *catalog.PROVIDER_DISCOVERY_METHODS.values(),
             *self.workspace_control_methods().values(),
-            *INTERRUPT_RECOVERY_METHODS.values(),
-            *INTERRUPT_CALLBACK_METHODS.values(),
+            *catalog.INTERRUPT_RECOVERY_METHODS.values(),
+            *catalog.INTERRUPT_CALLBACK_METHODS.values(),
         ]
-        if self.is_method_enabled(SESSION_CONTROL_METHODS["shell"]):
-            methods.append(SESSION_CONTROL_METHODS["shell"])
+        if self.is_method_enabled(catalog.SESSION_CONTROL_METHODS["shell"]):
+            methods.append(catalog.SESSION_CONTROL_METHODS["shell"])
         return methods
 
     def extension_jsonrpc_methods(self) -> list[str]:
         methods = [
-            *(method for key, method in SESSION_METHODS.items() if key != "shell"),
-            *PROVIDER_DISCOVERY_METHODS.values(),
+            *(method for key, method in catalog.SESSION_METHODS.items() if key != "shell"),
+            *catalog.PROVIDER_DISCOVERY_METHODS.values(),
             *self.workspace_control_methods().values(),
-            *INTERRUPT_RECOVERY_METHODS.values(),
-            *INTERRUPT_CALLBACK_METHODS.values(),
+            *catalog.INTERRUPT_RECOVERY_METHODS.values(),
+            *catalog.INTERRUPT_CALLBACK_METHODS.values(),
         ]
-        if self.is_method_enabled(SESSION_CONTROL_METHODS["shell"]):
-            methods.append(SESSION_CONTROL_METHODS["shell"])
+        if self.is_method_enabled(catalog.SESSION_CONTROL_METHODS["shell"]):
+            methods.append(catalog.SESSION_CONTROL_METHODS["shell"])
         return methods
 
     def conditionally_available_methods(self) -> dict[str, dict[str, str]]:
@@ -134,10 +121,10 @@ class JsonRpcCapabilitySnapshot:
 
 def build_capability_snapshot(*, runtime_profile: RuntimeProfile) -> JsonRpcCapabilitySnapshot:
     conditional_methods = {
-        SESSION_CONTROL_METHODS["shell"]: DeploymentConditionalMethod(
-            method=SESSION_CONTROL_METHODS["shell"],
+        catalog.SESSION_CONTROL_METHODS["shell"]: DeploymentConditionalMethod(
+            method=catalog.SESSION_CONTROL_METHODS["shell"],
             enabled=runtime_profile.session_shell.enabled,
-            extension_uri=SESSION_MANAGEMENT_EXTENSION_URI,
+            extension_uri=identifiers.SESSION_MANAGEMENT_EXTENSION_URI,
             toggle=SESSION_SHELL_TOGGLE,
         )
     }
@@ -146,10 +133,10 @@ def build_capability_snapshot(*, runtime_profile: RuntimeProfile) -> JsonRpcCapa
             method: DeploymentConditionalMethod(
                 method=method,
                 enabled=runtime_profile.workspace_mutations.enabled,
-                extension_uri=WORKSPACE_CONTROL_EXTENSION_URI,
+                extension_uri=identifiers.WORKSPACE_CONTROL_EXTENSION_URI,
                 toggle=WORKSPACE_MUTATIONS_TOGGLE,
             )
-            for method in WORKSPACE_MUTATION_METHODS.values()
+            for method in catalog.WORKSPACE_MUTATION_METHODS.values()
         }
     )
     return JsonRpcCapabilitySnapshot(conditional_methods=conditional_methods)

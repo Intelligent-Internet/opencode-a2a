@@ -3,42 +3,18 @@ from __future__ import annotations
 from typing import Any
 
 from ...profile.runtime import RuntimeProfile
+from . import catalog, identifiers
 from .capabilities import JsonRpcCapabilitySnapshot, build_capability_snapshot
-from .catalog import (
-    CORE_HTTP_ENDPOINTS,
-    CORE_JSONRPC_METHODS,
-    INTERRUPT_CALLBACK_METHODS,
-    INTERRUPT_RECOVERY_METHODS,
-    PROVIDER_DISCOVERY_METHODS,
-    SESSION_METHODS,
-    WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS,
-    WORKSPACE_EXPERIMENTAL_UPSTREAM_METHODS,
-    WORKSPACE_MUTATION_METHODS,
-    WORKSPACE_STABLE_METHODS,
-)
-from .identifiers import (
-    CANCEL_IDEMPOTENCY_BEHAVIOR,
-    INTERRUPT_CALLBACK_EXTENSION_URI,
-    INTERRUPT_RECOVERY_EXTENSION_URI,
-    MODEL_SELECTION_EXTENSION_URI,
-    PROVIDER_DISCOVERY_EXTENSION_URI,
-    SERVICE_BEHAVIOR_CLASSIFICATION,
-    SESSION_BINDING_EXTENSION_URI,
-    SESSION_MANAGEMENT_EXTENSION_URI,
-    STREAMING_EXTENSION_URI,
-    TERMINAL_RESUBSCRIBE_BEHAVIOR,
-    WORKSPACE_CONTROL_EXTENSION_URI,
-)
 
 DECLARED_EXTENSION_URIS: tuple[str, ...] = (
-    SESSION_BINDING_EXTENSION_URI,
-    MODEL_SELECTION_EXTENSION_URI,
-    STREAMING_EXTENSION_URI,
-    SESSION_MANAGEMENT_EXTENSION_URI,
-    PROVIDER_DISCOVERY_EXTENSION_URI,
-    WORKSPACE_CONTROL_EXTENSION_URI,
-    INTERRUPT_RECOVERY_EXTENSION_URI,
-    INTERRUPT_CALLBACK_EXTENSION_URI,
+    identifiers.SESSION_BINDING_EXTENSION_URI,
+    identifiers.MODEL_SELECTION_EXTENSION_URI,
+    identifiers.STREAMING_EXTENSION_URI,
+    identifiers.SESSION_MANAGEMENT_EXTENSION_URI,
+    identifiers.PROVIDER_DISCOVERY_EXTENSION_URI,
+    identifiers.WORKSPACE_CONTROL_EXTENSION_URI,
+    identifiers.INTERRUPT_RECOVERY_EXTENSION_URI,
+    identifiers.INTERRUPT_CALLBACK_EXTENSION_URI,
 )
 
 
@@ -57,8 +33,8 @@ def _build_declared_protocol_versions(
 
 def _build_core_contract_surface() -> dict[str, list[str]]:
     return {
-        "jsonrpc_methods": list(CORE_JSONRPC_METHODS),
-        "http_endpoints": list(CORE_HTTP_ENDPOINTS),
+        "jsonrpc_methods": list(catalog.CORE_JSONRPC_METHODS),
+        "http_endpoints": list(catalog.CORE_HTTP_ENDPOINTS),
     }
 
 
@@ -104,38 +80,38 @@ def _build_method_retention_records(
 
 def _build_extension_retention() -> dict[str, dict[str, Any]]:
     return {
-        SESSION_BINDING_EXTENSION_URI: _build_retention_record(
+        identifiers.SESSION_BINDING_EXTENSION_URI: _build_retention_record(
             surface="core-runtime-metadata",
             retention="required",
         ),
-        MODEL_SELECTION_EXTENSION_URI: _build_retention_record(
+        identifiers.MODEL_SELECTION_EXTENSION_URI: _build_retention_record(
             surface="core-runtime-metadata",
             retention="stable",
         ),
-        STREAMING_EXTENSION_URI: _build_retention_record(
+        identifiers.STREAMING_EXTENSION_URI: _build_retention_record(
             surface="core-runtime-metadata",
             retention="required",
         ),
-        SESSION_MANAGEMENT_EXTENSION_URI: _build_retention_record(
+        identifiers.SESSION_MANAGEMENT_EXTENSION_URI: _build_retention_record(
             surface="jsonrpc-extension",
             retention="stable",
         ),
-        PROVIDER_DISCOVERY_EXTENSION_URI: _build_retention_record(
+        identifiers.PROVIDER_DISCOVERY_EXTENSION_URI: _build_retention_record(
             surface="jsonrpc-extension",
             retention="stable",
         ),
-        WORKSPACE_CONTROL_EXTENSION_URI: _build_retention_record(
+        identifiers.WORKSPACE_CONTROL_EXTENSION_URI: _build_retention_record(
             surface="jsonrpc-extension",
             retention="mixed",
             upstream_stability="mixed",
         ),
-        INTERRUPT_RECOVERY_EXTENSION_URI: _build_retention_record(
+        identifiers.INTERRUPT_RECOVERY_EXTENSION_URI: _build_retention_record(
             surface="jsonrpc-extension",
             retention="stable",
             implementation_scope="adapter-local",
             identity_scope="current_authenticated_caller",
         ),
-        INTERRUPT_CALLBACK_EXTENSION_URI: _build_retention_record(
+        identifiers.INTERRUPT_CALLBACK_EXTENSION_URI: _build_retention_record(
             surface="jsonrpc-extension",
             retention="stable",
         ),
@@ -146,59 +122,59 @@ def _build_method_retention(
     capability_snapshot: JsonRpcCapabilitySnapshot,
 ) -> dict[str, dict[str, Any]]:
     method_retention = _build_method_retention_records(
-        CORE_JSONRPC_METHODS,
+        catalog.CORE_JSONRPC_METHODS,
         surface="core",
         retention="required",
     )
     method_retention.update(
         _build_method_retention_records(
-            [method for key, method in SESSION_METHODS.items() if key != "shell"],
-            extension_uri=SESSION_MANAGEMENT_EXTENSION_URI,
+            [method for key, method in catalog.SESSION_METHODS.items() if key != "shell"],
+            extension_uri=identifiers.SESSION_MANAGEMENT_EXTENSION_URI,
             retention="stable",
         )
     )
     method_retention.update(capability_snapshot.conditional_method_retention())
     method_retention.update(
         _build_method_retention_records(
-            list(PROVIDER_DISCOVERY_METHODS.values()),
-            extension_uri=PROVIDER_DISCOVERY_EXTENSION_URI,
+            list(catalog.PROVIDER_DISCOVERY_METHODS.values()),
+            extension_uri=identifiers.PROVIDER_DISCOVERY_EXTENSION_URI,
             retention="stable",
         )
     )
     method_retention.update(
         _build_method_retention_records(
-            list(WORKSPACE_STABLE_METHODS.values()),
-            extension_uri=WORKSPACE_CONTROL_EXTENSION_URI,
+            list(catalog.WORKSPACE_STABLE_METHODS.values()),
+            extension_uri=identifiers.WORKSPACE_CONTROL_EXTENSION_URI,
             retention="stable",
         )
     )
     method_retention.update(
         _build_method_retention_records(
             [
-                WORKSPACE_EXPERIMENTAL_UPSTREAM_METHODS["list_workspaces"],
-                WORKSPACE_EXPERIMENTAL_UPSTREAM_METHODS["list_worktrees"],
+                catalog.WORKSPACE_EXPERIMENTAL_UPSTREAM_METHODS["list_workspaces"],
+                catalog.WORKSPACE_EXPERIMENTAL_UPSTREAM_METHODS["list_worktrees"],
             ],
-            extension_uri=WORKSPACE_CONTROL_EXTENSION_URI,
+            extension_uri=identifiers.WORKSPACE_CONTROL_EXTENSION_URI,
             retention="experimental-upstream",
         )
     )
     method_retention.update(
         _build_method_retention_records(
-            list(INTERRUPT_RECOVERY_METHODS.values()),
-            extension_uri=INTERRUPT_RECOVERY_EXTENSION_URI,
+            list(catalog.INTERRUPT_RECOVERY_METHODS.values()),
+            extension_uri=identifiers.INTERRUPT_RECOVERY_EXTENSION_URI,
             retention="stable",
             implementation_scope="adapter-local",
             identity_scope="current_authenticated_caller",
         )
     )
-    for method in WORKSPACE_MUTATION_METHODS.values():
+    for method in catalog.WORKSPACE_MUTATION_METHODS.values():
         retention = method_retention.get(method)
         if retention is not None:
             retention["upstream_stability"] = "experimental"
     method_retention.update(
         _build_method_retention_records(
-            list(INTERRUPT_CALLBACK_METHODS.values()),
-            extension_uri=INTERRUPT_CALLBACK_EXTENSION_URI,
+            list(catalog.INTERRUPT_CALLBACK_METHODS.values()),
+            extension_uri=identifiers.INTERRUPT_CALLBACK_EXTENSION_URI,
             retention="stable",
         )
     )
@@ -371,21 +347,21 @@ def build_wire_contract_params(
         "unsupported_method_error": {
             "code": -32601,
             "type": "METHOD_NOT_SUPPORTED",
-            "data_fields": list(WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS),
+            "data_fields": list(catalog.WIRE_CONTRACT_UNSUPPORTED_METHOD_DATA_FIELDS),
         },
     }
 
 
 def build_service_behavior_contract_params() -> dict[str, Any]:
     return {
-        "classification": SERVICE_BEHAVIOR_CLASSIFICATION,
+        "classification": identifiers.SERVICE_BEHAVIOR_CLASSIFICATION,
         "methods": {
             "CancelTask": {
                 "baseline": "core",
                 "retention": "stable",
                 "idempotency": {
                     "already_canceled": {
-                        "behavior": CANCEL_IDEMPOTENCY_BEHAVIOR,
+                        "behavior": identifiers.CANCEL_IDEMPOTENCY_BEHAVIOR,
                         "returns_current_state": "canceled",
                         "error": None,
                     }
@@ -395,7 +371,7 @@ def build_service_behavior_contract_params() -> dict[str, Any]:
                 "baseline": "core",
                 "retention": "stable",
                 "terminal_state_behavior": {
-                    "behavior": TERMINAL_RESUBSCRIBE_BEHAVIOR,
+                    "behavior": identifiers.TERMINAL_RESUBSCRIBE_BEHAVIOR,
                     "delivery": "single_task_snapshot",
                     "closes_stream": True,
                 },
