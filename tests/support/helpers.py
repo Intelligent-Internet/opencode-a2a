@@ -17,6 +17,7 @@ from opencode_a2a.contracts.extensions import (
     STREAMING_EXTENSION_URI,
 )
 from opencode_a2a.opencode_upstream_client import OpencodeMessage, OpencodeMessagePage
+from opencode_a2a.server.context_helpers import normalize_server_call_context
 
 
 def _build_test_static_auth_credentials(**overrides: Any) -> tuple[dict[str, Any], ...]:
@@ -102,10 +103,12 @@ def _default_requested_extensions() -> set[str]:
 
 def _ensure_test_call_context(call_context: Any | None) -> Any:
     if call_context is None:
-        return ServerCallContext(requested_extensions=_default_requested_extensions())
+        return normalize_server_call_context(
+            ServerCallContext(requested_extensions=_default_requested_extensions())
+        )
     if not hasattr(call_context, "requested_extensions"):
         call_context.requested_extensions = _default_requested_extensions()
-    return call_context
+    return normalize_server_call_context(call_context)
 
 
 def make_request_context_mock(
@@ -127,9 +130,12 @@ def make_request_context_mock(
     context.message = message
     context.current_task = current_task
     if call_context_enabled:
-        call_context = MagicMock(spec=ServerCallContext)
-        call_context.state = {"identity": identity} if identity else {}
-        call_context.requested_extensions = _default_requested_extensions()
+        call_context = normalize_server_call_context(
+            ServerCallContext(
+                state={"identity": identity} if identity else {},
+                requested_extensions=_default_requested_extensions(),
+            )
+        )
         context.call_context = call_context
     else:
         context.call_context = None

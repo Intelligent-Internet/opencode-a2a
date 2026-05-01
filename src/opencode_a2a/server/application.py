@@ -7,7 +7,6 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 import uvicorn
-from a2a.auth.user import User
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventConsumer, EventQueueLegacy
 from a2a.server.request_handlers.default_request_handler import (
@@ -93,6 +92,7 @@ from .agent_card import (
     build_agent_card,
 )
 from .client_manager import A2AClientManager
+from .context_helpers import AuthenticatedIdentityUser
 from .lifespan import build_lifespan
 from .middleware import (
     build_agent_card_etag,
@@ -120,19 +120,6 @@ from .task_store import (
 logger = logging.getLogger(__name__)
 TASK_STORE_ERROR_TYPE = "TASK_STORE_UNAVAILABLE"
 PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE = "Push notifications are not supported by the agent"
-
-
-class AuthenticatedIdentityUser(User):
-    def __init__(self, identity: str) -> None:
-        self._identity = identity
-
-    @property
-    def is_authenticated(self) -> bool:
-        return True
-
-    @property
-    def user_name(self) -> str:
-        return self._identity
 
 
 def _rest_error_response(

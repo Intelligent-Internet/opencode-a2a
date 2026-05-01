@@ -21,6 +21,7 @@ from sqlalchemy.engine import make_url
 from ..a2a_utils import proto_equals
 from ..config import Settings
 from ..task_states import TERMINAL_TASK_STATES
+from .context_helpers import normalize_server_call_context
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -388,9 +389,7 @@ def unwrap_task_store(task_store: TaskStore) -> TaskStore:
 def _normalize_task_store_context(
     context: ServerCallContext | None,
 ) -> ServerCallContext:
-    if context is not None:
-        return context
-    return ServerCallContext()
+    return normalize_server_call_context(context)
 
 
 def _configure_sqlite_connection(dbapi_connection: Any, _connection_record: Any) -> None:

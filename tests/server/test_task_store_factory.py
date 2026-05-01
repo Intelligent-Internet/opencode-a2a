@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 import warnings
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from a2a.server.context import ServerCallContext
 from a2a.server.tasks.database_task_store import DatabaseTaskStore
 from a2a.types import Task, TaskState, TaskStatus
 from sqlalchemy import text
@@ -24,7 +25,7 @@ from opencode_a2a.server.task_store import (
     initialize_task_store,
     unwrap_task_store,
 )
-from tests.support.helpers import make_settings
+from tests.support.helpers import make_request_context_mock, make_settings
 
 
 def _task(task_id: str, *, context_id: str = "ctx-1") -> Task:
@@ -258,6 +259,50 @@ async def test_initialize_task_store_delegates_back_to_sdk_initialize(
         await store.engine.dispose()
 
     assert called is True
+
+
+def test_make_request_context_mock_uses_normalized_call_context() -> None:
+    context = make_request_context_mock(
+        task_id="task-1",
+        context_id="ctx-1",
+        identity="opaque:test-id",
+    )
+
+    assert isinstance(context.call_context, ServerCallContext)
+    assert context.call_context.state["identity"] == "opaque:test-id"
+    assert context.call_context.user.is_authenticated is True
+    assert context.call_context.user.user_name == "opaque:test-id"
+
+
+@pytest.mark.asyncio
+async def test_database_task_store_normalizes_mock_server_call_context_identity_scope(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'mock-context.db'}",
+    )
+    store = build_task_store(settings)
+    await initialize_task_store(store)
+
+    owner_context = MagicMock(spec=ServerCallContext)
+    owner_context.state = {"identity": "opaque:test-id"}
+    owner_context.requested_extensions = set()
+
+    other_context = MagicMock(spec=ServerCallContext)
+    other_context.state = {"identity": "opaque:other-id"}
+    other_context.requested_extensions = set()
+
+    try:
+        await store.save(_task("task-1"), owner_context)
+        restored = await store.get("task-1", owner_context)
+        missing = await store.get("task-1", other_context)
+    finally:
+        await store.engine.dispose()
+
+    assert restored is not None
+    assert restored.id == "task-1"
+    assert missing is None
 
 
 @pytest.mark.asyncio
