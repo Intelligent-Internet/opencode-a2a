@@ -24,11 +24,11 @@ from ..methods import (
 )
 from ..models import JSONRPCRequest
 from .common import (
+    SessionClaimGuard,
     build_authorization_forbidden_response,
     build_session_forbidden_response,
     build_success_response,
     build_upstream_exception_response,
-    claim_session,
     reject_unknown_fields,
     resolve_routing_context,
 )
@@ -167,7 +167,7 @@ async def handle_session_control_request(
         routing_kwargs["workspace_id"] = workspace_id
 
     try:
-        async with claim_session(
+        async with SessionClaimGuard(
             context,
             identity=identity,
             session_id=session_id,

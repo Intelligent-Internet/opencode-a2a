@@ -72,23 +72,6 @@ class SessionClaimGuard:
                     self._session_id,
                 )
         return False
-
-
-def claim_session(
-    context: ExtensionHandlerContext,
-    *,
-    identity: str | None,
-    session_id: str | None,
-    logger: logging.Logger,
-) -> SessionClaimGuard:
-    return SessionClaimGuard(
-        context,
-        identity=identity,
-        session_id=session_id,
-        logger=logger,
-    )
-
-
 def build_success_response(
     context: ExtensionHandlerContext,
     request_id: str | int | None,

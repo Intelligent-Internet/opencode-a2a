@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 from ..contracts.extensions import (
@@ -29,40 +30,24 @@ def _validation_error(field: str, message: str) -> JsonRpcParamsValidationError:
         message=message,
         data={"type": "INVALID_FIELD", "field": field},
     )
-
-
-def _parse_positive_int(value: Any, *, field: str) -> int | None:
-    return parse_shared_int_field(
-        value,
-        field=field,
-        error_factory=_validation_error,
-        minimum=1,
-    )
-
-
-def _parse_non_negative_int(value: Any, *, field: str) -> int | None:
-    return parse_shared_int_field(
-        value,
-        field=field,
-        error_factory=_validation_error,
-        minimum=0,
-    )
-
-
-def _parse_string_field(value: Any, *, field: str) -> str | None:
-    return parse_shared_string_field(
-        value,
-        field=field,
-        error_factory=_validation_error,
-    )
-
-
-def _parse_bool_field(value: Any, *, field: str) -> bool | None:
-    return parse_shared_bool_field(
-        value,
-        field=field,
-        error_factory=_validation_error,
-    )
+_parse_required_positive_int = partial(
+    parse_shared_int_field,
+    error_factory=_validation_error,
+    minimum=1,
+)
+_parse_non_negative_int = partial(
+    parse_shared_int_field,
+    error_factory=_validation_error,
+    minimum=0,
+)
+_parse_string_field = partial(
+    parse_shared_string_field,
+    error_factory=_validation_error,
+)
+_parse_bool_field = partial(
+    parse_shared_bool_field,
+    error_factory=_validation_error,
+)
 
 
 def _parse_query_object(params: dict[str, Any]) -> dict[str, Any]:
@@ -97,8 +82,8 @@ def _normalize_session_query_limit(
     params: dict[str, Any],
     query: dict[str, Any],
 ) -> dict[str, Any]:
-    top_level_limit = _parse_positive_int(params.get("limit"), field="limit")
-    query_limit = _parse_positive_int(query.get("limit"), field="limit")
+    top_level_limit = _parse_required_positive_int(params.get("limit"), field="limit")
+    query_limit = _parse_required_positive_int(query.get("limit"), field="limit")
     if top_level_limit is not None and query_limit is not None and top_level_limit != query_limit:
         raise JsonRpcParamsValidationError(
             message="limit is ambiguous between params.limit and params.query.limit",

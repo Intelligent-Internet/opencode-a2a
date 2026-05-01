@@ -21,10 +21,10 @@ from ..methods import (
 )
 from ..models import JSONRPCRequest
 from .common import (
+    SessionClaimGuard,
     build_session_forbidden_response,
     build_success_response,
     build_upstream_exception_response,
-    claim_session,
     reject_unknown_fields,
     resolve_routing_context,
 )
@@ -340,7 +340,7 @@ async def handle_session_lifecycle_request(
 
     claim_identity = identity if method in mutating_methods else None
     try:
-        async with claim_session(
+        async with SessionClaimGuard(
             context,
             identity=claim_identity,
             session_id=session_id,
