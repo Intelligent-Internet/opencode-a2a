@@ -80,6 +80,17 @@ def _agent_card() -> AgentCard:
     return AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True))
 
 
+class _RaisingAsyncIterator:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def __aiter__(self) -> _RaisingAsyncIterator:
+        return self
+
+    async def __anext__(self):
+        raise self._error
+
+
 def _request(
     path: str,
     body: bytes = b"{}",
@@ -811,11 +822,9 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
             parts=[app_module.Part(text="server reply")],
         )
 
-    async def _stream_failure(params, context=None):  # noqa: ANN001
+    def _stream_failure(params, context=None):  # noqa: ANN001
         del params, context
-        if False:  # pragma: no cover
-            yield None
-        raise InvalidRequestError(message="stream bad")
+        return _RaisingAsyncIterator(InvalidRequestError(message="stream bad"))
 
     handler.on_message_send = _message_response
     handler.on_message_send_stream = _stream_failure
@@ -933,10 +942,9 @@ async def test_on_message_send_returns_stable_failure_task_for_task_store_error(
 @pytest.mark.asyncio
 async def test_on_message_send_stream_emits_stable_failure_events_for_task_store_error() -> None:
     class _Aggregator:
-        async def consume_and_emit(self, _consumer):
-            if _consumer is None:  # pragma: no cover
-                yield None
-            raise TaskStoreOperationError("save", "task-1")
+        def consume_and_emit(self, _consumer):
+            del _consumer
+            return _RaisingAsyncIterator(TaskStoreOperationError("save", "task-1"))
 
     class _Handler(OpencodeRequestHandler):
         def __init__(self) -> None:

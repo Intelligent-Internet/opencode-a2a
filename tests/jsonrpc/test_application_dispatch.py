@@ -32,22 +32,38 @@ def _request_context() -> SimpleNamespace:
     return SimpleNamespace(state={}, tenant="")
 
 
-async def _empty_stream() -> AsyncIterator[TaskStatusUpdateEvent]:
-    if False:
-        yield TaskStatusUpdateEvent(
-            task_id="task-0",
-            context_id="ctx-0",
-            status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-        )
+class _EmptyStream(AsyncIterator[TaskStatusUpdateEvent]):
+    def __aiter__(self) -> _EmptyStream:
+        return self
+
+    async def __anext__(self) -> TaskStatusUpdateEvent:
+        raise StopAsyncIteration
 
 
-async def _broken_stream() -> AsyncIterator[TaskStatusUpdateEvent]:
-    yield TaskStatusUpdateEvent(
-        task_id="task-1",
-        context_id="ctx-1",
-        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-    )
-    raise InvalidParamsError(message="bad stream")
+class _BrokenStream(AsyncIterator[TaskStatusUpdateEvent]):
+    def __init__(self) -> None:
+        self._yielded_event = False
+
+    def __aiter__(self) -> _BrokenStream:
+        return self
+
+    async def __anext__(self) -> TaskStatusUpdateEvent:
+        if not self._yielded_event:
+            self._yielded_event = True
+            return TaskStatusUpdateEvent(
+                task_id="task-1",
+                context_id="ctx-1",
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+            )
+        raise InvalidParamsError(message="bad stream")
+
+
+def _empty_stream() -> AsyncIterator[TaskStatusUpdateEvent]:
+    return _EmptyStream()
+
+
+def _broken_stream() -> AsyncIterator[TaskStatusUpdateEvent]:
+    return _BrokenStream()
 
 
 @pytest.mark.asyncio
