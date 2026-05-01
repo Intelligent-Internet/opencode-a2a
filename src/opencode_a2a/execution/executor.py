@@ -30,6 +30,7 @@ from ..contracts.extensions import (
     STREAMING_EXTENSION_URI,
 )
 from ..extension_negotiation import requested_extensions_from_call_context
+from ..metadata_access import extract_first_namespaced_string
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..output_modes import accepts_output_mode, normalize_accepted_output_modes
 from ..parts.mapping import (
@@ -42,12 +43,6 @@ from ..sandbox_policy import SandboxPolicy
 from .coordinator import ExecutionCoordinator, PreparedExecution, build_session_binding_context_id
 from .event_helpers import _enqueue_artifact_update
 from .metrics import emit_metric
-from .request_context import (
-    _extract_opencode_directory,
-    _extract_opencode_workspace_id,
-    _extract_shared_model,
-    _extract_shared_session_id,
-)
 from .session_manager import SessionManager
 from .stream_runtime import StreamRuntime
 from .stream_state import (
@@ -60,14 +55,6 @@ from .upstream_error_translator import (
 logger = logging.getLogger(__name__)
 _TEXT_PLAIN_MEDIA_TYPE = "text/plain"
 _APPLICATION_JSON_MEDIA_TYPE = "application/json"
-
-
-def _emit_metric(
-    name: str,
-    value: float = 1.0,
-    **labels: str | int | float | bool,
-) -> None:
-    emit_metric(name, value, **labels)
 
 
 class OpencodeAgentExecutor(AgentExecutor):
@@ -100,7 +87,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         )
         self._stream_runtime = StreamRuntime(
             client=client,
-            emit_metric=self._emit_metric,
+            emit_metric=emit_metric,
             sleep=asyncio.sleep,
         )
         self._lock = asyncio.Lock()
@@ -111,14 +98,6 @@ class OpencodeAgentExecutor(AgentExecutor):
         self._running_directories: dict[tuple[str, str], str | None] = {}
         self._running_workspace_ids: dict[tuple[str, str], str | None] = {}
         self._running_binding_context_ids: dict[tuple[str, str], str] = {}
-
-    @staticmethod
-    def _emit_metric(
-        name: str,
-        value: float = 1.0,
-        **labels: str | int | float | bool,
-    ) -> None:
-        _emit_metric(name, value, **labels)
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id
@@ -167,8 +146,40 @@ class OpencodeAgentExecutor(AgentExecutor):
             and request_parts[0].get("text") == user_text
         )
         use_structured_parts = bool(request_parts) and not text_only_request
-        bound_session_id = _extract_shared_session_id(context)
-        model_override = _extract_shared_model(context)
+        try:
+            context_meta = context.metadata
+        except Exception:
+            context_meta = None
+
+        metadata_sources: list[Mapping[str, Any] | None] = []
+        if isinstance(context_meta, Mapping):
+            metadata_sources.append(context_meta)
+        if context.message is not None:
+            message_meta = getattr(context.message, "metadata", None) or {}
+            if isinstance(message_meta, Mapping):
+                metadata_sources.append(message_meta)
+        metadata_source_tuple = tuple(metadata_sources)
+
+        bound_session_id = extract_first_namespaced_string(
+            metadata_source_tuple,
+            namespace="shared",
+            path=("session", "id"),
+        )
+        model_provider_id = extract_first_namespaced_string(
+            metadata_source_tuple,
+            namespace="shared",
+            path=("model", "providerID"),
+        )
+        model_id = extract_first_namespaced_string(
+            metadata_source_tuple,
+            namespace="shared",
+            path=("model", "modelID"),
+        )
+        model_override = (
+            {"providerID": model_provider_id, "modelID": model_id}
+            if model_provider_id is not None and model_id is not None
+            else None
+        )
         # Directory validation
         metadata = context.metadata
         if metadata is not None and not isinstance(metadata, Mapping):
@@ -181,8 +192,16 @@ class OpencodeAgentExecutor(AgentExecutor):
                 streaming_request=streaming_request,
             )
             return
-        workspace_id = _extract_opencode_workspace_id(context)
-        requested_dir = _extract_opencode_directory(context)
+        workspace_id = extract_first_namespaced_string(
+            metadata_source_tuple,
+            namespace="opencode",
+            path=("workspace", "id"),
+        )
+        requested_dir = extract_first_namespaced_string(
+            metadata_source_tuple,
+            namespace="opencode",
+            path=("directory",),
+        )
 
         directory: str | None = None
         if workspace_id is None:
@@ -292,7 +311,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         context_id = context.context_id
         started_at = time.monotonic()
         abort_outcome = "not_attempted"
-        self._emit_metric("a2a_cancel_requests_total")
+        emit_metric("a2a_cancel_requests_total")
         try:
             if not task_id or not context_id:
                 abort_outcome = "invalid_request_context"
@@ -340,7 +359,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                 and not running_task.done()
             )
             if running_session_id and should_cancel_running_task:
-                self._emit_metric("a2a_cancel_abort_attempt_total")
+                emit_metric("a2a_cancel_abort_attempt_total")
                 try:
                     abort_kwargs: dict[str, Any] = {"directory": running_directory}
                     if running_workspace_id is not None:
@@ -350,10 +369,10 @@ class OpencodeAgentExecutor(AgentExecutor):
                         timeout=self._cancel_abort_timeout_seconds,
                     )
                     abort_outcome = "success"
-                    self._emit_metric("a2a_cancel_abort_success_total")
+                    emit_metric("a2a_cancel_abort_success_total")
                 except TimeoutError:
                     abort_outcome = "timeout"
-                    self._emit_metric("a2a_cancel_abort_timeout_total")
+                    emit_metric("a2a_cancel_abort_timeout_total")
                     logger.warning(
                         (
                             "Best-effort session abort timed out task_id=%s "
@@ -366,7 +385,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     )
                 except (httpx.HTTPError, RuntimeError) as exc:
                     abort_outcome = "error"
-                    self._emit_metric("a2a_cancel_abort_error_total")
+                    emit_metric("a2a_cancel_abort_error_total")
                     logger.warning(
                         (
                             "Best-effort session abort failed task_id=%s "
@@ -390,7 +409,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     await inflight
         except Exception as exc:
             abort_outcome = "cancel_error"
-            self._emit_metric("a2a_cancel_errors_total")
+            emit_metric("a2a_cancel_errors_total")
             logger.exception("Cancel failed")
             if task_id and context_id:
                 with suppress(Exception):
@@ -403,7 +422,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                         streaming_request=False,
                     )
         finally:
-            self._emit_metric(
+            emit_metric(
                 "a2a_cancel_duration_ms",
                 (time.monotonic() - started_at) * 1000.0,
                 abort_outcome=abort_outcome,

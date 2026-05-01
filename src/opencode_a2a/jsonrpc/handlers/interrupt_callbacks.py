@@ -23,7 +23,7 @@ from .common import (
     build_upstream_concurrency_error_response,
     build_upstream_http_error_response,
     build_upstream_unreachable_error_response,
-    extract_interrupt_callback_directory_hint,
+    extract_directory_from_metadata,
     extract_workspace_id_from_metadata,
     reject_unknown_fields,
 )
@@ -56,7 +56,9 @@ async def handle_interrupt_callback_request(
     request_identity = getattr(request.state, "user_identity", None)
     request_credential_id = getattr(request.state, "user_credential_id", None)
 
-    directory, directory_error = extract_interrupt_callback_directory_hint(
+    # Historical contract: interrupt callbacks accept raw metadata.opencode.directory
+    # and do not run it through the directory resolver used by session methods.
+    directory, directory_error = extract_directory_from_metadata(
         context,
         request_id=base_request.id,
         params=params,

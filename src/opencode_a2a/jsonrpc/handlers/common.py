@@ -354,21 +354,6 @@ def resolve_directory(
         )
 
 
-def extract_interrupt_callback_directory_hint(
-    context: ExtensionHandlerContext,
-    *,
-    request_id: str | int | None,
-    params: dict[str, Any],
-) -> tuple[str | None, Response | None]:
-    # Historical contract: interrupt callbacks accept raw metadata.opencode.directory
-    # and do not run it through the directory resolver used by session methods.
-    return extract_directory_from_metadata(
-        context,
-        request_id=request_id,
-        params=params,
-    )
-
-
 async def invoke_upstream_or_error(
     context: ExtensionHandlerContext,
     request_id: str | int | None,

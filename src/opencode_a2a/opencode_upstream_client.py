@@ -131,18 +131,15 @@ class OpencodeUpstreamClient:
             category="stream",
             limit=settings.opencode_max_concurrent_streams,
         )
-        self._client = self._build_http_client(self._base_url)
+        self._client = httpx.AsyncClient(
+            base_url=self._base_url,
+            timeout=self._settings.opencode_timeout,
+            headers={"Accept": "application/json"},
+        )
 
     def _sync_interrupt_clock(self) -> None:
         if isinstance(self._interrupt_request_repository, MemoryInterruptRequestRepository):
             self._interrupt_request_repository._clock = self._interrupt_request_clock
-
-    def _build_http_client(self, base_url: str) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            base_url=base_url,
-            timeout=self._settings.opencode_timeout,
-            headers={"Accept": "application/json"},
-        )
 
     @staticmethod
     def _request_headers(headers: Mapping[str, str] | None = None) -> dict[str, str] | None:

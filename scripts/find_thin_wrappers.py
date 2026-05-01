@@ -194,8 +194,7 @@ def _is_thin_forwarder(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     if not body or len(body) > 2:
         return False
     if any(
-        isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-        for stmt in body
+        isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) for stmt in body
     ):
         return False
     tail = body[-1]
@@ -269,8 +268,7 @@ def _build_report(roots: list[Path], max_callers: int) -> list[dict[str, Any]]:
     for symbol, record in sorted(functions_by_symbol.items(), key=lambda item: item[0]):
         callsites = calls_by_symbol.get(symbol, [])
         distinct_callers = {
-            callsite.caller_symbol or f"<module>:{callsite.caller_path}"
-            for callsite in callsites
+            callsite.caller_symbol or f"<module>:{callsite.caller_path}" for callsite in callsites
         }
         if len(distinct_callers) > max_callers:
             continue
@@ -308,9 +306,7 @@ def _build_report(roots: list[Path], max_callers: int) -> list[dict[str, Any]]:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Find low-consumer local functions and flag likely thin forwarding wrappers."
-        )
+        description=("Find low-consumer local functions and flag likely thin forwarding wrappers.")
     )
     parser.add_argument(
         "paths",

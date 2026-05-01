@@ -159,7 +159,9 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                 Callable[[str | int | None, JSONRPCError | A2AError], Response],
                 self._generate_error_response,
             ),
-            success_response=self._jsonrpc_success_response,
+            success_response=lambda request_id, result: JSONResponse(
+                {"jsonrpc": "2.0", "id": request_id, "result": result}
+            ),
         )
         self._extension_method_registry = build_extension_method_registry(
             self._extension_handler_context
@@ -167,9 +169,6 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
 
     def add_routes_to_app(self, app: FastAPI, *, rpc_url: str = "/") -> None:
         app.add_api_route(rpc_url, self.handle_requests, methods=["POST"])
-
-    def _jsonrpc_success_response(self, request_id: str | int, result: Any) -> JSONResponse:
-        return JSONResponse({"jsonrpc": "2.0", "id": request_id, "result": result})
 
     def _generate_protocol_error_response(
         self,
@@ -296,9 +295,12 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             request.state.activated_extensions = tuple(
                 value for value in requested_extensions if value in ALL_EXTENSION_URIS
             )
-            return self._jsonrpc_success_response(
-                base_request.id,
-                agent_card_to_dict(extended_agent_card),
+            return JSONResponse(
+                {
+                    "jsonrpc": "2.0",
+                    "id": base_request.id,
+                    "result": agent_card_to_dict(extended_agent_card),
+                }
             )
         model_class = self.METHOD_TO_MODEL.get(canonical_method)
         if model_class is None:
@@ -337,7 +339,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             raw_result = await self._process_non_streaming_request(specific_request, call_context)
             if base_request.id is None:
                 return Response(status_code=204)
-            return self._jsonrpc_success_response(base_request.id, raw_result)
+            return JSONResponse({"jsonrpc": "2.0", "id": base_request.id, "result": raw_result})
         except A2AError as exc:
             return self._generate_protocol_error_response(
                 base_request.id,

@@ -26,7 +26,7 @@ from .stream_events import (
     _extract_progress_metadata,
     _extract_stream_message_id,
     _extract_stream_part_id,
-    _extract_stream_role,
+    _extract_stream_part_type,
     _extract_stream_session_id,
     _extract_stream_snapshot_text,
     _extract_stream_terminal_signal,
@@ -34,7 +34,8 @@ from .stream_events import (
     _extract_tool_part_payload,
     _extract_upstream_error_from_event,
     _log_stream_event_debug,
-    _resolve_stream_block_type,
+    _map_part_type_to_block_type,
+    _normalize_role,
 )
 from .stream_state import (
     _build_output_metadata,
@@ -267,7 +268,7 @@ class StreamRuntime:
             role: str | None,
             message_id: str | None,
         ) -> _StreamPartState | None:
-            block_type = _resolve_stream_block_type(part, props)
+            block_type = _map_part_type_to_block_type(_extract_stream_part_type(part, props))
             if block_type is None:
                 return None
             state = part_states.get(part_id)
@@ -523,7 +524,7 @@ class StreamRuntime:
                                 await _emit_chunks(delta_chunks)
                             continue
 
-                        role = _extract_stream_role(part, props)
+                        role = _normalize_role(part.get("role") or props.get("role"))
                         state = _upsert_part_state(
                             part_id=part_id,
                             part=part,
