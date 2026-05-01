@@ -37,7 +37,7 @@ from opencode_a2a.contracts.extensions import (
 from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from opencode_a2a.profile.runtime import build_runtime_profile
 from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
-from opencode_a2a.server.agent_card import build_authenticated_extended_agent_card
+from opencode_a2a.server.agent_card import build_agent_card
 from opencode_a2a.server.application import create_app
 from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
@@ -64,7 +64,10 @@ def test_extension_uris_map_to_repository_spec_documents() -> None:
 
 
 def test_extension_ssot_matches_agent_card_contracts() -> None:
-    card = build_authenticated_extended_agent_card(make_settings(test_bearer_token="test-token"))
+    card = build_agent_card(
+        make_settings(test_bearer_token="test-token"),
+        include_detailed_contracts=True,
+    )
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
     session_binding = ext_by_uri[SESSION_BINDING_EXTENSION_URI]

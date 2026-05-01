@@ -115,7 +115,7 @@ async def test_get_agent_card_cached_and_reused(monkeypatch: pytest.MonkeyPatch)
     resolver = _FakeCardResolver("agent-card")
 
     client = A2AClient("http://agent.example.com")
-    monkeypatch.setattr(client_module, "build_agent_card_resolver", lambda *_args: resolver)
+    monkeypatch.setattr(client_module, "A2ACardResolver", lambda **_kwargs: resolver)
     first = await client.get_agent_card()
     second = await client.get_agent_card()
     assert first == second == "agent-card"
@@ -453,15 +453,14 @@ async def test_send_message_maps_jsonrpc_not_supported(
 @pytest.mark.asyncio
 async def test_get_agent_card_maps_json_error(monkeypatch: pytest.MonkeyPatch) -> None:
     class _BrokenResolver:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
         async def get_agent_card(self, **_kwargs: object) -> object:
             raise FakeA2AClientJSONError("invalid json")
 
     client = A2AClient("http://agent.example.com")
-    monkeypatch.setattr(
-        client_module,
-        "build_agent_card_resolver",
-        lambda *_args: _BrokenResolver(),
-    )
+    monkeypatch.setattr(client_module, "A2ACardResolver", _BrokenResolver)
 
     with pytest.raises(A2APeerProtocolError, match="invalid agent card payload"):
         await client.get_agent_card()
@@ -474,6 +473,9 @@ async def test_get_agent_card_passes_basic_auth_to_resolver(
     resolver_http_kwargs: dict[str, object] = {}
 
     class _ResolverWithCapturedKwargs:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
         async def get_agent_card(self, **kwargs: object) -> object:
             resolver_http_kwargs.update(kwargs)
             return "agent-card"
@@ -482,11 +484,7 @@ async def test_get_agent_card_passes_basic_auth_to_resolver(
         "http://agent.example.com",
         settings=A2AClientSettings(card_fetch_timeout=7, basic_auth="user:pass"),
     )
-    monkeypatch.setattr(
-        client_module,
-        "build_agent_card_resolver",
-        lambda *_args: _ResolverWithCapturedKwargs(),
-    )
+    monkeypatch.setattr(client_module, "A2ACardResolver", _ResolverWithCapturedKwargs)
 
     card = await client.get_agent_card()
 

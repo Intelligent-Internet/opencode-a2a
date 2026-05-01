@@ -551,7 +551,3 @@ def build_agent_card(
         security_schemes=security_schemes,
         security_requirements=security_requirements,
     )
-
-
-def build_authenticated_extended_agent_card(settings: Settings) -> AgentCard:
-    return build_agent_card(settings, include_detailed_contracts=True)

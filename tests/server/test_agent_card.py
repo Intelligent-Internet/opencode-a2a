@@ -23,7 +23,6 @@ from opencode_a2a.contracts.extensions import (
 from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from opencode_a2a.server.agent_card import (
     build_agent_card,
-    build_authenticated_extended_agent_card,
 )
 from tests.support.helpers import make_settings
 
@@ -94,8 +93,9 @@ def test_agent_card_reflects_registry_declared_auth_schemes() -> None:
 
 def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> None:
     public_card = build_agent_card(make_settings(test_bearer_token="test-token"))
-    extended_card = build_authenticated_extended_agent_card(
-        make_settings(test_bearer_token="test-token")
+    extended_card = build_agent_card(
+        make_settings(test_bearer_token="test-token"),
+        include_detailed_contracts=True,
     )
     ext_by_uri = {ext.uri: ext for ext in public_card.capabilities.extensions or []}
     extended_ext_by_uri = {ext.uri: ext for ext in extended_card.capabilities.extensions or []}
@@ -198,7 +198,7 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
 
 
 def test_agent_card_injects_profile_into_extensions() -> None:
-    card = build_authenticated_extended_agent_card(
+    card = build_agent_card(
         make_settings(
             test_bearer_token="test-token",
             a2a_project="alpha",
@@ -215,7 +215,8 @@ def test_agent_card_injects_profile_into_extensions() -> None:
             a2a_approval_escalation_behavior="unsupported",
             a2a_write_access_scope="workspace_and_declared_roots",
             a2a_write_access_outside_workspace="disallowed",
-        )
+        ),
+        include_detailed_contracts=True,
     )
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
@@ -827,8 +828,9 @@ def test_agent_card_chat_examples_include_project_hint_when_configured() -> None
 
 
 def test_agent_card_contracts_include_shell_when_enabled() -> None:
-    card = build_authenticated_extended_agent_card(
-        make_settings(test_bearer_token="test-token", a2a_enable_session_shell=True)
+    card = build_agent_card(
+        make_settings(test_bearer_token="test-token", a2a_enable_session_shell=True),
+        include_detailed_contracts=True,
     )
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
@@ -877,8 +879,9 @@ def test_agent_card_contracts_include_shell_when_enabled() -> None:
 
 
 def test_agent_card_contracts_include_workspace_mutations_when_enabled() -> None:
-    card = build_authenticated_extended_agent_card(
-        make_settings(test_bearer_token="test-token", a2a_enable_workspace_mutations=True)
+    card = build_agent_card(
+        make_settings(test_bearer_token="test-token", a2a_enable_workspace_mutations=True),
+        include_detailed_contracts=True,
     )
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 
@@ -922,13 +925,14 @@ def test_agent_card_skills_hide_shell_when_disabled_by_default() -> None:
 
 
 def test_agent_card_hides_shell_when_policy_disables_it() -> None:
-    card = build_authenticated_extended_agent_card(
+    card = build_agent_card(
         make_settings(
             test_bearer_token="test-token",
             a2a_enable_session_shell=True,
             a2a_sandbox_mode="read-only",
             a2a_write_access_scope="workspace_only",
-        )
+        ),
+        include_detailed_contracts=True,
     )
     ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
 

@@ -1,19 +1,13 @@
-"""Helpers for agent-card URL normalization and resolver bootstrap."""
+"""Helpers for agent-card URL normalization."""
 
 from __future__ import annotations
 
-from typing import Any
 from urllib.parse import urlsplit, urlunsplit
-
-import httpx
-from a2a.client.card_resolver import A2ACardResolver
 
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
     EXTENDED_AGENT_CARD_PATH,
 )
-from ..trace_context import current_trace_headers
-from .request_context import build_default_headers
 
 
 def normalize_agent_card_endpoint(agent_url: str) -> tuple[str, str]:
@@ -47,31 +41,3 @@ def normalize_agent_card_endpoint(agent_url: str) -> tuple[str, str]:
         )
     ).rstrip("/")
     return base_url, agent_card_path
-
-
-def build_agent_card_resolver(
-    agent_url: str,
-    httpx_client: httpx.AsyncClient,
-) -> A2ACardResolver:
-    base_url, agent_card_path = normalize_agent_card_endpoint(agent_url)
-    return A2ACardResolver(
-        httpx_client=httpx_client,
-        base_url=base_url,
-        agent_card_path=agent_card_path,
-    )
-
-
-def build_resolver_http_kwargs(
-    *,
-    bearer_token: str | None,
-    timeout: float,
-    basic_auth: str | None = None,
-) -> dict[str, Any]:
-    http_kwargs: dict[str, Any] = {"timeout": timeout}
-    default_headers = build_default_headers(bearer_token, basic_auth)
-    trace_headers = current_trace_headers()
-    if trace_headers:
-        default_headers.update(trace_headers)
-    if default_headers:
-        http_kwargs["headers"] = default_headers
-    return http_kwargs

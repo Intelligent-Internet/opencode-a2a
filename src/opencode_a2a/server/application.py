@@ -90,7 +90,6 @@ from ..trace_context import install_log_record_factory
 from .agent_card import (
     _CHAT_OUTPUT_MODES,
     build_agent_card,
-    build_authenticated_extended_agent_card,
 )
 from .client_manager import A2AClientManager
 from .lifespan import build_lifespan
@@ -801,7 +800,7 @@ def create_app(settings: Settings) -> FastAPI:
     )
     client_manager = A2AClientManager(settings)
     agent_card = build_agent_card(settings)
-    extended_agent_card = build_authenticated_extended_agent_card(settings)
+    extended_agent_card = build_agent_card(settings, include_detailed_contracts=True)
     executor = OpencodeAgentExecutor(
         upstream_client,
         streaming_enabled=True,

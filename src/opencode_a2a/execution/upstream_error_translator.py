@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 from dataclasses import dataclass
+from typing import cast
 
 import httpx
 from a2a.types import TaskState
@@ -157,32 +158,21 @@ async def _await_stream_terminal_signal(
     if stream_task is None:
         raise RuntimeError("Streaming task was not initialized")
 
-    terminal_wait_task = asyncio.create_task(_wait_for_terminal_signal(terminal_signal))
-    try:
-        done, _pending = await asyncio.wait(
-            {stream_task, terminal_wait_task},
-            return_when=asyncio.FIRST_COMPLETED,
+    stream_completion = cast(asyncio.Future[object], stream_task)
+    terminal_completion = cast(asyncio.Future[object], terminal_signal)
+    done, _pending = await asyncio.wait(
+        {stream_completion, terminal_completion},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    if terminal_signal in done:
+        return terminal_signal.result()
+    if stream_task in done:
+        with suppress(asyncio.CancelledError):
+            await stream_task
+        if terminal_signal.done():
+            return terminal_signal.result()
+        raise UpstreamContractError(
+            "OpenCode event stream ended before terminal signal "
+            f"(session_id={session_id}, expected session.idle or session.error)"
         )
-        if terminal_wait_task in done:
-            return terminal_wait_task.result()
-        if stream_task in done:
-            with suppress(asyncio.CancelledError):
-                await stream_task
-            if terminal_signal.done():
-                return terminal_signal.result()
-            raise UpstreamContractError(
-                "OpenCode event stream ended before terminal signal "
-                f"(session_id={session_id}, expected session.idle or session.error)"
-            )
-        return await terminal_wait_task
-    finally:
-        if not terminal_wait_task.done():
-            terminal_wait_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await terminal_wait_task
-
-
-async def _wait_for_terminal_signal(
-    terminal_signal: asyncio.Future[_StreamTerminalSignal],
-) -> _StreamTerminalSignal:
     return await terminal_signal
