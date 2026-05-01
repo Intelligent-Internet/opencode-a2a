@@ -69,6 +69,7 @@ from opencode_a2a.server.request_parsing import (
     _RequestBodyTooLargeError,
 )
 from opencode_a2a.server.task_store import TaskStoreOperationError
+from tests.support.async_iterators import iter_async
 from tests.support.helpers import (
     DummyChatOpencodeUpstreamClient,
     make_basic_auth_header,
@@ -78,17 +79,6 @@ from tests.support.helpers import (
 
 def _agent_card() -> AgentCard:
     return AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True))
-
-
-class _RaisingAsyncIterator:
-    def __init__(self, error: Exception) -> None:
-        self._error = error
-
-    def __aiter__(self) -> _RaisingAsyncIterator:
-        return self
-
-    async def __anext__(self):
-        raise self._error
 
 
 def _request(
@@ -824,7 +814,7 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
 
     def _stream_failure(params, context=None):  # noqa: ANN001
         del params, context
-        return _RaisingAsyncIterator(InvalidRequestError(message="stream bad"))
+        return iter_async(terminal_error=InvalidRequestError(message="stream bad"))
 
     handler.on_message_send = _message_response
     handler.on_message_send_stream = _stream_failure
@@ -944,7 +934,7 @@ async def test_on_message_send_stream_emits_stable_failure_events_for_task_store
     class _Aggregator:
         def consume_and_emit(self, _consumer):
             del _consumer
-            return _RaisingAsyncIterator(TaskStoreOperationError("save", "task-1"))
+            return iter_async(terminal_error=TaskStoreOperationError("save", "task-1"))
 
     class _Handler(OpencodeRequestHandler):
         def __init__(self) -> None:
@@ -1217,7 +1207,7 @@ async def test_on_message_send_stream_rejects_incompatible_output_modes_before_e
     )
 
     with pytest.raises(UnsupportedOperationError) as exc_info:
-        await handler.on_message_send_stream(params).__anext__()
+        await anext(handler.on_message_send_stream(params))
 
     assert "not compatible" in exc_info.value.message
     assert exc_info.value.data == {
@@ -1308,7 +1298,7 @@ async def test_on_message_send_stream_rejects_shared_extension_metadata_without_
     )
 
     with pytest.raises(UnsupportedOperationError) as exc_info:
-        await handler.on_message_send_stream(params).__anext__()
+        await anext(handler.on_message_send_stream(params))
 
     assert exc_info.value.data == {
         "type": "EXTENSION_NEGOTIATION_REQUIRED",

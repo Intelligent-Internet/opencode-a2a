@@ -35,6 +35,7 @@ from opencode_a2a.jsonrpc.models import JSONRPCError, JSONRPCErrorResponse
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from opencode_a2a.server.client_manager import A2AClientManager
 from opencode_a2a.trace_context import TraceContext, bind_trace_context
+from tests.support.async_iterators import iter_async
 from tests.support.fake_client_errors import (
     FakeA2AClientHTTPError,
     FakeA2AClientJSONRPCError,
@@ -487,17 +488,10 @@ async def test_agent_handles_a2a_call_tool_errors() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_maps_a2a_call_tool_auth_errors_to_stable_payload() -> None:
-    class _AuthErrorStream:
-        def __aiter__(self):
-            return self
-
-        async def __anext__(self):
-            raise FakeA2AClientHTTPError(401, "unauthorized")
-
     class MockA2AClient:
         def send_message(self, text: str):
             del text
-            return _AuthErrorStream()
+            return iter_async(terminal_error=FakeA2AClientHTTPError(401, "unauthorized"))
 
     class MockManager:
         class _BorrowedClient:

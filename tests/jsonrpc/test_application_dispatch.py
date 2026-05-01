@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -14,6 +13,7 @@ from fastapi.responses import JSONResponse
 import opencode_a2a.server.application as app_module
 from opencode_a2a.contracts.extensions import SESSION_MANAGEMENT_EXTENSION_URI
 from opencode_a2a.jsonrpc.models import JSONRPCRequest
+from tests.support.async_iterators import iter_async
 from tests.support.helpers import DummySessionQueryOpencodeUpstreamClient, make_settings
 from tests.support.session_extensions import _BASE_SETTINGS, _jsonrpc_app
 
@@ -32,38 +32,21 @@ def _request_context() -> SimpleNamespace:
     return SimpleNamespace(state={}, tenant="")
 
 
-class _EmptyStream(AsyncIterator[TaskStatusUpdateEvent]):
-    def __aiter__(self) -> _EmptyStream:
-        return self
-
-    async def __anext__(self) -> TaskStatusUpdateEvent:
-        raise StopAsyncIteration
+def _empty_stream():
+    return iter_async()
 
 
-class _BrokenStream(AsyncIterator[TaskStatusUpdateEvent]):
-    def __init__(self) -> None:
-        self._yielded_event = False
-
-    def __aiter__(self) -> _BrokenStream:
-        return self
-
-    async def __anext__(self) -> TaskStatusUpdateEvent:
-        if not self._yielded_event:
-            self._yielded_event = True
-            return TaskStatusUpdateEvent(
+def _broken_stream():
+    return iter_async(
+        [
+            TaskStatusUpdateEvent(
                 task_id="task-1",
                 context_id="ctx-1",
                 status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
             )
-        raise InvalidParamsError(message="bad stream")
-
-
-def _empty_stream() -> AsyncIterator[TaskStatusUpdateEvent]:
-    return _EmptyStream()
-
-
-def _broken_stream() -> AsyncIterator[TaskStatusUpdateEvent]:
-    return _BrokenStream()
+        ],
+        terminal_error=InvalidParamsError(message="bad stream"),
+    )
 
 
 @pytest.mark.asyncio
