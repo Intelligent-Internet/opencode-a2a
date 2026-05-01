@@ -58,6 +58,7 @@ Key variables to understand protocol behavior:
 - `A2A_CLIENT_SUPPORTED_TRANSPORTS`: ordered outbound transport preference list.
 - `A2A_TASK_STORE_BACKEND`: unified lightweight persistence backend for SDK task rows plus adapter-managed session / interrupt state. Supported values: `database`, `memory`. Default: `database`.
 - `A2A_TASK_STORE_DATABASE_URL`: database URL used by the unified durable backend when `A2A_TASK_STORE_BACKEND=database`. Default: `sqlite+aiosqlite:///./opencode-a2a.db`.
+- On startup, the runtime applies compatible in-place schema upgrades for the durable task/state store tables before serving requests.
 - Runtime authentication is configured only through the static credential registry declared by `A2A_STATIC_AUTH_CREDENTIALS`.
 - The runtime maps authenticated requests to stable principals rather than credential-derived identities.
 - With `A2A_STATIC_AUTH_CREDENTIALS`, every bearer credential must declare an explicit `principal`; Basic credentials always derive their runtime principal from `username`.

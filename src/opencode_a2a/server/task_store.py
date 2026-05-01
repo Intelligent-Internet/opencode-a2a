@@ -13,7 +13,7 @@ from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.server.tasks.task_store import TaskStore
 from a2a.types import ListTasksRequest, ListTasksResponse, Task, TaskState
 from google.protobuf.json_format import MessageToDict
-from sqlalchemy import event, or_, select
+from sqlalchemy import Table, event, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import make_url
@@ -21,6 +21,7 @@ from sqlalchemy.engine import make_url
 from ..a2a_utils import proto_equals
 from ..config import Settings
 from ..task_states import TERMINAL_TASK_STATES
+from .migrations import migrate_task_store_schema
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -472,6 +473,20 @@ def _task_row_values(task: Task, *, owner: str | None) -> dict[str, Any]:
 
 
 async def initialize_task_store(task_store: TaskStore) -> None:
+    raw_task_store = unwrap_task_store(task_store)
+    if isinstance(raw_task_store, DatabaseTaskStore):
+        if raw_task_store._initialized:
+            return
+        task_table = cast(Table, raw_task_store.task_model.__table__)
+        async with raw_task_store.engine.begin() as conn:
+            await conn.run_sync(
+                lambda sync_conn: migrate_task_store_schema(
+                    sync_conn,
+                    task_table=task_table,
+                )
+            )
+        raw_task_store._initialized = True
+        return
     initialize = getattr(task_store, "initialize", None)
     if callable(initialize):
         await initialize()
