@@ -225,16 +225,23 @@ If one deployment works while another fails against the same upstream provider, 
 - Streaming is always enabled in this server profile; `message:stream` is part of the stable runtime baseline.
 - Streaming (`/v1/message:stream`) emits incremental `TaskArtifactUpdateEvent` and then `TaskStatusUpdateEvent(final=true)`.
 - Stream artifacts carry `artifact.metadata.shared.stream.block_type` with values `text` / `reasoning` / `tool_call`.
-- All chunks share one stream artifact ID and preserve original timeline via `artifact.metadata.shared.stream.event_id`.
+- Stream artifacts are scoped to logical output lanes rather than one shared catch-all artifact:
+  - text chunks use a stable text artifact ID
+  - reasoning chunks use a stable reasoning artifact ID
+  - tool-call updates use a stable per-tool-part artifact ID when the upstream part is identifiable
+- `artifact.metadata.shared.stream.event_id` preserves the original cross-artifact stream timeline, even when different logical lanes use different artifact IDs.
+- `artifact.metadata.shared.stream.part_id` is best-effort metadata for the upstream part identity that drove the chunk.
 - `artifact.metadata.shared.stream.message_id` remains best-effort metadata: when upstream omits `message_id`, the service falls back to a stable request-scoped message identity.
 - `artifact.metadata.shared.stream.sequence` carries the canonical per-request stream sequence.
-- A final snapshot is emitted only when streaming chunks did not already produce the same final text.
+- A final complete text snapshot is emitted only when streaming chunks did not already produce the same final text.
+- That final complete text snapshot uses `append=false` on the text artifact so clients and the task store can treat it as the canonical replace-on-finish version rather than another fragment.
 - Stream routing is schema-first: the service classifies chunks primarily by OpenCode `part.type` and `part_id` state rather than inline text markers.
 - `message.part.delta` and `message.part.updated` are merged per `part_id`; out-of-order deltas are buffered and replayed when the corresponding `part.updated` arrives.
 - Structured `tool` parts are emitted as `tool_call` blocks using structured v1 part payloads, while `text` and `reasoning` continue to use text parts.
 - `tool_call` block payloads are normalized structured objects that may expose fields such as `call_id`, `tool`, `status`, `title`, `subtitle`, `input`, `output`, and `error`.
 - If `application/json` is not accepted but `text/plain` is still accepted, those `tool_call` blocks are downgraded to stable compact JSON text so text-only clients retain the same observable state transitions.
 - When a request restricts `acceptedOutputModes`, the stream applies the same output filtering before persistence so later task snapshots do not re-expose filtered structured blocks.
+- Persistence is canonicalized separately from transport: stream subscribers still receive incremental artifact updates, while task-store persistence rewrites those updates into compact per-artifact snapshots so `GetTask` and terminal replay do not accumulate token-level fragments.
 - Final status event metadata may include normalized token usage at `metadata.shared.usage` with fields such as `input_tokens`, `output_tokens`, `total_tokens`, optional `reasoning_tokens`, optional `cache_tokens.read_tokens` / `cache_tokens.write_tokens`, and optional `cost`.
 - Usage is extracted from documented info payloads and supported usage parts such as `step-finish`; non-usage parts with similar fields are ignored.
 - Interrupt events (`permission.asked` / `question.asked`) are mapped to `TaskStatusUpdateEvent(final=false, state=input-required)` with details at `metadata.shared.interrupt`, including `request_id`, interrupt `type`, `phase=asked`, and a normalized minimal callback payload.

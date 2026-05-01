@@ -93,11 +93,12 @@ class ExecutionCoordinator:
         self._task_id = task_id
         self._context_id = context_id
         self._prepared = prepared
-        self._stream_artifact_id = f"{task_id}:stream"
+        self._stream_artifact_base_id = f"{task_id}:stream"
+        self._stream_text_artifact_id = f"{self._stream_artifact_base_id}:text"
         self._stream_state = _StreamOutputState(
             user_text=prepared.user_text,
             stable_message_id=f"{task_id}:{context_id}:assistant",
-            event_id_namespace=f"{task_id}:{context_id}:{self._stream_artifact_id}",
+            event_id_namespace=f"{task_id}:{context_id}:{self._stream_artifact_base_id}",
         )
         self._stream_terminal_signal: asyncio.Future[_StreamTerminalSignal] | None = None
         self._stop_event = asyncio.Event()
@@ -287,7 +288,7 @@ class ExecutionCoordinator:
                     identity=self._prepared.identity,
                     task_id=self._task_id,
                     context_id=self._context_id,
-                    artifact_id=self._stream_artifact_id,
+                    artifact_id=self._stream_artifact_base_id,
                     stream_state=self._stream_state,
                     event_queue=self._event_queue,
                     stop_event=self._stop_event,
@@ -391,19 +392,26 @@ class ExecutionCoordinator:
             )
             return
 
-        if self._stream_state.should_emit_final_snapshot(response_text):
+        final_text_artifact_id = self._stream_state.resolve_text_artifact_id(
+            self._stream_text_artifact_id
+        )
+        if self._stream_state.should_emit_final_snapshot(
+            artifact_id=final_text_artifact_id,
+            text=response_text,
+        ):
             sequence = self._stream_state.next_sequence()
             await _enqueue_artifact_update(
                 event_queue=self._event_queue,
                 task_id=self._task_id,
                 context_id=self._context_id,
-                artifact_id=self._stream_artifact_id,
+                artifact_id=final_text_artifact_id,
                 part=Part(text=response_text),
-                append=self._stream_state.emitted_stream_chunk,
+                append=False,
                 last_chunk=True,
                 artifact_metadata=_build_stream_artifact_metadata(
                     block_type=BlockType.TEXT,
                     shared_source="final_snapshot",
+                    part_id=None,
                     message_id=resolved_message_id,
                     event_id=self._stream_state.build_event_id(sequence),
                     sequence=sequence,

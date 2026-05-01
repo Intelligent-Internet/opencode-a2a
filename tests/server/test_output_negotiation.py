@@ -216,6 +216,77 @@ async def test_negotiating_result_aggregator_persists_metadata_for_artifact_firs
 
 
 @pytest.mark.asyncio
+async def test_negotiating_result_aggregator_compacts_stream_artifacts_for_persistence() -> None:
+    store = _store()
+    task_manager = TaskManager(
+        context=ServerCallContext(),
+        task_id="task-stream-compact",
+        context_id="ctx-stream-compact",
+        task_store=store,
+        initial_message=None,
+    )
+    aggregator = NegotiatingResultAggregator(task_manager, None)
+    queue = EventQueue()
+    stream_metadata = {
+        "shared": {
+            "stream": {
+                "block_type": "text",
+                "source": "stream",
+                "message_id": "msg-stream-1",
+            }
+        }
+    }
+
+    await queue.enqueue_event(
+        TaskArtifactUpdateEvent(
+            task_id="task-stream-compact",
+            context_id="ctx-stream-compact",
+            artifact=Artifact(
+                artifact_id="task-stream-compact:stream:text",
+                parts=[Part(text="hello ")],
+                metadata=stream_metadata,
+            ),
+            append=False,
+            last_chunk=False,
+        )
+    )
+    await queue.enqueue_event(
+        TaskArtifactUpdateEvent(
+            task_id="task-stream-compact",
+            context_id="ctx-stream-compact",
+            artifact=Artifact(
+                artifact_id="task-stream-compact:stream:text",
+                parts=[Part(text="world")],
+                metadata=stream_metadata,
+            ),
+            append=True,
+            last_chunk=False,
+        )
+    )
+    await queue.enqueue_event(
+        TaskStatusUpdateEvent(
+            task_id="task-stream-compact",
+            context_id="ctx-stream-compact",
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        )
+    )
+
+    result = await aggregator.consume_all(EventConsumer(queue))
+
+    assert isinstance(result, Task)
+    assert result.artifacts is not None
+    assert len(result.artifacts) == 1
+    assert result.artifacts[0].artifact_id == "task-stream-compact:stream:text"
+    assert result.artifacts[0].parts[0].text == "hello world"
+
+    stored = await store.get("task-stream-compact", ServerCallContext())
+    assert stored is not None
+    assert len(stored.artifacts) == 1
+    assert stored.artifacts[0].artifact_id == "task-stream-compact:stream:text"
+    assert stored.artifacts[0].parts[0].text == "hello world"
+
+
+@pytest.mark.asyncio
 async def test_on_get_task_applies_persisted_output_negotiation() -> None:
     store = _store()
     task = _task_with_negotiated_outputs(task_id="task-get", context_id="ctx-get")
