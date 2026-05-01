@@ -16,7 +16,6 @@ from a2a.types import (
 )
 
 from ..a2a_utils import make_data_part
-from ..invocation import call_with_supported_kwargs
 from .event_helpers import _enqueue_artifact_update
 from .stream_events import (
     BlockType,
@@ -389,12 +388,12 @@ class StreamRuntime:
         try:
             while not stop_event.is_set():
                 try:
-                    async for event in call_with_supported_kwargs(
-                        self._client.stream_events,
-                        stop_event=stop_event,
-                        directory=directory,
-                        workspace_id=workspace_id,
-                    ):
+                    stream_kwargs: dict[str, Any] = {"stop_event": stop_event}
+                    if directory is not None:
+                        stream_kwargs["directory"] = directory
+                    if workspace_id is not None:
+                        stream_kwargs["workspace_id"] = workspace_id
+                    async for event in self._client.stream_events(**stream_kwargs):
                         if stop_event.is_set():
                             break
                         _log_stream_event_debug(

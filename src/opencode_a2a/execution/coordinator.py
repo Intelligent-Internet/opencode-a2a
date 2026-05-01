@@ -22,7 +22,6 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from ..invocation import call_with_supported_kwargs
 from ..opencode_upstream_client import UpstreamConcurrencyLimitError, UpstreamContractError
 from .event_helpers import _enqueue_artifact_update
 from .stream_events import _extract_token_usage, _extract_upstream_error_from_response
@@ -121,24 +120,24 @@ class ExecutionCoordinator:
             user_text = self._prepared.user_text
 
             while True:
-                send_kwargs: dict[str, Any] = {
-                    "directory": self._prepared.directory,
-                    "workspace_id": self._prepared.workspace_id,
-                    "model_override": self._prepared.model_override,
-                }
+                send_kwargs: dict[str, Any] = {}
+                if self._prepared.directory is not None:
+                    send_kwargs["directory"] = self._prepared.directory
+                if self._prepared.workspace_id is not None:
+                    send_kwargs["workspace_id"] = self._prepared.workspace_id
+                if self._prepared.model_override is not None:
+                    send_kwargs["model_override"] = self._prepared.model_override
                 if self._prepared.streaming_request:
                     send_kwargs["timeout_override"] = self._executor._client.stream_timeout
 
                 if not self._prepared.use_structured_parts and not turn_request_parts:
-                    response = await call_with_supported_kwargs(
-                        self._executor._client.send_message,
+                    response = await self._executor._client.send_message(
                         self._session_id,
                         user_text,
                         **send_kwargs,
                     )
                 else:
-                    response = await call_with_supported_kwargs(
-                        self._executor._client.send_message,
+                    response = await self._executor._client.send_message(
                         self._session_id,
                         user_text or None,
                         parts=turn_request_parts,

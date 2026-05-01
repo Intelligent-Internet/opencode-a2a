@@ -7,7 +7,6 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ...contracts.extensions import SESSION_QUERY_ERROR_BUSINESS_CODES
-from ...invocation import call_with_supported_kwargs
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import invalid_params_error, session_not_found_error
 from ..methods import (
@@ -94,18 +93,22 @@ async def handle_session_query_request(
 
     async def _invoke_session_query() -> Any:
         if base_request.method == context.method_list_sessions:
-            return await call_with_supported_kwargs(
-                context.upstream_client.list_sessions,
+            routing_kwargs: dict[str, Any] = {}
+            if directory is not None:
+                routing_kwargs["directory"] = directory
+            if workspace_id is not None:
+                routing_kwargs["workspace_id"] = workspace_id
+            return await context.upstream_client.list_sessions(
                 params=query,
-                directory=directory,
-                workspace_id=workspace_id,
+                **routing_kwargs,
             )
         assert session_id is not None
-        return await call_with_supported_kwargs(
-            context.upstream_client.list_messages,
+        list_messages_kwargs: dict[str, Any] = {"params": query}
+        if workspace_id is not None:
+            list_messages_kwargs["workspace_id"] = workspace_id
+        return await context.upstream_client.list_messages(
             session_id,
-            params=query,
-            workspace_id=workspace_id,
+            **list_messages_kwargs,
         )
 
     raw_result, upstream_error = await invoke_upstream_or_error(

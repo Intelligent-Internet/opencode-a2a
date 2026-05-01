@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import weakref
-
-from ..invocation import call_with_supported_kwargs
 from ..server.state_store import MemorySessionStateRepository, SessionStateRepository
 
 
@@ -64,12 +62,15 @@ class SessionManager:
                 return existing, False
             task = self._inflight_session_creates.get(cache_key)
             if task is None:
+                create_session_kwargs: dict[str, str] = {}
+                if directory is not None:
+                    create_session_kwargs["directory"] = directory
+                if workspace_id is not None:
+                    create_session_kwargs["workspace_id"] = workspace_id
                 task = asyncio.create_task(
-                    call_with_supported_kwargs(
-                        self._client.create_session,
+                    self._client.create_session(
                         title=title,
-                        directory=directory,
-                        workspace_id=workspace_id,
+                        **create_session_kwargs,
                     )
                 )
                 self._inflight_session_creates[cache_key] = task

@@ -305,7 +305,13 @@ class DummyChatOpencodeUpstreamClient:
 
 
 class DummySessionQueryOpencodeUpstreamClient:
-    def __init__(self, _settings: Settings) -> None:
+    def __init__(
+        self,
+        _settings: Settings,
+        *,
+        interrupt_request_repository=None,  # noqa: ANN001
+    ) -> None:
+        del interrupt_request_repository
         self.settings = _settings
         self.directory = _settings.opencode_workspace_root
         self._sessions_payload = [{"id": "s-1", "title": "Session s-1"}]

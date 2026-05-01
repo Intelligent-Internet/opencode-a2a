@@ -330,8 +330,8 @@ async def test_send_message_adds_bearer_token_from_settings(
 
     assert len(result) == 1
     assert result[0].HasField("message")
-    _, _, kwargs = fake_client.send_message_inputs[0]
-    assert kwargs["request_metadata"] is None
+    request, _, kwargs = fake_client.send_message_inputs[0]
+    assert request.metadata == {}
     assert kwargs["context"] is not None
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer peer-token"
 
@@ -351,8 +351,8 @@ async def test_send_message_adds_basic_auth_from_settings(
 
     assert len(result) == 1
     assert result[0].HasField("message")
-    _, _, kwargs = fake_client.send_message_inputs[0]
-    assert kwargs["request_metadata"] is None
+    request, _, kwargs = fake_client.send_message_inputs[0]
+    assert request.metadata == {}
     assert kwargs["context"] is not None
     assert kwargs["context"].state["headers"]["Authorization"] == (
         f"Basic {b64encode(b'user:pass').decode()}"
@@ -380,8 +380,8 @@ async def test_send_message_preserves_explicit_authorization_metadata(
 
     assert len(result) == 1
     assert result[0].HasField("message")
-    _, _, kwargs = fake_client.send_message_inputs[0]
-    assert kwargs["request_metadata"] == {"trace_id": "trace-1"}
+    request, _, kwargs = fake_client.send_message_inputs[0]
+    assert request.metadata == {"trace_id": "trace-1"}
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
 
 
@@ -426,8 +426,8 @@ async def test_send_message_prefers_explicit_authorization_without_default_token
 
     assert len(result) == 1
     assert result[0].HasField("message")
-    _, _, kwargs = fake_client.send_message_inputs[0]
-    assert kwargs["request_metadata"] is None
+    request, _, kwargs = fake_client.send_message_inputs[0]
+    assert request.metadata == {}
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
 
 
@@ -535,7 +535,7 @@ async def test_get_task_uses_authorization_header_context(
     params, kwargs = fake_client.task_inputs[0]
     assert params.id == "task-id"
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
-    assert kwargs["request_metadata"] == {"trace_id": "trace-1"}
+    assert "request_metadata" not in kwargs
 
 
 @pytest.mark.asyncio
@@ -624,7 +624,7 @@ async def test_subscribe_to_task_uses_authorization_header_context(
     params, kwargs = fake_client.subscribe_inputs[0]
     assert params.id == "task-id"
     assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
-    assert kwargs["request_metadata"] == {"trace_id": "trace-1"}
+    assert "request_metadata" not in kwargs
 
 
 @pytest.mark.asyncio

@@ -69,7 +69,6 @@ from ..extension_negotiation import (
     filter_negotiated_extensions_from_payload,
     requested_extensions_from_call_context,
 )
-from ..invocation import call_with_supported_kwargs
 from ..jsonrpc.application import (
     OpencodeSessionManagementJSONRPCApplication,
 )
@@ -793,16 +792,14 @@ def create_app(settings: Settings) -> FastAPI:
         settings,
         engine=database_engine,
     )
-    upstream_client = call_with_supported_kwargs(
-        OpencodeUpstreamClient,
+    upstream_client = OpencodeUpstreamClient(
         settings,
         interrupt_request_repository=interrupt_request_repository,
     )
     client_manager = A2AClientManager(settings)
     agent_card = build_agent_card(settings)
     extended_agent_card = build_authenticated_extended_agent_card(settings)
-    executor = call_with_supported_kwargs(
-        OpencodeAgentExecutor,
+    executor = OpencodeAgentExecutor(
         upstream_client,
         streaming_enabled=True,
         cancel_abort_timeout_seconds=settings.a2a_cancel_abort_timeout_seconds,
@@ -810,8 +807,7 @@ def create_app(settings: Settings) -> FastAPI:
         a2a_client_manager=client_manager,
         session_state_repository=session_state_repository,
     )
-    task_store = call_with_supported_kwargs(
-        build_task_store,
+    task_store = build_task_store(
         settings,
         engine=database_engine,
     )

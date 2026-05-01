@@ -29,7 +29,6 @@ from a2a.types import (
 )
 from a2a.utils.errors import A2AError
 
-from ..invocation import call_with_supported_kwargs
 from .agent_card import build_agent_card_resolver, build_resolver_http_kwargs
 from .config import A2AClientSettings, load_settings
 from .error_mapping import (
@@ -143,8 +142,7 @@ class A2AClient:
                 self._settings.basic_auth,
             )
             try:
-                async for event in call_with_supported_kwargs(
-                    client.send_message,
+                async for event in client.send_message(
                     SendMessageRequest(
                         message=Message(
                             role=Role.ROLE_USER,
@@ -157,8 +155,6 @@ class A2AClient:
                         metadata=request_metadata or {},
                     ),
                     context=call_context,
-                    call_context=call_context,
-                    request_metadata=request_metadata,
                 ):
                     yield event
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
@@ -224,12 +220,9 @@ class A2AClient:
             try:
                 return cast(
                     Task,
-                    await call_with_supported_kwargs(
-                        client.get_task,
+                    await client.get_task(
                         GetTaskRequest(id=task_id, history_length=history_length),
                         context=call_context,
-                        call_context=call_context,
-                        request_metadata=request_metadata,
                     ),
                 )
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
@@ -259,12 +252,9 @@ class A2AClient:
             try:
                 return cast(
                     Task,
-                    await call_with_supported_kwargs(
-                        client.cancel_task,
+                    await client.cancel_task(
                         CancelTaskRequest(id=task_id, metadata=request_metadata or {}),
                         context=call_context,
-                        call_context=call_context,
-                        request_metadata=request_metadata,
                     ),
                 )
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
@@ -292,12 +282,9 @@ class A2AClient:
                 self._settings.basic_auth,
             )
             try:
-                async for event in call_with_supported_kwargs(
-                    client.subscribe,
+                async for event in client.subscribe(
                     SubscribeToTaskRequest(id=task_id),
                     context=call_context,
-                    call_context=call_context,
-                    request_metadata=request_metadata,
                 ):
                     yield event
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:

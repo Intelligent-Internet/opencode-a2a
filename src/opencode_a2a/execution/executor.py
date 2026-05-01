@@ -30,7 +30,6 @@ from ..contracts.extensions import (
     STREAMING_EXTENSION_URI,
 )
 from ..extension_negotiation import requested_extensions_from_call_context
-from ..invocation import call_with_supported_kwargs
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..output_modes import accepts_output_mode, normalize_accepted_output_modes
 from ..parts.mapping import (
@@ -347,11 +346,7 @@ class OpencodeAgentExecutor(AgentExecutor):
                     if running_workspace_id is not None:
                         abort_kwargs["workspace_id"] = running_workspace_id
                     await asyncio.wait_for(
-                        call_with_supported_kwargs(
-                            self._client.abort_session,
-                            running_session_id,
-                            **abort_kwargs,
-                        ),
+                        self._client.abort_session(running_session_id, **abort_kwargs),
                         timeout=self._cancel_abort_timeout_seconds,
                     )
                     abort_outcome = "success"
