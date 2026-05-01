@@ -51,6 +51,9 @@ def test_extension_uris_map_to_repository_spec_documents() -> None:
     index_path = repo_root / "docs" / "extension-specifications.md"
     index_text = index_path.read_text(encoding="utf-8")
 
+    spec_paths = {repo_root / path for path in EXTENSION_SPEC_DOCUMENT_PATHS_BY_URI.values()}
+    assert spec_paths == {index_path}
+
     for uri in ALL_EXTENSION_URIS:
         assert uri.startswith(EXTENSION_URI_NAMESPACE), (
             "Extension URI drifted away from the permanent URN namespace."
@@ -59,7 +62,6 @@ def test_extension_uris_map_to_repository_spec_documents() -> None:
         assert local_spec_path.is_file(), (
             f"Extension URI {uri!r} does not map to a checked-in spec document."
         )
-        assert f"Extension URI:\n`{uri}`" in local_spec_path.read_text(encoding="utf-8")
         assert uri in index_text
 
 

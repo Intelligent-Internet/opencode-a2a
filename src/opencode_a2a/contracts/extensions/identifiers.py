@@ -13,6 +13,7 @@ OPENCODE_DIRECTORY_METADATA_FIELD = "metadata.opencode.directory"
 OPENCODE_WORKSPACE_METADATA_FIELD = "metadata.opencode.workspace.id"
 
 EXTENSION_URI_NAMESPACE = "urn:opencode-a2a:extension:"
+EXTENSION_SPEC_INDEX_DOCUMENT_PATH = "docs/extension-specifications.md"
 
 
 def _extension_uri(*segments: str) -> str:
@@ -20,17 +21,7 @@ def _extension_uri(*segments: str) -> str:
     return f"{EXTENSION_URI_NAMESPACE}{':'.join(normalized_segments)}"
 
 
-def _extension_spec_document_path(*segments: str) -> str:
-    normalized_segments = [segment.strip("/") for segment in segments if segment.strip("/")]
-    return "/".join(("docs", "extensions", *normalized_segments)) + ".md"
-
-
 SESSION_BINDING_EXTENSION_URI = _extension_uri(
-    "shared",
-    "session-binding",
-    "v1",
-)
-SESSION_BINDING_EXTENSION_SPEC_DOCUMENT_PATH = _extension_spec_document_path(
     "shared",
     "session-binding",
     "v1",
@@ -40,17 +31,7 @@ MODEL_SELECTION_EXTENSION_URI = _extension_uri(
     "model-selection",
     "v1",
 )
-MODEL_SELECTION_EXTENSION_SPEC_DOCUMENT_PATH = _extension_spec_document_path(
-    "shared",
-    "model-selection",
-    "v1",
-)
 STREAMING_EXTENSION_URI = _extension_uri(
-    "shared",
-    "stream-hints",
-    "v1",
-)
-STREAMING_EXTENSION_SPEC_DOCUMENT_PATH = _extension_spec_document_path(
     "shared",
     "stream-hints",
     "v1",
@@ -60,17 +41,7 @@ SESSION_MANAGEMENT_EXTENSION_URI = _extension_uri(
     "session-management",
     "v1",
 )
-SESSION_MANAGEMENT_EXTENSION_SPEC_DOCUMENT_PATH = _extension_spec_document_path(
-    "private",
-    "session-management",
-    "v1",
-)
 PROVIDER_DISCOVERY_EXTENSION_URI = _extension_uri(
-    "private",
-    "provider-discovery",
-    "v1",
-)
-PROVIDER_DISCOVERY_EXTENSION_SPEC_DOCUMENT_PATH = _extension_spec_document_path(
     "private",
     "provider-discovery",
     "v1",
@@ -80,17 +51,7 @@ INTERRUPT_CALLBACK_EXTENSION_URI = _extension_uri(
     "interactive-interrupt",
     "v1",
 )
-INTERRUPT_CALLBACK_EXTENSION_SPEC_DOCUMENT_PATH = _extension_spec_document_path(
-    "shared",
-    "interactive-interrupt",
-    "v1",
-)
 INTERRUPT_RECOVERY_EXTENSION_URI = _extension_uri(
-    "private",
-    "interrupt-recovery",
-    "v1",
-)
-INTERRUPT_RECOVERY_EXTENSION_SPEC_DOCUMENT_PATH = _extension_spec_document_path(
     "private",
     "interrupt-recovery",
     "v1",
@@ -100,27 +61,12 @@ WORKSPACE_CONTROL_EXTENSION_URI = _extension_uri(
     "workspace-control",
     "v1",
 )
-WORKSPACE_CONTROL_EXTENSION_SPEC_DOCUMENT_PATH = _extension_spec_document_path(
-    "private",
-    "workspace-control",
-    "v1",
-)
 COMPATIBILITY_PROFILE_EXTENSION_URI = _extension_uri(
     "private",
     "compatibility-profile",
     "v1",
 )
-COMPATIBILITY_PROFILE_EXTENSION_SPEC_DOCUMENT_PATH = _extension_spec_document_path(
-    "private",
-    "compatibility-profile",
-    "v1",
-)
 WIRE_CONTRACT_EXTENSION_URI = _extension_uri(
-    "private",
-    "wire-contract",
-    "v1",
-)
-WIRE_CONTRACT_EXTENSION_SPEC_DOCUMENT_PATH = _extension_spec_document_path(
     "private",
     "wire-contract",
     "v1",
@@ -141,18 +87,7 @@ AUTHENTICATED_ONLY_EXTENSION_URIS: tuple[str, ...] = (
 )
 ALL_EXTENSION_URIS: tuple[str, ...] = PUBLIC_EXTENSION_URIS + AUTHENTICATED_ONLY_EXTENSION_URIS
 EXTENSION_SPEC_DOCUMENT_PATHS_BY_URI = MappingProxyType(
-    {
-        SESSION_BINDING_EXTENSION_URI: SESSION_BINDING_EXTENSION_SPEC_DOCUMENT_PATH,
-        MODEL_SELECTION_EXTENSION_URI: MODEL_SELECTION_EXTENSION_SPEC_DOCUMENT_PATH,
-        STREAMING_EXTENSION_URI: STREAMING_EXTENSION_SPEC_DOCUMENT_PATH,
-        SESSION_MANAGEMENT_EXTENSION_URI: SESSION_MANAGEMENT_EXTENSION_SPEC_DOCUMENT_PATH,
-        PROVIDER_DISCOVERY_EXTENSION_URI: PROVIDER_DISCOVERY_EXTENSION_SPEC_DOCUMENT_PATH,
-        INTERRUPT_CALLBACK_EXTENSION_URI: INTERRUPT_CALLBACK_EXTENSION_SPEC_DOCUMENT_PATH,
-        INTERRUPT_RECOVERY_EXTENSION_URI: INTERRUPT_RECOVERY_EXTENSION_SPEC_DOCUMENT_PATH,
-        WORKSPACE_CONTROL_EXTENSION_URI: WORKSPACE_CONTROL_EXTENSION_SPEC_DOCUMENT_PATH,
-        COMPATIBILITY_PROFILE_EXTENSION_URI: COMPATIBILITY_PROFILE_EXTENSION_SPEC_DOCUMENT_PATH,
-        WIRE_CONTRACT_EXTENSION_URI: WIRE_CONTRACT_EXTENSION_SPEC_DOCUMENT_PATH,
-    }
+    {uri: EXTENSION_SPEC_INDEX_DOCUMENT_PATH for uri in ALL_EXTENSION_URIS}
 )
 SERVICE_BEHAVIOR_CLASSIFICATION = "service-level-semantic-enhancement"
 CANCEL_IDEMPOTENCY_BEHAVIOR = "return_current_terminal_task"
