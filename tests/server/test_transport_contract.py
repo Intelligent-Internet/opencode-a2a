@@ -1709,7 +1709,8 @@ def test_create_app_builds_configured_task_store(monkeypatch) -> None:
 
     captured: dict[str, object] = {}
 
-    def _build_task_store(settings):  # noqa: ANN001
+    def _build_task_store(settings, *, engine=None):  # noqa: ANN001
+        del engine
         captured["backend"] = settings.a2a_task_store_backend
         captured["database_url"] = settings.a2a_task_store_database_url
         return MagicMock()

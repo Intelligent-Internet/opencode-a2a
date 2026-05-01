@@ -431,7 +431,11 @@ async def test_extension_notification_contracts_return_204(
             interrupt_type=interrupt_type,
         )
 
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: dummy)
+    monkeypatch.setattr(
+        app_module,
+        "OpencodeUpstreamClient",
+        lambda _settings, **_kwargs: dummy,
+    )
     app = app_module.create_app(make_settings(test_bearer_token="t-1", a2a_log_payloads=False))
     transport = httpx.ASGITransport(app=app)
 

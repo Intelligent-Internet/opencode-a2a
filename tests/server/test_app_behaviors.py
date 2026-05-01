@@ -508,7 +508,11 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch, caplog) -> No
             self.closed = True
 
     closable = _ClosableClient(make_settings(test_bearer_token="test-token"))
-    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings: closable)
+    monkeypatch.setattr(
+        app_module,
+        "OpencodeUpstreamClient",
+        lambda _settings, **_kwargs: closable,
+    )
 
     settings = make_settings(test_bearer_token="test-token", a2a_enable_session_shell=True)
     app = create_app(settings)
