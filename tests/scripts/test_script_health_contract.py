@@ -6,6 +6,7 @@ DEPENDENCY_HEALTH_TEXT = Path("scripts/dependency_health.sh").read_text()
 HEALTH_COMMON_TEXT = Path("scripts/health_common.sh").read_text()
 SMOKE_TEST_TEXT = Path("scripts/smoke_test_built_cli.sh").read_text()
 COVERAGE_GATE_TEXT = Path("scripts/check_coverage.py").read_text()
+THIN_WRAPPER_FINDER_TEXT = Path("scripts/find_thin_wrappers.py").read_text()
 SCRIPTS_INDEX_TEXT = Path("scripts/README.md").read_text()
 PYPROJECT_TEXT = Path("pyproject.toml").read_text()
 DEPENDABOT_TEXT = Path(".github/dependabot.yml").read_text()
@@ -48,6 +49,7 @@ def test_scripts_index_documents_split_health_entrypoints() -> None:
     assert "local development regression entrypoint" in SCRIPTS_INDEX_TEXT
     assert "external A2A conformance experiment entrypoint" in SCRIPTS_INDEX_TEXT
     assert "dependency review entrypoint" in SCRIPTS_INDEX_TEXT
+    assert "thin forwarding wrappers" in SCRIPTS_INDEX_TEXT
     assert "health_common.sh" in SCRIPTS_INDEX_TEXT
     assert "built-wheel smoke test" in SCRIPTS_INDEX_TEXT
     assert "single weekly grouped Dependabot PR for `uv`" in SCRIPTS_INDEX_TEXT
@@ -104,3 +106,10 @@ def test_coverage_policy_tracks_overall_and_critical_file_thresholds() -> None:
     assert '"src/opencode_a2a/opencode_upstream_client.py": 85.0' in COVERAGE_GATE_TEXT
     assert "--cov-fail-under=90" in PYPROJECT_TEXT
     assert "--cov-report=json:.coverage.json" in PYPROJECT_TEXT
+
+
+def test_thin_wrapper_finder_keeps_static_analysis_scope() -> None:
+    assert "ast.parse" in THIN_WRAPPER_FINDER_TEXT
+    assert "--max-callers" in THIN_WRAPPER_FINDER_TEXT
+    assert "--thin-only" in THIN_WRAPPER_FINDER_TEXT
+    assert "thin_forwarder" in THIN_WRAPPER_FINDER_TEXT
