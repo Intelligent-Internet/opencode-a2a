@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,8 +16,6 @@ from .catalog import (
     PROVIDER_DISCOVERY_METHODS,
     SESSION_CONTROL_METHODS,
     SESSION_METHODS,
-    SESSION_MUTATION_METHODS,
-    SESSION_READ_METHODS,
     WORKSPACE_DISCOVERY_METHODS,
     WORKSPACE_MUTATION_METHODS,
 )
@@ -80,21 +79,6 @@ class JsonRpcCapabilitySnapshot:
             methods.pop("shell", None)
         return methods
 
-    def session_read_methods(self) -> dict[str, str]:
-        return dict(SESSION_READ_METHODS)
-
-    def session_mutation_methods(self) -> dict[str, str]:
-        return dict(SESSION_MUTATION_METHODS)
-
-    def provider_discovery_methods(self) -> dict[str, str]:
-        return dict(PROVIDER_DISCOVERY_METHODS)
-
-    def interrupt_recovery_methods(self) -> dict[str, str]:
-        return dict(INTERRUPT_RECOVERY_METHODS)
-
-    def interrupt_callback_methods(self) -> dict[str, str]:
-        return dict(INTERRUPT_CALLBACK_METHODS)
-
     def workspace_control_methods(self) -> dict[str, str]:
         methods = dict(WORKSPACE_DISCOVERY_METHODS)
         for key, method in WORKSPACE_MUTATION_METHODS.items():
@@ -134,18 +118,11 @@ class JsonRpcCapabilitySnapshot:
             if (disabled_entry := conditional_method.disabled_wire_contract_entry()) is not None
         }
 
-    def control_method_flags(self) -> dict[str, dict[str, Any]]:
+    def method_flags(self, methods: Collection[str]) -> dict[str, dict[str, Any]]:
         return {
             method: conditional_method.control_method_flag()
             for method, conditional_method in self.conditional_methods.items()
-            if method in SESSION_CONTROL_METHODS.values()
-        }
-
-    def workspace_mutation_method_flags(self) -> dict[str, dict[str, Any]]:
-        return {
-            method: conditional_method.control_method_flag()
-            for method, conditional_method in self.conditional_methods.items()
-            if method in WORKSPACE_MUTATION_METHODS.values()
+            if method in methods
         }
 
     def conditional_method_retention(self) -> dict[str, dict[str, Any]]:

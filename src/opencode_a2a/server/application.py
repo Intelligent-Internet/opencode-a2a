@@ -59,7 +59,10 @@ from ..a2a_protocol import (
 )
 from ..config import Settings
 from ..contracts.extensions import (
+    INTERRUPT_CALLBACK_METHODS,
+    INTERRUPT_RECOVERY_METHODS,
     MODEL_SELECTION_EXTENSION_URI,
+    PROVIDER_DISCOVERY_METHODS,
     SESSION_BINDING_EXTENSION_URI,
     build_capability_snapshot,
 )
@@ -824,10 +827,10 @@ def create_app(settings: Settings) -> FastAPI:
 
     jsonrpc_methods = {
         **capability_snapshot.session_management_methods(),
-        **capability_snapshot.provider_discovery_methods(),
+        **dict(PROVIDER_DISCOVERY_METHODS),
         **capability_snapshot.workspace_control_methods(),
-        **capability_snapshot.interrupt_recovery_methods(),
-        **capability_snapshot.interrupt_callback_methods(),
+        **dict(INTERRUPT_RECOVERY_METHODS),
+        **dict(INTERRUPT_CALLBACK_METHODS),
     }
 
     # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.

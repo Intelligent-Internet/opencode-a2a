@@ -92,15 +92,6 @@ def _build_public_streaming_extension_params(
     }
 
 
-def _build_public_interrupt_callback_extension_params(
-    params: dict[str, Any],
-) -> dict[str, Any]:
-    return _select_public_extension_params(
-        params,
-        keys=("methods", "supported_interrupt_events", "request_id_field"),
-    )
-
-
 def _build_agent_card_description(
     settings: Settings,
     runtime_profile: RuntimeProfile,
@@ -330,8 +321,9 @@ def _build_agent_extensions(
             params=(
                 interrupt_callback_extension_params
                 if include_detailed_contracts
-                else _build_public_interrupt_callback_extension_params(
-                    interrupt_callback_extension_params
+                else _select_public_extension_params(
+                    interrupt_callback_extension_params,
+                    keys=("methods", "supported_interrupt_events", "request_id_field"),
                 )
             ),
         ),

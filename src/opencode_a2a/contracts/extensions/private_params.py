@@ -13,8 +13,10 @@ from .catalog import (
     PROVIDER_DISCOVERY_INVALID_PARAMS_DATA_FIELDS,
     PROVIDER_DISCOVERY_METHOD_CONTRACTS,
     PROVIDER_DISCOVERY_METHODS,
+    SESSION_CONTROL_METHODS,
     SESSION_METHOD_CONTRACTS,
     SESSION_METHODS,
+    SESSION_MUTATION_METHODS,
     SESSION_QUERY_DEFAULT_LIMIT,
     SESSION_QUERY_ERROR_BUSINESS_CODES,
     SESSION_QUERY_ERROR_DATA_FIELDS,
@@ -23,11 +25,13 @@ from .catalog import (
     SESSION_QUERY_PAGINATION_BEHAVIOR,
     SESSION_QUERY_PAGINATION_MODE,
     SESSION_QUERY_PAGINATION_PARAMS,
+    SESSION_READ_METHODS,
     WORKSPACE_CONTROL_ERROR_BUSINESS_CODES,
     WORKSPACE_CONTROL_ERROR_DATA_FIELDS,
     WORKSPACE_CONTROL_INVALID_PARAMS_DATA_FIELDS,
     WORKSPACE_CONTROL_METHOD_CONTRACTS,
     WORKSPACE_CONTROL_METHODS,
+    WORKSPACE_MUTATION_METHODS,
 )
 from .identifiers import (
     OPENCODE_DIRECTORY_METADATA_FIELD,
@@ -48,8 +52,8 @@ def build_session_management_extension_params(
 ) -> dict[str, Any]:
     capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
     methods = capability_snapshot.session_management_methods()
-    read_methods = capability_snapshot.session_read_methods()
-    mutation_methods = capability_snapshot.session_mutation_methods()
+    read_methods = dict(SESSION_READ_METHODS)
+    mutation_methods = dict(SESSION_MUTATION_METHODS)
     control_methods = capability_snapshot.session_control_methods()
     active_session_methods = set(methods.values())
 
@@ -89,7 +93,7 @@ def build_session_management_extension_params(
         "read_methods": read_methods,
         "mutation_methods": mutation_methods,
         "control_methods": control_methods,
-        "control_method_flags": capability_snapshot.control_method_flags(),
+        "control_method_flags": capability_snapshot.method_flags(SESSION_CONTROL_METHODS.values()),
         "profile": runtime_profile.summary_dict(),
         "pagination": {
             "mode": SESSION_QUERY_PAGINATION_MODE,
@@ -296,7 +300,9 @@ def build_workspace_control_extension_params(
 
     return {
         "methods": methods,
-        "control_method_flags": capability_snapshot.workspace_mutation_method_flags(),
+        "control_method_flags": capability_snapshot.method_flags(
+            WORKSPACE_MUTATION_METHODS.values()
+        ),
         "method_contracts": method_contracts,
         "upstream_stability": {
             WORKSPACE_CONTROL_METHODS["list_projects"]: "stable",
