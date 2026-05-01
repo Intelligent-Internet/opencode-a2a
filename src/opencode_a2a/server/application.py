@@ -121,13 +121,6 @@ TASK_STORE_ERROR_TYPE = "TASK_STORE_UNAVAILABLE"
 PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE = "Push notifications are not supported by the agent"
 
 
-def _are_modalities_compatible(
-    supported_output_modes: list[str],
-    accepted_output_modes: list[str],
-) -> bool:
-    return bool(set(supported_output_modes) & set(accepted_output_modes))
-
-
 def _rest_error_response(
     *,
     request: Request,
@@ -473,7 +466,7 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         if not accepted_output_modes:
             return
 
-        if not _are_modalities_compatible(list(_CHAT_OUTPUT_MODES), accepted_output_modes):
+        if not (set(_CHAT_OUTPUT_MODES) & set(accepted_output_modes)):
             raise UnsupportedOperationError(
                 message=(
                     "Requested acceptedOutputModes are not compatible with OpenCode chat responses."

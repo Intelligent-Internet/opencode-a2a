@@ -76,9 +76,15 @@ def build_list_tasks_route(
             query = _parse_list_tasks_query(request)
             tasks = await list_stored_tasks(task_store)
         except _ListTasksValidationError as error:
-            return _invalid_argument_response(
-                field=error.field,
-                message=error.message,
+            return JSONResponse(
+                build_http_error_body(
+                    status_code=400,
+                    status="INVALID_ARGUMENT",
+                    message=error.message,
+                    reason="INVALID_LIST_TASKS_REQUEST",
+                    metadata={"field": error.field},
+                ),
+                status_code=400,
             )
         except TaskStoreOperationError as error:
             return JSONResponse(
@@ -336,20 +342,3 @@ def _encode_page_token(task: Task) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return base64.urlsafe_b64encode(payload).decode("utf-8").rstrip("=")
-
-
-def _invalid_argument_response(
-    *,
-    field: str,
-    message: str,
-) -> JSONResponse:
-    return JSONResponse(
-        build_http_error_body(
-            status_code=400,
-            status="INVALID_ARGUMENT",
-            message=message,
-            reason="INVALID_LIST_TASKS_REQUEST",
-            metadata={"field": field},
-        ),
-        status_code=400,
-    )
