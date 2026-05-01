@@ -7,6 +7,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 import uvicorn
+from a2a.auth.user import User
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventConsumer, EventQueueLegacy
 from a2a.server.request_handlers.default_request_handler import (
@@ -119,6 +120,19 @@ from .task_store import (
 logger = logging.getLogger(__name__)
 TASK_STORE_ERROR_TYPE = "TASK_STORE_UNAVAILABLE"
 PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE = "Push notifications are not supported by the agent"
+
+
+class AuthenticatedIdentityUser(User):
+    def __init__(self, identity: str) -> None:
+        self._identity = identity
+
+    @property
+    def is_authenticated(self) -> bool:
+        return True
+
+    @property
+    def user_name(self) -> str:
+        return self._identity
 
 
 def _rest_error_response(
@@ -758,6 +772,7 @@ class IdentityAwareCallContextBuilder(DefaultServerCallContextBuilder):
         identity = getattr(request.state, "user_identity", None)
         if identity:
             context.state["identity"] = identity
+            context.user = AuthenticatedIdentityUser(identity)
         auth_scheme = getattr(request.state, "user_auth_scheme", None)
         if auth_scheme:
             context.state["auth_scheme"] = auth_scheme
@@ -966,6 +981,7 @@ def create_app(settings: Settings) -> FastAPI:
         "/v1/tasks",
         build_list_tasks_route(
             task_store=task_store,
+            context_builder=context_builder.build,
         ),
         methods=["GET"],
     )

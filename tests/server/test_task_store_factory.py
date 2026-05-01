@@ -270,6 +270,37 @@ async def test_database_task_store_upgrades_legacy_tasks_table_schema(
 
 
 @pytest.mark.asyncio
+async def test_initialize_task_store_delegates_back_to_sdk_initialize(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'sdk-init.db'}",
+    )
+    store = build_task_store(settings)
+    raw_store = unwrap_task_store(store)
+    assert isinstance(raw_store, DatabaseTaskStore)
+
+    called = False
+    original_initialize = DatabaseTaskStore.initialize
+
+    async def _record_initialize(self) -> None:  # noqa: ANN001
+        nonlocal called
+        called = True
+        await original_initialize(self)
+
+    monkeypatch.setattr(DatabaseTaskStore, "initialize", _record_initialize)
+
+    try:
+        await initialize_task_store(store)
+    finally:
+        await store.engine.dispose()
+
+    assert called is True
+
+
+@pytest.mark.asyncio
 async def test_build_task_store_does_not_dispose_shared_engine(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

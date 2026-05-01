@@ -485,7 +485,7 @@ async def initialize_task_store(task_store: TaskStore) -> None:
                     task_table=task_table,
                 )
             )
-        raw_task_store._initialized = True
+        await raw_task_store.initialize()
         return
     initialize = getattr(task_store, "initialize", None)
     if callable(initialize):

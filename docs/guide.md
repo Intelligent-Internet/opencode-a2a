@@ -182,7 +182,7 @@ Database-backed task persistence also keeps the existing first-terminal-state-wi
 
 At startup, the runtime logs a concise persistence summary covering the active backend, the redacted database URL when applicable, the shared persistence scope, and whether the SQLite local durability profile is active.
 
-The A2A SDK task table remains managed by the SDK's own `DatabaseTaskStore` initialization path. The internal migration runner only owns the additional `opencode-a2a` state tables listed above, but both layers still share the same configured lightweight persistence backend.
+For the SDK task table, the runtime first applies a compatibility migration for legacy local schemas and then delegates steady-state table initialization back to the SDK's own `DatabaseTaskStore` path. The internal migration runner therefore owns the adapter-local state tables listed above plus backward-compatible task-table upgrades, while the SDK continues to own the primary task ORM lifecycle on the shared lightweight persistence backend.
 
 In-flight asyncio locks, outbound A2A client caches, and stream-local aggregation buffers remain process-local runtime state.
 
