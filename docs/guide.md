@@ -58,7 +58,7 @@ Key variables to understand protocol behavior:
 - `A2A_CLIENT_SUPPORTED_TRANSPORTS`: ordered outbound transport preference list.
 - `A2A_TASK_STORE_BACKEND`: unified lightweight persistence backend for SDK task rows plus adapter-managed session / interrupt state. Supported values: `database`, `memory`. Default: `database`.
 - `A2A_TASK_STORE_DATABASE_URL`: database URL used by the unified durable backend when `A2A_TASK_STORE_BACKEND=database`. Default: `sqlite+aiosqlite:///./opencode-a2a.db`.
-- On startup, the runtime applies compatible in-place schema upgrades for the durable task/state store tables before serving requests.
+- On startup, the runtime only auto-migrates adapter-owned state tables; existing SDK-owned task tables must be upgraded explicitly with upstream `a2a-db`.
 - Runtime authentication is configured only through the static credential registry declared by `A2A_STATIC_AUTH_CREDENTIALS`.
 - The runtime maps authenticated requests to stable principals rather than credential-derived identities.
 - With `A2A_STATIC_AUTH_CREDENTIALS`, every bearer credential must declare an explicit `principal`; Basic credentials always derive their runtime principal from `username`.
@@ -182,7 +182,7 @@ Database-backed task persistence also keeps the existing first-terminal-state-wi
 
 At startup, the runtime logs a concise persistence summary covering the active backend, the redacted database URL when applicable, the shared persistence scope, and whether the SQLite local durability profile is active.
 
-For the SDK task table, the runtime first applies a compatibility migration for legacy local schemas and then delegates steady-state table initialization back to the SDK's own `DatabaseTaskStore` path. The internal migration runner therefore owns the adapter-local state tables listed above plus backward-compatible task-table upgrades, while the SDK continues to own the primary task ORM lifecycle on the shared lightweight persistence backend.
+The adapter-owned state tables listed above remain managed by the internal migration runner. The SDK-owned `tasks` table does not use runtime auto-migration here; upgrade existing SDK task schemas explicitly with upstream `a2a-db` before starting the service after an SDK schema change. If `a2a-db` is unavailable in your environment, install the `a2a-sdk[db-cli]` extra first.
 
 In-flight asyncio locks, outbound A2A client caches, and stream-local aggregation buffers remain process-local runtime state.
 

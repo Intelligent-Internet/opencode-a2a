@@ -8,9 +8,8 @@ from unittest.mock import AsyncMock
 import pytest
 from a2a.server.tasks.database_task_store import DatabaseTaskStore
 from a2a.types import Task, TaskState, TaskStatus
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 
-from opencode_a2a.server.migrations import CURRENT_TASK_STORE_SCHEMA_VERSION
 from opencode_a2a.server.task_store import (
     FirstTerminalStateWinsPolicy,
     GuardedTaskStore,
@@ -45,24 +44,6 @@ def _set_metadata(task: Task, metadata: dict) -> Task:
     task.ClearField("metadata")
     task.metadata.update(metadata)
     return task
-
-
-async def _read_task_store_schema_version(engine) -> int | None:  # noqa: ANN001
-    async with engine.begin() as conn:
-        result = await conn.execute(
-            text("SELECT version FROM a2a_schema_version WHERE name = 'task_store'")
-        )
-        value = result.scalar_one_or_none()
-        return int(value) if value is not None else None
-
-
-async def _read_table_index_names(engine, table_name: str) -> set[str]:  # noqa: ANN001
-    async with engine.begin() as conn:
-        return await conn.run_sync(
-            lambda sync_conn: {
-                index["name"] for index in inspect(sync_conn).get_indexes(table_name)
-            }
-        )
 
 
 def test_build_task_store_defaults_to_database_backend(tmp_path: Path) -> None:
@@ -191,7 +172,7 @@ async def test_build_database_engine_configures_sqlite_pragmas_and_parent_dir(
 
 
 @pytest.mark.asyncio
-async def test_database_task_store_upgrades_legacy_tasks_table_schema(
+async def test_database_task_store_rejects_legacy_tasks_table_schema(
     tmp_path: Path,
 ) -> None:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'legacy-tasks.db'}"
@@ -242,29 +223,8 @@ async def test_database_task_store_upgrades_legacy_tasks_table_schema(
         )
 
     store = build_task_store(settings, engine=engine)
-    await initialize_task_store(store)
-    restored = await store.get("legacy-task")
-
-    async with engine.begin() as conn:
-        result = await conn.execute(
-            text(
-                """
-                SELECT owner, protocol_version
-                FROM tasks
-                WHERE id = 'legacy-task'
-                """
-            )
-        )
-        migrated_row = result.mappings().one()
-
-    assert restored is not None
-    assert restored.id == "legacy-task"
-    assert restored.context_id == "ctx-1"
-    assert restored.status.state == TaskState.TASK_STATE_WORKING
-    assert migrated_row["owner"] == ""
-    assert migrated_row["protocol_version"] == "1.0"
-    assert await _read_task_store_schema_version(engine) == CURRENT_TASK_STORE_SCHEMA_VERSION
-    assert "idx_tasks_owner_last_updated" in await _read_table_index_names(engine, "tasks")
+    with pytest.raises(RuntimeError, match="a2a-db"):
+        await initialize_task_store(store)
 
     await engine.dispose()
 

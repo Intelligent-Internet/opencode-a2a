@@ -23,8 +23,6 @@ if TYPE_CHECKING:
 
 STATE_STORE_SCHEMA_NAME = "state_store"
 CURRENT_STATE_STORE_SCHEMA_VERSION = 5
-TASK_STORE_SCHEMA_NAME = "task_store"
-CURRENT_TASK_STORE_SCHEMA_VERSION = 3
 
 _SCHEMA_VERSION_METADATA = MetaData()
 
@@ -136,41 +134,6 @@ def _migration_5_drop_legacy_pending_claim_rows(
             pending_session_claims_table.c.expires_at.is_(None)
         )
     )
-
-
-def _migration_1_add_task_store_sdk_columns(
-    connection: Connection,
-    *,
-    task_table: Table,
-) -> None:
-    for column_name in ("owner", "last_updated", "protocol_version"):
-        _add_missing_nullable_column(
-            connection,
-            table=task_table,
-            column_name=column_name,
-        )
-
-
-def _migration_2_backfill_task_store_sdk_defaults(
-    connection: Connection,
-    *,
-    task_table: Table,
-) -> None:
-    connection.execute(task_table.update().where(task_table.c.owner.is_(None)).values(owner=""))
-    connection.execute(
-        task_table.update()
-        .where(task_table.c.protocol_version.is_(None))
-        .values(protocol_version="1.0")
-    )
-
-
-def _migration_3_add_task_store_indexes(
-    connection: Connection,
-    *,
-    task_table: Table,
-) -> None:
-    for index in sorted(task_table.indexes, key=lambda item: item.name or ""):
-        _create_missing_index(connection, index=index)
 
 
 def _read_schema_version(
@@ -288,38 +251,6 @@ def migrate_state_store_schema(
         connection,
         version_table=_SCHEMA_VERSIONS,
         scope=STATE_STORE_SCHEMA_NAME,
-        current_version=current_version,
-        migrations=migrations,
-    )
-
-
-def migrate_task_store_schema(
-    connection: Connection,
-    *,
-    task_table: Table,
-    current_version: int = CURRENT_TASK_STORE_SCHEMA_VERSION,
-) -> int:
-    _SCHEMA_VERSION_METADATA.create_all(connection)
-    task_table.metadata.create_all(connection, tables=[task_table])
-
-    migrations: dict[int, Callable[[Connection], None]] = {
-        1: lambda conn: _migration_1_add_task_store_sdk_columns(
-            conn,
-            task_table=task_table,
-        ),
-        2: lambda conn: _migration_2_backfill_task_store_sdk_defaults(
-            conn,
-            task_table=task_table,
-        ),
-        3: lambda conn: _migration_3_add_task_store_indexes(
-            conn,
-            task_table=task_table,
-        ),
-    }
-    return _apply_schema_migrations(
-        connection,
-        version_table=_SCHEMA_VERSIONS,
-        scope=TASK_STORE_SCHEMA_NAME,
         current_version=current_version,
         migrations=migrations,
     )
