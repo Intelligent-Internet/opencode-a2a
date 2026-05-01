@@ -36,11 +36,13 @@ from ..contracts.extensions import (
     build_interrupt_recovery_extension_params,
     build_model_selection_extension_params,
     build_provider_discovery_extension_params,
+    build_public_streaming_extension_params,
     build_session_binding_extension_params,
     build_session_management_extension_params,
     build_streaming_extension_params,
     build_wire_contract_params,
     build_workspace_control_extension_params,
+    select_public_extension_params,
 )
 from ..jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from ..profile.runtime import RuntimeProfile, build_runtime_profile
@@ -49,47 +51,10 @@ from ..protocol_versions import A2A_PROTOCOL_VERSION
 _CHAT_INPUT_MODES = ["text/plain", "application/octet-stream"]
 _CHAT_OUTPUT_MODES = ["text/plain", "application/json"]
 _JSON_RPC_MODES = ["application/json"]
-
-
-def _select_public_extension_params(
-    params: dict[str, Any],
-    *,
-    keys: tuple[str, ...],
-) -> dict[str, Any]:
-    return {key: params[key] for key in keys if key in params}
-
-
-def _build_public_streaming_extension_params(
-    params: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        "artifact_metadata_field": params["artifact_metadata_field"],
-        "progress_metadata_field": params["progress_metadata_field"],
-        "interrupt_metadata_field": params["interrupt_metadata_field"],
-        "session_metadata_field": params["session_metadata_field"],
-        "usage_metadata_field": params["usage_metadata_field"],
-        "block_types": params["block_types"],
-        "stream_fields": _select_public_extension_params(
-            params["stream_fields"],
-            keys=("block_type", "message_id", "sequence"),
-        ),
-        "progress_fields": _select_public_extension_params(
-            params["progress_fields"],
-            keys=("type", "status"),
-        ),
-        "interrupt_fields": _select_public_extension_params(
-            params["interrupt_fields"],
-            keys=("request_id", "type", "phase"),
-        ),
-        "session_fields": _select_public_extension_params(
-            params["session_fields"],
-            keys=("id", "title"),
-        ),
-        "usage_fields": _select_public_extension_params(
-            params["usage_fields"],
-            keys=("input_tokens", "output_tokens", "total_tokens"),
-        ),
-    }
+_INTERRUPT_RECOVERY_SKILL_EXAMPLES = [
+    "List pending permission interrupts (method opencode.permissions.list).",
+    "List pending question interrupts (method opencode.questions.list).",
+]
 
 
 def _build_agent_card_description(
@@ -195,13 +160,6 @@ def _build_session_management_skill_examples(
     return examples
 
 
-def _build_interrupt_recovery_skill_examples() -> list[str]:
-    return [
-        "List pending permission interrupts (method opencode.permissions.list).",
-        "List pending question interrupts (method opencode.questions.list).",
-    ]
-
-
 def _build_workspace_control_skill_examples(*, capability_snapshot) -> list[str]:  # noqa: ANN001
     examples = [
         "List OpenCode projects (method opencode.projects.list).",
@@ -263,7 +221,7 @@ def _build_agent_extensions(
             params=(
                 session_binding_extension_params
                 if include_detailed_contracts
-                else _select_public_extension_params(
+                else select_public_extension_params(
                     session_binding_extension_params,
                     keys=(
                         "metadata_field",
@@ -285,7 +243,7 @@ def _build_agent_extensions(
             params=(
                 model_selection_extension_params
                 if include_detailed_contracts
-                else _select_public_extension_params(
+                else select_public_extension_params(
                     model_selection_extension_params,
                     keys=(
                         "metadata_field",
@@ -308,7 +266,7 @@ def _build_agent_extensions(
             params=(
                 streaming_extension_params
                 if include_detailed_contracts
-                else _build_public_streaming_extension_params(streaming_extension_params)
+                else build_public_streaming_extension_params(streaming_extension_params)
             ),
         ),
         AgentExtension(
@@ -321,7 +279,7 @@ def _build_agent_extensions(
             params=(
                 interrupt_callback_extension_params
                 if include_detailed_contracts
-                else _select_public_extension_params(
+                else select_public_extension_params(
                     interrupt_callback_extension_params,
                     keys=("methods", "supported_interrupt_events", "request_id_field"),
                 )
@@ -505,7 +463,7 @@ def _build_agent_skills(
             input_modes=list(_JSON_RPC_MODES),
             output_modes=list(_JSON_RPC_MODES),
             tags=["interrupt", "permission", "question", "provider-private"],
-            examples=_build_interrupt_recovery_skill_examples(),
+            examples=list(_INTERRUPT_RECOVERY_SKILL_EXAMPLES),
         ),
         AgentSkill(
             id="opencode.interrupt.callback",
@@ -526,10 +484,10 @@ def _build_agent_skills(
     ]
 
 
-def _build_agent_card(
+def build_agent_card(
     settings: Settings,
     *,
-    include_detailed_contracts: bool,
+    include_detailed_contracts: bool = False,
 ) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     runtime_profile = build_runtime_profile(settings)
@@ -595,9 +553,5 @@ def _build_agent_card(
     )
 
 
-def build_agent_card(settings: Settings) -> AgentCard:
-    return _build_agent_card(settings, include_detailed_contracts=False)
-
-
 def build_authenticated_extended_agent_card(settings: Settings) -> AgentCard:
-    return _build_agent_card(settings, include_detailed_contracts=True)
+    return build_agent_card(settings, include_detailed_contracts=True)

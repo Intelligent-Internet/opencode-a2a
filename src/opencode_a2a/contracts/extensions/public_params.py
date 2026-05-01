@@ -26,6 +26,44 @@ from .identifiers import (
     SHARED_USAGE_METADATA_FIELD,
 )
 
+PROMPT_ASYNC_PART_CONTRACT_DOC = {
+    "items_type": "PromptAsyncPart[]",
+    "type_field": "type",
+    "accepted_types": list(PROMPT_ASYNC_SUPPORTED_PART_TYPES),
+    "part_contracts": {
+        part_type: {
+            "required": list(contract["required"]),
+            **(
+                {"optional": list(optional)}
+                if (optional := contract.get("optional")) is not None
+                else {}
+            ),
+        }
+        for part_type, contract in PROMPT_ASYNC_PART_CONTRACTS.items()
+    },
+}
+PROMPT_ASYNC_SUBTASK_SUPPORT = {
+    "support_level": "passthrough-compatible",
+    "invocation_path": "request.parts[]",
+    "part_type": "subtask",
+    "subagent_selector_field": "request.parts[].agent",
+    "execution_model": "upstream-provider-private-subagent-runtime",
+    "notes": [
+        (
+            "opencode-a2a validates and forwards provider-private subtask parts to "
+            "the upstream OpenCode session runtime."
+        ),
+        (
+            "The adapter does not define a separate subagent discovery or "
+            "orchestration JSON-RPC method surface."
+        ),
+        (
+            "Subtask execution semantics, available subagent names, and any task-tool "
+            "fan-out remain upstream OpenCode behavior."
+        ),
+    ],
+}
+
 
 def _build_method_contract_params(
     *,
@@ -43,45 +81,44 @@ def _build_method_contract_params(
     return params
 
 
-def _build_prompt_async_part_contracts() -> dict[str, Any]:
-    part_contracts: dict[str, Any] = {}
-    for part_type, contract in PROMPT_ASYNC_PART_CONTRACTS.items():
-        part_contract_doc: dict[str, Any] = {
-            "required": list(contract["required"]),
-        }
-        optional = contract.get("optional")
-        if optional:
-            part_contract_doc["optional"] = list(optional)
-        part_contracts[part_type] = part_contract_doc
-    return {
-        "items_type": "PromptAsyncPart[]",
-        "type_field": "type",
-        "accepted_types": list(PROMPT_ASYNC_SUPPORTED_PART_TYPES),
-        "part_contracts": part_contracts,
-    }
+def select_public_extension_params(
+    params: dict[str, Any],
+    *,
+    keys: tuple[str, ...],
+) -> dict[str, Any]:
+    return {key: params[key] for key in keys if key in params}
 
 
-def _build_prompt_async_subtask_support() -> dict[str, Any]:
+def build_public_streaming_extension_params(
+    params: dict[str, Any],
+) -> dict[str, Any]:
     return {
-        "support_level": "passthrough-compatible",
-        "invocation_path": "request.parts[]",
-        "part_type": "subtask",
-        "subagent_selector_field": "request.parts[].agent",
-        "execution_model": "upstream-provider-private-subagent-runtime",
-        "notes": [
-            (
-                "opencode-a2a validates and forwards provider-private subtask parts to "
-                "the upstream OpenCode session runtime."
-            ),
-            (
-                "The adapter does not define a separate subagent discovery or "
-                "orchestration JSON-RPC method surface."
-            ),
-            (
-                "Subtask execution semantics, available subagent names, and any task-tool "
-                "fan-out remain upstream OpenCode behavior."
-            ),
-        ],
+        "artifact_metadata_field": params["artifact_metadata_field"],
+        "progress_metadata_field": params["progress_metadata_field"],
+        "interrupt_metadata_field": params["interrupt_metadata_field"],
+        "session_metadata_field": params["session_metadata_field"],
+        "usage_metadata_field": params["usage_metadata_field"],
+        "block_types": params["block_types"],
+        "stream_fields": select_public_extension_params(
+            params["stream_fields"],
+            keys=("block_type", "message_id", "sequence"),
+        ),
+        "progress_fields": select_public_extension_params(
+            params["progress_fields"],
+            keys=("type", "status"),
+        ),
+        "interrupt_fields": select_public_extension_params(
+            params["interrupt_fields"],
+            keys=("request_id", "type", "phase"),
+        ),
+        "session_fields": select_public_extension_params(
+            params["session_fields"],
+            keys=("id", "title"),
+        ),
+        "usage_fields": select_public_extension_params(
+            params["usage_fields"],
+            keys=("input_tokens", "output_tokens", "total_tokens"),
+        ),
     }
 
 

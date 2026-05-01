@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Any
 
 import httpx
 import pytest
@@ -27,11 +26,13 @@ from opencode_a2a.contracts.extensions import (
     build_interrupt_recovery_extension_params,
     build_model_selection_extension_params,
     build_provider_discovery_extension_params,
+    build_public_streaming_extension_params,
     build_session_binding_extension_params,
     build_session_management_extension_params,
     build_streaming_extension_params,
     build_wire_contract_params,
     build_workspace_control_extension_params,
+    select_public_extension_params,
 )
 from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from opencode_a2a.profile.runtime import build_runtime_profile
@@ -43,47 +44,6 @@ from tests.support.helpers import (
 )
 from tests.support.helpers import make_settings
 from tests.support.session_extensions import _extension_headers
-
-
-def _select_public_extension_params(
-    params: dict[str, Any],
-    *,
-    keys: tuple[str, ...],
-) -> dict[str, Any]:
-    return {key: params[key] for key in keys if key in params}
-
-
-def _build_public_streaming_extension_params(
-    params: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        "artifact_metadata_field": params["artifact_metadata_field"],
-        "progress_metadata_field": params["progress_metadata_field"],
-        "interrupt_metadata_field": params["interrupt_metadata_field"],
-        "session_metadata_field": params["session_metadata_field"],
-        "usage_metadata_field": params["usage_metadata_field"],
-        "block_types": params["block_types"],
-        "stream_fields": _select_public_extension_params(
-            params["stream_fields"],
-            keys=("block_type", "message_id", "sequence"),
-        ),
-        "progress_fields": _select_public_extension_params(
-            params["progress_fields"],
-            keys=("type", "status"),
-        ),
-        "interrupt_fields": _select_public_extension_params(
-            params["interrupt_fields"],
-            keys=("request_id", "type", "phase"),
-        ),
-        "session_fields": _select_public_extension_params(
-            params["session_fields"],
-            keys=("id", "title"),
-        ),
-        "usage_fields": _select_public_extension_params(
-            params["usage_fields"],
-            keys=("input_tokens", "output_tokens", "total_tokens"),
-        ),
-    }
 
 
 def test_extension_uris_map_to_repository_spec_documents() -> None:
@@ -211,7 +171,7 @@ def test_openapi_jsonrpc_contract_extension_matches_public_disclosure_policy() -
     }
     settings = make_settings(test_bearer_token="test-token")
     runtime_profile = build_runtime_profile(settings)
-    expected_session_binding = _select_public_extension_params(
+    expected_session_binding = select_public_extension_params(
         build_session_binding_extension_params(runtime_profile=runtime_profile),
         keys=(
             "metadata_field",
@@ -220,7 +180,7 @@ def test_openapi_jsonrpc_contract_extension_matches_public_disclosure_policy() -
             "provider_private_metadata",
         ),
     )
-    expected_model_selection = _select_public_extension_params(
+    expected_model_selection = select_public_extension_params(
         build_model_selection_extension_params(runtime_profile=runtime_profile),
         keys=(
             "metadata_field",
@@ -231,10 +191,8 @@ def test_openapi_jsonrpc_contract_extension_matches_public_disclosure_policy() -
             "fields",
         ),
     )
-    expected_streaming = _build_public_streaming_extension_params(
-        build_streaming_extension_params()
-    )
-    expected_interrupt_callback = _select_public_extension_params(
+    expected_streaming = build_public_streaming_extension_params(build_streaming_extension_params())
+    expected_interrupt_callback = select_public_extension_params(
         build_interrupt_callback_extension_params(runtime_profile=runtime_profile),
         keys=("methods", "supported_interrupt_events", "request_id_field"),
     )

@@ -9,52 +9,13 @@ from ..contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
+    build_public_streaming_extension_params,
     build_session_binding_extension_params,
     build_streaming_extension_params,
+    select_public_extension_params,
 )
 from ..jsonrpc.models import JSONRPCRequest
 from ..profile.runtime import RuntimeProfile
-
-
-def _select_public_extension_params(
-    params: dict[str, Any],
-    *,
-    keys: tuple[str, ...],
-) -> dict[str, Any]:
-    return {key: params[key] for key in keys if key in params}
-
-
-def _build_public_streaming_extension_params(
-    params: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        "artifact_metadata_field": params["artifact_metadata_field"],
-        "progress_metadata_field": params["progress_metadata_field"],
-        "interrupt_metadata_field": params["interrupt_metadata_field"],
-        "session_metadata_field": params["session_metadata_field"],
-        "usage_metadata_field": params["usage_metadata_field"],
-        "block_types": params["block_types"],
-        "stream_fields": _select_public_extension_params(
-            params["stream_fields"],
-            keys=("block_type", "message_id", "sequence"),
-        ),
-        "progress_fields": _select_public_extension_params(
-            params["progress_fields"],
-            keys=("type", "status"),
-        ),
-        "interrupt_fields": _select_public_extension_params(
-            params["interrupt_fields"],
-            keys=("request_id", "type", "phase"),
-        ),
-        "session_fields": _select_public_extension_params(
-            params["session_fields"],
-            keys=("id", "title"),
-        ),
-        "usage_fields": _select_public_extension_params(
-            params["usage_fields"],
-            keys=("input_tokens", "output_tokens", "total_tokens"),
-        ),
-    }
 
 
 def _build_jsonrpc_extension_openapi_description() -> str:
@@ -309,7 +270,7 @@ def _patch_jsonrpc_openapi_contract(
                     post["summary"] = "Handle A2A JSON-RPC Requests"
                     post["description"] = _build_jsonrpc_extension_openapi_description()
                     post["x-a2a-extension-contracts"] = {
-                        "session_binding": _select_public_extension_params(
+                        "session_binding": select_public_extension_params(
                             session_binding,
                             keys=(
                                 "metadata_field",
@@ -318,7 +279,7 @@ def _patch_jsonrpc_openapi_contract(
                                 "provider_private_metadata",
                             ),
                         ),
-                        "model_selection": _select_public_extension_params(
+                        "model_selection": select_public_extension_params(
                             model_selection,
                             keys=(
                                 "metadata_field",
@@ -329,8 +290,8 @@ def _patch_jsonrpc_openapi_contract(
                                 "fields",
                             ),
                         ),
-                        "streaming": _build_public_streaming_extension_params(streaming),
-                        "interrupt_callback": _select_public_extension_params(
+                        "streaming": build_public_streaming_extension_params(streaming),
+                        "interrupt_callback": select_public_extension_params(
                             interrupt_callback,
                             keys=("methods", "supported_interrupt_events", "request_id_field"),
                         ),

@@ -39,9 +39,9 @@ from .identifiers import (
     SHARED_SESSION_BINDING_FIELD,
 )
 from .public_params import (
+    PROMPT_ASYNC_PART_CONTRACT_DOC,
+    PROMPT_ASYNC_SUBTASK_SUPPORT,
     _build_method_contract_params,
-    _build_prompt_async_part_contracts,
-    _build_prompt_async_subtask_support,
 )
 
 
@@ -77,8 +77,8 @@ def build_session_management_extension_params(
             "result": result_contract,
         }
         if method_contract.method == SESSION_METHODS["prompt_async"]:
-            contract_doc["request_parts"] = _build_prompt_async_part_contracts()
-            contract_doc["subtask_support"] = _build_prompt_async_subtask_support()
+            contract_doc["request_parts"] = PROMPT_ASYNC_PART_CONTRACT_DOC
+            contract_doc["subtask_support"] = PROMPT_ASYNC_SUBTASK_SUPPORT
         if method_contract.notification_response_status is not None:
             contract_doc["notification_response_status"] = (
                 method_contract.notification_response_status
