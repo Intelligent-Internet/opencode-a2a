@@ -33,7 +33,6 @@ _ATOMIC_TERMINAL_GUARD_DIALECTS = frozenset({"postgresql", "sqlite"})
 _SQLITE_JOURNAL_MODE = "WAL"
 _SQLITE_BUSY_TIMEOUT_MS = 30_000
 _SQLITE_SYNCHRONOUS_MODE = "NORMAL"
-_LIST_TASKS_BATCH_SIZE = 100
 
 
 class TaskStoreOperationError(RuntimeError):
@@ -378,28 +377,6 @@ def unwrap_task_store(task_store: TaskStore) -> TaskStore:
     if isinstance(inner, TaskStore):
         return unwrap_task_store(inner)
     return task_store
-
-
-async def list_stored_tasks(
-    task_store: TaskStore,
-    context: ServerCallContext | None = None,
-) -> list[Task]:
-    normalized_context = _normalize_task_store_context(context)
-    tasks: list[Task] = []
-    next_page_token = ""
-
-    while True:
-        response = await task_store.list(
-            ListTasksRequest(
-                page_size=_LIST_TASKS_BATCH_SIZE,
-                page_token=next_page_token,
-            ),
-            normalized_context,
-        )
-        tasks.extend(response.tasks)
-        if not response.next_page_token:
-            return tasks
-        next_page_token = response.next_page_token
 
 
 def _normalize_task_store_context(
