@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 from starlette.requests import Request
@@ -84,13 +86,6 @@ async def handle_session_query_request(
         if routing_error is not None:
             return routing_error
 
-    def _session_not_found_response() -> Response:
-        assert session_id is not None
-        return context.error_response(
-            base_request.id,
-            session_not_found_error(ERR_SESSION_NOT_FOUND, session_id=session_id),
-        )
-
     async def _invoke_session_query() -> Any:
         if base_request.method == context.method_list_sessions:
             routing_kwargs: dict[str, Any] = {}
@@ -111,6 +106,15 @@ async def handle_session_query_request(
             **list_messages_kwargs,
         )
 
+    on_not_found: Callable[[], Response] | None = None
+    if base_request.method == context.method_get_session_messages:
+        assert session_id is not None
+        on_not_found = partial(
+            context.error_response,
+            base_request.id,
+            session_not_found_error(ERR_SESSION_NOT_FOUND, session_id=session_id),
+        )
+
     raw_result, upstream_error = await invoke_upstream_or_error(
         context,
         base_request.id,
@@ -118,11 +122,7 @@ async def handle_session_query_request(
         upstream_http_error_code=ERR_UPSTREAM_HTTP_ERROR,
         upstream_unreachable_error_code=ERR_UPSTREAM_UNREACHABLE,
         internal_log_message="OpenCode session query JSON-RPC method failed",
-        on_not_found=(
-            _session_not_found_response
-            if base_request.method == context.method_get_session_messages
-            else None
-        ),
+        on_not_found=on_not_found,
     )
     if upstream_error is not None:
         return upstream_error

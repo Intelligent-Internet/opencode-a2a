@@ -63,10 +63,6 @@ class _ListTasksValidationError(ValueError):
         self.message = message
 
 
-def _validation_error(field: str, message: str) -> _ListTasksValidationError:
-    return _ListTasksValidationError(field=field, message=message)
-
-
 def build_list_tasks_route(
     *,
     task_store: TaskStore,
@@ -249,9 +245,9 @@ def _parse_int(raw_value: str, *, field: str) -> int:
     parsed = parse_shared_int_field(
         raw_value,
         field=field,
-        error_factory=lambda error_field, _message: _validation_error(
-            error_field,
-            f"{error_field} must be an integer.",
+        error_factory=lambda error_field, _message: _ListTasksValidationError(
+            field=error_field,
+            message=f"{error_field} must be an integer.",
         ),
     )
     assert parsed is not None
@@ -262,9 +258,9 @@ def _parse_bool(raw_value: str | None, *, field: str, default: bool) -> bool:
     parsed = parse_shared_bool_field(
         raw_value,
         field=field,
-        error_factory=lambda error_field, _message: _validation_error(
-            error_field,
-            f"{error_field} must be a boolean.",
+        error_factory=lambda error_field, _message: _ListTasksValidationError(
+            field=error_field,
+            message=f"{error_field} must be a boolean.",
         ),
         true_values=("true", "1"),
         false_values=("false", "0"),
@@ -276,7 +272,10 @@ def _parse_timestamp(raw_value: str, *, field: str) -> datetime:
     return parse_shared_timestamp_field(
         raw_value,
         field=field,
-        error_factory=_validation_error,
+        error_factory=lambda error_field, message: _ListTasksValidationError(
+            field=error_field,
+            message=message,
+        ),
     )
 
 

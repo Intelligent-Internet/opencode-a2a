@@ -468,14 +468,6 @@ async def handle_session_lifecycle_request(
                     identity=identity, session_id=forked_session_id
                 )
     except Exception as exc:
-
-        def _session_not_found_response() -> Response:
-            assert session_id is not None
-            return context.error_response(
-                base_request.id,
-                session_not_found_error(ERR_SESSION_NOT_FOUND, session_id=session_id),
-            )
-
         return build_upstream_exception_response(
             context,
             base_request.id,
@@ -486,7 +478,14 @@ async def handle_session_lifecycle_request(
             internal_log_message="OpenCode session lifecycle JSON-RPC method failed",
             method=method,
             session_id=session_id,
-            on_not_found=_session_not_found_response if session_id is not None else None,
+            on_not_found=(
+                lambda: context.error_response(
+                    base_request.id,
+                    session_not_found_error(ERR_SESSION_NOT_FOUND, session_id=session_id),
+                )
+            )
+            if session_id is not None
+            else None,
             on_permission_error=(
                 lambda: build_session_forbidden_response(
                     context,
