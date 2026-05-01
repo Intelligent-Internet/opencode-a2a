@@ -17,7 +17,6 @@ from .catalog import (
     SESSION_METHODS,
     SESSION_MUTATION_METHODS,
     SESSION_READ_METHODS,
-    WORKSPACE_CONTROL_METHODS,
     WORKSPACE_DISCOVERY_METHODS,
     WORKSPACE_MUTATION_METHODS,
 )
@@ -25,6 +24,7 @@ from .identifiers import (
     SESSION_MANAGEMENT_EXTENSION_URI,
     WORKSPACE_CONTROL_EXTENSION_URI,
 )
+
 
 @dataclass(frozen=True)
 class DeploymentConditionalMethod:

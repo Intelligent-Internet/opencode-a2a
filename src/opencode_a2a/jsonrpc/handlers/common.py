@@ -72,6 +72,8 @@ class SessionClaimGuard:
                     self._session_id,
                 )
         return False
+
+
 def build_success_response(
     context: ExtensionHandlerContext,
     request_id: str | int | None,

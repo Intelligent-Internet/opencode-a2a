@@ -14,6 +14,7 @@ from .identifiers import (
     OPENCODE_WORKSPACE_METADATA_FIELD,
 )
 
+
 @dataclass(frozen=True)
 class SessionQueryMethodContract:
     method: str
@@ -661,4 +662,3 @@ WORKSPACE_CONTROL_INVALID_PARAMS_DATA_FIELDS: tuple[str, ...] = (
     "field",
     "fields",
 )
-

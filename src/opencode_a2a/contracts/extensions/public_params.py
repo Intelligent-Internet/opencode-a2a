@@ -4,8 +4,8 @@ from typing import Any
 
 from ...profile.runtime import RuntimeProfile
 from .catalog import (
-    INTERRUPT_CALLBACK_METHODS,
     INTERRUPT_CALLBACK_METHOD_CONTRACTS,
+    INTERRUPT_CALLBACK_METHODS,
     INTERRUPT_ERROR_BUSINESS_CODES,
     INTERRUPT_ERROR_DATA_FIELDS,
     INTERRUPT_ERROR_TYPES,
@@ -25,6 +25,7 @@ from .identifiers import (
     SHARED_STREAM_METADATA_FIELD,
     SHARED_USAGE_METADATA_FIELD,
 )
+
 
 def _build_method_contract_params(
     *,

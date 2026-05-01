@@ -30,6 +30,8 @@ def _validation_error(field: str, message: str) -> JsonRpcParamsValidationError:
         message=message,
         data={"type": "INVALID_FIELD", "field": field},
     )
+
+
 _parse_required_positive_int = partial(
     parse_shared_int_field,
     error_factory=_validation_error,

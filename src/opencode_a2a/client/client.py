@@ -218,12 +218,9 @@ class A2AClient:
                 self._settings.basic_auth,
             )
             try:
-                return cast(
-                    Task,
-                    await client.get_task(
-                        GetTaskRequest(id=task_id, history_length=history_length),
-                        context=call_context,
-                    ),
+                return await client.get_task(
+                    GetTaskRequest(id=task_id, history_length=history_length),
+                    context=call_context,
                 )
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
                 raise map_operation_error("GetTask", exc) from exc
@@ -250,12 +247,9 @@ class A2AClient:
                 self._settings.basic_auth,
             )
             try:
-                return cast(
-                    Task,
-                    await client.cancel_task(
-                        CancelTaskRequest(id=task_id, metadata=request_metadata or {}),
-                        context=call_context,
-                    ),
+                return await client.cancel_task(
+                    CancelTaskRequest(id=task_id, metadata=request_metadata or {}),
+                    context=call_context,
                 )
             except (A2AError, SDKClientError, httpx.TimeoutException, httpx.TransportError) as exc:
                 raise map_operation_error("CancelTask", exc) from exc

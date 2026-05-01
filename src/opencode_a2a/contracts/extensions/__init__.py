@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# ruff: noqa: F401
 from .capabilities import JsonRpcCapabilitySnapshot, build_capability_snapshot
 from .catalog import (
     COMMAND_REQUEST_ALLOWED_FIELDS,

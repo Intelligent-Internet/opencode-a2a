@@ -307,7 +307,9 @@ async def test_session_command_extension_maps_404_to_session_not_found(monkeypat
     import opencode_a2a.server.application as app_module
 
     class NotFoundCommandClient(DummyOpencodeUpstreamClient):
-        async def session_command(self, session_id: str, request: dict, *, directory=None, workspace_id=None):
+        async def session_command(
+            self, session_id: str, request: dict, *, directory=None, workspace_id=None
+        ):
             del session_id, request, directory, workspace_id
             req = httpx.Request("POST", "http://opencode/session/s-404/command")
             resp = httpx.Response(404, request=req)
@@ -699,7 +701,9 @@ async def test_session_command_extension_maps_500_to_upstream_http_error(monkeyp
     import opencode_a2a.server.application as app_module
 
     class UpstreamErrorCommandClient(DummyOpencodeUpstreamClient):
-        async def session_command(self, session_id: str, request: dict, *, directory=None, workspace_id=None):
+        async def session_command(
+            self, session_id: str, request: dict, *, directory=None, workspace_id=None
+        ):
             del session_id, request, directory, workspace_id
             req = httpx.Request("POST", "http://opencode/session/s-1/command")
             resp = httpx.Response(500, request=req)
@@ -740,7 +744,9 @@ async def test_session_shell_extension_maps_network_error_to_unreachable(monkeyp
     import opencode_a2a.server.application as app_module
 
     class NetworkErrorShellClient(DummyOpencodeUpstreamClient):
-        async def session_shell(self, session_id: str, request: dict, *, directory=None, workspace_id=None):
+        async def session_shell(
+            self, session_id: str, request: dict, *, directory=None, workspace_id=None
+        ):
             del session_id, request, directory, workspace_id
             req = httpx.Request("POST", "http://opencode/session/s-1/shell")
             raise httpx.ConnectError("network down", request=req)
