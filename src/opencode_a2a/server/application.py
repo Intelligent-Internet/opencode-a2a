@@ -93,6 +93,7 @@ from .agent_card import (
 )
 from .client_manager import A2AClientManager
 from .context_helpers import AuthenticatedIdentityUser
+from .database import build_database_engine
 from .lifespan import build_lifespan
 from .middleware import (
     build_agent_card_etag,
@@ -107,13 +108,11 @@ from .request_parsing import (
 )
 from .rest_tasks import build_list_tasks_route
 from .state_store import (
-    build_interrupt_request_repository,
-    build_session_state_repository,
+    build_runtime_state_runtime,
 )
 from .task_store import (
     TaskStoreOperationError,
-    build_database_engine,
-    build_task_store,
+    build_task_store_runtime,
     describe_lightweight_persistence_backend,
 )
 
@@ -784,14 +783,13 @@ def create_app(settings: Settings) -> FastAPI:
     database_engine = (
         build_database_engine(settings) if settings.a2a_task_store_backend == "database" else None
     )
-    session_state_repository = build_session_state_repository(settings, engine=database_engine)
-    interrupt_request_repository = build_interrupt_request_repository(
+    runtime_state_runtime = build_runtime_state_runtime(
         settings,
         engine=database_engine,
     )
     upstream_client = OpencodeUpstreamClient(
         settings,
-        interrupt_request_repository=interrupt_request_repository,
+        interrupt_request_repository=runtime_state_runtime.interrupt_request_repository,
     )
     client_manager = A2AClientManager(settings)
     agent_card = build_agent_card(settings)
@@ -802,12 +800,13 @@ def create_app(settings: Settings) -> FastAPI:
         cancel_abort_timeout_seconds=settings.a2a_cancel_abort_timeout_seconds,
         pending_session_claim_ttl_seconds=settings.a2a_pending_session_claim_ttl_seconds,
         a2a_client_manager=client_manager,
-        session_state_repository=session_state_repository,
+        session_state_repository=runtime_state_runtime.session_state_repository,
     )
-    task_store = build_task_store(
+    task_store_runtime = build_task_store_runtime(
         settings,
         engine=database_engine,
     )
+    task_store = task_store_runtime.task_store
     handler = OpencodeRequestHandler(
         agent_executor=executor,
         task_store=task_store,
@@ -859,9 +858,8 @@ def create_app(settings: Settings) -> FastAPI:
     persistence_summary = describe_lightweight_persistence_backend(settings)
     lifespan = build_lifespan(
         database_engine=database_engine,
-        task_store=task_store,
-        session_state_repository=session_state_repository,
-        interrupt_request_repository=interrupt_request_repository,
+        task_store_runtime=task_store_runtime,
+        runtime_state_runtime=runtime_state_runtime,
         client_manager=client_manager,
         upstream_client=upstream_client,
         persistence_summary=persistence_summary,

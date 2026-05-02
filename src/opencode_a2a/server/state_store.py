@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import (
@@ -25,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ..config import Settings
 from ..execution.stream_state import _TTLCache
 from ..runtime_state import InterruptRequestBinding, InterruptRequestTombstone
+from .database import build_database_engine
 from .migrations import migrate_state_store_schema
 
 if TYPE_CHECKING:
@@ -767,6 +769,54 @@ def build_interrupt_request_repository(
     return MemoryInterruptRequestRepository(
         request_ttl_seconds=settings.a2a_interrupt_request_ttl_seconds,
         tombstone_ttl_seconds=settings.a2a_interrupt_request_tombstone_ttl_seconds,
+    )
+
+
+@dataclass(slots=True)
+class RuntimeStateRuntime:
+    session_state_repository: SessionStateRepository
+    interrupt_request_repository: InterruptRequestRepository
+    startup: Callable[[], Awaitable[None]]
+    shutdown: Callable[[], Awaitable[None]]
+
+
+async def _noop() -> None:
+    return None
+
+
+def build_runtime_state_runtime(
+    settings: Settings,
+    *,
+    engine: AsyncEngine | None = None,
+) -> RuntimeStateRuntime:
+    if settings.a2a_task_store_backend != "database":
+        return RuntimeStateRuntime(
+            session_state_repository=build_session_state_repository(settings),
+            interrupt_request_repository=build_interrupt_request_repository(settings),
+            startup=_noop,
+            shutdown=_noop,
+        )
+
+    resolved_engine = engine or build_database_engine(settings)
+    session_state_repository = build_session_state_repository(settings, engine=resolved_engine)
+    interrupt_request_repository = build_interrupt_request_repository(
+        settings,
+        engine=resolved_engine,
+    )
+
+    async def _startup() -> None:
+        await initialize_state_repository(session_state_repository)
+        await initialize_state_repository(interrupt_request_repository)
+
+    async def _shutdown() -> None:
+        if engine is None:
+            await resolved_engine.dispose()
+
+    return RuntimeStateRuntime(
+        session_state_repository=session_state_repository,
+        interrupt_request_repository=interrupt_request_repository,
+        startup=_startup,
+        shutdown=_shutdown,
     )
 
 

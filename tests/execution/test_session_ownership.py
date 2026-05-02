@@ -10,12 +10,12 @@ from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.execution.session_manager import SessionManager
 from opencode_a2a.execution.stream_state import _TTLCache
 from opencode_a2a.opencode_upstream_client import OpencodeUpstreamClient
+from opencode_a2a.server.database import build_database_engine
 from opencode_a2a.server.state_store import (
     DatabaseSessionStateRepository,
     MemorySessionStateRepository,
     initialize_state_repository,
 )
-from opencode_a2a.server.task_store import build_database_engine
 from tests.support.helpers import (
     configure_mock_client_runtime,
     make_request_context_mock,

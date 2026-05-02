@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import inspect, text
@@ -9,16 +10,17 @@ from sqlalchemy.exc import IntegrityError
 
 import opencode_a2a.server.migrations as migrations_module
 import opencode_a2a.server.state_store as state_store_module
+from opencode_a2a.server.database import build_database_engine
 from opencode_a2a.server.migrations import CURRENT_STATE_STORE_SCHEMA_VERSION
 from opencode_a2a.server.state_store import (
     _INTERRUPT_REQUESTS,
     DatabaseSessionStateRepository,
     MemorySessionStateRepository,
     build_interrupt_request_repository,
+    build_runtime_state_runtime,
     build_session_state_repository,
     initialize_state_repository,
 )
-from opencode_a2a.server.task_store import build_database_engine
 from tests.support.helpers import make_settings
 
 
@@ -679,3 +681,24 @@ async def test_database_state_store_initialization_is_idempotent_across_reposito
     assert await _read_state_store_schema_row_count(engine) == 1
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_build_runtime_state_runtime_initializes_and_preserves_shared_engine(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'runtime-state.db'}",
+    )
+    engine = build_database_engine(settings)
+    dispose_spy = AsyncMock()
+    monkeypatch.setattr(type(engine), "dispose", dispose_spy)
+
+    runtime = build_runtime_state_runtime(settings, engine=engine)
+    await runtime.startup()
+    await runtime.shutdown()
+
+    assert await _read_state_store_schema_version(engine) == CURRENT_STATE_STORE_SCHEMA_VERSION
+    dispose_spy.assert_not_awaited()
