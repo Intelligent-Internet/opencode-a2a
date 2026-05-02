@@ -801,18 +801,11 @@ async def test_streaming_emits_progress_metadata_for_step_events() -> None:
     assert len(progress_statuses) == 2
 
     first = _progress_meta(progress_statuses[0])
-    assert first["type"] == "step-start"
-    assert first["part_id"] == "prt-step-start-1"
-    assert first["reason"] == "run"
-    assert first["status"] == "running"
-    assert first["title"] == "Planning"
-    assert first["subtitle"] == "Inspecting repository"
+    assert first == {"type": "step-start", "status": "running"}
     assert "source" not in _status_shared_meta(progress_statuses[0])["stream"]
 
     second = _progress_meta(progress_statuses[1])
-    assert second["type"] == "step-finish"
-    assert second["part_id"] == "prt-step-finish-1"
-    assert second["reason"] == "stop"
+    assert second == {"type": "step-finish"}
 
 
 @pytest.mark.asyncio
@@ -855,7 +848,7 @@ async def test_streaming_emits_progress_metadata_for_snapshot_without_text_artif
     ]
     assert len(progress_statuses) == 1
     progress = _progress_meta(progress_statuses[0])
-    assert progress == {"type": "snapshot", "part_id": "prt-snapshot-1"}
+    assert progress == {"type": "snapshot"}
     text_updates = [
         event
         for event in _artifact_updates(queue)

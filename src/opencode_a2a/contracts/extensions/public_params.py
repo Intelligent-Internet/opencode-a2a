@@ -122,7 +122,6 @@ def build_session_binding_extension_params(
         ],
         "session_fields": {
             "id": f"{identifiers.SHARED_SESSION_METADATA_FIELD}.id",
-            "title": f"{identifiers.SHARED_SESSION_METADATA_FIELD}.title",
         },
         "provider_private_metadata": ["opencode.directory", "opencode.workspace.id"],
         "profile": runtime_profile.summary_dict(),
@@ -216,11 +215,7 @@ def build_streaming_extension_params() -> dict[str, Any]:
         },
         "progress_fields": {
             "type": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.type",
-            "part_id": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.part_id",
-            "reason": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.reason",
             "status": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.status",
-            "title": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.title",
-            "subtitle": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.subtitle",
         },
         "usage_fields": {
             "input_tokens": f"{identifiers.SHARED_USAGE_METADATA_FIELD}.input_tokens",

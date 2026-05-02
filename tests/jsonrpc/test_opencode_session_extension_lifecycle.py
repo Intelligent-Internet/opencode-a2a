@@ -84,7 +84,7 @@ async def test_session_lifecycle_status_get_and_children_success(monkeypatch):
     assert get_response.status_code == 200
     get_item = get_response.json()["result"]["item"]
     assert get_item["id"] == "s-1"
-    assert _session_meta(get_item)["title"] == "Session s-1"
+    assert _session_meta(get_item) == {"id": "s-1"}
 
     assert children_response.status_code == 200
     children_items = children_response.json()["result"]["items"]

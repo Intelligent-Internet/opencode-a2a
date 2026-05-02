@@ -99,7 +99,7 @@ def _task_with_extension_metadata(*, task_id: str, context_id: str) -> Task:
     metadata = build_output_negotiation_metadata(["text/plain"])
     assert metadata is not None
     metadata["shared"] = {
-        "session": {"id": "ses-1", "title": "Alpha"},
+        "session": {"id": "ses-1"},
         "interrupt": {"request_id": "irq-1", "type": "permission", "phase": "asked"},
         "model": {"providerID": "openai", "modelID": "gpt-5"},
         "usage": {"input_tokens": 12},

@@ -58,7 +58,6 @@ Extension URI:
 - Disclosure: public Agent Card and authenticated extended Agent Card
 - Activation: client requests the URI via `A2A-Extensions` and sends `metadata.shared.session.id`
 - Runtime fields: `metadata.shared.session.id`, `metadata.shared.session`, optional provider-private companions `metadata.opencode.directory` and `metadata.opencode.workspace.id`
-- Detailed-only display field: `metadata.shared.session.title` may be emitted when known, but it is not part of the minimum public consumer contract
 - Dependencies: none declared by this version
 - Security boundary: shared session identity is portable; provider-private routing metadata remains deployment-scoped
 - Versioning: breaking changes require a new versioned URI

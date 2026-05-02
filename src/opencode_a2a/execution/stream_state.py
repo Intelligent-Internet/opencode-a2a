@@ -263,7 +263,6 @@ def _build_stream_artifact_metadata(
 def _build_output_metadata(
     *,
     session_id: str | None = None,
-    session_title: str | None = None,
     usage: Mapping[str, Any] | None = None,
     stream: Mapping[str, Any] | None = None,
     progress: Mapping[str, Any] | None = None,
@@ -276,10 +275,7 @@ def _build_output_metadata(
     shared_meta: dict[str, Any] = {}
 
     if include_session_metadata and session_id:
-        session_meta: dict[str, Any] = {"id": session_id}
-        if session_title is not None:
-            session_meta["title"] = session_title
-        shared_meta["session"] = session_meta
+        shared_meta["session"] = {"id": session_id}
     if include_streaming_metadata and usage is not None:
         shared_meta["usage"] = dict(usage)
     if include_streaming_metadata and stream is not None:

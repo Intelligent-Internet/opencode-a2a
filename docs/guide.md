@@ -478,7 +478,6 @@ Consumer guidance:
 - Use this extension declaration to decide whether the server explicitly supports shared session rebinding.
 - On the request path, write the upstream session identity to `metadata.shared.session.id`.
 - On the response/query path, treat `metadata.shared.session` as runtime metadata negotiated by the same extension.
-- Treat `metadata.shared.session.title` as a display hint only; do not build client logic on it.
 
 Minimal example:
 
@@ -618,7 +617,7 @@ Detailed contract discovery for this provider-private surface is intentionally a
   - `opencode.sessions.messages.list` also returns `result.next_cursor` when older messages are available
   - `contextId` is an A2A context key derived by the adapter (format: `ctx:opencode-session:<session_id>`, not raw OpenCode session ID)
   - OpenCode session identity is exposed explicitly at `metadata.shared.session.id`
-  - session title is available at `metadata.shared.session.title`
+  - session titles remain provider-private summary fields such as `result.item.title` / `result.items[].title`; they are not duplicated under `metadata.shared.session`
 - Session list filters:
   - optional `directory`, `roots`, `start`, `search`, `limit`
   - optional `metadata.opencode.workspace.id`

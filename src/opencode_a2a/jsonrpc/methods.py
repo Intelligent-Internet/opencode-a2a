@@ -337,12 +337,11 @@ def _as_a2a_session_task(session: Any) -> dict[str, Any] | None:
     if session_id is None:
         return None
     context_id = _as_a2a_session_context_id(session_id)
-    title = _extract_session_title(session)
     task = Task(
         id=session_id,
         context_id=context_id,
         status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
-        metadata={"shared": {"session": {"id": session_id, "title": title}}},
+        metadata={"shared": {"session": {"id": session_id}}},
     )
     return cast(dict[str, Any], MessageToDict(task))
 
