@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 class PreparedExecution:
     identity: str
     streaming_request: bool
+    return_immediately: bool
     request_parts: list[Any]
     user_text: str
     session_title: str
@@ -115,13 +116,8 @@ class ExecutionCoordinator:
 
         try:
             await self._bind_session()
-            await self._event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    task_id=self._task_id,
-                    context_id=self._context_id,
-                    status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-                )
-            )
+            if self._prepared.streaming_request or self._prepared.return_immediately:
+                await self._event_queue.enqueue_event(self._build_initial_task_snapshot())
 
             turn_request_parts = list(self._prepared.request_parts)
             user_text = self._prepared.user_text
@@ -480,6 +476,21 @@ class ExecutionCoordinator:
         )
         task.status.message.CopyFrom(assistant_message)
         await self._event_queue.enqueue_event(task)
+
+    def _build_initial_task_snapshot(self) -> Task:
+        current_task = self._context.current_task
+        if current_task is not None:
+            task = Task()
+            task.CopyFrom(current_task)
+        else:
+            task = Task(id=self._task_id, context_id=self._context_id)
+            if self._context.message:
+                task.history.append(self._context.message)
+
+        task.id = self._task_id
+        task.context_id = self._context_id
+        task.status.CopyFrom(TaskStatus(state=TaskState.TASK_STATE_WORKING))
+        return task
 
     async def _cleanup(self) -> None:
         if self._pending_preferred_claim and self._session_id:

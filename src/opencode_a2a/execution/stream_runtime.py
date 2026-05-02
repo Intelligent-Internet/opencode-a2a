@@ -435,9 +435,12 @@ class StreamRuntime:
                                         sort_keys=True,
                                         separators=(",", ":"),
                                     )
-                                    if stream_state.register_progress(
-                                        identity=progress_identity,
-                                        content_key=progress_key,
+                                    if (
+                                        stream_state.register_progress(
+                                            identity=progress_identity,
+                                            content_key=progress_key,
+                                        )
+                                        and emit_streaming_metadata
                                     ):
                                         sequence = stream_state.next_sequence()
                                         await event_queue.enqueue_event(

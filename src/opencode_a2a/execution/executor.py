@@ -120,8 +120,13 @@ class OpencodeAgentExecutor(AgentExecutor):
         trace_id = call_context.state.get("trace_id") if call_context else None
 
         streaming_request = self._should_stream(context)
+        configuration = context.configuration
+        return_immediately = (
+            configuration is not None
+            and getattr(configuration, "return_immediately", False) is True
+        )
         requested_extensions = requested_extensions_from_call_context(context.call_context)
-        accepted_output_modes = normalize_accepted_output_modes(context.configuration)
+        accepted_output_modes = normalize_accepted_output_modes(configuration)
         message_parts = (
             getattr(context.message, "parts", None) if context.message is not None else None
         )
@@ -283,6 +288,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         prepared = PreparedExecution(
             identity=identity,
             streaming_request=streaming_request,
+            return_immediately=return_immediately,
             request_parts=request_parts,
             user_text=user_text,
             session_title=session_title or user_text,
