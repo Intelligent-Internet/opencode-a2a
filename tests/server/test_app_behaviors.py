@@ -8,8 +8,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from a2a.server.events import EventConsumer
+from a2a.server.context import ServerCallContext
+from a2a.server.events import EventConsumer, EventQueueLegacy
 from a2a.server.routes.rest_dispatcher import RestDispatcher
+from a2a.server.tasks import TaskManager
+from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
@@ -17,9 +20,12 @@ from a2a.types import (
     GetTaskRequest,
     InternalError,
     Message,
+    Part,
+    Role,
     SendMessageRequest,
     SubscribeToTaskRequest,
     Task,
+    TaskArtifactUpdateEvent,
     TaskNotCancelableError,
     TaskNotFoundError,
     TaskState,
@@ -37,6 +43,7 @@ from opencode_a2a.contracts.extensions import (
     SESSION_METHODS,
     build_capability_snapshot,
 )
+from opencode_a2a.output_modes import NegotiatingResultAggregator
 from opencode_a2a.profile.runtime import build_runtime_profile
 from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
 from opencode_a2a.server.agent_card import (
@@ -985,6 +992,104 @@ async def test_on_message_send_stream_emits_stable_failure_events_for_task_store
             }
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_on_message_send_stream_keeps_running_after_client_disconnect() -> None:
+    class _Handler(OpencodeRequestHandler):
+        def __init__(self) -> None:
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=InMemoryTaskStore(owner_resolver=lambda _context: "test-owner"),
+                agent_card=_agent_card(),
+            )
+            self.stream_queue: EventQueueLegacy | None = None
+            self.tracked_tasks: list[asyncio.Task] = []
+
+        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
+            task_id = "task-disconnect"
+            context_id = "ctx-disconnect"
+            task_manager = TaskManager(
+                task_store=self.task_store,
+                context=context or ServerCallContext(),
+                task_id=task_id,
+                context_id=context_id,
+                initial_message=params.message,
+            )
+            queue = EventQueueLegacy()
+            self.stream_queue = queue
+            result_aggregator = NegotiatingResultAggregator(task_manager, None)
+
+            async def _produce() -> None:
+                await queue.enqueue_event(
+                    Task(
+                        id=task_id,
+                        context_id=context_id,
+                        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+                    )
+                )
+                await asyncio.sleep(0)
+                await queue.enqueue_event(
+                    TaskArtifactUpdateEvent(
+                        task_id=task_id,
+                        context_id=context_id,
+                        artifact=app_module.Artifact(
+                            artifact_id=f"{task_id}:stream:text",
+                            parts=[Part(text="final answer")],
+                            metadata={"shared": {"stream": {"block_type": "text"}}},
+                        ),
+                        append=False,
+                        last_chunk=True,
+                    )
+                )
+                await queue.enqueue_event(
+                    app_module.TaskStatusUpdateEvent(
+                        task_id=task_id,
+                        context_id=context_id,
+                        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+                    )
+                )
+
+            producer_task = asyncio.create_task(_produce())
+            return task_manager, task_id, queue, result_aggregator, producer_task
+
+        async def _cleanup_producer(self, producer_task, task_id):  # noqa: ANN001
+            del task_id
+            await producer_task
+            if self.stream_queue is not None:
+                await self.stream_queue.close()
+
+        async def _send_push_notification_if_needed(self, task_id, result_aggregator):  # noqa: ANN001
+            del task_id, result_aggregator
+
+        def _track_background_task(self, task):  # noqa: ANN001
+            self.tracked_tasks.append(task)
+            super()._track_background_task(task)
+
+    handler = _Handler()
+    params = SendMessageRequest(
+        message=Message(
+            message_id="msg-user-1",
+            role=Role.ROLE_USER,
+            parts=[Part(text="hello")],
+        )
+    )
+
+    stream = handler.on_message_send_stream(params, ServerCallContext())
+    first_event = await anext(stream)
+    assert isinstance(first_event, Task)
+    assert first_event.status.state == TaskState.TASK_STATE_WORKING
+
+    await stream.aclose()
+    await asyncio.sleep(0)
+    await asyncio.gather(*handler.tracked_tasks, return_exceptions=True)
+
+    result = await handler.on_get_task(GetTaskRequest(id="task-disconnect"))
+    assert result is not None
+    assert result.status.state == TaskState.TASK_STATE_COMPLETED
+    assert result.artifacts is not None
+    assert len(result.artifacts) == 1
+    assert result.artifacts[0].parts[0].text == "final answer"
 
 
 @pytest.mark.asyncio
