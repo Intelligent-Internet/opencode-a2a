@@ -1093,6 +1093,104 @@ async def test_on_message_send_stream_keeps_running_after_client_disconnect() ->
 
 
 @pytest.mark.asyncio
+async def test_on_message_send_stream_drains_buffered_events_after_disconnect() -> None:
+    class _Handler(OpencodeRequestHandler):
+        def __init__(self) -> None:
+            super().__init__(
+                agent_executor=MagicMock(),
+                task_store=InMemoryTaskStore(owner_resolver=lambda _context: "test-owner"),
+                agent_card=_agent_card(),
+            )
+            self.stream_queue: EventQueueLegacy | None = None
+            self.tracked_tasks: list[asyncio.Task] = []
+
+        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
+            task_id = "task-buffered-disconnect"
+            context_id = "ctx-buffered-disconnect"
+            task_manager = TaskManager(
+                task_store=self.task_store,
+                context=context or ServerCallContext(),
+                task_id=task_id,
+                context_id=context_id,
+                initial_message=params.message,
+            )
+            queue = EventQueueLegacy()
+            self.stream_queue = queue
+            result_aggregator = NegotiatingResultAggregator(task_manager, None)
+
+            async def _produce() -> None:
+                await queue.enqueue_event(
+                    Task(
+                        id=task_id,
+                        context_id=context_id,
+                        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+                    )
+                )
+                await queue.enqueue_event(
+                    TaskArtifactUpdateEvent(
+                        task_id=task_id,
+                        context_id=context_id,
+                        artifact=app_module.Artifact(
+                            artifact_id=f"{task_id}:stream:text",
+                            parts=[Part(text="buffered final answer")],
+                            metadata={"shared": {"stream": {"block_type": "text"}}},
+                        ),
+                        append=False,
+                        last_chunk=True,
+                    )
+                )
+                await queue.enqueue_event(
+                    app_module.TaskStatusUpdateEvent(
+                        task_id=task_id,
+                        context_id=context_id,
+                        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+                    )
+                )
+
+            producer_task = asyncio.create_task(_produce())
+            await producer_task
+            return task_manager, task_id, queue, result_aggregator, producer_task
+
+        async def _cleanup_producer(self, producer_task, task_id):  # noqa: ANN001
+            del task_id
+            await producer_task
+            if self.stream_queue is not None:
+                await self.stream_queue.close()
+
+        async def _send_push_notification_if_needed(self, task_id, result_aggregator):  # noqa: ANN001
+            del task_id, result_aggregator
+
+        def _track_background_task(self, task):  # noqa: ANN001
+            self.tracked_tasks.append(task)
+            super()._track_background_task(task)
+
+    handler = _Handler()
+    params = SendMessageRequest(
+        message=Message(
+            message_id="msg-user-2",
+            role=Role.ROLE_USER,
+            parts=[Part(text="hello again")],
+        )
+    )
+
+    stream = handler.on_message_send_stream(params, ServerCallContext())
+    first_event = await anext(stream)
+    assert isinstance(first_event, Task)
+    assert first_event.status.state == TaskState.TASK_STATE_WORKING
+
+    await stream.aclose()
+    await asyncio.sleep(0)
+    await asyncio.gather(*handler.tracked_tasks, return_exceptions=True)
+
+    result = await handler.on_get_task(GetTaskRequest(id="task-buffered-disconnect"))
+    assert result is not None
+    assert result.status.state == TaskState.TASK_STATE_COMPLETED
+    assert result.artifacts is not None
+    assert len(result.artifacts) == 1
+    assert result.artifacts[0].parts[0].text == "buffered final answer"
+
+
+@pytest.mark.asyncio
 async def test_on_message_send_covers_error_cleanup_and_internal_error(monkeypatch, caplog) -> None:
     class _Aggregator:
         def __init__(self, *, result=None, error: Exception | None = None) -> None:

@@ -671,17 +671,16 @@ class OpencodeRequestHandler(LegacyRequestHandler):
                 "Client disconnected from streaming task %s; continuing task in background",
                 task_id,
             )
-            if not producer_task.done():
-                detached_task = asyncio.create_task(
-                    self._continue_stream_after_disconnect(
-                        task_id=task_id,
-                        result_aggregator=result_aggregator,
-                        queue=queue,
-                    )
+            detached_task = asyncio.create_task(
+                self._continue_stream_after_disconnect(
+                    task_id=task_id,
+                    result_aggregator=result_aggregator,
+                    queue=queue,
                 )
-                detached_task.set_name(f"continue_stream_after_disconnect:{task_id}")
-                self._track_background_task(detached_task)
-                stream_detached = True
+            )
+            detached_task.set_name(f"continue_stream_after_disconnect:{task_id}")
+            self._track_background_task(detached_task)
+            stream_detached = True
             raise
         finally:
             emit_stream_request_metrics(active_delta=-1.0)
