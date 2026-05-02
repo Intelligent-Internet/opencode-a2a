@@ -1780,17 +1780,25 @@ def test_create_app_requires_control_guard_hooks(monkeypatch) -> None:
 
 def test_create_app_builds_configured_task_store(monkeypatch) -> None:
     import opencode_a2a.server.application as app_module
+    from opencode_a2a.server.task_store import TaskStoreRuntime
 
     captured: dict[str, object] = {}
 
-    def _build_task_store(settings, *, engine=None):  # noqa: ANN001
+    async def _noop() -> None:
+        return None
+
+    def _build_task_store_runtime(settings, *, engine=None):  # noqa: ANN001
         del engine
         captured["backend"] = settings.a2a_task_store_backend
         captured["database_url"] = settings.a2a_task_store_database_url
-        return MagicMock()
+        return TaskStoreRuntime(
+            task_store=MagicMock(),
+            startup=_noop,
+            shutdown=_noop,
+        )
 
     monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
-    monkeypatch.setattr(app_module, "build_task_store", _build_task_store)
+    monkeypatch.setattr(app_module, "build_task_store_runtime", _build_task_store_runtime)
 
     app_module.create_app(
         make_settings(

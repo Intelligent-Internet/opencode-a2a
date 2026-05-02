@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from a2a.server.context import ServerCallContext
@@ -13,7 +13,7 @@ from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.server.tasks.task_store import TaskStore
 from a2a.types import ListTasksRequest, ListTasksResponse, Task, TaskState
 from google.protobuf.json_format import MessageToDict
-from sqlalchemy import event, inspect, or_, select
+from sqlalchemy import inspect, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import make_url
@@ -22,6 +22,7 @@ from ..a2a_utils import proto_equals
 from ..config import Settings
 from ..task_states import TERMINAL_TASK_STATES
 from .context_helpers import normalize_server_call_context
+from .database import build_database_engine
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -30,9 +31,6 @@ logger = logging.getLogger(__name__)
 
 _TERMINAL_TASK_STATE_VALUES = tuple(TaskState.Name(int(state)) for state in TERMINAL_TASK_STATES)
 _ATOMIC_TERMINAL_GUARD_DIALECTS = frozenset({"postgresql", "sqlite"})
-_SQLITE_JOURNAL_MODE = "WAL"
-_SQLITE_BUSY_TIMEOUT_MS = 30_000
-_SQLITE_SYNCHRONOUS_MODE = "NORMAL"
 _SDK_TASKS_TABLE_NAME = "tasks"
 _SDK_TASKS_REQUIRED_COLUMNS = frozenset({"owner", "last_updated", "protocol_version"})
 _SDK_TASKS_REQUIRED_INDEXES = frozenset({"idx_tasks_owner_last_updated"})
@@ -268,7 +266,7 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
         task: Task,
         context: ServerCallContext,
     ) -> bool:
-        await task_store._ensure_initialized()
+        await task_store.initialize()
         statement = _build_atomic_task_save_statement(
             task=task,
             owner=task_store.owner_resolver(context),
@@ -284,7 +282,7 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
         task_store: DatabaseTaskStore,
         task_id: str,
     ) -> Task | None:
-        await task_store._ensure_initialized()
+        await task_store.initialize()
         async with task_store.async_session_maker() as session:
             stmt = select(task_store.task_model).where(task_store.task_model.id == task_id)
             result = await session.execute(stmt)
@@ -326,20 +324,54 @@ class GuardedTaskStore(PolicyAwareTaskStore):
         )
 
 
+@dataclass(slots=True)
+class TaskStoreRuntime:
+    task_store: TaskStore
+    startup: Callable[[], Awaitable[None]]
+    shutdown: Callable[[], Awaitable[None]]
+
+
+async def _noop() -> None:
+    return None
+
+
+def build_task_store_runtime(
+    settings: Settings,
+    *,
+    engine: AsyncEngine | None = None,
+) -> TaskStoreRuntime:
+    if settings.a2a_task_store_backend == "memory":
+        return TaskStoreRuntime(
+            task_store=GuardedTaskStore(InMemoryTaskStore()),
+            startup=_noop,
+            shutdown=_noop,
+        )
+
+    resolved_engine = engine or build_database_engine(settings)
+    raw_task_store = DatabaseTaskStore(engine=resolved_engine)
+    task_store = GuardedTaskStore(raw_task_store)
+
+    async def _startup() -> None:
+        await _ensure_sdk_task_store_schema_compatible(raw_task_store)
+        await raw_task_store.initialize()
+
+    async def _shutdown() -> None:
+        if engine is None:
+            await resolved_engine.dispose()
+
+    return TaskStoreRuntime(
+        task_store=task_store,
+        startup=_startup,
+        shutdown=_shutdown,
+    )
+
+
 def build_task_store(
     settings: Settings,
     *,
     engine: AsyncEngine | None = None,
 ) -> TaskStore:
-    if settings.a2a_task_store_backend == "memory":
-        return GuardedTaskStore(InMemoryTaskStore())
-
-    resolved_engine = engine or build_database_engine(settings)
-    return GuardedTaskStore(
-        DatabaseTaskStore(
-            engine=resolved_engine,
-        )
-    )
+    return build_task_store_runtime(settings, engine=engine).task_store
 
 
 def describe_lightweight_persistence_backend(settings: Settings) -> dict[str, str]:
@@ -357,28 +389,6 @@ def describe_lightweight_persistence_backend(settings: Settings) -> dict[str, st
     return summary
 
 
-def build_database_engine(settings: Settings) -> AsyncEngine:
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    database_url = cast(str, settings.a2a_task_store_database_url)
-    url = make_url(database_url)
-    if url.drivername.startswith("sqlite"):
-        database_path = url.database
-        if database_path and database_path != ":memory:" and not database_path.startswith("file:"):
-            path = Path(database_path)
-            if not path.is_absolute():
-                path = (Path.cwd() / path).resolve()
-            path.parent.mkdir(parents=True, exist_ok=True)
-
-    engine = create_async_engine(
-        database_url,
-        pool_pre_ping=not url.drivername.startswith("sqlite"),
-    )
-    if url.drivername.startswith("sqlite"):
-        event.listen(engine.sync_engine, "connect", _configure_sqlite_connection)
-    return engine
-
-
 def unwrap_task_store(task_store: TaskStore) -> TaskStore:
     inner = getattr(task_store, "_inner", None)
     if isinstance(inner, TaskStore):
@@ -390,16 +400,6 @@ def _normalize_task_store_context(
     context: ServerCallContext | None,
 ) -> ServerCallContext:
     return normalize_server_call_context(context)
-
-
-def _configure_sqlite_connection(dbapi_connection: Any, _connection_record: Any) -> None:
-    cursor = dbapi_connection.cursor()
-    try:
-        cursor.execute(f"PRAGMA journal_mode={_SQLITE_JOURNAL_MODE}")
-        cursor.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS}")
-        cursor.execute(f"PRAGMA synchronous={_SQLITE_SYNCHRONOUS_MODE}")
-    finally:
-        cursor.close()
 
 
 def _build_atomic_task_save_statement(

@@ -11,6 +11,7 @@ from a2a.server.tasks.database_task_store import DatabaseTaskStore
 from a2a.types import Task, TaskState, TaskStatus
 from sqlalchemy import text
 
+from opencode_a2a.server.database import build_database_engine
 from opencode_a2a.server.task_store import (
     FirstTerminalStateWinsPolicy,
     GuardedTaskStore,
@@ -18,9 +19,10 @@ from opencode_a2a.server.task_store import (
     TaskPersistenceDecision,
     TaskStoreOperationError,
     TaskStoreOperationWrappingDecorator,
+    TaskStoreRuntime,
     TaskWritePolicy,
-    build_database_engine,
     build_task_store,
+    build_task_store_runtime,
     describe_lightweight_persistence_backend,
     initialize_task_store,
     unwrap_task_store,
@@ -58,6 +60,18 @@ def test_build_task_store_defaults_to_database_backend(tmp_path: Path) -> None:
     assert hasattr(store, "engine")
 
 
+def test_build_task_store_runtime_defaults_to_database_backend(tmp_path: Path) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'runtime-tasks.db'}",
+    )
+    runtime = build_task_store_runtime(settings)
+
+    assert isinstance(runtime, TaskStoreRuntime)
+    assert isinstance(runtime.task_store, GuardedTaskStore)
+    assert hasattr(runtime.task_store, "engine")
+
+
 def test_build_task_store_allows_explicit_memory_backend() -> None:
     from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 
@@ -68,6 +82,16 @@ def test_build_task_store_allows_explicit_memory_backend() -> None:
     assert isinstance(store, GuardedTaskStore)
     assert isinstance(store._inner, TaskStoreOperationWrappingDecorator)
     assert isinstance(store._inner._inner, InMemoryTaskStore)
+
+
+def test_build_task_store_runtime_allows_explicit_memory_backend() -> None:
+    runtime = build_task_store_runtime(
+        make_settings(test_bearer_token="test-token", a2a_task_store_backend="memory")
+    )
+
+    assert isinstance(runtime.task_store, GuardedTaskStore)
+    assert runtime.startup is not None
+    assert runtime.shutdown is not None
 
 
 def test_describe_lightweight_persistence_backend_marks_sqlite_first_scope() -> None:
@@ -261,6 +285,46 @@ async def test_initialize_task_store_delegates_back_to_sdk_initialize(
     assert called is True
 
 
+@pytest.mark.asyncio
+async def test_policy_aware_task_store_uses_public_initialize_for_atomic_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'public-init.db'}",
+    )
+    store = build_task_store(settings)
+    raw_store = unwrap_task_store(store)
+    assert isinstance(raw_store, DatabaseTaskStore)
+
+    original_initialize = DatabaseTaskStore.initialize
+    called = 0
+
+    async def _record_initialize(self) -> None:  # noqa: ANN001
+        nonlocal called
+        called += 1
+        await original_initialize(self)
+
+    async def _fail_private_initialize(self) -> None:  # noqa: ANN001
+        raise AssertionError("_ensure_initialized should not be used by task store adapter")
+
+    monkeypatch.setattr(DatabaseTaskStore, "initialize", _record_initialize)
+    monkeypatch.setattr(DatabaseTaskStore, "_ensure_initialized", _fail_private_initialize)
+
+    try:
+        await initialize_task_store(store)
+        await store.save(_task("task-1"))
+        completed = _set_status(_task("task-1"), TaskState.TASK_STATE_COMPLETED)
+        await store.save(completed)
+        late_failed = _set_status(_task("task-1"), TaskState.TASK_STATE_FAILED)
+        await store.save(late_failed)
+    finally:
+        await store.engine.dispose()
+
+    assert called >= 3
+
+
 def test_make_request_context_mock_uses_normalized_call_context() -> None:
     context = make_request_context_mock(
         task_id="task-1",
@@ -320,6 +384,26 @@ async def test_build_task_store_does_not_dispose_shared_engine(
 
     store = build_task_store(settings, engine=engine)
     await initialize_task_store(store)
+
+    dispose_spy.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_build_task_store_runtime_does_not_dispose_shared_engine(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'shared-runtime-engine.db'}",
+    )
+    engine = build_database_engine(settings)
+    dispose_spy = AsyncMock()
+    monkeypatch.setattr(type(engine), "dispose", dispose_spy)
+
+    runtime = build_task_store_runtime(settings, engine=engine)
+    await runtime.startup()
+    await runtime.shutdown()
 
     dispose_spy.assert_not_awaited()
 
