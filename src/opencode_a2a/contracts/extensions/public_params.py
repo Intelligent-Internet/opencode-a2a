@@ -59,8 +59,6 @@ def build_public_streaming_extension_params(
     return {
         "artifact_metadata_field": params["artifact_metadata_field"],
         "progress_metadata_field": params["progress_metadata_field"],
-        "interrupt_metadata_field": params["interrupt_metadata_field"],
-        "session_metadata_field": params["session_metadata_field"],
         "usage_metadata_field": params["usage_metadata_field"],
         "block_types": params["block_types"],
         "stream_fields": select_public_extension_params(
@@ -71,17 +69,24 @@ def build_public_streaming_extension_params(
             params["progress_fields"],
             keys=("type", "status"),
         ),
-        "interrupt_fields": select_public_extension_params(
-            params["interrupt_fields"],
-            keys=("request_id", "type", "phase"),
-        ),
-        "session_fields": select_public_extension_params(
-            params["session_fields"],
-            keys=("id", "title"),
-        ),
         "usage_fields": select_public_extension_params(
             params["usage_fields"],
             keys=("input_tokens", "output_tokens", "total_tokens"),
+        ),
+    }
+
+
+def build_public_interrupt_callback_extension_params(
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "methods": params["methods"],
+        "supported_interrupt_events": params["supported_interrupt_events"],
+        "request_id_field": params["request_id_field"],
+        "interrupt_metadata_field": params["interrupt_metadata_field"],
+        "interrupt_fields": select_public_extension_params(
+            params["interrupt_fields"],
+            keys=("request_id", "type", "phase"),
         ),
     }
 
@@ -92,12 +97,17 @@ def build_session_binding_extension_params(
 ) -> dict[str, Any]:
     return {
         "metadata_field": identifiers.SHARED_SESSION_BINDING_FIELD,
+        "session_metadata_field": identifiers.SHARED_SESSION_METADATA_FIELD,
         "behavior": "prefer_metadata_binding_else_create_session",
         "supported_metadata": [
             "shared.session.id",
             "opencode.directory",
             "opencode.workspace.id",
         ],
+        "session_fields": {
+            "id": f"{identifiers.SHARED_SESSION_METADATA_FIELD}.id",
+            "title": f"{identifiers.SHARED_SESSION_METADATA_FIELD}.title",
+        },
         "provider_private_metadata": ["opencode.directory", "opencode.workspace.id"],
         "profile": runtime_profile.summary_dict(),
         "notes": [
@@ -156,8 +166,6 @@ def build_streaming_extension_params() -> dict[str, Any]:
         "artifact_metadata_field": identifiers.SHARED_STREAM_METADATA_FIELD,
         "status_metadata_field": identifiers.SHARED_STREAM_METADATA_FIELD,
         "progress_metadata_field": identifiers.SHARED_PROGRESS_METADATA_FIELD,
-        "interrupt_metadata_field": identifiers.SHARED_INTERRUPT_METADATA_FIELD,
-        "session_metadata_field": identifiers.SHARED_SESSION_METADATA_FIELD,
         "usage_metadata_field": identifiers.SHARED_USAGE_METADATA_FIELD,
         "block_types": ["text", "reasoning", "tool_call"],
         "block_contracts": {
@@ -198,17 +206,6 @@ def build_streaming_extension_params() -> dict[str, Any]:
             "title": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.title",
             "subtitle": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.subtitle",
         },
-        "interrupt_fields": {
-            "request_id": f"{identifiers.SHARED_INTERRUPT_METADATA_FIELD}.request_id",
-            "type": f"{identifiers.SHARED_INTERRUPT_METADATA_FIELD}.type",
-            "phase": f"{identifiers.SHARED_INTERRUPT_METADATA_FIELD}.phase",
-            "details": f"{identifiers.SHARED_INTERRUPT_METADATA_FIELD}.details",
-            "resolution": f"{identifiers.SHARED_INTERRUPT_METADATA_FIELD}.resolution",
-        },
-        "session_fields": {
-            "id": f"{identifiers.SHARED_SESSION_METADATA_FIELD}.id",
-            "title": f"{identifiers.SHARED_SESSION_METADATA_FIELD}.title",
-        },
         "usage_fields": {
             "input_tokens": f"{identifiers.SHARED_USAGE_METADATA_FIELD}.input_tokens",
             "output_tokens": f"{identifiers.SHARED_USAGE_METADATA_FIELD}.output_tokens",
@@ -246,6 +243,14 @@ def build_interrupt_callback_extension_params(
             "answers": "array of answer arrays (same order as asked questions)"
         },
         "request_id_field": f"{identifiers.SHARED_INTERRUPT_METADATA_FIELD}.request_id",
+        "interrupt_metadata_field": identifiers.SHARED_INTERRUPT_METADATA_FIELD,
+        "interrupt_fields": {
+            "request_id": f"{identifiers.SHARED_INTERRUPT_METADATA_FIELD}.request_id",
+            "type": f"{identifiers.SHARED_INTERRUPT_METADATA_FIELD}.type",
+            "phase": f"{identifiers.SHARED_INTERRUPT_METADATA_FIELD}.phase",
+            "details": f"{identifiers.SHARED_INTERRUPT_METADATA_FIELD}.details",
+            "resolution": f"{identifiers.SHARED_INTERRUPT_METADATA_FIELD}.resolution",
+        },
         "supported_metadata": ["opencode.directory", "opencode.workspace.id"],
         "provider_private_metadata": ["opencode.directory", "opencode.workspace.id"],
         "context_fields": {

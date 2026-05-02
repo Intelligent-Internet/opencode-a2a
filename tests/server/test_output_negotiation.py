@@ -25,6 +25,7 @@ from a2a.types import (
 
 from opencode_a2a.a2a_utils import make_data_part
 from opencode_a2a.contracts.extensions import (
+    INTERRUPT_CALLBACK_EXTENSION_URI,
     MODEL_SELECTION_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
@@ -99,6 +100,7 @@ def _task_with_extension_metadata(*, task_id: str, context_id: str) -> Task:
     assert metadata is not None
     metadata["shared"] = {
         "session": {"id": "ses-1", "title": "Alpha"},
+        "interrupt": {"request_id": "irq-1", "type": "permission", "phase": "asked"},
         "model": {"providerID": "openai", "modelID": "gpt-5"},
         "usage": {"input_tokens": 12},
     }
@@ -358,6 +360,7 @@ async def test_on_get_task_filters_unnegotiated_shared_extension_metadata() -> N
         context=ServerCallContext(
             requested_extensions={
                 SESSION_BINDING_EXTENSION_URI,
+                INTERRUPT_CALLBACK_EXTENSION_URI,
                 MODEL_SELECTION_EXTENSION_URI,
                 STREAMING_EXTENSION_URI,
             }
@@ -365,5 +368,19 @@ async def test_on_get_task_filters_unnegotiated_shared_extension_metadata() -> N
     )
     assert negotiated is not None
     assert negotiated.metadata["shared"]["session"]["id"] == "ses-1"
+    assert negotiated.metadata["shared"]["interrupt"]["request_id"] == "irq-1"
     assert negotiated.metadata["shared"]["model"]["providerID"] == "openai"
     assert negotiated.metadata["shared"]["usage"]["input_tokens"] == 12
+
+    streaming_only = await handler.on_get_task(
+        GetTaskRequest(id="task-filter"),
+        context=ServerCallContext(
+            requested_extensions={
+                STREAMING_EXTENSION_URI,
+            }
+        ),
+    )
+    assert streaming_only is not None
+    assert "session" not in streaming_only.metadata["shared"]
+    assert "interrupt" not in streaming_only.metadata["shared"]
+    assert streaming_only.metadata["shared"]["usage"]["input_tokens"] == 12

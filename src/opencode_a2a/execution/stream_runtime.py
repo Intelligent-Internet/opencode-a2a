@@ -79,6 +79,7 @@ class StreamRuntime:
         allow_structured_output: bool = True,
         emit_session_metadata: bool = True,
         emit_streaming_metadata: bool = True,
+        emit_interrupt_metadata: bool = True,
     ) -> None:
         part_states: dict[str, _StreamPartState] = {}
         pending_deltas: defaultdict[str, list[_PendingDelta]] = defaultdict(list)
@@ -170,6 +171,7 @@ class StreamRuntime:
                         interrupt=interrupt_metadata,
                         include_session_metadata=emit_session_metadata,
                         include_streaming_metadata=emit_streaming_metadata,
+                        include_interrupt_metadata=emit_interrupt_metadata,
                     ),
                 )
             )
@@ -467,6 +469,9 @@ class StreamRuntime:
                                                     ),
                                                     include_streaming_metadata=(
                                                         emit_streaming_metadata
+                                                    ),
+                                                    include_interrupt_metadata=(
+                                                        emit_interrupt_metadata
                                                     ),
                                                 ),
                                             )

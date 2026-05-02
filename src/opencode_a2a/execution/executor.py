@@ -26,6 +26,7 @@ from a2a.types import (
 )
 
 from ..contracts.extensions import (
+    INTERRUPT_CALLBACK_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
 )
@@ -260,14 +261,9 @@ class OpencodeAgentExecutor(AgentExecutor):
             accepted_output_modes,
             _APPLICATION_JSON_MEDIA_TYPE,
         )
-        emit_session_metadata = bool(
-            {
-                SESSION_BINDING_EXTENSION_URI,
-                STREAMING_EXTENSION_URI,
-            }
-            & set(requested_extensions)
-        )
+        emit_session_metadata = SESSION_BINDING_EXTENSION_URI in requested_extensions
         emit_streaming_metadata = STREAMING_EXTENSION_URI in requested_extensions
+        emit_interrupt_metadata = INTERRUPT_CALLBACK_EXTENSION_URI in requested_extensions
 
         logger.debug(
             (
@@ -301,6 +297,7 @@ class OpencodeAgentExecutor(AgentExecutor):
             allow_structured_output=allow_structured_output,
             emit_session_metadata=emit_session_metadata,
             emit_streaming_metadata=emit_streaming_metadata,
+            emit_interrupt_metadata=emit_interrupt_metadata,
         )
         coordinator = ExecutionCoordinator(
             self,
@@ -518,6 +515,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         allow_structured_output: bool = True,
         emit_session_metadata: bool = True,
         emit_streaming_metadata: bool = True,
+        emit_interrupt_metadata: bool = True,
     ) -> None:
         await self._stream_runtime.consume(
             session_id=session_id,
@@ -534,4 +532,5 @@ class OpencodeAgentExecutor(AgentExecutor):
             allow_structured_output=allow_structured_output,
             emit_session_metadata=emit_session_metadata,
             emit_streaming_metadata=emit_streaming_metadata,
+            emit_interrupt_metadata=emit_interrupt_metadata,
         )

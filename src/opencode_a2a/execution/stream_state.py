@@ -270,6 +270,7 @@ def _build_output_metadata(
     interrupt: Mapping[str, Any] | None = None,
     include_session_metadata: bool = True,
     include_streaming_metadata: bool = True,
+    include_interrupt_metadata: bool = True,
 ) -> dict[str, Any] | None:
     metadata: dict[str, Any] = {}
     shared_meta: dict[str, Any] = {}
@@ -285,7 +286,7 @@ def _build_output_metadata(
         shared_meta["stream"] = dict(stream)
     if include_streaming_metadata and progress is not None:
         shared_meta["progress"] = dict(progress)
-    if include_streaming_metadata and interrupt is not None:
+    if include_interrupt_metadata and interrupt is not None:
         shared_meta["interrupt"] = dict(interrupt)
     if shared_meta:
         metadata["shared"] = shared_meta

@@ -36,6 +36,7 @@ from ..contracts.extensions import (
     build_interrupt_recovery_extension_params,
     build_model_selection_extension_params,
     build_provider_discovery_extension_params,
+    build_public_interrupt_callback_extension_params,
     build_public_streaming_extension_params,
     build_session_binding_extension_params,
     build_session_management_extension_params,
@@ -225,8 +226,10 @@ def _build_agent_extensions(
                     session_binding_extension_params,
                     keys=(
                         "metadata_field",
+                        "session_metadata_field",
                         "behavior",
                         "supported_metadata",
+                        "session_fields",
                         "provider_private_metadata",
                     ),
                 )
@@ -261,7 +264,7 @@ def _build_agent_extensions(
             required=False,
             description=(
                 "Shared streaming metadata contract for canonical block hints, "
-                "timeline identity, usage, and interactive interrupt metadata."
+                "progress hints, and usage metadata."
             ),
             params=(
                 streaming_extension_params
@@ -279,9 +282,8 @@ def _build_agent_extensions(
             params=(
                 interrupt_callback_extension_params
                 if include_detailed_contracts
-                else select_public_extension_params(
-                    interrupt_callback_extension_params,
-                    keys=("methods", "supported_interrupt_events", "request_id_field"),
+                else build_public_interrupt_callback_extension_params(
+                    interrupt_callback_extension_params
                 )
             ),
         ),

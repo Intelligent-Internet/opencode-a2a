@@ -244,8 +244,8 @@ If one deployment works while another fails against the same upstream provider, 
 - Final status event metadata may include normalized token usage at `metadata.shared.usage` with fields such as `input_tokens`, `output_tokens`, `total_tokens`, optional `reasoning_tokens`, optional `cache_tokens.read_tokens` / `cache_tokens.write_tokens`, and optional `cost`.
 - Progress metadata at `metadata.shared.progress` is emitted only when the client negotiated `urn:opencode-a2a:extension:shared:stream-hints:v1`; baseline streams do not emit duplicate generic `working` status updates just to carry progress hints.
 - Usage is extracted from documented info payloads and supported usage parts such as `step-finish`; non-usage parts with similar fields are ignored.
-- Interrupt events (`permission.asked` / `question.asked`) are mapped to `TaskStatusUpdateEvent(final=false, state=input-required)` with details at `metadata.shared.interrupt`, including `request_id`, interrupt `type`, `phase=asked`, and a normalized minimal callback payload.
-- Resolved interrupt events (`permission.replied` / `question.replied` / `question.rejected`) are emitted as `TaskStatusUpdateEvent(final=false, state=working)` with `metadata.shared.interrupt.phase=resolved` and a normalized `metadata.shared.interrupt.resolution`.
+- Interrupt events (`permission.asked` / `question.asked`) are mapped to `TaskStatusUpdateEvent(final=false, state=input-required)` with details at `metadata.shared.interrupt` when the client negotiated `urn:opencode-a2a:extension:shared:interactive-interrupt:v1`.
+- Resolved interrupt events (`permission.replied` / `question.replied` / `question.rejected`) are emitted as `TaskStatusUpdateEvent(final=false, state=working)` with `metadata.shared.interrupt.phase=resolved` only when the same interactive interrupt extension is negotiated.
 - Duplicate or unknown resolved events are suppressed unless the matching request is still pending.
 - Non-streaming requests return a `Task` directly. When `configuration.returnImmediately=true`, the initial response is a working `Task` snapshot and completion continues in the background for later `GetTask` reads.
 - Non-streaming `message:send` responses may include normalized token usage at `Task.metadata.shared.usage` with the same field schema.
@@ -476,7 +476,7 @@ Consumer guidance:
 
 - Use this extension declaration to decide whether the server explicitly supports shared session rebinding.
 - On the request path, write the upstream session identity to `metadata.shared.session.id`.
-- On the response/query path, treat `metadata.shared.session` as runtime metadata and not as a separate capability declaration.
+- On the response/query path, treat `metadata.shared.session` as runtime metadata negotiated by the same extension.
 
 Minimal example:
 
@@ -561,7 +561,7 @@ Stable specification URI:
 
 This section focuses on how clients should interpret runtime metadata. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
-This extension declares that streaming and final task payloads use canonical shared metadata for block, usage, interrupt, and session hints.
+This extension declares that streaming and final task payloads use canonical shared metadata for block, progress, and usage hints.
 
 Runtime payload:
 
@@ -573,17 +573,12 @@ Shared runtime fields:
   - block-level stream metadata such as `block_type`, `message_id`, `event_id`, and `sequence`
 - `metadata.shared.usage`
   - normalized usage data such as `input_tokens`, `output_tokens`, `total_tokens`, optional `reasoning_tokens`, optional `cache_tokens.read_tokens` / `cache_tokens.write_tokens`, and optional `cost`
-- `metadata.shared.interrupt`
-  - normalized interrupt request or resolution metadata including `request_id`, `type`, `phase`, optional `resolution`, and callback-safe details
-- `metadata.shared.session`
-  - session-level metadata such as the bound upstream session ID and session title when available
 
 Consumer guidance:
 
 - Use the extension declaration to know the server emits canonical shared stream hints.
-- Use runtime metadata to render block timelines, token usage, and interactive interruptions.
+- Use runtime metadata to render block timelines, progress states, and token usage.
 - Do not infer capability support only from seeing one runtime field on one response; rely on Agent Card discovery first when possible.
-- Treat `metadata.shared.interrupt` as observation data. Callback operations are a separate shared capability declared by `urn:opencode-a2a:extension:shared:interactive-interrupt:v1`.
 
 Minimal stream semantics summary:
 
@@ -591,7 +586,7 @@ Minimal stream semantics summary:
 - `text` and `reasoning` blocks use text parts, while `tool_call` uses structured v1 part payloads
 - `message_id` and `event_id` preserve stable timeline identity where possible
 - `sequence` is the per-request canonical stream sequence
-- final task/status metadata may repeat normalized usage and interrupt context even after the streaming phase ends
+- final task/status metadata may repeat normalized usage after the streaming phase ends
 
 ## OpenCode Session Management A2A Extension
 
@@ -1165,7 +1160,7 @@ Notes:
 
 ## Shared Interrupt Callback (A2A Extension)
 
-When stream metadata reports an interrupt request at `metadata.shared.interrupt`, clients can reply through JSON-RPC extension methods:
+When the shared interactive interrupt extension is negotiated, runtime status updates may report an interrupt request at `metadata.shared.interrupt`, and clients can reply through JSON-RPC extension methods:
 
 - `a2a.interrupt.permission.reply`
   - required: `request_id`
@@ -1182,7 +1177,7 @@ When stream metadata reports an interrupt request at `metadata.shared.interrupt`
 
 Notes:
 
-- `request_id` must be a live interrupt request observed from stream metadata (`metadata.shared.interrupt.request_id`) or rediscovered through `opencode.permissions.list` / `opencode.questions.list`.
+- `request_id` must be a live interrupt request observed from negotiated runtime metadata (`metadata.shared.interrupt.request_id`) or rediscovered through `opencode.permissions.list` / `opencode.questions.list`.
 - The server keeps an interrupt binding registry; callbacks with unknown or expired `request_id` are rejected.
 - The cache retention windows are controlled by `A2A_INTERRUPT_REQUEST_TTL_SECONDS` (default: `10800` seconds / `180` minutes) and `A2A_INTERRUPT_REQUEST_TOMBSTONE_TTL_SECONDS` (default: `600` seconds / `10` minutes). After the active TTL elapses, the server keeps a short-lived tombstone so repeated replies continue to return `INTERRUPT_REQUEST_EXPIRED` before eventually aging out to `INTERRUPT_REQUEST_NOT_FOUND`.
 - These values are deployment/runtime settings and are intentionally not part of the shared extension method contract.

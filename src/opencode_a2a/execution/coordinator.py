@@ -61,6 +61,7 @@ class PreparedExecution:
     allow_structured_output: bool
     emit_session_metadata: bool
     emit_streaming_metadata: bool
+    emit_interrupt_metadata: bool
 
 
 def build_session_binding_context_id(
@@ -294,6 +295,7 @@ class ExecutionCoordinator:
                     allow_structured_output=self._prepared.allow_structured_output,
                     emit_session_metadata=self._prepared.emit_session_metadata,
                     emit_streaming_metadata=self._prepared.emit_streaming_metadata,
+                    emit_interrupt_metadata=self._prepared.emit_interrupt_metadata,
                 )
             )
 
@@ -427,6 +429,7 @@ class ExecutionCoordinator:
                     },
                     include_session_metadata=self._prepared.emit_session_metadata,
                     include_streaming_metadata=self._prepared.emit_streaming_metadata,
+                    include_interrupt_metadata=self._prepared.emit_interrupt_metadata,
                 ),
             )
         )
@@ -469,6 +472,7 @@ class ExecutionCoordinator:
                 usage=resolved_token_usage,
                 include_session_metadata=self._prepared.emit_session_metadata,
                 include_streaming_metadata=self._prepared.emit_streaming_metadata,
+                include_interrupt_metadata=self._prepared.emit_interrupt_metadata,
             ),
         )
         task.status.message.CopyFrom(assistant_message)

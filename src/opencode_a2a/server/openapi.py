@@ -9,6 +9,7 @@ from ..contracts.extensions import (
     INTERRUPT_CALLBACK_METHODS,
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
+    build_public_interrupt_callback_extension_params,
     build_public_streaming_extension_params,
     build_session_binding_extension_params,
     build_streaming_extension_params,
@@ -274,8 +275,10 @@ def _patch_jsonrpc_openapi_contract(
                             session_binding,
                             keys=(
                                 "metadata_field",
+                                "session_metadata_field",
                                 "behavior",
                                 "supported_metadata",
+                                "session_fields",
                                 "provider_private_metadata",
                             ),
                         ),
@@ -292,8 +295,14 @@ def _patch_jsonrpc_openapi_contract(
                         ),
                         "streaming": build_public_streaming_extension_params(streaming),
                         "interrupt_callback": select_public_extension_params(
-                            interrupt_callback,
-                            keys=("methods", "supported_interrupt_events", "request_id_field"),
+                            build_public_interrupt_callback_extension_params(interrupt_callback),
+                            keys=(
+                                "methods",
+                                "supported_interrupt_events",
+                                "request_id_field",
+                                "interrupt_metadata_field",
+                                "interrupt_fields",
+                            ),
                         ),
                     }
 
