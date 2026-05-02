@@ -2,8 +2,14 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from a2a.server.agent_execution import RequestContext
+from a2a.server.context import ServerCallContext
 from a2a.types import (
+    Message,
     Part,
+    Role,
+    SendMessageConfiguration,
+    SendMessageRequest,
     Task,
     TaskState,
     TaskStatusUpdateEvent,
@@ -12,6 +18,7 @@ from a2a.types import (
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.execution.stream_events import _extract_token_usage, _extract_tool_part_payload
 from opencode_a2a.execution.stream_state import _StreamOutputState
+from opencode_a2a.server.context_helpers import normalize_server_call_context
 from opencode_a2a.task_states import TERMINAL_TASK_STATES
 from tests.support.helpers import (
     DummyEventQueue,
@@ -66,6 +73,30 @@ async def test_streaming_accepts_file_input_without_breaking_contract() -> None:
 
     assert _is_terminal_status_event(status_events[-1])
     assert status_events[-1].status.state == TaskState.TASK_STATE_COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_streaming_emits_initial_working_task_snapshot() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="hello"),
+        ],
+        response_text="hello",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(task_id="task-1", context_id="ctx-1", text="hi"), queue
+    )
+
+    assert isinstance(queue.events[0], Task)
+    assert queue.events[0].status.state == TaskState.TASK_STATE_WORKING
+    assert queue.events[0].id == "task-1"
+    assert queue.events[0].context_id == "ctx-1"
+    assert len(queue.events[0].history) == 1
+    assert queue.events[0].history[0].parts[0].text == "hi"
 
 
 def test_stream_output_state_deduplicates_non_accumulating_tool_chunks() -> None:
@@ -834,6 +865,56 @@ async def test_streaming_emits_progress_metadata_for_snapshot_without_text_artif
 
 
 @pytest.mark.asyncio
+async def test_streaming_progress_without_extension_avoids_duplicate_working_status() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            {
+                "type": "message.part.updated",
+                "properties": {
+                    "part": {
+                        "id": "prt-step-start-1",
+                        "sessionID": "ses-1",
+                        "messageID": "msg-1",
+                        "type": "step-start",
+                        "reason": "run",
+                        "state": {
+                            "status": "running",
+                            "title": "Planning",
+                        },
+                    }
+                },
+            },
+        ],
+        response_text="done",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+    call_context = normalize_server_call_context(ServerCallContext(requested_extensions=set()))
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-progress",
+            context_id="ctx-progress",
+            text="hello",
+            call_context=call_context,
+        ),
+        queue,
+    )
+
+    assert isinstance(queue.events[0], Task)
+    assert queue.events[0].status.state == TaskState.TASK_STATE_WORKING
+    working_status_updates = [
+        event
+        for event in queue.events
+        if isinstance(event, TaskStatusUpdateEvent)
+        and not _is_terminal_status_event(event)
+        and event.status.state == TaskState.TASK_STATE_WORKING
+    ]
+    assert working_status_updates == []
+
+
+@pytest.mark.asyncio
 async def test_non_streaming_response_task_state_is_completed() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[],
@@ -851,4 +932,35 @@ async def test_non_streaming_response_task_state_is_completed() -> None:
 
     tasks = [event for event in queue.events if isinstance(event, Task)]
     assert tasks
+    assert tasks[-1].status.state == TaskState.TASK_STATE_COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_non_streaming_return_immediately_emits_initial_working_task() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[],
+        response_text="answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    queue = DummyEventQueue()
+    call_context = normalize_server_call_context(ServerCallContext(requested_extensions=set()))
+    context = RequestContext(
+        request=SendMessageRequest(
+            message=Message(
+                message_id="req-1",
+                role=Role.ROLE_USER,
+                parts=[Part(text="hello")],
+            ),
+            configuration=SendMessageConfiguration(return_immediately=True),
+        ),
+        task_id="task-return-immediately",
+        context_id="ctx-return-immediately",
+        call_context=call_context,
+    )
+
+    await executor.execute(context, queue)
+
+    assert isinstance(queue.events[0], Task)
+    assert queue.events[0].status.state == TaskState.TASK_STATE_WORKING
+    tasks = [event for event in queue.events if isinstance(event, Task)]
     assert tasks[-1].status.state == TaskState.TASK_STATE_COMPLETED

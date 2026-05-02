@@ -223,7 +223,7 @@ If one deployment works while another fails against the same upstream provider, 
 ## Streaming Contract
 
 - Streaming is always enabled in this server profile; `message:stream` is part of the stable runtime baseline.
-- Streaming (`/v1/message:stream`) emits incremental `TaskArtifactUpdateEvent` and then `TaskStatusUpdateEvent(final=true)`.
+- Streaming (`/v1/message:stream`) emits an initial working `Task`, then incremental `TaskArtifactUpdateEvent` / `TaskStatusUpdateEvent` updates, and finally a terminal `TaskStatusUpdateEvent(final=true)`.
 - Stream artifacts carry `artifact.metadata.shared.stream.block_type` with values `text` / `reasoning` / `tool_call`.
 - Stream artifacts are scoped to logical output lanes rather than one shared catch-all artifact:
   - text chunks use a stable text artifact ID
@@ -243,11 +243,12 @@ If one deployment works while another fails against the same upstream provider, 
 - When a request restricts `acceptedOutputModes`, the stream applies the same output filtering before persistence so later task snapshots do not re-expose filtered structured blocks.
 - Persistence is canonicalized separately from transport: stream subscribers still receive incremental artifact updates, while task-store persistence rewrites those updates into compact per-artifact snapshots so `GetTask` and terminal replay do not accumulate token-level fragments.
 - Final status event metadata may include normalized token usage at `metadata.shared.usage` with fields such as `input_tokens`, `output_tokens`, `total_tokens`, optional `reasoning_tokens`, optional `cache_tokens.read_tokens` / `cache_tokens.write_tokens`, and optional `cost`.
+- Progress metadata at `metadata.shared.progress` is emitted only when the client negotiated `urn:opencode-a2a:extension:shared:stream-hints:v1`; baseline streams do not emit duplicate generic `working` status updates just to carry progress hints.
 - Usage is extracted from documented info payloads and supported usage parts such as `step-finish`; non-usage parts with similar fields are ignored.
 - Interrupt events (`permission.asked` / `question.asked`) are mapped to `TaskStatusUpdateEvent(final=false, state=input-required)` with details at `metadata.shared.interrupt`, including `request_id`, interrupt `type`, `phase=asked`, and a normalized minimal callback payload.
 - Resolved interrupt events (`permission.replied` / `question.replied` / `question.rejected`) are emitted as `TaskStatusUpdateEvent(final=false, state=working)` with `metadata.shared.interrupt.phase=resolved` and a normalized `metadata.shared.interrupt.resolution`.
 - Duplicate or unknown resolved events are suppressed unless the matching request is still pending.
-- Non-streaming requests return a `Task` directly.
+- Non-streaming requests return a `Task` directly. When `configuration.returnImmediately=true`, the initial response is a working `Task` snapshot and completion continues in the background for later `GetTask` reads.
 - Non-streaming `message:send` responses may include normalized token usage at `Task.metadata.shared.usage` with the same field schema.
 
 ## Auth, Limits, and Failure Contract
