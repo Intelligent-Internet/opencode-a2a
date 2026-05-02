@@ -96,25 +96,28 @@ class StreamRuntime:
                 ):
                     continue
                 should_emit, effective_append = stream_state.register_chunk(
-                    block_type=chunk.block_type,
+                    artifact_id=chunk.artifact_id,
                     content_key=chunk.content_key,
                     append=chunk.append,
                     accumulate_content=chunk.accumulate_content,
                 )
                 if not should_emit:
                     continue
+                if chunk.block_type == BlockType.TEXT:
+                    stream_state.remember_text_artifact_id(chunk.artifact_id)
                 sequence = stream_state.next_sequence()
                 await _enqueue_artifact_update(
                     event_queue=event_queue,
                     task_id=task_id,
                     context_id=context_id,
-                    artifact_id=artifact_id,
+                    artifact_id=chunk.artifact_id,
                     part=chunk.part,
                     append=effective_append,
                     last_chunk=False,
                     artifact_metadata=_build_stream_artifact_metadata(
                         block_type=chunk.block_type,
                         shared_source=chunk.shared_source,
+                        part_id=chunk.part_id,
                         message_id=resolved_message_id,
                         role=chunk.role,
                         event_id=stream_state.build_event_id(sequence),
@@ -181,15 +184,18 @@ class StreamRuntime:
 
         def _new_text_chunk(
             *,
+            artifact_id: str,
             text: str,
             append: bool,
             block_type: BlockType,
             internal_source: str,
             shared_source: str,
+            part_id: str | None,
             message_id: str | None,
             role: str | None,
         ) -> _NormalizedStreamChunk:
             return _NormalizedStreamChunk(
+                artifact_id=artifact_id,
                 part=Part(text=text),
                 content_key=text,
                 accumulate_content=True,
@@ -197,18 +203,21 @@ class StreamRuntime:
                 block_type=block_type,
                 internal_source=internal_source,
                 shared_source=shared_source,
+                part_id=part_id,
                 message_id=message_id,
                 role=role,
             )
 
         def _new_data_chunk(
             *,
+            artifact_id: str,
             data: Mapping[str, Any],
             content_key: str,
             append: bool,
             block_type: BlockType,
             internal_source: str,
             shared_source: str,
+            part_id: str | None,
             message_id: str | None,
             role: str | None,
         ) -> _NormalizedStreamChunk:
@@ -223,6 +232,7 @@ class StreamRuntime:
                 part = Part(text=fallback_text)
                 content_key = fallback_text
             return _NormalizedStreamChunk(
+                artifact_id=artifact_id,
                 part=part,
                 content_key=content_key,
                 accumulate_content=False,
@@ -230,9 +240,24 @@ class StreamRuntime:
                 block_type=block_type,
                 internal_source=internal_source,
                 shared_source=shared_source,
+                part_id=part_id,
                 message_id=message_id,
                 role=role,
             )
+
+        def _resolve_stream_artifact_id(
+            *,
+            block_type: BlockType,
+            part_id: str | None,
+        ) -> str:
+            if block_type == BlockType.TEXT:
+                return f"{artifact_id}:text"
+            if block_type == BlockType.REASONING:
+                return f"{artifact_id}:reasoning"
+            normalized_part_id = (part_id or "").strip()
+            if normalized_part_id:
+                return f"{artifact_id}:tool:{normalized_part_id}"
+            return f"{artifact_id}:tool"
 
         def _upsert_part_state(
             *,
@@ -248,13 +273,23 @@ class StreamRuntime:
             state = part_states.get(part_id)
             if state is None:
                 state = _StreamPartState(
+                    artifact_id=_resolve_stream_artifact_id(
+                        block_type=block_type,
+                        part_id=part_id,
+                    ),
                     block_type=block_type,
+                    part_id=part_id,
                     message_id=message_id,
                     role=role,
                 )
                 part_states[part_id] = state
                 return state
+            state.artifact_id = _resolve_stream_artifact_id(
+                block_type=block_type,
+                part_id=part_id,
+            )
             state.block_type = block_type
+            state.part_id = part_id
             if role is not None:
                 state.role = role
             if message_id:
@@ -276,11 +311,13 @@ class StreamRuntime:
             state.saw_delta = True
             return [
                 _new_text_chunk(
+                    artifact_id=state.artifact_id,
                     text=delta_text,
                     append=True,
                     block_type=state.block_type,
                     internal_source=internal_source,
                     shared_source="stream",
+                    part_id=state.part_id,
                     message_id=state.message_id,
                     role=state.role,
                 )
@@ -305,11 +342,13 @@ class StreamRuntime:
                     return []
                 return [
                     _new_text_chunk(
+                        artifact_id=state.artifact_id,
                         text=delta_text,
                         append=True,
                         block_type=state.block_type,
                         internal_source="part_text_diff",
                         shared_source="stream",
+                        part_id=state.part_id,
                         message_id=state.message_id,
                         role=state.role,
                     )
@@ -349,12 +388,14 @@ class StreamRuntime:
             state.buffer = content_key
             return [
                 _new_data_chunk(
+                    artifact_id=state.artifact_id,
                     data=tool_payload,
                     content_key=content_key,
                     append=bool(previous),
                     block_type=state.block_type,
                     internal_source="tool_part_update",
                     shared_source="tool_part_update",
+                    part_id=state.part_id,
                     message_id=state.message_id,
                     role=state.role,
                 )

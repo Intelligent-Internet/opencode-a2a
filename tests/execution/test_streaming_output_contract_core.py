@@ -11,7 +11,7 @@ from a2a.types import (
 
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.execution.stream_events import _extract_token_usage, _extract_tool_part_payload
-from opencode_a2a.execution.stream_state import BlockType, _StreamOutputState
+from opencode_a2a.execution.stream_state import _StreamOutputState
 from opencode_a2a.task_states import TERMINAL_TASK_STATES
 from tests.support.helpers import (
     DummyEventQueue,
@@ -76,19 +76,19 @@ def test_stream_output_state_deduplicates_non_accumulating_tool_chunks() -> None
     )
 
     assert state.register_chunk(
-        block_type=BlockType.TOOL_CALL,
+        artifact_id="task:stream:tool:call-1",
         content_key='{"status":"pending"}',
         append=False,
         accumulate_content=False,
     ) == (True, False)
     assert state.register_chunk(
-        block_type=BlockType.TOOL_CALL,
+        artifact_id="task:stream:tool:call-1",
         content_key='{"status":"pending"}',
         append=True,
         accumulate_content=False,
     ) == (False, False)
     assert state.register_chunk(
-        block_type=BlockType.TOOL_CALL,
+        artifact_id="task:stream:tool:call-1",
         content_key='{"status":"running"}',
         append=True,
         accumulate_content=False,
@@ -170,7 +170,11 @@ async def test_streaming_filters_user_echo_and_emits_single_artifact_block_types
     block_types = [_artifact_stream_meta(event)["block_type"] for event in updates]
     assert _unique(block_types) == ["reasoning", "tool_call", "text"]
     artifact_ids = [event.artifact.artifact_id for event in updates]
-    assert len(set(artifact_ids)) == 1
+    assert artifact_ids == [
+        "task-1:stream:reasoning",
+        "task-1:stream:tool:prt-msg-1-tool",
+        "task-1:stream:text",
+    ]
     event_ids = [_artifact_stream_meta(event)["event_id"] for event in updates]
     assert event_ids == [f"task-1:ctx-1:task-1:stream:{seq}" for seq in range(1, len(updates) + 1)]
 
@@ -348,7 +352,7 @@ async def test_streaming_emits_final_snapshot_only_when_stream_has_no_final_answ
     final_event = final_updates[0]
     assert _part_text(final_event) == "final answer from send_message"
     assert _artifact_stream_meta(final_event)["source"] == "final_snapshot"
-    assert final_event.append is True
+    assert final_event.append is False
     assert final_event.last_chunk is True
 
 
@@ -503,7 +507,7 @@ async def test_streaming_emits_snapshot_when_message_id_missing_and_stream_is_pa
     assert _artifact_stream_meta(first)["sequence"] == 1
 
     assert _part_text(second) == "partial final answer"
-    assert second.append is True
+    assert second.append is False
     assert second.last_chunk is True
     assert _artifact_stream_meta(second)["source"] == "final_snapshot"
     assert _artifact_stream_meta(second)["message_id"] == "task-6b:ctx-6b:assistant"

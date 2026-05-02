@@ -233,7 +233,14 @@ async def test_streaming_never_resets_single_artifact_after_first_chunk() -> Non
     updates = _artifact_updates(queue)
     assert len(updates) >= 2
     assert updates[0].append is False
-    assert all(ev.append is True for ev in updates[1:])
+    stream_updates = [ev for ev in updates if _artifact_stream_meta(ev)["source"] == "stream"]
+    assert stream_updates[0].append is False
+    assert all(ev.append is True for ev in stream_updates[1:])
+    final_snapshots = [
+        ev for ev in updates if _artifact_stream_meta(ev)["source"] == "final_snapshot"
+    ]
+    assert final_snapshots
+    assert all(ev.append is False for ev in final_snapshots)
 
 
 @pytest.mark.asyncio

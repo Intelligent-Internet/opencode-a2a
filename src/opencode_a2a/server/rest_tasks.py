@@ -3,13 +3,15 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
 from a2a.extensions.common import HTTP_EXTENSION_HEADER, get_requested_extensions
+from a2a.server.context import ServerCallContext
 from a2a.server.tasks.task_store import TaskStore
-from a2a.types import Task, TaskState
+from a2a.types import ListTasksRequest, Task, TaskState
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict
@@ -31,12 +33,13 @@ from ..parsing import (
 from ..parsing import (
     parse_timestamp_field as parse_shared_timestamp_field,
 )
-from .task_store import TaskStoreOperationError, list_stored_tasks
+from .task_store import TaskStoreOperationError
 
 logger = logging.getLogger(__name__)
 _DEFAULT_LIST_TASKS_PAGE_SIZE = 50
 _MAX_LIST_TASKS_PAGE_SIZE = 100
 _MIN_LIST_TASKS_PAGE_SIZE = 1
+_LIST_TASKS_SCAN_BATCH_SIZE = 100
 
 
 @dataclass(frozen=True)
@@ -56,6 +59,13 @@ class _ListTasksQuery:
     status_timestamp_after: datetime | None
 
 
+@dataclass(frozen=True)
+class _ListTasksPage:
+    tasks: list[Task]
+    next_page_token: str
+    total_size: int
+
+
 class _ListTasksValidationError(ValueError):
     def __init__(self, *, field: str, message: str) -> None:
         super().__init__(message)
@@ -66,11 +76,16 @@ class _ListTasksValidationError(ValueError):
 def build_list_tasks_route(
     *,
     task_store: TaskStore,
+    context_builder: Callable[[Request], ServerCallContext],
 ):
     async def list_tasks_route(request: Request) -> JSONResponse:
         try:
             query = _parse_list_tasks_query(request)
-            tasks = await list_stored_tasks(task_store)
+            page = await _list_tasks_page(
+                task_store,
+                query=query,
+                context=context_builder(request),
+            )
         except _ListTasksValidationError as error:
             return JSONResponse(
                 build_http_error_body(
@@ -94,14 +109,6 @@ def build_list_tasks_route(
                 status_code=500,
             )
 
-        filtered_tasks = _filter_tasks(tasks, query=query)
-        total_size = len(filtered_tasks)
-        paged_tasks = _apply_cursor(filtered_tasks, cursor=query.cursor)
-        page_tasks = paged_tasks[: query.requested_page_size]
-        next_page_token = ""
-        if len(paged_tasks) > len(page_tasks) and page_tasks:
-            next_page_token = _encode_page_token(page_tasks[-1])
-
         return JSONResponse(
             {
                 "tasks": [
@@ -113,42 +120,78 @@ def build_list_tasks_route(
                             get_requested_extensions(request.headers.getlist(HTTP_EXTENSION_HEADER))
                         ),
                     )
-                    for task in page_tasks
+                    for task in page.tasks
                 ],
-                "nextPageToken": next_page_token,
-                "pageSize": len(page_tasks),
-                "totalSize": total_size,
+                "nextPageToken": page.next_page_token,
+                "pageSize": len(page.tasks),
+                "totalSize": page.total_size,
             }
         )
 
     return list_tasks_route
 
 
-def _filter_tasks(tasks: list[Task], *, query: _ListTasksQuery) -> list[Task]:
-    filtered = tasks
+async def _list_tasks_page(
+    task_store: TaskStore,
+    *,
+    query: _ListTasksQuery,
+    context: ServerCallContext,
+) -> _ListTasksPage:
+    page_tasks: list[Task] = []
+    total_size: int | None = None
+    backend_page_token = ""
+    has_more = False
 
-    if query.context_id is not None:
-        filtered = [task for task in filtered if task.context_id == query.context_id]
+    while True:
+        response = await task_store.list(
+            _build_list_tasks_request(
+                query,
+                page_size=max(query.requested_page_size, _LIST_TASKS_SCAN_BATCH_SIZE),
+                page_token=backend_page_token,
+            ),
+            context,
+        )
+        if total_size is None:
+            total_size = int(response.total_size)
 
-    if query.status is not None:
-        filtered = [task for task in filtered if task.status.state == query.status]
+        for task in response.tasks:
+            if query.cursor is not None and _task_sort_key(task) >= _cursor_sort_key(query.cursor):
+                continue
+            page_tasks.append(task)
+            if len(page_tasks) > query.requested_page_size:
+                has_more = True
+                break
 
-    if query.status_timestamp_after is not None:
-        filtered = [
-            task for task in filtered if _task_sort_key(task)[0] >= query.status_timestamp_after
-        ]
+        if has_more or not response.next_page_token:
+            break
+        backend_page_token = response.next_page_token
 
-    return sorted(
-        filtered,
-        key=_task_sort_key,
-        reverse=True,
+    tasks = page_tasks[: query.requested_page_size]
+    next_page_token = _encode_page_token(tasks[-1]) if has_more and tasks else ""
+    return _ListTasksPage(
+        tasks=tasks,
+        next_page_token=next_page_token,
+        total_size=0 if total_size is None else total_size,
     )
 
 
-def _apply_cursor(tasks: list[Task], *, cursor: _TaskCursor | None) -> list[Task]:
-    if cursor is None:
-        return tasks
-    return [task for task in tasks if _task_sort_key(task) < _cursor_sort_key(cursor)]
+def _build_list_tasks_request(
+    query: _ListTasksQuery,
+    *,
+    page_size: int,
+    page_token: str,
+) -> ListTasksRequest:
+    request = ListTasksRequest(
+        context_id=query.context_id or "",
+        include_artifacts=True,
+        page_size=page_size,
+        page_token=page_token,
+    )
+    if query.status is not None:
+        request.status = query.status
+    if query.status_timestamp_after is not None:
+        request.status_timestamp_after = query.status_timestamp_after
+    return request
 
 
 def _serialize_task(

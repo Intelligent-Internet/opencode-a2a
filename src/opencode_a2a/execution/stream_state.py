@@ -15,6 +15,7 @@ class BlockType(StrEnum):
 
 @dataclass(frozen=True)
 class _NormalizedStreamChunk:
+    artifact_id: str
     part: Any
     content_key: str
     accumulate_content: bool
@@ -22,6 +23,7 @@ class _NormalizedStreamChunk:
     block_type: BlockType
     internal_source: str
     shared_source: str
+    part_id: str | None
     message_id: str | None
     role: str | None
 
@@ -35,7 +37,9 @@ class _PendingDelta:
 
 @dataclass
 class _StreamPartState:
+    artifact_id: str
     block_type: BlockType
+    part_id: str | None
     message_id: str | None
     role: str | None
     buffer: str = ""
@@ -69,13 +73,14 @@ class _StreamOutputState:
     user_text: str
     stable_message_id: str
     event_id_namespace: str
-    content_buffers: dict[BlockType, str] = field(default_factory=dict)
+    artifact_content_buffers: dict[str, str] = field(default_factory=dict)
     progress_buffers: dict[str, str] = field(default_factory=dict)
     token_usage: dict[str, Any] | None = None
     upstream_error: Any | None = None
     pending_interrupt_request_ids: set[str] = field(default_factory=set)
+    emitted_artifact_ids: set[str] = field(default_factory=set)
+    text_artifact_id: str | None = None
     saw_any_chunk: bool = False
-    emitted_stream_chunk: bool = False
     sequence: int = 0
 
     def should_drop_initial_user_echo(
@@ -97,19 +102,19 @@ class _StreamOutputState:
     def register_chunk(
         self,
         *,
-        block_type: BlockType,
+        artifact_id: str,
         content_key: str,
         append: bool,
         accumulate_content: bool = True,
     ) -> tuple[bool, bool]:
-        previous = self.content_buffers.get(block_type, "")
+        previous = self.artifact_content_buffers.get(artifact_id, "")
         next_value = f"{previous}{content_key}" if append and accumulate_content else content_key
         if next_value == previous:
             return False, False
-        self.content_buffers[block_type] = next_value
+        self.artifact_content_buffers[artifact_id] = next_value
         self.saw_any_chunk = True
-        effective_append = self.emitted_stream_chunk
-        self.emitted_stream_chunk = True
+        effective_append = artifact_id in self.emitted_artifact_ids
+        self.emitted_artifact_ids.add(artifact_id)
         return True, effective_append
 
     def register_progress(self, *, identity: str, content_key: str) -> bool:
@@ -119,13 +124,24 @@ class _StreamOutputState:
         self.progress_buffers[identity] = content_key
         return True
 
-    def should_emit_final_snapshot(self, text: str) -> bool:
+    def remember_text_artifact_id(self, artifact_id: str | None) -> None:
+        if isinstance(artifact_id, str):
+            normalized = artifact_id.strip()
+            if normalized:
+                self.text_artifact_id = normalized
+
+    def resolve_text_artifact_id(self, default_artifact_id: str) -> str:
+        if isinstance(self.text_artifact_id, str) and self.text_artifact_id.strip():
+            return self.text_artifact_id.strip()
+        return default_artifact_id
+
+    def should_emit_final_snapshot(self, *, artifact_id: str, text: str) -> bool:
         if not text.strip():
             return False
-        existing = self.content_buffers.get(BlockType.TEXT, "")
+        existing = self.artifact_content_buffers.get(artifact_id, "")
         if existing.strip() == text.strip():
             return False
-        self.content_buffers[BlockType.TEXT] = text
+        self.artifact_content_buffers[artifact_id] = text
         self.saw_any_chunk = True
         return True
 
@@ -226,6 +242,7 @@ def _build_stream_artifact_metadata(
     *,
     block_type: BlockType,
     shared_source: str,
+    part_id: str | None = None,
     message_id: str | None = None,
     role: str | None = None,
     event_id: str | None = None,
@@ -238,6 +255,8 @@ def _build_stream_artifact_metadata(
         "block_type": block_type.value,
         "source": shared_source,
     }
+    if part_id:
+        stream_meta["part_id"] = part_id
     if message_id:
         stream_meta["message_id"] = message_id
     if role:

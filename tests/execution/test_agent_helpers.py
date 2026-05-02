@@ -62,21 +62,28 @@ def test_stream_output_state_covers_echo_progress_and_interrupt_edges() -> None:
     )
 
     changed, append = state.register_chunk(
-        block_type=BlockType.TEXT,
+        artifact_id="task:stream:text",
         content_key="draft",
         append=False,
     )
     assert (changed, append) == (True, False)
     assert state.register_chunk(
-        block_type=BlockType.TEXT,
+        artifact_id="task:stream:text",
         content_key="draft",
         append=False,
     ) == (False, False)
     assert state.register_progress(identity="step:1", content_key="running") is True
     assert state.register_progress(identity="step:1", content_key="running") is False
-    assert state.should_emit_final_snapshot(" ") is False
-    assert state.should_emit_final_snapshot("draft") is False
-    assert state.should_emit_final_snapshot("final answer") is True
+    state.remember_text_artifact_id("task:stream:text")
+    assert state.should_emit_final_snapshot(artifact_id="task:stream:text", text=" ") is False
+    assert state.should_emit_final_snapshot(artifact_id="task:stream:text", text="draft") is False
+    assert (
+        state.should_emit_final_snapshot(
+            artifact_id="task:stream:text",
+            text="final answer",
+        )
+        is True
+    )
     assert state.resolve_message_id("  msg-1  ") == "msg-1"
     assert state.resolve_message_id("   ") == "msg-stable"
     assert state.build_event_id(state.next_sequence()) == "evt-ns:1"

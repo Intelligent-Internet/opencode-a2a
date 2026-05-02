@@ -171,6 +171,7 @@ def should_show_call_help(args: Sequence[str]) -> bool:
 async def run_call(agent_url: str, text: str) -> int:
     settings = load_settings(os.environ)
     client = A2AClient(agent_url, settings=settings)
+    rendered_artifacts: dict[str, str] = {}
 
     try:
         async for event in client.send_message(text):
@@ -182,9 +183,24 @@ async def run_call(agent_url: str, text: str) -> int:
             elif event.HasField("artifact_update"):
                 artifact = event.artifact_update.artifact
                 if artifact and artifact.parts:
+                    artifact_id = artifact.artifact_id or ""
                     for part in artifact.parts:
                         text_val = part.text if part.HasField("text") else None
                         if isinstance(text_val, str):
+                            if event.artifact_update.append:
+                                rendered_artifacts[artifact_id] = (
+                                    f"{rendered_artifacts.get(artifact_id, '')}{text_val}"
+                                )
+                                print(text_val, end="", flush=True)
+                                continue
+
+                            previous = rendered_artifacts.get(artifact_id, "")
+                            rendered_artifacts[artifact_id] = text_val
+                            if text_val == previous:
+                                continue
+                            if previous and text_val.startswith(previous):
+                                print(text_val[len(previous) :], end="", flush=True)
+                                continue
                             print(text_val, end="", flush=True)
             elif (
                 event.HasField("status_update")

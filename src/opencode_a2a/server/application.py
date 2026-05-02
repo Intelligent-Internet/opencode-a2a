@@ -92,6 +92,7 @@ from .agent_card import (
     build_agent_card,
 )
 from .client_manager import A2AClientManager
+from .context_helpers import AuthenticatedIdentityUser
 from .lifespan import build_lifespan
 from .middleware import (
     build_agent_card_etag,
@@ -758,6 +759,7 @@ class IdentityAwareCallContextBuilder(DefaultServerCallContextBuilder):
         identity = getattr(request.state, "user_identity", None)
         if identity:
             context.state["identity"] = identity
+            context.user = AuthenticatedIdentityUser(identity)
         auth_scheme = getattr(request.state, "user_auth_scheme", None)
         if auth_scheme:
             context.state["auth_scheme"] = auth_scheme
@@ -966,6 +968,7 @@ def create_app(settings: Settings) -> FastAPI:
         "/v1/tasks",
         build_list_tasks_route(
             task_store=task_store,
+            context_builder=context_builder.build,
         ),
         methods=["GET"],
     )

@@ -3,11 +3,13 @@ from __future__ import annotations
 import logging
 import warnings
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from a2a.server.context import ServerCallContext
 from a2a.server.tasks.database_task_store import DatabaseTaskStore
 from a2a.types import Task, TaskState, TaskStatus
+from sqlalchemy import text
 
 from opencode_a2a.server.task_store import (
     FirstTerminalStateWinsPolicy,
@@ -23,7 +25,7 @@ from opencode_a2a.server.task_store import (
     initialize_task_store,
     unwrap_task_store,
 )
-from tests.support.helpers import make_settings
+from tests.support.helpers import make_request_context_mock, make_settings
 
 
 def _task(task_id: str, *, context_id: str = "ctx-1") -> Task:
@@ -168,6 +170,139 @@ async def test_build_database_engine_configures_sqlite_pragmas_and_parent_dir(
     assert str(journal_mode).lower() == "wal"
     assert int(busy_timeout) == 30_000
     assert int(synchronous) == 1
+
+
+@pytest.mark.asyncio
+async def test_database_task_store_rejects_legacy_tasks_table_schema(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'legacy-tasks.db'}"
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=database_url,
+    )
+    engine = build_database_engine(settings)
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE tasks (
+                    id VARCHAR(36) NOT NULL PRIMARY KEY,
+                    context_id VARCHAR(36) NOT NULL,
+                    kind VARCHAR(16) NOT NULL,
+                    status JSON NOT NULL,
+                    artifacts JSON,
+                    history JSON,
+                    metadata JSON
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO tasks (
+                    id,
+                    context_id,
+                    kind,
+                    status,
+                    artifacts,
+                    history,
+                    metadata
+                ) VALUES (
+                    'legacy-task',
+                    'ctx-1',
+                    'task',
+                    '{"state":"TASK_STATE_WORKING"}',
+                    '[]',
+                    '[]',
+                    '{}'
+                )
+                """
+            )
+        )
+
+    store = build_task_store(settings, engine=engine)
+    with pytest.raises(RuntimeError, match="a2a-db"):
+        await initialize_task_store(store)
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_initialize_task_store_delegates_back_to_sdk_initialize(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'sdk-init.db'}",
+    )
+    store = build_task_store(settings)
+    raw_store = unwrap_task_store(store)
+    assert isinstance(raw_store, DatabaseTaskStore)
+
+    called = False
+    original_initialize = DatabaseTaskStore.initialize
+
+    async def _record_initialize(self) -> None:  # noqa: ANN001
+        nonlocal called
+        called = True
+        await original_initialize(self)
+
+    monkeypatch.setattr(DatabaseTaskStore, "initialize", _record_initialize)
+
+    try:
+        await initialize_task_store(store)
+    finally:
+        await store.engine.dispose()
+
+    assert called is True
+
+
+def test_make_request_context_mock_uses_normalized_call_context() -> None:
+    context = make_request_context_mock(
+        task_id="task-1",
+        context_id="ctx-1",
+        identity="opaque:test-id",
+    )
+
+    assert isinstance(context.call_context, ServerCallContext)
+    assert context.call_context.state["identity"] == "opaque:test-id"
+    assert context.call_context.user.is_authenticated is True
+    assert context.call_context.user.user_name == "opaque:test-id"
+
+
+@pytest.mark.asyncio
+async def test_database_task_store_normalizes_mock_server_call_context_identity_scope(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'mock-context.db'}",
+    )
+    store = build_task_store(settings)
+    await initialize_task_store(store)
+
+    owner_context = MagicMock(spec=ServerCallContext)
+    owner_context.state = {"identity": "opaque:test-id"}
+    owner_context.requested_extensions = set()
+
+    other_context = MagicMock(spec=ServerCallContext)
+    other_context.state = {"identity": "opaque:other-id"}
+    other_context.requested_extensions = set()
+
+    try:
+        await store.save(_task("task-1"), owner_context)
+        restored = await store.get("task-1", owner_context)
+        missing = await store.get("task-1", other_context)
+    finally:
+        await store.engine.dispose()
+
+    assert restored is not None
+    assert restored.id == "task-1"
+    assert missing is None
 
 
 @pytest.mark.asyncio

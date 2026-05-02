@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from a2a.auth.user import User
+from a2a.server.context import ServerCallContext
 from a2a.server.routes.rest_dispatcher import RestDispatcher
 from a2a.types import (
     Artifact,
@@ -91,6 +93,23 @@ def _task_for_listing(
         artifacts=artifacts,
         history=history,
     )
+
+
+class _TestUser(User):
+    def __init__(self, user_name: str) -> None:
+        self._user_name = user_name
+
+    @property
+    def is_authenticated(self) -> bool:
+        return True
+
+    @property
+    def user_name(self) -> str:
+        return self._user_name
+
+
+def _authenticated_task_context(user_name: str = "automation") -> ServerCallContext:
+    return ServerCallContext(user=_TestUser(user_name))
 
 
 def test_agent_card_declares_dual_stack_with_http_json_preferred() -> None:
@@ -204,7 +223,8 @@ async def test_list_tasks_route_returns_paginated_results(monkeypatch) -> None:
             timestamp=(now + timedelta(seconds=2)).isoformat(),
             include_artifacts=True,
             history_size=3,
-        )
+        ),
+        _authenticated_task_context(),
     )
     await task_store.save(
         _task_for_listing(
@@ -213,7 +233,8 @@ async def test_list_tasks_route_returns_paginated_results(monkeypatch) -> None:
             timestamp=(now + timedelta(seconds=1)).isoformat(),
             include_artifacts=True,
             history_size=2,
-        )
+        ),
+        _authenticated_task_context(),
     )
     await task_store.save(
         _task_for_listing(
@@ -222,7 +243,8 @@ async def test_list_tasks_route_returns_paginated_results(monkeypatch) -> None:
             state=TaskState.TASK_STATE_WORKING,
             timestamp=now.isoformat(),
             history_size=1,
-        )
+        ),
+        _authenticated_task_context(),
     )
 
     transport = httpx.ASGITransport(app=app)
@@ -262,6 +284,50 @@ async def test_list_tasks_route_returns_paginated_results(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_tasks_route_respects_authenticated_owner_scope(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(
+        make_settings(
+            test_bearer_token="test-token",
+            a2a_task_store_backend="memory",
+        )
+    )
+    task_store = app.state.task_store
+    now = datetime.now(UTC)
+    await task_store.save(
+        _task_for_listing(
+            task_id="task-visible",
+            context_id="ctx-owner-scope",
+            timestamp=(now + timedelta(seconds=1)).isoformat(),
+        ),
+        _authenticated_task_context(),
+    )
+    await task_store.save(
+        _task_for_listing(
+            task_id="task-hidden",
+            context_id="ctx-owner-scope",
+            timestamp=now.isoformat(),
+        ),
+        _authenticated_task_context("someone-else"),
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/v1/tasks",
+            headers={"Authorization": "Bearer test-token"},
+            params={"contextId": "ctx-owner-scope"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["totalSize"] == 1
+    assert [task["id"] for task in payload["tasks"]] == ["task-visible"]
+
+
+@pytest.mark.asyncio
 async def test_list_tasks_route_cursor_stays_stable_when_newer_task_is_inserted(
     monkeypatch,
 ) -> None:
@@ -281,21 +347,24 @@ async def test_list_tasks_route_cursor_stays_stable_when_newer_task_is_inserted(
             task_id="task-page-1",
             context_id="ctx-cursor",
             timestamp=(now + timedelta(seconds=3)).isoformat(),
-        )
+        ),
+        _authenticated_task_context(),
     )
     await task_store.save(
         _task_for_listing(
             task_id="task-page-2",
             context_id="ctx-cursor",
             timestamp=(now + timedelta(seconds=2)).isoformat(),
-        )
+        ),
+        _authenticated_task_context(),
     )
     await task_store.save(
         _task_for_listing(
             task_id="task-page-3",
             context_id="ctx-cursor",
             timestamp=(now + timedelta(seconds=1)).isoformat(),
-        )
+        ),
+        _authenticated_task_context(),
     )
 
     transport = httpx.ASGITransport(app=app)
@@ -314,7 +383,8 @@ async def test_list_tasks_route_cursor_stays_stable_when_newer_task_is_inserted(
                 task_id="task-inserted-later",
                 context_id="ctx-cursor",
                 timestamp=(now + timedelta(seconds=4)).isoformat(),
-            )
+            ),
+            _authenticated_task_context(),
         )
 
         second_page = await client.get(
@@ -355,7 +425,7 @@ async def test_list_tasks_route_supports_history_artifacts_and_filters(monkeypat
         include_artifacts=True,
         history_size=4,
     )
-    await task_store.save(target_task)
+    await task_store.save(target_task, _authenticated_task_context())
     await task_store.save(
         _task_for_listing(
             task_id="task-excluded-status",
@@ -364,7 +434,8 @@ async def test_list_tasks_route_supports_history_artifacts_and_filters(monkeypat
             timestamp=now.isoformat(),
             include_artifacts=True,
             history_size=2,
-        )
+        ),
+        _authenticated_task_context(),
     )
 
     transport = httpx.ASGITransport(app=app)
@@ -424,7 +495,7 @@ async def test_list_tasks_route_applies_persisted_output_negotiation(monkeypatch
         ],
         metadata=metadata,
     )
-    await task_store.save(task)
+    await task_store.save(task, _authenticated_task_context())
 
     transport = httpx.ASGITransport(app=app)
     headers = {"Authorization": "Bearer test-token"}
@@ -477,7 +548,8 @@ async def test_list_tasks_route_filters_unnegotiated_shared_extension_metadata(m
             context_id="ctx-shared-list",
             status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED, timestamp=datetime.now(UTC)),
             metadata=metadata,
-        )
+        ),
+        _authenticated_task_context(),
     )
 
     transport = httpx.ASGITransport(app=app)
@@ -613,14 +685,16 @@ async def test_list_tasks_route_tolerates_invalid_stored_status_timestamp(monkey
             task_id="task-valid-ts",
             context_id="ctx-invalid-ts",
             timestamp=now.isoformat(),
-        )
+        ),
+        _authenticated_task_context(),
     )
     await task_store.save(
         _task_for_listing(
             task_id="task-invalid-ts",
             context_id="ctx-invalid-ts",
             timestamp="not-a-timestamp",
-        )
+        ),
+        _authenticated_task_context(),
     )
 
     transport = httpx.ASGITransport(app=app)

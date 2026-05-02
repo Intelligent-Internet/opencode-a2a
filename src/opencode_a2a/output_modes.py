@@ -32,6 +32,9 @@ OUTPUT_NEGOTIATION_ACCEPTED_OUTPUT_MODES_FIELD = "accepted_output_modes"
 _OPENCODE_METADATA_KEY = "opencode"
 _APPLICATION_JSON_MEDIA_TYPE = "application/json"
 _TEXT_PLAIN_MEDIA_TYPE = "text/plain"
+_STREAM_METADATA_SHARED_KEY = "shared"
+_STREAM_METADATA_STREAM_KEY = "stream"
+_STREAM_METADATA_BLOCK_TYPE_KEY = "block_type"
 
 
 def _accepted_output_modes_source(source: Any) -> Iterable[str] | None:
@@ -208,6 +211,55 @@ def apply_accepted_output_modes(
     return payload
 
 
+def _extract_artifact_stream_block_type(artifact: Artifact | None) -> str | None:
+    if artifact is None:
+        return None
+    metadata = _normalize_metadata_mapping(artifact.metadata)
+    if not metadata:
+        return None
+    shared = metadata.get(_STREAM_METADATA_SHARED_KEY)
+    if not isinstance(shared, dict):
+        return None
+    stream = shared.get(_STREAM_METADATA_STREAM_KEY)
+    if not isinstance(stream, dict):
+        return None
+    block_type = stream.get(_STREAM_METADATA_BLOCK_TYPE_KEY)
+    return block_type.strip() if isinstance(block_type, str) and block_type.strip() else None
+
+
+def _canonicalize_artifact_event(
+    event: TaskArtifactUpdateEvent,
+    text_buffers: dict[str, str],
+) -> TaskArtifactUpdateEvent:
+    artifact = event.artifact
+    if artifact is None or not artifact.parts:
+        return event
+
+    block_type = _extract_artifact_stream_block_type(artifact)
+    if block_type is None:
+        return event
+
+    updated = clone_proto(event)
+    updated.append = False
+
+    part = artifact.parts[0]
+    artifact_id = artifact.artifact_id
+    if block_type in {"text", "reasoning"} and part.HasField("text"):
+        previous = text_buffers.get(artifact_id, "")
+        full_text = part.text if not event.append else f"{previous}{part.text}"
+        text_buffers[artifact_id] = full_text
+        canonical_part = clone_proto(part)
+        canonical_part.text = full_text
+        updated.artifact.CopyFrom(replace_artifact_parts(artifact, [canonical_part]))
+        return updated
+
+    if block_type == "tool_call":
+        updated.artifact.CopyFrom(replace_artifact_parts(artifact, [clone_proto(part)]))
+        return updated
+
+    return event
+
+
 class NegotiatingResultAggregator(ResultAggregator):
     def __init__(
         self,
@@ -216,12 +268,18 @@ class NegotiatingResultAggregator(ResultAggregator):
     ) -> None:
         super().__init__(task_manager)
         self._accepted_output_modes = normalize_accepted_output_modes(accepted_output_modes)
+        self._canonical_text_buffers: dict[str, str] = {}
 
     def _transform_event(self, event: Any) -> Any | None:
         negotiated_event = apply_accepted_output_modes(event, self._accepted_output_modes)
         if negotiated_event is None:
             return None
         return annotate_output_negotiation_metadata(negotiated_event, self._accepted_output_modes)
+
+    def _transform_persisted_event(self, event: Any) -> Any:
+        if not isinstance(event, TaskArtifactUpdateEvent):
+            return event
+        return _canonicalize_artifact_event(event, self._canonical_text_buffers)
 
     async def _persist_output_negotiation_metadata(self, event: Any) -> None:
         if not isinstance(event, TaskArtifactUpdateEvent):
@@ -243,8 +301,9 @@ class NegotiatingResultAggregator(ResultAggregator):
             transformed_event = self._transform_event(event)
             if transformed_event is None:
                 continue
-            await self._persist_output_negotiation_metadata(transformed_event)
-            await self.task_manager.process(transformed_event)
+            persisted_event = self._transform_persisted_event(transformed_event)
+            await self._persist_output_negotiation_metadata(persisted_event)
+            await self.task_manager.process(persisted_event)
             yield transformed_event
 
     async def consume_all(self, consumer: EventConsumer) -> Task | Message | None:
@@ -255,8 +314,9 @@ class NegotiatingResultAggregator(ResultAggregator):
             if isinstance(transformed_event, Message):
                 self._message = transformed_event
                 return transformed_event
-            await self._persist_output_negotiation_metadata(transformed_event)
-            await self.task_manager.process(transformed_event)
+            persisted_event = self._transform_persisted_event(transformed_event)
+            await self._persist_output_negotiation_metadata(persisted_event)
+            await self.task_manager.process(persisted_event)
         return await self.task_manager.get_task()
 
     async def consume_and_break_on_interrupt(
@@ -275,8 +335,9 @@ class NegotiatingResultAggregator(ResultAggregator):
             if isinstance(transformed_event, Message):
                 self._message = transformed_event
                 return transformed_event, False, None
-            await self._persist_output_negotiation_metadata(transformed_event)
-            await self.task_manager.process(transformed_event)
+            persisted_event = self._transform_persisted_event(transformed_event)
+            await self._persist_output_negotiation_metadata(persisted_event)
+            await self.task_manager.process(persisted_event)
 
             should_interrupt = False
             is_auth_required = (
@@ -304,8 +365,9 @@ class NegotiatingResultAggregator(ResultAggregator):
             transformed_event = self._transform_event(event)
             if transformed_event is None:
                 continue
-            await self._persist_output_negotiation_metadata(transformed_event)
-            await self.task_manager.process(transformed_event)
+            persisted_event = self._transform_persisted_event(transformed_event)
+            await self._persist_output_negotiation_metadata(persisted_event)
+            await self.task_manager.process(persisted_event)
             if event_callback:
                 await event_callback()
 

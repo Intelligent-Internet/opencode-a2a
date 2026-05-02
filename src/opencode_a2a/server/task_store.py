@@ -13,7 +13,7 @@ from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.server.tasks.task_store import TaskStore
 from a2a.types import ListTasksRequest, ListTasksResponse, Task, TaskState
 from google.protobuf.json_format import MessageToDict
-from sqlalchemy import event, or_, select
+from sqlalchemy import event, inspect, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import make_url
@@ -21,6 +21,7 @@ from sqlalchemy.engine import make_url
 from ..a2a_utils import proto_equals
 from ..config import Settings
 from ..task_states import TERMINAL_TASK_STATES
+from .context_helpers import normalize_server_call_context
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -32,7 +33,9 @@ _ATOMIC_TERMINAL_GUARD_DIALECTS = frozenset({"postgresql", "sqlite"})
 _SQLITE_JOURNAL_MODE = "WAL"
 _SQLITE_BUSY_TIMEOUT_MS = 30_000
 _SQLITE_SYNCHRONOUS_MODE = "NORMAL"
-_LIST_TASKS_BATCH_SIZE = 100
+_SDK_TASKS_TABLE_NAME = "tasks"
+_SDK_TASKS_REQUIRED_COLUMNS = frozenset({"owner", "last_updated", "protocol_version"})
+_SDK_TASKS_REQUIRED_INDEXES = frozenset({"idx_tasks_owner_last_updated"})
 
 
 class TaskStoreOperationError(RuntimeError):
@@ -47,6 +50,10 @@ class TaskStoreOperationError(RuntimeError):
 class TaskPersistenceDecision:
     persist: bool
     reason: str | None = None
+
+
+class TaskStoreSchemaCompatibilityError(RuntimeError):
+    pass
 
 
 class TaskWritePolicy(ABC):
@@ -379,34 +386,10 @@ def unwrap_task_store(task_store: TaskStore) -> TaskStore:
     return task_store
 
 
-async def list_stored_tasks(
-    task_store: TaskStore,
-    context: ServerCallContext | None = None,
-) -> list[Task]:
-    normalized_context = _normalize_task_store_context(context)
-    tasks: list[Task] = []
-    next_page_token = ""
-
-    while True:
-        response = await task_store.list(
-            ListTasksRequest(
-                page_size=_LIST_TASKS_BATCH_SIZE,
-                page_token=next_page_token,
-            ),
-            normalized_context,
-        )
-        tasks.extend(response.tasks)
-        if not response.next_page_token:
-            return tasks
-        next_page_token = response.next_page_token
-
-
 def _normalize_task_store_context(
     context: ServerCallContext | None,
 ) -> ServerCallContext:
-    if context is not None:
-        return context
-    return ServerCallContext()
+    return normalize_server_call_context(context)
 
 
 def _configure_sqlite_connection(dbapi_connection: Any, _connection_record: Any) -> None:
@@ -472,6 +455,52 @@ def _task_row_values(task: Task, *, owner: str | None) -> dict[str, Any]:
 
 
 async def initialize_task_store(task_store: TaskStore) -> None:
+    raw_task_store = unwrap_task_store(task_store)
+    if isinstance(raw_task_store, DatabaseTaskStore):
+        await _ensure_sdk_task_store_schema_compatible(raw_task_store)
+        await raw_task_store.initialize()
+        return
     initialize = getattr(task_store, "initialize", None)
     if callable(initialize):
         await initialize()
+
+
+async def _ensure_sdk_task_store_schema_compatible(task_store: DatabaseTaskStore) -> None:
+    database_url = task_store.engine.url.render_as_string(hide_password=True)
+    async with task_store.engine.begin() as conn:
+        await conn.run_sync(
+            lambda sync_conn: _validate_sdk_task_table_schema(
+                sync_conn,
+                database_url=database_url,
+            )
+        )
+
+
+def _validate_sdk_task_table_schema(
+    connection: Any,
+    *,
+    database_url: str,
+) -> None:
+    inspector = inspect(connection)
+    if _SDK_TASKS_TABLE_NAME not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns(_SDK_TASKS_TABLE_NAME)}
+    existing_indexes = {index["name"] for index in inspector.get_indexes(_SDK_TASKS_TABLE_NAME)}
+    missing_columns = sorted(_SDK_TASKS_REQUIRED_COLUMNS - existing_columns)
+    missing_indexes = sorted(_SDK_TASKS_REQUIRED_INDEXES - existing_indexes)
+    if not missing_columns and not missing_indexes:
+        return
+
+    details: list[str] = []
+    if missing_columns:
+        details.append(f"missing columns: {', '.join(missing_columns)}")
+    if missing_indexes:
+        details.append(f"missing indexes: {', '.join(missing_indexes)}")
+
+    raise TaskStoreSchemaCompatibilityError(
+        "Legacy SDK task table schema detected for 'tasks' "
+        f"({'; '.join(details)}). Run "
+        f"`a2a-db --database-url {database_url}` before starting the service. "
+        "If `a2a-db` is unavailable, install the `a2a-sdk[db-cli]` extra first."
+    )
