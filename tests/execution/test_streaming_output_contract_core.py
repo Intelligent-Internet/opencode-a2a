@@ -355,7 +355,7 @@ async def test_streaming_does_not_send_duplicate_final_snapshot_when_chunks_exis
     ]
     assert len(final_updates) == 1
     assert _part_text(final_updates[0]) == "stable final answer"
-    assert _artifact_stream_meta(final_updates[0])["source"] == "stream"
+    assert "source" not in _artifact_stream_meta(final_updates[0])
 
 
 @pytest.mark.asyncio
@@ -382,7 +382,7 @@ async def test_streaming_emits_final_snapshot_only_when_stream_has_no_final_answ
     assert len(final_updates) == 1
     final_event = final_updates[0]
     assert _part_text(final_event) == "final answer from send_message"
-    assert _artifact_stream_meta(final_event)["source"] == "final_snapshot"
+    assert "source" not in _artifact_stream_meta(final_event)
     assert final_event.append is False
     assert final_event.last_chunk is True
 
@@ -425,7 +425,7 @@ async def test_streaming_final_snapshot_does_not_repeat_reasoning_content() -> N
     assert len(text_updates) == 1
     assert _part_text(text_updates[0]) == "final answer from send_message"
     assert "draft plan" not in _part_text(text_updates[0])
-    assert _artifact_stream_meta(text_updates[0])["source"] == "final_snapshot"
+    assert "source" not in _artifact_stream_meta(text_updates[0])
 
 
 @pytest.mark.asyncio
@@ -485,7 +485,7 @@ async def test_streaming_emits_events_without_message_id_using_stable_fallback()
     assert len(updates) == 1
     update = updates[0]
     assert _part_text(update) == "final answer from send_message"
-    assert _artifact_stream_meta(update)["source"] == "stream"
+    assert "source" not in _artifact_stream_meta(update)
     assert _artifact_stream_meta(update)["block_type"] == "text"
     assert _artifact_stream_meta(update)["message_id"] == "task-6:ctx-6:assistant"
     assert _artifact_stream_meta(update)["event_id"] == "task-6:ctx-6:task-6:stream:1"
@@ -532,7 +532,7 @@ async def test_streaming_emits_snapshot_when_message_id_missing_and_stream_is_pa
     assert _part_text(first) == "partial "
     assert first.append is False
     assert first.last_chunk is False
-    assert _artifact_stream_meta(first)["source"] == "stream"
+    assert "source" not in _artifact_stream_meta(first)
     assert _artifact_stream_meta(first)["message_id"] == "task-6b:ctx-6b:assistant"
     assert _artifact_stream_meta(first)["event_id"] == "task-6b:ctx-6b:task-6b:stream:1"
     assert _artifact_stream_meta(first)["sequence"] == 1
@@ -540,7 +540,7 @@ async def test_streaming_emits_snapshot_when_message_id_missing_and_stream_is_pa
     assert _part_text(second) == "partial final answer"
     assert second.append is False
     assert second.last_chunk is True
-    assert _artifact_stream_meta(second)["source"] == "final_snapshot"
+    assert "source" not in _artifact_stream_meta(second)
     assert _artifact_stream_meta(second)["message_id"] == "task-6b:ctx-6b:assistant"
     assert _artifact_stream_meta(second)["event_id"] == "task-6b:ctx-6b:task-6b:stream:2"
     assert _artifact_stream_meta(second)["sequence"] == 2
@@ -807,7 +807,7 @@ async def test_streaming_emits_progress_metadata_for_step_events() -> None:
     assert first["status"] == "running"
     assert first["title"] == "Planning"
     assert first["subtitle"] == "Inspecting repository"
-    assert _status_shared_meta(progress_statuses[0])["stream"]["source"] == "progress"
+    assert "source" not in _status_shared_meta(progress_statuses[0])["stream"]
 
     second = _progress_meta(progress_statuses[1])
     assert second["type"] == "step-finish"

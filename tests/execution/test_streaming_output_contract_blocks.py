@@ -233,12 +233,10 @@ async def test_streaming_never_resets_single_artifact_after_first_chunk() -> Non
     updates = _artifact_updates(queue)
     assert len(updates) >= 2
     assert updates[0].append is False
-    stream_updates = [ev for ev in updates if _artifact_stream_meta(ev)["source"] == "stream"]
+    stream_updates = [ev for ev in updates if ev.last_chunk is False]
     assert stream_updates[0].append is False
     assert all(ev.append is True for ev in stream_updates[1:])
-    final_snapshots = [
-        ev for ev in updates if _artifact_stream_meta(ev)["source"] == "final_snapshot"
-    ]
+    final_snapshots = [ev for ev in updates if ev.last_chunk is True]
     assert final_snapshots
     assert all(ev.append is False for ev in final_snapshots)
 
@@ -325,7 +323,7 @@ async def test_streaming_supports_message_part_delta_events() -> None:
     assert reasoning_updates
     merged = "".join(_part_text(ev) for ev in reasoning_updates)
     assert merged == "first second"
-    assert {_artifact_stream_meta(ev)["source"] for ev in reasoning_updates} == {"stream"}
+    assert all("source" not in _artifact_stream_meta(ev) for ev in reasoning_updates)
 
 
 @pytest.mark.asyncio
@@ -364,4 +362,4 @@ async def test_streaming_buffers_delta_until_part_updated_arrives() -> None:
     assert reasoning_updates
     merged = "".join(_part_text(ev) for ev in reasoning_updates)
     assert merged == "first second"
-    assert {_artifact_stream_meta(ev)["source"] for ev in reasoning_updates} == {"stream"}
+    assert all("source" not in _artifact_stream_meta(ev) for ev in reasoning_updates)

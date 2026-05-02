@@ -241,10 +241,7 @@ class _TTLCache:
 def _build_stream_artifact_metadata(
     *,
     block_type: BlockType,
-    shared_source: str,
-    part_id: str | None = None,
     message_id: str | None = None,
-    role: str | None = None,
     event_id: str | None = None,
     sequence: int | None = None,
     include_shared_stream_metadata: bool = True,
@@ -253,14 +250,9 @@ def _build_stream_artifact_metadata(
         return None
     stream_meta: dict[str, Any] = {
         "block_type": block_type.value,
-        "source": shared_source,
     }
-    if part_id:
-        stream_meta["part_id"] = part_id
     if message_id:
         stream_meta["message_id"] = message_id
-    if role:
-        stream_meta["role"] = role
     if event_id:
         stream_meta["event_id"] = event_id
     if sequence is not None:
@@ -276,7 +268,6 @@ def _build_output_metadata(
     stream: Mapping[str, Any] | None = None,
     progress: Mapping[str, Any] | None = None,
     interrupt: Mapping[str, Any] | None = None,
-    opencode_private: Mapping[str, Any] | None = None,
     include_session_metadata: bool = True,
     include_streaming_metadata: bool = True,
 ) -> dict[str, Any] | None:
@@ -298,6 +289,4 @@ def _build_output_metadata(
         shared_meta["interrupt"] = dict(interrupt)
     if shared_meta:
         metadata["shared"] = shared_meta
-    if opencode_private:
-        metadata["opencode"] = dict(opencode_private)
     return metadata or None

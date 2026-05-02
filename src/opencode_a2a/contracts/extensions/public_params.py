@@ -186,11 +186,9 @@ def build_streaming_extension_params() -> dict[str, Any]:
         },
         "stream_fields": {
             "block_type": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.block_type",
-            "source": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.source",
             "message_id": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.message_id",
             "event_id": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.event_id",
             "sequence": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.sequence",
-            "role": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.role",
         },
         "progress_fields": {
             "type": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.type",

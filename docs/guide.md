@@ -230,7 +230,6 @@ If one deployment works while another fails against the same upstream provider, 
   - reasoning chunks use a stable reasoning artifact ID
   - tool-call updates use a stable per-tool-part artifact ID when the upstream part is identifiable
 - `artifact.metadata.shared.stream.event_id` preserves the original cross-artifact stream timeline, even when different logical lanes use different artifact IDs.
-- `artifact.metadata.shared.stream.part_id` is best-effort metadata for the upstream part identity that drove the chunk.
 - `artifact.metadata.shared.stream.message_id` remains best-effort metadata: when upstream omits `message_id`, the service falls back to a stable request-scoped message identity.
 - `artifact.metadata.shared.stream.sequence` carries the canonical per-request stream sequence.
 - A final complete text snapshot is emitted only when streaming chunks did not already produce the same final text.
@@ -571,7 +570,7 @@ Runtime payload:
 Shared runtime fields:
 
 - `metadata.shared.stream`
-  - block-level stream metadata such as `block_type`, `source`, `message_id`, `event_id`, `sequence`, and `role`
+  - block-level stream metadata such as `block_type`, `message_id`, `event_id`, and `sequence`
 - `metadata.shared.usage`
   - normalized usage data such as `input_tokens`, `output_tokens`, `total_tokens`, optional `reasoning_tokens`, optional `cache_tokens.read_tokens` / `cache_tokens.write_tokens`, and optional `cost`
 - `metadata.shared.interrupt`

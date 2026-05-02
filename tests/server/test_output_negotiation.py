@@ -231,7 +231,6 @@ async def test_negotiating_result_aggregator_compacts_stream_artifacts_for_persi
         "shared": {
             "stream": {
                 "block_type": "text",
-                "source": "stream",
                 "message_id": "msg-stream-1",
             }
         }

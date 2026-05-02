@@ -406,8 +406,6 @@ class ExecutionCoordinator:
                 last_chunk=True,
                 artifact_metadata=_build_stream_artifact_metadata(
                     block_type=BlockType.TEXT,
-                    shared_source="final_snapshot",
-                    part_id=None,
                     message_id=resolved_message_id,
                     event_id=self._stream_state.build_event_id(sequence),
                     sequence=sequence,
@@ -426,7 +424,6 @@ class ExecutionCoordinator:
                     stream={
                         "message_id": resolved_message_id,
                         "event_id": f"{self._stream_state.event_id_namespace}:status",
-                        "source": "status",
                     },
                     include_session_metadata=self._prepared.emit_session_metadata,
                     include_streaming_metadata=self._prepared.emit_streaming_metadata,

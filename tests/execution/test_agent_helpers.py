@@ -210,7 +210,6 @@ def test_build_output_metadata_and_number_coercion_helpers() -> None:
         stream={"block_type": "text"},
         progress={"type": "step-finish"},
         interrupt={"phase": "asked"},
-        opencode_private={"directory": "/tmp/workspace"},
     )
 
     assert metadata == {
@@ -220,8 +219,7 @@ def test_build_output_metadata_and_number_coercion_helpers() -> None:
             "stream": {"block_type": "text"},
             "progress": {"type": "step-finish"},
             "interrupt": {"phase": "asked"},
-        },
-        "opencode": {"directory": "/tmp/workspace"},
+        }
     }
     assert _build_output_metadata() is None
     assert _coerce_number(True) is None
