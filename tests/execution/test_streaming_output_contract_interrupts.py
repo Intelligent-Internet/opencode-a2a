@@ -1,12 +1,15 @@
 import pytest
+from a2a.server.context import ServerCallContext
 from a2a.types import (
     TaskState,
     TaskStatusUpdateEvent,
 )
 
+from opencode_a2a.contracts.extensions import INTERRUPT_CALLBACK_EXTENSION_URI
 from opencode_a2a.execution.executor import (
     OpencodeAgentExecutor,
 )
+from opencode_a2a.server.context_helpers import normalize_server_call_context
 from opencode_a2a.task_states import TERMINAL_TASK_STATES
 from tests.support.helpers import (
     DummyEventQueue,
@@ -34,6 +37,12 @@ def _interrupt_type(event: TaskStatusUpdateEvent) -> str | None:
     return _interrupt_meta(event).get("type")
 
 
+def _interrupt_enabled_call_context() -> ServerCallContext:
+    return normalize_server_call_context(
+        ServerCallContext(requested_extensions={INTERRUPT_CALLBACK_EXTENSION_URI})
+    )
+
+
 @pytest.mark.asyncio
 async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> None:
     client = DummyStreamingClient(
@@ -49,7 +58,12 @@ async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> 
     queue = DummyEventQueue()
 
     await executor.execute(
-        make_request_context(task_id="task-perm", context_id="ctx-perm", text="hello"),
+        make_request_context(
+            task_id="task-perm",
+            context_id="ctx-perm",
+            text="hello",
+            call_context=_interrupt_enabled_call_context(),
+        ),
         queue,
     )
 
@@ -89,7 +103,12 @@ async def test_streaming_emits_interrupt_status_for_question_asked_event() -> No
     queue = DummyEventQueue()
 
     await executor.execute(
-        make_request_context(task_id="task-question", context_id="ctx-question", text="hello"),
+        make_request_context(
+            task_id="task-question",
+            context_id="ctx-question",
+            text="hello",
+            call_context=_interrupt_enabled_call_context(),
+        ),
         queue,
     )
 
@@ -174,6 +193,7 @@ async def test_streaming_normalizes_question_interrupt_details() -> None:
             task_id="task-question-normalized",
             context_id="ctx-question-normalized",
             text="hello",
+            call_context=_interrupt_enabled_call_context(),
         ),
         queue,
     )
@@ -229,6 +249,7 @@ async def test_streaming_resolved_interrupt_only_clears_internal_pending_state()
             task_id="task-interrupt-resolved",
             context_id="ctx-interrupt-resolved",
             text="hello",
+            call_context=_interrupt_enabled_call_context(),
         ),
         queue,
     )
@@ -288,6 +309,7 @@ async def test_streaming_duplicate_interrupt_resolved_event_is_not_emitted_twice
             task_id="task-interrupt-resolved-dedupe",
             context_id="ctx-interrupt-resolved-dedupe",
             text="hello",
+            call_context=_interrupt_enabled_call_context(),
         ),
         queue,
     )

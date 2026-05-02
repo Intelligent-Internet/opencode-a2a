@@ -106,12 +106,16 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
 
     assert ext_by_uri[SESSION_BINDING_EXTENSION_URI].params == {
         "metadata_field": "metadata.shared.session.id",
+        "session_metadata_field": "metadata.shared.session",
         "behavior": "prefer_metadata_binding_else_create_session",
         "supported_metadata": [
             "shared.session.id",
             "opencode.directory",
             "opencode.workspace.id",
         ],
+        "session_fields": {
+            "id": "metadata.shared.session.id",
+        },
         "provider_private_metadata": [
             "opencode.directory",
             "opencode.workspace.id",
@@ -134,27 +138,15 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
     assert ext_by_uri[STREAMING_EXTENSION_URI].params == {
         "artifact_metadata_field": "metadata.shared.stream",
         "progress_metadata_field": "metadata.shared.progress",
-        "interrupt_metadata_field": "metadata.shared.interrupt",
-        "session_metadata_field": "metadata.shared.session",
         "usage_metadata_field": "metadata.shared.usage",
         "block_types": ["text", "reasoning", "tool_call"],
         "stream_fields": {
             "block_type": "metadata.shared.stream.block_type",
-            "message_id": "metadata.shared.stream.message_id",
             "sequence": "metadata.shared.stream.sequence",
         },
         "progress_fields": {
             "type": "metadata.shared.progress.type",
             "status": "metadata.shared.progress.status",
-        },
-        "interrupt_fields": {
-            "request_id": "metadata.shared.interrupt.request_id",
-            "type": "metadata.shared.interrupt.type",
-            "phase": "metadata.shared.interrupt.phase",
-        },
-        "session_fields": {
-            "id": "metadata.shared.session.id",
-            "title": "metadata.shared.session.title",
         },
         "usage_fields": {
             "input_tokens": "metadata.shared.usage.input_tokens",
@@ -173,6 +165,12 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
             "question.asked",
         ],
         "request_id_field": "metadata.shared.interrupt.request_id",
+        "interrupt_metadata_field": "metadata.shared.interrupt",
+        "interrupt_fields": {
+            "request_id": "metadata.shared.interrupt.request_id",
+            "type": "metadata.shared.interrupt.type",
+            "phase": "metadata.shared.interrupt.phase",
+        },
     }
 
     for uri in AUTHENTICATED_ONLY_EXTENSION_URIS:
@@ -223,6 +221,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     binding = ext_by_uri[SESSION_BINDING_EXTENSION_URI]
     profile = binding.params["profile"]
     assert binding.params["metadata_field"] == "metadata.shared.session.id"
+    assert binding.params["session_metadata_field"] == "metadata.shared.session"
     assert binding.params["supported_metadata"] == [
         "shared.session.id",
         "opencode.directory",
@@ -232,6 +231,9 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "opencode.directory",
         "opencode.workspace.id",
     ]
+    assert binding.params["session_fields"] == {
+        "id": "metadata.shared.session.id",
+    }
     assert profile["profile_id"] == "opencode-a2a-single-tenant-coding-v1"
     assert profile["deployment"] == {
         "id": "single_tenant_shared_workspace",
@@ -286,8 +288,6 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     streaming = ext_by_uri[STREAMING_EXTENSION_URI]
     assert streaming.params["artifact_metadata_field"] == "metadata.shared.stream"
     assert streaming.params["progress_metadata_field"] == "metadata.shared.progress"
-    assert streaming.params["interrupt_metadata_field"] == "metadata.shared.interrupt"
-    assert streaming.params["session_metadata_field"] == "metadata.shared.session"
     assert streaming.params["usage_metadata_field"] == "metadata.shared.usage"
     assert streaming.params["block_types"] == ["text", "reasoning", "tool_call"]
     assert streaming.params["block_contracts"] == {
@@ -316,17 +316,6 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     }
     assert streaming.params["stream_fields"]["sequence"] == "metadata.shared.stream.sequence"
     assert streaming.params["progress_fields"]["type"] == "metadata.shared.progress.type"
-    assert streaming.params["interrupt_fields"] == {
-        "request_id": "metadata.shared.interrupt.request_id",
-        "type": "metadata.shared.interrupt.type",
-        "phase": "metadata.shared.interrupt.phase",
-        "details": "metadata.shared.interrupt.details",
-        "resolution": "metadata.shared.interrupt.resolution",
-    }
-    assert streaming.params["session_fields"] == {
-        "id": "metadata.shared.session.id",
-        "title": "metadata.shared.session.title",
-    }
     assert streaming.params["usage_fields"] == {
         "input_tokens": "metadata.shared.usage.input_tokens",
         "output_tokens": "metadata.shared.usage.output_tokens",
@@ -628,6 +617,14 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     interrupt = ext_by_uri[INTERRUPT_CALLBACK_EXTENSION_URI]
     assert interrupt.params["profile"]["runtime_context"]["project"] == "alpha"
     assert interrupt.params["request_id_field"] == "metadata.shared.interrupt.request_id"
+    assert interrupt.params["interrupt_metadata_field"] == "metadata.shared.interrupt"
+    assert interrupt.params["interrupt_fields"] == {
+        "request_id": "metadata.shared.interrupt.request_id",
+        "type": "metadata.shared.interrupt.type",
+        "phase": "metadata.shared.interrupt.phase",
+        "details": "metadata.shared.interrupt.details",
+        "resolution": "metadata.shared.interrupt.resolution",
+    }
     assert interrupt.params["supported_metadata"] == [
         "opencode.directory",
         "opencode.workspace.id",

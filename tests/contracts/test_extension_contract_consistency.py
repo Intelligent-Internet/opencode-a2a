@@ -26,6 +26,8 @@ from opencode_a2a.contracts.extensions import (
     build_interrupt_recovery_extension_params,
     build_model_selection_extension_params,
     build_provider_discovery_extension_params,
+    build_public_interrupt_callback_extension_params,
+    build_public_session_binding_extension_params,
     build_public_streaming_extension_params,
     build_session_binding_extension_params,
     build_session_management_extension_params,
@@ -176,14 +178,8 @@ def test_openapi_jsonrpc_contract_extension_matches_public_disclosure_policy() -
     }
     settings = make_settings(test_bearer_token="test-token")
     runtime_profile = build_runtime_profile(settings)
-    expected_session_binding = select_public_extension_params(
+    expected_session_binding = build_public_session_binding_extension_params(
         build_session_binding_extension_params(runtime_profile=runtime_profile),
-        keys=(
-            "metadata_field",
-            "behavior",
-            "supported_metadata",
-            "provider_private_metadata",
-        ),
     )
     expected_model_selection = select_public_extension_params(
         build_model_selection_extension_params(runtime_profile=runtime_profile),
@@ -197,9 +193,8 @@ def test_openapi_jsonrpc_contract_extension_matches_public_disclosure_policy() -
         ),
     )
     expected_streaming = build_public_streaming_extension_params(build_streaming_extension_params())
-    expected_interrupt_callback = select_public_extension_params(
+    expected_interrupt_callback = build_public_interrupt_callback_extension_params(
         build_interrupt_callback_extension_params(runtime_profile=runtime_profile),
-        keys=("methods", "supported_interrupt_events", "request_id_field"),
     )
 
     assert session_binding == expected_session_binding, (

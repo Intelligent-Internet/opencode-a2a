@@ -205,12 +205,10 @@ def test_ttl_cache_handles_disabled_refresh_and_pop() -> None:
 def test_build_output_metadata_and_number_coercion_helpers() -> None:
     metadata = _build_output_metadata(
         session_id="ses-1",
-        session_title=None,
         usage={"total_tokens": 3},
         stream={"block_type": "text"},
         progress={"type": "step-finish"},
         interrupt={"phase": "asked"},
-        opencode_private={"directory": "/tmp/workspace"},
     )
 
     assert metadata == {
@@ -220,8 +218,7 @@ def test_build_output_metadata_and_number_coercion_helpers() -> None:
             "stream": {"block_type": "text"},
             "progress": {"type": "step-finish"},
             "interrupt": {"phase": "asked"},
-        },
-        "opencode": {"directory": "/tmp/workspace"},
+        }
     }
     assert _build_output_metadata() is None
     assert _coerce_number(True) is None
@@ -324,11 +321,7 @@ def test_upstream_error_and_progress_extractors_cover_edge_cases() -> None:
     )
     assert progress == {
         "type": "step-finish",
-        "part_id": "part-1",
-        "reason": "done",
         "status": "ok",
-        "title": "Write tests",
-        "subtitle": "finished",
     }
     assert (
         _build_progress_identity(

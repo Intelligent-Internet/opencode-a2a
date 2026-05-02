@@ -79,6 +79,7 @@ class StreamRuntime:
         allow_structured_output: bool = True,
         emit_session_metadata: bool = True,
         emit_streaming_metadata: bool = True,
+        emit_interrupt_metadata: bool = True,
     ) -> None:
         part_states: dict[str, _StreamPartState] = {}
         pending_deltas: defaultdict[str, list[_PendingDelta]] = defaultdict(list)
@@ -116,10 +117,7 @@ class StreamRuntime:
                     last_chunk=False,
                     artifact_metadata=_build_stream_artifact_metadata(
                         block_type=chunk.block_type,
-                        shared_source=chunk.shared_source,
-                        part_id=chunk.part_id,
                         message_id=resolved_message_id,
-                        role=chunk.role,
                         event_id=stream_state.build_event_id(sequence),
                         sequence=sequence,
                         include_shared_stream_metadata=emit_streaming_metadata,
@@ -168,12 +166,12 @@ class StreamRuntime:
                         stream={
                             "message_id": stream_state.resolve_message_id(None),
                             "event_id": stream_state.build_event_id(sequence),
-                            "source": "interrupt",
                             "sequence": sequence,
                         },
                         interrupt=interrupt_metadata,
                         include_session_metadata=emit_session_metadata,
                         include_streaming_metadata=emit_streaming_metadata,
+                        include_interrupt_metadata=emit_interrupt_metadata,
                     ),
                 )
             )
@@ -463,7 +461,6 @@ class StreamRuntime:
                                                         "event_id": stream_state.build_event_id(
                                                             sequence
                                                         ),
-                                                        "source": "progress",
                                                         "sequence": sequence,
                                                     },
                                                     progress=dict(progress),
@@ -472,6 +469,9 @@ class StreamRuntime:
                                                     ),
                                                     include_streaming_metadata=(
                                                         emit_streaming_metadata
+                                                    ),
+                                                    include_interrupt_metadata=(
+                                                        emit_interrupt_metadata
                                                     ),
                                                 ),
                                             )

@@ -51,6 +51,8 @@ from .private_params import (
 from .public_params import (
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
+    build_public_interrupt_callback_extension_params,
+    build_public_session_binding_extension_params,
     build_public_streaming_extension_params,
     build_session_binding_extension_params,
     build_streaming_extension_params,

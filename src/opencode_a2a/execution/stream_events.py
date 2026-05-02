@@ -299,23 +299,11 @@ def _extract_progress_metadata(
     if part_type not in {"step-start", "step-finish", "snapshot"}:
         return None
     progress: dict[str, Any] = {"type": part_type}
-    part_id = _extract_stream_part_id(part, props)
-    if part_id:
-        progress["part_id"] = part_id
-    reason = _extract_first_nonempty_string(part, ("reason",))
-    if reason:
-        progress["reason"] = reason
     state = part.get("state")
     if isinstance(state, Mapping):
         status = _extract_first_nonempty_string(state, ("status",))
         if status:
             progress["status"] = status
-        title = _extract_first_nonempty_string(state, ("title",))
-        if title:
-            progress["title"] = title
-        subtitle = _extract_first_nonempty_string(state, ("subtitle",))
-        if subtitle:
-            progress["subtitle"] = subtitle
     return progress
 
 

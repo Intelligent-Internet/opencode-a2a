@@ -54,7 +54,7 @@ Provider-private contract note:
 Extension URI:
 `urn:opencode-a2a:extension:shared:session-binding:v1`
 
-- Scope: shared A2A request metadata for rebinding to an existing upstream OpenCode session
+- Scope: shared A2A request metadata for rebinding to an existing upstream OpenCode session, plus negotiated response/task session metadata
 - Disclosure: public Agent Card and authenticated extended Agent Card
 - Activation: client requests the URI via `A2A-Extensions` and sends `metadata.shared.session.id`
 - Runtime fields: `metadata.shared.session.id`, `metadata.shared.session`, optional provider-private companions `metadata.opencode.directory` and `metadata.opencode.workspace.id`
@@ -81,10 +81,11 @@ Extension URI:
 Extension URI:
 `urn:opencode-a2a:extension:shared:stream-hints:v1`
 
-- Scope: shared response/task/stream metadata for block identity, progress, usage, interrupt, and session hints
+- Scope: shared response/task/stream metadata for block identity, progress, and usage hints
 - Disclosure: public Agent Card and authenticated extended Agent Card
 - Activation: client requests the URI via `A2A-Extensions`; runtime emits shared metadata on streamed events and final task payloads
-- Runtime fields: `metadata.shared.stream`, `metadata.shared.progress`, `metadata.shared.interrupt`, `metadata.shared.usage`, `metadata.shared.session`
+- Runtime fields: `metadata.shared.stream`, `metadata.shared.progress`, `metadata.shared.usage`
+- Detailed-only correlation fields: `metadata.shared.stream.message_id` and `metadata.shared.stream.event_id` may be emitted for timeline stitching and diagnostics, but are not part of the minimum public consumer contract
 - Dependencies: none declared by this version
 - Security boundary: this extension is observational metadata only; callback methods are defined by the separate shared interactive interrupt extension
 - Versioning: breaking changes require a new versioned URI
@@ -98,7 +99,7 @@ Extension URI:
 - Disclosure: public Agent Card and authenticated extended Agent Card
 - Activation: client requests the URI via `A2A-Extensions` before calling `a2a.interrupt.*` methods
 - Methods: `a2a.interrupt.permission.reply`, `a2a.interrupt.question.reply`, `a2a.interrupt.question.reject`
-- Runtime fields: `metadata.shared.interrupt.request_id` provides the callback correlation key
+- Runtime fields: `metadata.shared.interrupt`, including `metadata.shared.interrupt.request_id` as the callback correlation key
 - Dependencies: none declared by this version
 - Security boundary: the methods are shared, but request IDs remain scoped to authenticated caller identity and local interrupt state
 - Versioning: breaking changes require a new versioned URI

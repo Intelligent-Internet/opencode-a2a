@@ -241,10 +241,7 @@ class _TTLCache:
 def _build_stream_artifact_metadata(
     *,
     block_type: BlockType,
-    shared_source: str,
-    part_id: str | None = None,
     message_id: str | None = None,
-    role: str | None = None,
     event_id: str | None = None,
     sequence: int | None = None,
     include_shared_stream_metadata: bool = True,
@@ -253,14 +250,9 @@ def _build_stream_artifact_metadata(
         return None
     stream_meta: dict[str, Any] = {
         "block_type": block_type.value,
-        "source": shared_source,
     }
-    if part_id:
-        stream_meta["part_id"] = part_id
     if message_id:
         stream_meta["message_id"] = message_id
-    if role:
-        stream_meta["role"] = role
     if event_id:
         stream_meta["event_id"] = event_id
     if sequence is not None:
@@ -271,33 +263,27 @@ def _build_stream_artifact_metadata(
 def _build_output_metadata(
     *,
     session_id: str | None = None,
-    session_title: str | None = None,
     usage: Mapping[str, Any] | None = None,
     stream: Mapping[str, Any] | None = None,
     progress: Mapping[str, Any] | None = None,
     interrupt: Mapping[str, Any] | None = None,
-    opencode_private: Mapping[str, Any] | None = None,
     include_session_metadata: bool = True,
     include_streaming_metadata: bool = True,
+    include_interrupt_metadata: bool = True,
 ) -> dict[str, Any] | None:
     metadata: dict[str, Any] = {}
     shared_meta: dict[str, Any] = {}
 
     if include_session_metadata and session_id:
-        session_meta: dict[str, Any] = {"id": session_id}
-        if session_title is not None:
-            session_meta["title"] = session_title
-        shared_meta["session"] = session_meta
+        shared_meta["session"] = {"id": session_id}
     if include_streaming_metadata and usage is not None:
         shared_meta["usage"] = dict(usage)
     if include_streaming_metadata and stream is not None:
         shared_meta["stream"] = dict(stream)
     if include_streaming_metadata and progress is not None:
         shared_meta["progress"] = dict(progress)
-    if include_streaming_metadata and interrupt is not None:
+    if include_interrupt_metadata and interrupt is not None:
         shared_meta["interrupt"] = dict(interrupt)
     if shared_meta:
         metadata["shared"] = shared_meta
-    if opencode_private:
-        metadata["opencode"] = dict(opencode_private)
     return metadata or None
