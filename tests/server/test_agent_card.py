@@ -115,7 +115,6 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
         ],
         "session_fields": {
             "id": "metadata.shared.session.id",
-            "title": "metadata.shared.session.title",
         },
         "provider_private_metadata": [
             "opencode.directory",
@@ -143,7 +142,6 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
         "block_types": ["text", "reasoning", "tool_call"],
         "stream_fields": {
             "block_type": "metadata.shared.stream.block_type",
-            "message_id": "metadata.shared.stream.message_id",
             "sequence": "metadata.shared.stream.sequence",
         },
         "progress_fields": {

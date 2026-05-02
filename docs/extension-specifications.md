@@ -58,6 +58,7 @@ Extension URI:
 - Disclosure: public Agent Card and authenticated extended Agent Card
 - Activation: client requests the URI via `A2A-Extensions` and sends `metadata.shared.session.id`
 - Runtime fields: `metadata.shared.session.id`, `metadata.shared.session`, optional provider-private companions `metadata.opencode.directory` and `metadata.opencode.workspace.id`
+- Detailed-only display field: `metadata.shared.session.title` may be emitted when known, but it is not part of the minimum public consumer contract
 - Dependencies: none declared by this version
 - Security boundary: shared session identity is portable; provider-private routing metadata remains deployment-scoped
 - Versioning: breaking changes require a new versioned URI
@@ -85,6 +86,7 @@ Extension URI:
 - Disclosure: public Agent Card and authenticated extended Agent Card
 - Activation: client requests the URI via `A2A-Extensions`; runtime emits shared metadata on streamed events and final task payloads
 - Runtime fields: `metadata.shared.stream`, `metadata.shared.progress`, `metadata.shared.usage`
+- Detailed-only correlation fields: `metadata.shared.stream.message_id` and `metadata.shared.stream.event_id` may be emitted for timeline stitching and diagnostics, but are not part of the minimum public consumer contract
 - Dependencies: none declared by this version
 - Security boundary: this extension is observational metadata only; callback methods are defined by the separate shared interactive interrupt extension
 - Versioning: breaking changes require a new versioned URI

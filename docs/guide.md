@@ -231,6 +231,7 @@ If one deployment works while another fails against the same upstream provider, 
   - tool-call updates use a stable per-tool-part artifact ID when the upstream part is identifiable
 - `artifact.metadata.shared.stream.event_id` preserves the original cross-artifact stream timeline, even when different logical lanes use different artifact IDs.
 - `artifact.metadata.shared.stream.message_id` remains best-effort metadata: when upstream omits `message_id`, the service falls back to a stable request-scoped message identity.
+- `message_id` and `event_id` are advanced correlation fields: they help timeline stitching, deduplication, diagnostics, and advanced UI linking, but generic A2A consumers must not require them.
 - `artifact.metadata.shared.stream.sequence` carries the canonical per-request stream sequence.
 - A final complete text snapshot is emitted only when streaming chunks did not already produce the same final text.
 - That final complete text snapshot uses `append=false` on the text artifact so clients and the task store can treat it as the canonical replace-on-finish version rather than another fragment.
@@ -477,6 +478,7 @@ Consumer guidance:
 - Use this extension declaration to decide whether the server explicitly supports shared session rebinding.
 - On the request path, write the upstream session identity to `metadata.shared.session.id`.
 - On the response/query path, treat `metadata.shared.session` as runtime metadata negotiated by the same extension.
+- Treat `metadata.shared.session.title` as a display hint only; do not build client logic on it.
 
 Minimal example:
 
@@ -578,13 +580,14 @@ Consumer guidance:
 
 - Use the extension declaration to know the server emits canonical shared stream hints.
 - Use runtime metadata to render block timelines, progress states, and token usage.
+- Treat `message_id` and `event_id` as optional advanced correlation fields rather than baseline consumer requirements.
 - Do not infer capability support only from seeing one runtime field on one response; rely on Agent Card discovery first when possible.
 
 Minimal stream semantics summary:
 
 - `text`, `reasoning`, and `tool_call` are emitted as canonical block types
 - `text` and `reasoning` blocks use text parts, while `tool_call` uses structured v1 part payloads
-- `message_id` and `event_id` preserve stable timeline identity where possible
+- `message_id` and `event_id` preserve stable timeline identity where possible and are emitted only as optional advanced correlation hints
 - `sequence` is the per-request canonical stream sequence
 - final task/status metadata may repeat normalized usage after the streaming phase ends
 

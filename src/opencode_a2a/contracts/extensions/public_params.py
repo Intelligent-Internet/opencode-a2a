@@ -63,7 +63,7 @@ def build_public_streaming_extension_params(
         "block_types": params["block_types"],
         "stream_fields": select_public_extension_params(
             params["stream_fields"],
-            keys=("block_type", "message_id", "sequence"),
+            keys=("block_type", "sequence"),
         ),
         "progress_fields": select_public_extension_params(
             params["progress_fields"],
@@ -88,6 +88,22 @@ def build_public_interrupt_callback_extension_params(
             params["interrupt_fields"],
             keys=("request_id", "type", "phase"),
         ),
+    }
+
+
+def build_public_session_binding_extension_params(
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "metadata_field": params["metadata_field"],
+        "session_metadata_field": params["session_metadata_field"],
+        "behavior": params["behavior"],
+        "supported_metadata": params["supported_metadata"],
+        "session_fields": select_public_extension_params(
+            params["session_fields"],
+            keys=("id",),
+        ),
+        "provider_private_metadata": params["provider_private_metadata"],
     }
 
 

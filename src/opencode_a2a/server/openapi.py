@@ -10,6 +10,7 @@ from ..contracts.extensions import (
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
     build_public_interrupt_callback_extension_params,
+    build_public_session_binding_extension_params,
     build_public_streaming_extension_params,
     build_session_binding_extension_params,
     build_streaming_extension_params,
@@ -271,16 +272,8 @@ def _patch_jsonrpc_openapi_contract(
                     post["summary"] = "Handle A2A JSON-RPC Requests"
                     post["description"] = _build_jsonrpc_extension_openapi_description()
                     post["x-a2a-extension-contracts"] = {
-                        "session_binding": select_public_extension_params(
-                            session_binding,
-                            keys=(
-                                "metadata_field",
-                                "session_metadata_field",
-                                "behavior",
-                                "supported_metadata",
-                                "session_fields",
-                                "provider_private_metadata",
-                            ),
+                        "session_binding": build_public_session_binding_extension_params(
+                            session_binding
                         ),
                         "model_selection": select_public_extension_params(
                             model_selection,

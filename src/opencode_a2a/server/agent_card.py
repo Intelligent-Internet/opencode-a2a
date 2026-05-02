@@ -37,6 +37,7 @@ from ..contracts.extensions import (
     build_model_selection_extension_params,
     build_provider_discovery_extension_params,
     build_public_interrupt_callback_extension_params,
+    build_public_session_binding_extension_params,
     build_public_streaming_extension_params,
     build_session_binding_extension_params,
     build_session_management_extension_params,
@@ -222,17 +223,7 @@ def _build_agent_extensions(
             params=(
                 session_binding_extension_params
                 if include_detailed_contracts
-                else select_public_extension_params(
-                    session_binding_extension_params,
-                    keys=(
-                        "metadata_field",
-                        "session_metadata_field",
-                        "behavior",
-                        "supported_metadata",
-                        "session_fields",
-                        "provider_private_metadata",
-                    ),
-                )
+                else build_public_session_binding_extension_params(session_binding_extension_params)
             ),
         ),
         AgentExtension(
