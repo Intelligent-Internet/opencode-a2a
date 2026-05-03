@@ -604,6 +604,32 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         except TaskStoreOperationError as exc:
             raise self._task_store_server_error(exc) from exc
 
+    async def _continue_stream_after_disconnect(
+        self,
+        *,
+        task_id: str,
+        result_aggregator: ResultAggregator,
+        queue: EventQueueLegacy,
+    ) -> None:
+        """Drain and persist the remaining task stream after the client disconnects."""
+        consumer = EventConsumer(queue)
+        try:
+            async for event in result_aggregator.consume_and_emit(consumer):
+                if hasattr(event, "id") and event.id:
+                    self._validate_task_id_match(task_id, event.id)
+                await self._send_push_notification_if_needed(task_id, event)
+        except TaskStoreOperationError:
+            logger.exception(
+                "Task store operation failed while draining disconnected stream task_id=%s",
+                task_id,
+            )
+        except asyncio.CancelledError:
+            logger.debug(
+                "Background stream drain cancelled task_id=%s",
+                task_id,
+            )
+            raise
+
     async def on_message_send_stream(self, params, context=None):
         self._validate_chat_output_modes(params)
         self._validate_shared_extension_negotiation(params, context)
@@ -619,12 +645,13 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         consumer = EventConsumer(queue)
         producer_task.add_done_callback(consumer.agent_task_callback)
         stream_completed = False
+        stream_detached = False
 
         try:
             async for event in result_aggregator.consume_and_emit(consumer):
                 if hasattr(event, "id") and event.id:
                     self._validate_task_id_match(task_id, event.id)
-                await self._send_push_notification_if_needed(task_id, result_aggregator)
+                await self._send_push_notification_if_needed(task_id, event)
                 yield event
             stream_completed = True
         except TaskStoreOperationError as exc:
@@ -640,16 +667,28 @@ class OpencodeRequestHandler(LegacyRequestHandler):
             ):
                 yield event
         except (asyncio.CancelledError, GeneratorExit):
-            logger.debug("Client disconnected. Cancelling producer task %s", task_id)
-            producer_task.cancel()
-            await queue.close(immediate=True)
+            logger.debug(
+                "Client disconnected from streaming task %s; continuing task in background",
+                task_id,
+            )
+            detached_task = asyncio.create_task(
+                self._continue_stream_after_disconnect(
+                    task_id=task_id,
+                    result_aggregator=result_aggregator,
+                    queue=queue,
+                )
+            )
+            detached_task.set_name(f"continue_stream_after_disconnect:{task_id}")
+            self._track_background_task(detached_task)
+            stream_detached = True
             raise
         finally:
             emit_stream_request_metrics(active_delta=-1.0)
             logger.debug(
-                "A2A stream request closed task_id=%s completed=%s",
+                "A2A stream request closed task_id=%s completed=%s detached=%s",
                 task_id,
                 stream_completed,
+                stream_detached,
             )
             cleanup_task = asyncio.create_task(self._cleanup_producer(producer_task, task_id))
             cleanup_task.set_name(f"cleanup_producer:{task_id}")
