@@ -8,7 +8,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from a2a.server.context import ServerCallContext
 from a2a.server.tasks.database_task_store import DatabaseTaskStore
-from a2a.types import Task, TaskState, TaskStatus
+from a2a.types import Artifact, Message, Part, Role, Task, TaskState, TaskStatus
+from google.protobuf.json_format import MessageToDict
+from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import text
 
 from opencode_a2a.server.database import build_database_engine
@@ -30,6 +32,8 @@ from opencode_a2a.server.task_store import (
 from opencode_a2a.server.task_store_sdk_compat import (
     DatabaseTaskStoreCompat,
     TaskStoreSdkCompatibilityError,
+    _task_model_to_core,
+    _task_row_values,
 )
 from tests.support.helpers import make_request_context_mock, make_settings
 
@@ -51,6 +55,49 @@ def _set_metadata(task: Task, metadata: dict) -> Task:
     task.ClearField("metadata")
     task.metadata.update(metadata)
     return task
+
+
+def _rich_task(task_id: str, *, context_id: str = "ctx-1") -> Task:
+    timestamp = Timestamp()
+    timestamp.FromJsonString("2026-05-03T12:34:56Z")
+    return Task(
+        id=task_id,
+        context_id=context_id,
+        status=TaskStatus(
+            state=TaskState.TASK_STATE_COMPLETED,
+            timestamp=timestamp,
+            message=Message(
+                message_id=f"{task_id}:status",
+                role=Role.ROLE_AGENT,
+                parts=[Part(text="done")],
+                task_id=task_id,
+                context_id=context_id,
+            ),
+        ),
+        artifacts=[
+            Artifact(
+                artifact_id=f"{task_id}:artifact",
+                parts=[Part(text="plain result")],
+            )
+        ],
+        history=[
+            Message(
+                message_id=f"{task_id}:history",
+                role=Role.ROLE_AGENT,
+                parts=[Part(text="history item")],
+                task_id=task_id,
+                context_id=context_id,
+            )
+        ],
+        metadata={
+            "opencode": {"directory": "/workspace"},
+            "shared": {"usage": {"input_tokens": 12, "output_tokens": 8}},
+        },
+    )
+
+
+def _task_to_dict(task: Task) -> dict:
+    return MessageToDict(task)
 
 
 def test_build_task_store_defaults_to_database_backend(tmp_path: Path) -> None:
@@ -346,6 +393,65 @@ async def test_database_task_store_compat_fails_fast_on_sdk_shape_drift(
 
     with pytest.raises(TaskStoreSdkCompatibilityError, match="async_session_maker"):
         DatabaseTaskStoreCompat(raw_store)
+
+    await store.engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_database_task_store_compat_matches_sdk_to_orm_semantics(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'to-orm-parity.db'}",
+    )
+    store = build_task_store(settings)
+    raw_store = unwrap_task_store(store)
+    assert isinstance(raw_store, DatabaseTaskStore)
+
+    task = _rich_task("task-parity")
+    sdk_model = raw_store._to_orm(task, "owner-1")
+
+    compat_values = _task_row_values(task, owner="owner-1")
+    sdk_values = {
+        "id": sdk_model.id,
+        "context_id": sdk_model.context_id,
+        "kind": sdk_model.kind,
+        "owner": sdk_model.owner,
+        "last_updated": sdk_model.last_updated,
+        "status": sdk_model.status,
+        "artifacts": sdk_model.artifacts,
+        "history": sdk_model.history,
+        "metadata": sdk_model.task_metadata,
+        "protocol_version": sdk_model.protocol_version,
+    }
+
+    assert compat_values == sdk_values
+
+    await store.engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_database_task_store_compat_matches_sdk_from_orm_semantics(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'from-orm-parity.db'}",
+    )
+    store = build_task_store(settings)
+    raw_store = unwrap_task_store(store)
+    assert isinstance(raw_store, DatabaseTaskStore)
+
+    sdk_model = raw_store._to_orm(_rich_task("task-parity"), "owner-1")
+
+    compat_task = _task_model_to_core(
+        sdk_model,
+        model_to_core_conversion=raw_store.model_to_core_conversion,
+    )
+    sdk_task = raw_store._from_orm(sdk_model)
+
+    assert _task_to_dict(compat_task) == _task_to_dict(sdk_task)
 
     await store.engine.dispose()
 
