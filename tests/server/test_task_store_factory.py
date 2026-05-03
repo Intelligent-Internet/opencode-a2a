@@ -27,6 +27,10 @@ from opencode_a2a.server.task_store import (
     initialize_task_store,
     unwrap_task_store,
 )
+from opencode_a2a.server.task_store_sdk_compat import (
+    DatabaseTaskStoreCompat,
+    TaskStoreSdkCompatibilityError,
+)
 from tests.support.helpers import make_request_context_mock, make_settings
 
 
@@ -325,6 +329,27 @@ async def test_policy_aware_task_store_uses_public_initialize_for_atomic_paths(
     assert called >= 3
 
 
+@pytest.mark.asyncio
+async def test_database_task_store_compat_fails_fast_on_sdk_shape_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'shape-drift.db'}",
+    )
+    store = build_task_store(settings)
+    raw_store = unwrap_task_store(store)
+    assert isinstance(raw_store, DatabaseTaskStore)
+
+    monkeypatch.delattr(raw_store, "async_session_maker", raising=True)
+
+    with pytest.raises(TaskStoreSdkCompatibilityError, match="async_session_maker"):
+        DatabaseTaskStoreCompat(raw_store)
+
+    await store.engine.dispose()
+
+
 def test_make_request_context_mock_uses_normalized_call_context() -> None:
     context = make_request_context_mock(
         task_id="task-1",
@@ -537,6 +562,47 @@ async def test_database_task_store_atomic_guard_does_not_depend_on_stale_read(
         monkeypatch.setattr(raw_second, "get", _stale_get)
         await second.save(late_completed)
         monkeypatch.setattr(raw_second, "get", original_get)
+
+        restored = await first.get("task-1")
+    finally:
+        await first.engine.dispose()
+        await second.engine.dispose()
+
+    assert restored is not None
+    assert restored.status.state == TaskState.TASK_STATE_COMPLETED
+    assert not restored.metadata
+
+
+@pytest.mark.asyncio
+async def test_database_task_store_atomic_guard_does_not_depend_on_private_from_orm(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'from-orm.db'}",
+    )
+    first = build_task_store(settings)
+    second = build_task_store(settings)
+    await initialize_task_store(first)
+    await initialize_task_store(second)
+
+    try:
+        completed = _set_status(_task("task-1"), TaskState.TASK_STATE_COMPLETED)
+        await first.save(completed)
+
+        late_completed = _set_status(_task("task-1"), TaskState.TASK_STATE_COMPLETED)
+        _set_metadata(late_completed, {"opencode": {"late_mutation": True}})
+
+        raw_second = unwrap_task_store(second)
+        assert isinstance(raw_second, DatabaseTaskStore)
+
+        def _fail_private_from_orm(task_model):  # noqa: ANN001
+            del task_model
+            raise AssertionError("_from_orm should not be used by compat authoritative reload")
+
+        monkeypatch.setattr(raw_second, "_from_orm", _fail_private_from_orm)
+        await second.save(late_completed)
 
         restored = await first.get("task-1")
     finally:
