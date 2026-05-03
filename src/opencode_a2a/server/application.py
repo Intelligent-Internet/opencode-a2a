@@ -7,6 +7,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 import uvicorn
+from a2a.compat.v0_3.rest_adapter import REST03Adapter
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventConsumer, EventQueueLegacy
 from a2a.server.request_handlers.default_request_handler import (
@@ -47,7 +48,7 @@ from a2a.utils.errors import (
 )
 from a2a.utils.task import apply_history_length, validate_history_length
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from google.protobuf.message import Message as ProtoMessage
 from pydantic_settings import BaseSettings
@@ -85,7 +86,7 @@ from ..output_modes import (
     normalize_accepted_output_modes,
 )
 from ..profile.runtime import build_runtime_profile
-from ..protocol_versions import A2A_PROTOCOL_VERSION
+from ..protocol_versions import A2A_PROTOCOL_VERSION, A2A_PROTOCOL_VERSION_V0_3
 from ..trace_context import install_log_record_factory
 from .agent_card import (
     _CHAT_OUTPUT_MODES,
@@ -869,6 +870,7 @@ def create_app(settings: Settings) -> FastAPI:
     jsonrpc_app = OpencodeSessionManagementJSONRPCApplication(
         http_handler=handler,
         context_builder=context_builder,
+        enable_v0_3_compat=True,
         upstream_client=upstream_client,
         supported_methods=capability_snapshot.supported_jsonrpc_methods(),
         directory_resolver=(
@@ -892,6 +894,11 @@ def create_app(settings: Settings) -> FastAPI:
         request_handler=handler,
         context_builder=context_builder,
     )
+    rest03_adapter = REST03Adapter(
+        http_handler=handler,
+        context_builder=context_builder,
+    )
+    rest03_routes = rest03_adapter.routes()
     public_card_etag = build_agent_card_etag(agent_card)
     extended_card_etag = build_agent_card_etag(extended_agent_card)
     persistence_summary = describe_lightweight_persistence_backend(settings)
@@ -918,7 +925,17 @@ def create_app(settings: Settings) -> FastAPI:
     async def authenticated_extended_agent_card_route() -> JSONResponse:
         return JSONResponse(agent_card_to_dict(extended_agent_card))
 
+    def _is_v03_request(request: Request) -> bool:
+        return getattr(request.state, "a2a_protocol_version", A2A_PROTOCOL_VERSION) == (
+            A2A_PROTOCOL_VERSION_V0_3
+        )
+
+    def _rest03_route(path: str, method: str):
+        return rest03_routes[(path, method)]
+
     async def rest_message_send_route(request: Request) -> JSONResponse:
+        if _is_v03_request(request):
+            return cast(JSONResponse, await _rest03_route("/v1/message:send", "POST")(request))
         try:
 
             async def _handler(context) -> SendMessageResponse:  # noqa: ANN001
@@ -937,6 +954,8 @@ def create_app(settings: Settings) -> FastAPI:
             )
 
     async def rest_message_send_stream_route(request: Request):
+        if _is_v03_request(request):
+            return await _rest03_route("/v1/message:stream", "POST")(request)
         try:
 
             async def _handler(context):  # noqa: ANN001
@@ -951,23 +970,59 @@ def create_app(settings: Settings) -> FastAPI:
                 error=error,
             )
 
+    async def rest_cancel_task_route(request: Request) -> Response:
+        if _is_v03_request(request):
+            return cast(Response, await _rest03_route("/v1/tasks/{id}:cancel", "POST")(request))
+        return await rest_dispatcher.on_cancel_task(request)
+
+    async def rest_subscribe_task_route(request: Request) -> Response:
+        if _is_v03_request(request):
+            return cast(
+                Response,
+                await _rest03_route("/v1/tasks/{id}:subscribe", request.method)(request),
+            )
+        return cast(Response, await rest_dispatcher.on_subscribe_to_task(request))
+
+    async def rest_get_task_route(request: Request) -> Response:
+        if _is_v03_request(request):
+            return cast(Response, await _rest03_route("/v1/tasks/{id}", "GET")(request))
+        return await rest_dispatcher.on_get_task(request)
+
+    list_tasks_v1_route = build_list_tasks_route(
+        task_store=task_store,
+        context_builder=context_builder.build,
+    )
+
+    async def list_tasks_route(request: Request) -> JSONResponse:
+        if _is_v03_request(request):
+            return JSONResponse(
+                build_http_error_body(
+                    status_code=501,
+                    status="UNIMPLEMENTED",
+                    message="ListTasks is not supported for A2A 0.3 compatibility mode.",
+                    reason="LIST_TASKS_V03_UNSUPPORTED",
+                ),
+                status_code=501,
+            )
+        return cast(JSONResponse, await list_tasks_v1_route(request))
+
     app.add_api_route(AGENT_CARD_WELL_KNOWN_PATH, public_agent_card_route, methods=["GET"])
     app.add_api_route("/v1/message:send", rest_message_send_route, methods=["POST"])
     app.add_api_route("/v1/message:stream", rest_message_send_stream_route, methods=["POST"])
-    app.add_api_route("/v1/tasks/{id}:cancel", rest_dispatcher.on_cancel_task, methods=["POST"])
+    app.add_api_route("/v1/tasks/{id}:cancel", rest_cancel_task_route, methods=["POST"])
     app.add_api_route(
         "/v1/tasks/{id}:subscribe",
-        rest_dispatcher.on_subscribe_to_task,
+        rest_subscribe_task_route,
         methods=["GET"],
         operation_id="subscribe_to_task_get",
     )
     app.add_api_route(
         "/v1/tasks/{id}:subscribe",
-        rest_dispatcher.on_subscribe_to_task,
+        rest_subscribe_task_route,
         methods=["POST"],
         operation_id="subscribe_to_task_post",
     )
-    app.add_api_route("/v1/tasks/{id}", rest_dispatcher.on_get_task, methods=["GET"])
+    app.add_api_route("/v1/tasks/{id}", rest_get_task_route, methods=["GET"])
 
     async def push_notifications_unsupported_route(request: Request) -> JSONResponse:
         del request
@@ -1003,12 +1058,10 @@ def create_app(settings: Settings) -> FastAPI:
     )
     app.add_api_route(
         "/v1/tasks",
-        build_list_tasks_route(
-            task_store=task_store,
-            context_builder=context_builder.build,
-        ),
+        list_tasks_route,
         methods=["GET"],
     )
+    app.add_api_route("/v1/card", _rest03_route("/v1/card", "GET"), methods=["GET"])
     app.add_api_route(
         EXTENDED_AGENT_CARD_PATH,
         authenticated_extended_agent_card_route,

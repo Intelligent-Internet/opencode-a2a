@@ -90,7 +90,7 @@ def test_settings_valid():
         assert settings.a2a_task_store_database_url == "sqlite+aiosqlite:///./opencode-a2a.db"
         assert settings.a2a_version == __version__
         assert A2A_PROTOCOL_VERSION == "1.0"
-        assert A2A_SUPPORTED_PROTOCOL_VERSIONS == ("1.0",)
+        assert A2A_SUPPORTED_PROTOCOL_VERSIONS == ("1.0", "0.3")
 
 
 def test_settings_allow_explicit_memory_backend() -> None:

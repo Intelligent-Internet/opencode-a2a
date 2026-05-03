@@ -29,6 +29,8 @@ from ..jsonrpc.error_responses import (
 )
 from ..jsonrpc.models import JSONRPCError
 from ..protocol_versions import (
+    A2A_DEFAULT_PROTOCOL_VERSION,
+    A2A_PROTOCOL_VERSION_V0_3,
     UnsupportedProtocolVersionError,
     negotiate_protocol_version,
 )
@@ -54,6 +56,20 @@ from .request_parsing import (
 logger = logging.getLogger("opencode_a2a.server.application")
 PUBLIC_AGENT_CARD_CACHE_CONTROL = "public, max-age=300"
 AUTHENTICATED_EXTENDED_CARD_CACHE_CONTROL = "private, max-age=300"
+_V03_JSONRPC_METHODS = frozenset(
+    {
+        "message/send",
+        "message/stream",
+        "tasks/get",
+        "tasks/cancel",
+        "tasks/pushNotificationConfig/set",
+        "tasks/pushNotificationConfig/get",
+        "tasks/pushNotificationConfig/list",
+        "tasks/pushNotificationConfig/delete",
+        "tasks/resubscribe",
+        "agent/getAuthenticatedExtendedCard",
+    }
+)
 _REQUEST_BODY_BYTES: ContextVar[bytes | None] = ContextVar(
     "_REQUEST_BODY_BYTES",
     default=None,
@@ -139,6 +155,45 @@ def install_runtime_middlewares(
             return request_id
         return None
 
+    def _looks_like_v03_jsonrpc_method(payload: object) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        method = payload.get("method")
+        return isinstance(method, str) and method in _V03_JSONRPC_METHODS
+
+    def _looks_like_v03_rest_message_payload(payload: object) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            return False
+        if "content" in message:
+            return True
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            return False
+        return any(isinstance(part, dict) and "file" in part for part in parts)
+
+    async def _infer_default_protocol_version(request: Request) -> tuple[str, Token | None]:
+        if request.url.path == "/v1/card":
+            return A2A_PROTOCOL_VERSION_V0_3, None
+        if request.url.path == "/" and request.method == "POST":
+            body, token = await _get_request_body(request)
+            payload = _parse_json_body(body)
+            if _looks_like_v03_jsonrpc_method(payload):
+                return A2A_PROTOCOL_VERSION_V0_3, token
+            return A2A_DEFAULT_PROTOCOL_VERSION, token
+        if request.method == "POST" and request.url.path in {
+            "/v1/message:send",
+            "/v1/message:stream",
+        }:
+            body, token = await _get_request_body(request)
+            payload = _parse_json_body(body)
+            if _looks_like_v03_rest_message_payload(payload):
+                return A2A_PROTOCOL_VERSION_V0_3, token
+            return A2A_DEFAULT_PROTOCOL_VERSION, token
+        return A2A_DEFAULT_PROTOCOL_VERSION, None
+
     @app.middleware("http")
     async def bind_trace_context(request: Request, call_next):
         trace_context = resolve_trace_context(
@@ -164,9 +219,16 @@ def install_runtime_middlewares(
             return await call_next(request)
 
         try:
+            explicit_version = request.headers.get("A2A-Version") or request.query_params.get(
+                "A2A-Version"
+            )
+            default_version = A2A_DEFAULT_PROTOCOL_VERSION
+            if not explicit_version:
+                default_version, token = await _infer_default_protocol_version(request)
             negotiated_version = negotiate_protocol_version(
                 header_value=request.headers.get("A2A-Version"),
                 query_value=request.query_params.get("A2A-Version"),
+                default_version=default_version,
             )
         except UnsupportedProtocolVersionError as error:
             if request.url.path == "/" and request.method == "POST":

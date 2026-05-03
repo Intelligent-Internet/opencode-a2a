@@ -27,7 +27,7 @@ HELP_FLAGS = frozenset({"-h", "--help"})
 
 ROOT_DESCRIPTION = (
     "OpenCode A2A runtime for explicit service startup and peer calls. "
-    "A2A Protocol 1.0 only.\n"
+    "Inbound core A2A supports 1.0 plus 0.3 compatibility; outbound peer calls remain 1.0.\n"
     "  opencode-a2a <command> [arguments] [options]"
 )
 
@@ -248,7 +248,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "serve",
         help="Run the A2A service.",
-        description="Run the OpenCode A2A service. A2A Protocol 1.0 only.",
+        description=(
+            "Run the OpenCode A2A service. Inbound core A2A supports 1.0 plus 0.3 compatibility."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=SERVE_HELP_EPILOG,
     )
@@ -256,7 +258,10 @@ def build_parser() -> argparse.ArgumentParser:
     call_parser = subparsers.add_parser(
         "call",
         help="Call an A2A agent.",
-        description="Call an A2A agent using the A2A protocol. A2A Protocol 1.0 only.",
+        description=(
+            "Call an A2A agent using the A2A protocol. "
+            "Outbound peer calls currently use the 1.0 contract."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=CALL_HELP_EPILOG,
     )

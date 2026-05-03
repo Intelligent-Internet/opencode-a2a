@@ -38,7 +38,7 @@ from opencode_a2a.contracts.extensions import (
 )
 from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from opencode_a2a.profile.runtime import build_runtime_profile
-from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
+from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION, A2A_SUPPORTED_PROTOCOL_VERSIONS
 from opencode_a2a.server.agent_card import build_agent_card
 from opencode_a2a.server.application import create_app
 from tests.support.helpers import (
@@ -114,10 +114,14 @@ def test_extension_ssot_matches_agent_card_contracts() -> None:
     expected_compatibility_profile = build_compatibility_profile_params(
         protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
+        supported_protocol_versions=A2A_SUPPORTED_PROTOCOL_VERSIONS,
+        default_protocol_version=A2A_PROTOCOL_VERSION,
     )
     expected_wire_contract = build_wire_contract_params(
         protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
+        supported_protocol_versions=A2A_SUPPORTED_PROTOCOL_VERSIONS,
+        default_protocol_version=A2A_PROTOCOL_VERSION,
     )
 
     assert session_binding.params == expected_session_binding, (

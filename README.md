@@ -103,9 +103,10 @@ curl http://127.0.0.1:8000/.well-known/agent-card.json
 
 ## A2A Protocol Support
 
-- Supported A2A protocol line: `1.0`
-- The runtime is now v1-only across HTTP+JSON, JSON-RPC, Agent Card discovery, and protocol-aware error contracts.
-- Legacy `0.3` method aliases and payload shapes are rejected instead of being normalized at runtime.
+- Supported A2A protocol lines:
+  - `1.0` as the default and discovery-first line
+  - `0.3` compatibility for SDK-backed core HTTP+JSON / JSON-RPC methods
+- Public discovery remains v1-first through `/.well-known/agent-card.json`; provider-private `opencode.*` methods remain part of the current v1 contract surface.
 - The detailed runtime contract and machine-readable support boundary are documented in [`docs/guide.md`](docs/guide.md) and [`docs/compatibility.md`](docs/compatibility.md).
 
 ## Peering Node / Outbound Access

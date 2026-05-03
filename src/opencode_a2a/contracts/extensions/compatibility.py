@@ -280,6 +280,33 @@ def build_protocol_compatibility_params(
             ],
             "known_gaps": [],
         },
+        "0.3": {
+            "enabled": "0.3" in declared_supported_versions,
+            "default": default_protocol_version == "0.3",
+            "status": "compatibility",
+            "supported_features": [
+                "SDK-backed JSON-RPC legacy method aliases on the shared root endpoint.",
+                (
+                    "SDK-backed REST compatibility for the portable "
+                    "send/get/cancel/subscribe baseline."
+                ),
+                (
+                    "Shared runtime can preserve the v1.0 default path "
+                    "while accepting explicit 0.3 requests."
+                ),
+            ],
+            "known_gaps": [
+                (
+                    "Portable compatibility is limited to the SDK-owned "
+                    "core surface, not provider-private opencode.* methods."
+                ),
+                (
+                    "REST compatibility for ambiguous routes may require "
+                    "an explicit A2A-Version=0.3 signal."
+                ),
+                "SDK-owned 0.3 REST ListTasks parity is not declared by this deployment.",
+            ],
+        },
     }
 
     for version in declared_supported_versions:

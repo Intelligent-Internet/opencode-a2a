@@ -6,7 +6,9 @@ This document defines the compatibility promises `opencode-a2a` currently uphold
 
 - Python versions: 3.11, 3.12, 3.13
 - A2A SDK line: `1.x.y`
-- Supported A2A protocol line: `1.0`
+- Supported A2A protocol lines:
+  - `1.0` default / discovery-first
+  - `0.3` compatibility for SDK-backed core transport methods
 
 The repository currently pins one concrete SDK release in `pyproject.toml` within that v1 line. Upgrade the SDK deliberately rather than relying on floating dependency resolution.
 
@@ -25,6 +27,7 @@ If runtime support is not implemented, do not publish it as a supported machine-
 Consumer guidance:
 
 - Treat the v1 core A2A methods (`SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`, `SubscribeToTask`) as the portable baseline.
+- Treat `0.3` support in this repository as a compatibility layer over that same core baseline, not as a promise that every discovery or extension surface is dual-stacked.
 - Treat `urn:opencode-a2a:extension:...` entries in this repository as repository-governed extension identifiers, not as a claim that they are part of the A2A core baseline.
 - Treat `opencode.*` methods and `metadata.opencode.*` fields as provider-private OpenCode control and discovery surfaces layered on top of the portable A2A baseline.
 - Treat [extension-specifications.md](./extension-specifications.md) as the stable URI/spec index, not as the main usage guide.
@@ -44,7 +47,7 @@ External TCK runs and local conformance experiments are investigation inputs. Th
 This repository still ships as an alpha project. Within that alpha line, these declared surfaces should not drift silently:
 
 - core A2A send / stream / task methods
-- v1-only request/response payloads and enum values
+- default v1 request/response payloads plus the declared `0.3` compatibility envelope for core methods
 - v1 protocol-aware JSON-RPC and REST error shaping
 - shared session-binding metadata
 - shared model-selection metadata
@@ -142,6 +145,6 @@ This repository does not currently promise:
 
 - hard multi-tenant isolation inside one instance
 - generic provider-auth orchestration on behalf of OpenCode
-- compatibility with legacy A2A `0.3` method aliases or payload shapes
+- `0.3` compatibility for provider-private `opencode.*` methods or every machine-readable discovery surface
 
 Those areas may evolve later, but they should not be implied by current machine-readable discovery output.

@@ -48,7 +48,11 @@ from ..contracts.extensions import (
 )
 from ..jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from ..profile.runtime import RuntimeProfile, build_runtime_profile
-from ..protocol_versions import A2A_PROTOCOL_VERSION
+from ..protocol_versions import (
+    A2A_PROTOCOL_VERSION,
+    A2A_PROTOCOL_VERSION_V0_3,
+    A2A_SUPPORTED_PROTOCOL_VERSIONS,
+)
 
 _CHAT_INPUT_MODES = ["text/plain", "application/octet-stream"]
 _CHAT_OUTPUT_MODES = ["text/plain", "application/json"]
@@ -203,10 +207,14 @@ def _build_agent_extensions(
     compatibility_profile_params = build_compatibility_profile_params(
         protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
+        supported_protocol_versions=A2A_SUPPORTED_PROTOCOL_VERSIONS,
+        default_protocol_version=A2A_PROTOCOL_VERSION,
     )
     wire_contract_params = build_wire_contract_params(
         protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
+        supported_protocol_versions=A2A_SUPPORTED_PROTOCOL_VERSIONS,
+        default_protocol_version=A2A_PROTOCOL_VERSION,
     )
 
     public_extensions = [
@@ -524,6 +532,16 @@ def build_agent_card(
                 url=public_url,
                 protocol_binding="JSONRPC",
                 protocol_version=A2A_PROTOCOL_VERSION,
+            ),
+            AgentInterface(
+                url=public_url,
+                protocol_binding="HTTP+JSON",
+                protocol_version=A2A_PROTOCOL_VERSION_V0_3,
+            ),
+            AgentInterface(
+                url=public_url,
+                protocol_binding="JSONRPC",
+                protocol_version=A2A_PROTOCOL_VERSION_V0_3,
             ),
         ],
         default_input_modes=list(_CHAT_INPUT_MODES),

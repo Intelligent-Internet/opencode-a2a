@@ -16,7 +16,9 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
 - Payload schema is transport-specific and should not be mixed:
   - REST and JSON-RPC both use v1 `message.parts` payloads and enum values such as `ROLE_USER`
   - JSON-RPC uses canonical PascalCase core methods such as `SendMessage` and `SubscribeToTask`
-  - legacy `message.content`, lowercase roles, `{kind: ...}` wrappers, and `message/send` aliases are rejected
+  - core `0.3` compatibility is available for SDK-backed send / stream / get / cancel / subscribe methods
+  - provider-private `opencode.*` methods remain v1-only
+  - non-SDK envelopes such as `{kind: ...}` wrappers are still rejected
 
 ## Runtime Environment Variables
 
@@ -310,25 +312,25 @@ Consumer guidance:
 ## Protocol Version Negotiation
 
 - The runtime accepts `A2A-Version` from either the HTTP header or the query parameter of A2A transport requests.
-- If both are omitted, the runtime uses the fixed v1 protocol version `1.0`.
-- Machine-readable discovery still declares `default_protocol_version=1.0` and `supported_protocol_versions=["1.0"]`, but those values are runtime constants rather than operator-configurable settings.
+- If both are omitted, the runtime defaults to `1.0`. For JSON-RPC `0.3` method aliases and selected legacy REST send payload shapes, the runtime may infer `0.3` compatibility when the request is otherwise unambiguous.
+- Machine-readable discovery declares `default_protocol_version=1.0` and `supported_protocol_versions=["1.0","0.3"]`; those values are runtime constants rather than operator-configurable settings.
 - Unsupported or invalid versions are rejected before request routing:
   - JSON-RPC returns a unified `VERSION_NOT_SUPPORTED` error envelope.
   - REST returns HTTP `400` with the same contract fields.
 - Error shaping follows the v1 contract:
   - JSON-RPC keeps standard JSON-RPC error codes for standard failures and uses `google.rpc.ErrorInfo`-style `error.data[]` details for A2A-specific failures.
   - REST uses AIP-193 style `error.details[]`.
-- The runtime does not normalize legacy `0.3` method aliases or payload shapes.
+- The runtime accepts SDK-backed `0.3` compatibility for core send / stream / get / cancel / subscribe methods, but it does not extend that promise to provider-private `opencode.*` methods.
 
 Current compatibility matrix:
 
 | Area | `1.0` | Current note |
 | --- | --- | --- |
 | Version negotiation | Supported | The runtime accepts `A2A-Version` and routes requests before handler dispatch. |
-| Agent Card / interface version discovery | Supported | Agent Card publishes v1 `supportedInterfaces` entries for HTTP+JSON and JSON-RPC. |
-| Transport payloads and enums | Supported | Request/response payloads, enums, and schema details follow the current SDK-owned v1 baseline. |
+| Agent Card / interface version discovery | Supported | Agent Card publishes `1.0` as the discovery-first surface and also declares `0.3` core transport compatibility. |
+| Transport payloads and enums | Supported | `1.0` remains the default baseline; SDK-backed `0.3` compatibility is accepted on the declared core methods. |
 | Error model | Supported | JSON-RPC and REST both use the v1 protocol-aware error shapes. |
-| Pagination and list semantics | Supported | Cursor/list behavior follows the current SDK baseline. |
+| Pagination and list semantics | Supported with scope limits | v1 cursor/list behavior follows the current SDK baseline; `0.3` REST ListTasks parity is not declared. |
 | Push notification surfaces | Unsupported | SDK-owned task push-notification routes are still exposed, but this runtime does not enable push sender/config-store support. REST routes return HTTP `501`, while JSON-RPC methods remain unsupported via SDK-owned error envelopes. |
 | Signatures and authenticated data | Supported | Security schemes and authenticated extended card discovery follow the shipped SDK schema. |
 

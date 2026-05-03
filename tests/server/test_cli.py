@@ -15,7 +15,8 @@ def test_cli_help_does_not_require_runtime_settings(capsys: pytest.CaptureFixtur
     assert excinfo.value.code == 0
     help_text = capsys.readouterr().out
     assert (
-        "OpenCode A2A runtime for explicit service startup and peer calls. A2A Protocol 1.0 only."
+        "OpenCode A2A runtime for explicit service startup and peer calls. "
+        "Inbound core A2A supports 1.0 plus 0.3 compatibility; outbound peer calls remain 1.0."
     ) in help_text
     assert "___                    ____" in help_text
     assert "| | | | '_ \\ / _ \\ '_ \\| |   / _ \\ / _` |/ _ \\_____ / _ \\" in help_text
@@ -78,7 +79,9 @@ def test_cli_serve_subcommand_with_invalid_configuration_prints_help(
             assert cli.main(["serve"]) == 0
 
     help_text = capsys.readouterr().out
-    assert "Run the OpenCode A2A service. A2A Protocol 1.0 only." in help_text
+    assert (
+        "Run the OpenCode A2A service. Inbound core A2A supports 1.0 plus 0.3 compatibility."
+    ) in help_text
     assert "configuration errors:" in help_text
     assert "Configure runtime authentication via A2A_STATIC_AUTH_CREDENTIALS" in help_text
     serve_mock.assert_not_called()
@@ -91,7 +94,10 @@ def test_cli_call_without_required_arguments_prints_help(
         assert cli.main(["call"]) == 0
 
     help_text = capsys.readouterr().out
-    assert "Call an A2A agent using the A2A protocol. A2A Protocol 1.0 only." in help_text
+    assert (
+        "Call an A2A agent using the A2A protocol. "
+        "Outbound peer calls currently use the 1.0 contract."
+    ) in help_text
     assert "A2A_CLIENT_BEARER_TOKEN=peer-token" in help_text
     assert "Service base URLs also work, but card URLs are the preferred example form." in help_text
     serve_mock.assert_not_called()

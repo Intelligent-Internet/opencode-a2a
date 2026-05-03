@@ -5,16 +5,16 @@ This document summarizes the current interpretation rules for external TCK runs 
 ## Current Runtime Baseline
 
 - `opencode-a2a` now targets the `a2a-sdk 1.x.y` line
-- the runtime is v1-only
+- the runtime defaults to `1.0` and also exposes SDK-backed `0.3` compatibility for core methods
 - canonical JSON-RPC core methods are `SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`, and `SubscribeToTask`
-- legacy `0.3` aliases and payload shapes are intentionally rejected rather than normalized
+- provider-private `opencode.*` methods remain v1-only and are not part of the `0.3` compatibility promise
 
 ## How To Read TCK Failures
 
 When a TCK run fails, classify the result before changing the runtime:
 
 - `Runtime gap`
-  - the failure reproduces against the current v1-only runtime and contradicts the repository's declared machine-readable contract
+  - the failure reproduces against the current declared runtime contract and contradicts the repository's machine-readable discovery or docs
 - `TCK assumption mismatch`
   - the failure depends on method names, payload shapes, or schema expectations that do not match the current A2A v1 SDK/runtime contract
 - `Local experiment artifact`
@@ -24,7 +24,7 @@ When a TCK run fails, classify the result before changing the runtime:
 
 - Re-run conformance against the current runtime before using any historical triage note.
 - Treat Agent Card, authenticated extended card, OpenAPI, and runtime tests as the repository's declared source of truth.
-- Do not reopen removed `0.3` compatibility behavior just to satisfy an outdated TCK assumption.
+- Do not widen `0.3` compatibility beyond the declared core surface just to satisfy an outdated TCK assumption.
 - If a TCK gap is real, document it against the current v1 contract with the exact request/response payloads that failed.
 
 ## Historical Note

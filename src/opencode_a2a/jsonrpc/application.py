@@ -358,6 +358,18 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         except Exception:
             return await super().handle_requests(request)
 
+        if (
+            self.enable_v0_3_compat
+            and self._v03_adapter is not None
+            and self._v03_adapter.supports_method(base_request.method)
+        ):
+            return await self._v03_adapter.handle_request(
+                request_id=base_request.id,
+                method=base_request.method,
+                body=body,
+                request=request,
+            )
+
         extension_spec = self._extension_method_registry.resolve(base_request.method)
         if extension_spec is None:
             return await self._handle_core_request(

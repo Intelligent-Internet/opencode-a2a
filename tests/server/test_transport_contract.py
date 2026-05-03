@@ -120,6 +120,8 @@ def test_agent_card_declares_dual_stack_with_http_json_preferred() -> None:
     }
     assert ("HTTP+JSON", "1.0") in interfaces
     assert ("JSONRPC", "1.0") in interfaces
+    assert ("HTTP+JSON", "0.3") in interfaces
+    assert ("JSONRPC", "0.3") in interfaces
 
 
 def test_normalize_log_level_falls_back_to_warning_for_invalid_value() -> None:
@@ -980,14 +982,14 @@ async def test_rest_endpoints_reject_unsupported_protocol_version() -> None:
                     "domain": "a2a-protocol.org",
                     "metadata": {
                         "requestedVersion": "2.0",
-                        "supportedProtocolVersions": '["1.0"]',
+                        "supportedProtocolVersions": '["1.0","0.3"]',
                         "defaultProtocolVersion": "1.0",
                     },
                 },
                 {
                     "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
                     "requestedVersion": "2.0",
-                    "supportedProtocolVersions": ["1.0"],
+                    "supportedProtocolVersions": ["1.0", "0.3"],
                     "defaultProtocolVersion": "1.0",
                 },
             ],
@@ -1026,14 +1028,14 @@ async def test_rest_endpoints_return_v1_status_body_for_v1_protocol_errors() -> 
                     "domain": "a2a-protocol.org",
                     "metadata": {
                         "requestedVersion": "1.1",
-                        "supportedProtocolVersions": '["1.0"]',
+                        "supportedProtocolVersions": '["1.0","0.3"]',
                         "defaultProtocolVersion": "1.0",
                     },
                 },
                 {
                     "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
                     "requestedVersion": "1.1",
-                    "supportedProtocolVersions": ["1.0"],
+                    "supportedProtocolVersions": ["1.0", "0.3"],
                     "defaultProtocolVersion": "1.0",
                 },
             ],
@@ -1210,6 +1212,77 @@ async def test_v1_pascalcase_sendmessage_alias_is_accepted(monkeypatch) -> None:
     assert rpc_resp.status_code == 200
     assert rpc_resp.headers["A2A-Version"] == "1.0"
     assert rpc_resp.json().get("error") is None
+
+
+@pytest.mark.asyncio
+async def test_v03_jsonrpc_send_alias_is_accepted_without_explicit_version_header(
+    monkeypatch,
+) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(make_settings(test_bearer_token="test-token"))
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "message/send",
+        "params": {
+            "message": {
+                "messageId": "m-rpc-v03",
+                "role": "user",
+                "parts": [{"text": "hello from v0.3 dispatch"}],
+            }
+        },
+    }
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        rpc_resp = await client.post("/", headers=headers, json=payload)
+
+    assert rpc_resp.status_code == 200
+    assert rpc_resp.headers["A2A-Version"] == "0.3"
+    assert rpc_resp.json()["result"]["status"]["state"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_v03_rest_send_accepts_legacy_message_content_shape(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(make_settings(test_bearer_token="test-token"))
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+    payload = {
+        "message": {
+            "role": "ROLE_USER",
+            "content": [{"text": "hello from v0.3 rest"}],
+        }
+    }
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        rest_resp = await client.post("/v1/message:send", headers=headers, json=payload)
+
+    assert rest_resp.status_code == 200
+    assert rest_resp.headers["A2A-Version"] == "0.3"
+    assert rest_resp.json()["task"]["status"]["state"] == "TASK_STATE_WORKING"
+
+
+@pytest.mark.asyncio
+async def test_v03_rest_card_endpoint_is_available(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(make_settings(test_bearer_token="test-token"))
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        card_resp = await client.get("/v1/card", headers=headers)
+
+    assert card_resp.status_code == 200
+    assert card_resp.headers["A2A-Version"] == "0.3"
+    assert card_resp.json()["protocolVersion"] == "0.3"
 
 
 @pytest.mark.asyncio

@@ -107,7 +107,7 @@ async def test_unsupported_v1_minor_version_returns_v1_error_details() -> None:
         "domain": "a2a-protocol.org",
         "metadata": {
             "requestedVersion": "1.1",
-            "supportedProtocolVersions": '["1.0"]',
+            "supportedProtocolVersions": '["1.0","0.3"]',
             "defaultProtocolVersion": "1.0",
         },
     }
@@ -137,7 +137,7 @@ async def test_unsupported_version_returns_version_error() -> None:
         "domain": "a2a-protocol.org",
         "metadata": {
             "requestedVersion": "2.0",
-            "supportedProtocolVersions": '["1.0"]',
+            "supportedProtocolVersions": '["1.0","0.3"]',
             "defaultProtocolVersion": "1.0",
         },
     }

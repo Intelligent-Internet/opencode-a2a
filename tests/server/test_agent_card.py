@@ -21,6 +21,7 @@ from opencode_a2a.contracts.extensions import (
     build_service_behavior_contract_params,
 )
 from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
+from opencode_a2a.protocol_versions import A2A_SUPPORTED_PROTOCOL_VERSIONS
 from opencode_a2a.server.agent_card import (
     build_agent_card,
 )
@@ -48,7 +49,12 @@ def test_agent_card_description_reflects_actual_transport_capabilities() -> None
     ] == [
         ("HTTP+JSON", "1.0"),
         ("JSONRPC", "1.0"),
+        ("HTTP+JSON", "0.3"),
+        ("JSONRPC", "0.3"),
     ]
+    assert {iface.protocol_version for iface in card.supported_interfaces} == set(
+        A2A_SUPPORTED_PROTOCOL_VERSIONS
+    )
     assert card.default_input_modes == ["text/plain", "application/octet-stream"]
     assert card.default_output_modes == ["text/plain", "application/json"]
     assert set(card.security_schemes.keys()) == {"bearerAuth"}
@@ -675,7 +681,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     compatibility = ext_by_uri[COMPATIBILITY_PROFILE_EXTENSION_URI]
     expected_service_behaviors = build_service_behavior_contract_params()
     expected_protocol_compatibility = build_protocol_compatibility_params(
-        supported_protocol_versions=["1.0"],
+        supported_protocol_versions=["1.0", "0.3"],
         default_protocol_version="1.0",
     )
     assert compatibility.params["extension_retention"][MODEL_SELECTION_EXTENSION_URI] == {
@@ -769,7 +775,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     wire_contract = ext_by_uri[WIRE_CONTRACT_EXTENSION_URI]
     assert wire_contract.params["profile"]["profile_id"] == "opencode-a2a-single-tenant-coding-v1"
     assert wire_contract.params["default_protocol_version"] == "1.0"
-    assert wire_contract.params["supported_protocol_versions"] == ["1.0"]
+    assert wire_contract.params["supported_protocol_versions"] == ["1.0", "0.3"]
     assert wire_contract.params["protocol_compatibility"] == expected_protocol_compatibility
     assert MODEL_SELECTION_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert PROVIDER_DISCOVERY_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
