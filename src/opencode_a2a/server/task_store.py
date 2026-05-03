@@ -11,11 +11,7 @@ from a2a.server.context import ServerCallContext
 from a2a.server.tasks.database_task_store import DatabaseTaskStore
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.server.tasks.task_store import TaskStore
-from a2a.types import ListTasksRequest, ListTasksResponse, Task, TaskState
-from google.protobuf.json_format import MessageToDict
-from sqlalchemy import inspect, or_, select
-from sqlalchemy.dialects.postgresql import insert as postgresql_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from a2a.types import ListTasksRequest, ListTasksResponse, Task
 from sqlalchemy.engine import make_url
 
 from ..a2a_utils import proto_equals
@@ -23,17 +19,12 @@ from ..config import Settings
 from ..task_states import TERMINAL_TASK_STATES
 from .context_helpers import normalize_server_call_context
 from .database import build_database_engine
+from .task_store_sdk_compat import DatabaseTaskStoreCompat
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
 logger = logging.getLogger(__name__)
-
-_TERMINAL_TASK_STATE_VALUES = tuple(TaskState.Name(int(state)) for state in TERMINAL_TASK_STATES)
-_ATOMIC_TERMINAL_GUARD_DIALECTS = frozenset({"postgresql", "sqlite"})
-_SDK_TASKS_TABLE_NAME = "tasks"
-_SDK_TASKS_REQUIRED_COLUMNS = frozenset({"owner", "last_updated", "protocol_version"})
-_SDK_TASKS_REQUIRED_INDEXES = frozenset({"idx_tasks_owner_last_updated"})
 
 
 class TaskStoreOperationError(RuntimeError):
@@ -50,10 +41,6 @@ class TaskPersistenceDecision:
     reason: str | None = None
 
 
-class TaskStoreSchemaCompatibilityError(RuntimeError):
-    pass
-
-
 class TaskWritePolicy(ABC):
     @abstractmethod
     def evaluate(
@@ -65,6 +52,8 @@ class TaskWritePolicy(ABC):
 
 
 class FirstTerminalStateWinsPolicy(TaskWritePolicy):
+    """Treat terminal task snapshots as immutable once persisted."""
+
     def evaluate(
         self,
         *,
@@ -222,22 +211,22 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
         task: Task,
         context: ServerCallContext,
     ) -> None:
-        dialect_name = task_store.engine.dialect.name
-        if dialect_name not in _ATOMIC_TERMINAL_GUARD_DIALECTS:
+        compat = DatabaseTaskStoreCompat(task_store)
+        if not compat.supports_atomic_terminal_guard():
             if not self._atomic_guard_fallback_logged:
                 logger.warning(
                     "Database-backed task store dialect does not support atomic terminal guard; "
                     "falling back to read-before-write policy dialect=%s",
-                    dialect_name,
+                    compat.dialect_name,
                 )
                 self._atomic_guard_fallback_logged = True
             await self._save_with_read_before_write(task, context)
             return
 
         try:
-            if await self._persist_with_atomic_terminal_guard(task_store, task, context):
+            if await compat.atomic_save(task, context):
                 return
-            existing = await self._load_task_from_database(task_store, task.id)
+            existing = await compat.load_task(task.id, context)
             decision = self._write_policy.evaluate(existing=existing, incoming=task)
             self._log_terminal_persistence_decision(
                 existing=existing,
@@ -259,37 +248,6 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
             raise
         except Exception as exc:
             raise TaskStoreOperationError("save", task.id) from exc
-
-    async def _persist_with_atomic_terminal_guard(
-        self,
-        task_store: DatabaseTaskStore,
-        task: Task,
-        context: ServerCallContext,
-    ) -> bool:
-        await task_store.initialize()
-        statement = _build_atomic_task_save_statement(
-            task=task,
-            owner=task_store.owner_resolver(context),
-            task_table=task_store.task_model.__table__,
-            dialect_name=task_store.engine.dialect.name,
-        )
-        async with task_store.async_session_maker.begin() as session:
-            result = await session.execute(statement)
-        return result.scalar_one_or_none() is not None
-
-    async def _load_task_from_database(
-        self,
-        task_store: DatabaseTaskStore,
-        task_id: str,
-    ) -> Task | None:
-        await task_store.initialize()
-        async with task_store.async_session_maker() as session:
-            stmt = select(task_store.task_model).where(task_store.task_model.id == task_id)
-            result = await session.execute(stmt)
-            task_model = result.scalar_one_or_none()
-        if task_model is None:
-            return None
-        return task_store._from_orm(task_model)
 
     def _log_terminal_persistence_decision(
         self,
@@ -352,8 +310,9 @@ def build_task_store_runtime(
     task_store = GuardedTaskStore(raw_task_store)
 
     async def _startup() -> None:
-        await _ensure_sdk_task_store_schema_compatible(raw_task_store)
-        await raw_task_store.initialize()
+        compat = DatabaseTaskStoreCompat(raw_task_store)
+        await compat.validate_schema()
+        await compat.initialize()
 
     async def _shutdown() -> None:
         if engine is None:
@@ -402,105 +361,13 @@ def _normalize_task_store_context(
     return normalize_server_call_context(context)
 
 
-def _build_atomic_task_save_statement(
-    *,
-    task: Task,
-    owner: str | None,
-    task_table: Any,
-    dialect_name: str,
-):
-    insert = _resolve_atomic_insert_factory(dialect_name)
-    values = _task_row_values(task, owner=owner)
-    status_state = task_table.c.status["state"].as_string()
-    persist_guard = or_(
-        task_table.c.status.is_(None),
-        status_state.is_(None),
-        status_state.not_in(_TERMINAL_TASK_STATE_VALUES),
-    )
-    return (
-        insert(task_table)
-        .values(**values)
-        .on_conflict_do_update(
-            index_elements=[task_table.c.id],
-            set_={key: value for key, value in values.items() if key != "id"},
-            where=persist_guard,
-        )
-        .returning(task_table.c.id)
-    )
-
-
-def _resolve_atomic_insert_factory(dialect_name: str):
-    if dialect_name == "sqlite":
-        return sqlite_insert
-    if dialect_name == "postgresql":
-        return postgresql_insert
-    raise ValueError(f"Unsupported atomic task persistence dialect: {dialect_name}")
-
-
-def _task_row_values(task: Task, *, owner: str | None) -> dict[str, Any]:
-    return {
-        "id": task.id,
-        "context_id": task.context_id,
-        "kind": "task",
-        "owner": owner,
-        "last_updated": (
-            task.status.timestamp.ToDatetime() if task.status.HasField("timestamp") else None
-        ),
-        "status": MessageToDict(task.status),
-        "artifacts": [MessageToDict(artifact) for artifact in task.artifacts],
-        "history": [MessageToDict(message) for message in task.history],
-        "metadata": MessageToDict(task.metadata),
-        "protocol_version": "1.0",
-    }
-
-
 async def initialize_task_store(task_store: TaskStore) -> None:
     raw_task_store = unwrap_task_store(task_store)
     if isinstance(raw_task_store, DatabaseTaskStore):
-        await _ensure_sdk_task_store_schema_compatible(raw_task_store)
-        await raw_task_store.initialize()
+        compat = DatabaseTaskStoreCompat(raw_task_store)
+        await compat.validate_schema()
+        await compat.initialize()
         return
     initialize = getattr(task_store, "initialize", None)
     if callable(initialize):
         await initialize()
-
-
-async def _ensure_sdk_task_store_schema_compatible(task_store: DatabaseTaskStore) -> None:
-    database_url = task_store.engine.url.render_as_string(hide_password=True)
-    async with task_store.engine.begin() as conn:
-        await conn.run_sync(
-            lambda sync_conn: _validate_sdk_task_table_schema(
-                sync_conn,
-                database_url=database_url,
-            )
-        )
-
-
-def _validate_sdk_task_table_schema(
-    connection: Any,
-    *,
-    database_url: str,
-) -> None:
-    inspector = inspect(connection)
-    if _SDK_TASKS_TABLE_NAME not in inspector.get_table_names():
-        return
-
-    existing_columns = {column["name"] for column in inspector.get_columns(_SDK_TASKS_TABLE_NAME)}
-    existing_indexes = {index["name"] for index in inspector.get_indexes(_SDK_TASKS_TABLE_NAME)}
-    missing_columns = sorted(_SDK_TASKS_REQUIRED_COLUMNS - existing_columns)
-    missing_indexes = sorted(_SDK_TASKS_REQUIRED_INDEXES - existing_indexes)
-    if not missing_columns and not missing_indexes:
-        return
-
-    details: list[str] = []
-    if missing_columns:
-        details.append(f"missing columns: {', '.join(missing_columns)}")
-    if missing_indexes:
-        details.append(f"missing indexes: {', '.join(missing_indexes)}")
-
-    raise TaskStoreSchemaCompatibilityError(
-        "Legacy SDK task table schema detected for 'tasks' "
-        f"({'; '.join(details)}). Run "
-        f"`a2a-db --database-url {database_url}` before starting the service. "
-        "If `a2a-db` is unavailable, install the `a2a-sdk[db-cli]` extra first."
-    )

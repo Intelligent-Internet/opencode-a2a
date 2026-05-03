@@ -415,6 +415,8 @@ class ExecutionCoordinator:
                 ),
             )
 
+        # Terminal task snapshots are immutable after persistence. Final text artifacts must be
+        # emitted before the completed status event, and final usage belongs on that terminal event.
         await self._event_queue.enqueue_event(
             TaskStatusUpdateEvent(
                 task_id=self._task_id,

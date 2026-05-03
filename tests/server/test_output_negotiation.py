@@ -288,6 +288,71 @@ async def test_negotiating_result_aggregator_compacts_stream_artifacts_for_persi
 
 
 @pytest.mark.asyncio
+async def test_negotiating_result_aggregator_persists_terminal_usage_with_final_artifact() -> None:
+    store = _store()
+    task_manager = TaskManager(
+        context=ServerCallContext(),
+        task_id="task-stream-terminal-contract",
+        context_id="ctx-stream-terminal-contract",
+        task_store=store,
+        initial_message=None,
+    )
+    aggregator = NegotiatingResultAggregator(task_manager, None)
+    queue = EventQueue()
+    stream_metadata = {
+        "shared": {
+            "stream": {
+                "block_type": "text",
+                "message_id": "msg-stream-usage-1",
+            }
+        }
+    }
+
+    await queue.enqueue_event(
+        TaskArtifactUpdateEvent(
+            task_id="task-stream-terminal-contract",
+            context_id="ctx-stream-terminal-contract",
+            artifact=Artifact(
+                artifact_id="task-stream-terminal-contract:stream:text",
+                parts=[Part(text="final answer")],
+                metadata=stream_metadata,
+            ),
+            append=False,
+            last_chunk=True,
+        )
+    )
+    await queue.enqueue_event(
+        TaskStatusUpdateEvent(
+            task_id="task-stream-terminal-contract",
+            context_id="ctx-stream-terminal-contract",
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+            metadata={
+                "shared": {
+                    "usage": {
+                        "input_tokens": 9,
+                        "output_tokens": 3,
+                        "total_tokens": 12,
+                    }
+                }
+            },
+        )
+    )
+
+    result = await aggregator.consume_all(EventConsumer(queue))
+
+    assert isinstance(result, Task)
+    assert result.artifacts is not None
+    assert result.artifacts[0].parts[0].text == "final answer"
+    assert result.metadata["shared"]["usage"]["total_tokens"] == 12
+
+    stored = await store.get("task-stream-terminal-contract", ServerCallContext())
+    assert stored is not None
+    assert stored.artifacts is not None
+    assert stored.artifacts[0].parts[0].text == "final answer"
+    assert stored.metadata["shared"]["usage"]["total_tokens"] == 12
+
+
+@pytest.mark.asyncio
 async def test_on_get_task_applies_persisted_output_negotiation() -> None:
     store = _store()
     task = _task_with_negotiated_outputs(task_id="task-get", context_id="ctx-get")
