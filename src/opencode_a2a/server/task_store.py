@@ -17,7 +17,6 @@ from sqlalchemy.engine import make_url
 from ..a2a_utils import proto_equals
 from ..config import Settings
 from ..task_states import TERMINAL_TASK_STATES
-from . import task_store_sdk_compat as _task_store_sdk_compat
 from .context_helpers import normalize_server_call_context
 from .database import build_database_engine
 from .task_store_sdk_compat import DatabaseTaskStoreCompat
@@ -26,8 +25,6 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
 logger = logging.getLogger(__name__)
-
-TaskStoreSchemaCompatibilityError = _task_store_sdk_compat.TaskStoreSchemaCompatibilityError
 
 
 class TaskStoreOperationError(RuntimeError):
