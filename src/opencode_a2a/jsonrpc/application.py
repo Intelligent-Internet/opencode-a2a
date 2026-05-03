@@ -22,6 +22,7 @@ from ..extension_negotiation import (
     requested_extensions_from_call_context,
 )
 from ..opencode_upstream_client import OpencodeUpstreamClient
+from ..protocol_versions import A2A_PROTOCOL_VERSION
 from .dispatch import (
     ExtensionHandlerContext,
     build_extension_method_registry,
@@ -34,6 +35,15 @@ from .error_responses import (
 from .models import JSONRPCError, JSONRPCRequest
 
 logger = logging.getLogger(__name__)
+_SUPPORTED_V03_JSONRPC_METHODS = frozenset(
+    {
+        "message/send",
+        "message/stream",
+        "tasks/get",
+        "tasks/cancel",
+        "tasks/resubscribe",
+    }
+)
 _PUSH_NOTIFICATION_METHODS = frozenset(
     {
         "CreateTaskPushNotificationConfig",
@@ -311,6 +321,11 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                 method_not_supported_error(
                     method=base_request.method,
                     supported_methods=self._supported_methods,
+                    protocol_version=getattr(
+                        request.state,
+                        "a2a_protocol_version",
+                        A2A_PROTOCOL_VERSION,
+                    ),
                 ),
             )
 
@@ -361,7 +376,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         if (
             self.enable_v0_3_compat
             and self._v03_adapter is not None
-            and self._v03_adapter.supports_method(base_request.method)
+            and base_request.method in _SUPPORTED_V03_JSONRPC_METHODS
         ):
             return await self._v03_adapter.handle_request(
                 request_id=base_request.id,

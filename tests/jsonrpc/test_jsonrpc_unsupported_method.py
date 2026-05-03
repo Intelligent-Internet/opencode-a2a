@@ -65,6 +65,36 @@ async def test_unsupported_method_uses_requested_protocol_version() -> None:
 
 
 @pytest.mark.asyncio
+async def test_v03_push_notification_alias_returns_method_not_found() -> None:
+    settings = make_settings(test_bearer_token="test-token")
+    app = create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers={
+                "Authorization": "Bearer test-token",
+                "A2A-Version": "0.3",
+            },
+            json={
+                "jsonrpc": "2.0",
+                "id": 124,
+                "method": "tasks/pushNotificationConfig/list",
+                "params": {"id": "task-1"},
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["A2A-Version"] == "0.3"
+    body = response.json()
+    assert body["error"]["code"] == -32601
+    assert body["error"]["message"] == "Method not found"
+    assert body["error"]["data"]["method"] == "tasks/pushNotificationConfig/list"
+    assert body["error"]["data"]["protocolVersion"] == "0.3"
+
+
+@pytest.mark.asyncio
 async def test_sendmessage_uses_canonical_v1_method_dispatch() -> None:
     settings = make_settings(test_bearer_token="test-token")
     app = create_app(settings)

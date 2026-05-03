@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Mapping
 from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 import uvicorn
-from a2a.compat.v0_3.rest_adapter import REST03Adapter
+from a2a.compat.v0_3.context_builders import V03ServerCallContextBuilder
+from a2a.compat.v0_3.rest_handler import REST03Handler
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventConsumer, EventQueueLegacy
 from a2a.server.request_handlers.default_request_handler import (
@@ -41,10 +43,17 @@ from a2a.types import (
     UnsupportedOperationError,
 )
 from a2a.utils import proto_utils
+from a2a.utils.error_handlers import (
+    rest_error_handler,
+    rest_stream_error_handler,
+)
 from a2a.utils.errors import (
     A2A_REST_ERROR_MAPPING,
     A2AError,
     RestErrorMap,
+)
+from a2a.utils.errors import (
+    InvalidRequestError as UtilsInvalidRequestError,
 )
 from a2a.utils.task import apply_history_length, validate_history_length
 from fastapi import FastAPI, Request
@@ -52,6 +61,7 @@ from fastapi.responses import JSONResponse, Response
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from google.protobuf.message import Message as ProtoMessage
 from pydantic_settings import BaseSettings
+from sse_starlette.sse import EventSourceResponse
 from starlette.middleware.gzip import GZipMiddleware
 
 from ..a2a_protocol import (
@@ -120,6 +130,82 @@ from .task_store import (
 logger = logging.getLogger(__name__)
 TASK_STORE_ERROR_TYPE = "TASK_STORE_UNAVAILABLE"
 PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE = "Push notifications are not supported by the agent"
+
+
+def _build_rest03_routes(
+    *,
+    http_handler: LegacyRequestHandler,
+    context_builder: DefaultServerCallContextBuilder,
+) -> dict[tuple[str, str], Any]:
+    rest03_handler = REST03Handler(request_handler=http_handler)
+    rest03_context_builder = V03ServerCallContextBuilder(context_builder)
+
+    @rest_error_handler
+    async def _handle_request(method: Any, request: Request) -> Response:
+        call_context = rest03_context_builder.build(request)
+        response = await method(request, call_context)
+        return JSONResponse(content=response)
+
+    @rest_stream_error_handler
+    async def _handle_streaming_request(method: Any, request: Request) -> EventSourceResponse:
+        try:
+            await request.body()
+        except (ValueError, RuntimeError, OSError) as error:
+            raise UtilsInvalidRequestError(
+                message=f"Failed to pre-consume request body: {error}"
+            ) from error
+
+        call_context = rest03_context_builder.build(request)
+
+        async def event_generator(stream: Any):
+            async for item in stream:
+                yield json.dumps(item)
+
+        return EventSourceResponse(event_generator(method(request, call_context)))
+
+    return {
+        ("/v1/message:send", "POST"): partial(_handle_request, rest03_handler.on_message_send),
+        ("/v1/message:stream", "POST"): partial(
+            _handle_streaming_request,
+            rest03_handler.on_message_send_stream,
+        ),
+        ("/v1/tasks/{id}:cancel", "POST"): partial(
+            _handle_request,
+            rest03_handler.on_cancel_task,
+        ),
+        ("/v1/tasks/{id}:subscribe", "GET"): partial(
+            _handle_streaming_request,
+            rest03_handler.on_subscribe_to_task,
+        ),
+        ("/v1/tasks/{id}:subscribe", "POST"): partial(
+            _handle_streaming_request,
+            rest03_handler.on_subscribe_to_task,
+        ),
+        ("/v1/tasks/{id}", "GET"): partial(
+            _handle_request,
+            rest03_handler.on_get_task,
+        ),
+        ("/v1/tasks/{id}/pushNotificationConfigs/{push_id}", "GET"): partial(
+            _handle_request,
+            rest03_handler.get_push_notification,
+        ),
+        ("/v1/tasks/{id}/pushNotificationConfigs", "POST"): partial(
+            _handle_request,
+            rest03_handler.set_push_notification,
+        ),
+        ("/v1/tasks/{id}/pushNotificationConfigs", "GET"): partial(
+            _handle_request,
+            rest03_handler.list_push_notifications,
+        ),
+        ("/v1/tasks", "GET"): partial(
+            _handle_request,
+            rest03_handler.list_tasks,
+        ),
+        ("/v1/card", "GET"): partial(
+            _handle_request,
+            rest03_handler.on_get_extended_agent_card,
+        ),
+    }
 
 
 def _rest_error_response(
@@ -894,11 +980,10 @@ def create_app(settings: Settings) -> FastAPI:
         request_handler=handler,
         context_builder=context_builder,
     )
-    rest03_adapter = REST03Adapter(
+    rest03_routes = _build_rest03_routes(
         http_handler=handler,
         context_builder=context_builder,
     )
-    rest03_routes = rest03_adapter.routes()
     public_card_etag = build_agent_card_etag(agent_card)
     extended_card_etag = build_agent_card_etag(extended_agent_card)
     persistence_summary = describe_lightweight_persistence_backend(settings)

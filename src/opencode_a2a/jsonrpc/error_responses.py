@@ -190,6 +190,7 @@ def method_not_supported_error(
     *,
     method: str,
     supported_methods: list[str],
+    protocol_version: str = A2A_PROTOCOL_VERSION,
 ) -> JSONRPCError:
     return JSONRPCError(
         code=-32601,
@@ -198,7 +199,7 @@ def method_not_supported_error(
             "type": "METHOD_NOT_SUPPORTED",
             "method": method,
             "supported_methods": supported_methods,
-            "protocol_version": A2A_PROTOCOL_VERSION,
+            "protocol_version": protocol_version,
         },
     )
 

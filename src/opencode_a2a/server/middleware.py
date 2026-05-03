@@ -62,12 +62,7 @@ _V03_JSONRPC_METHODS = frozenset(
         "message/stream",
         "tasks/get",
         "tasks/cancel",
-        "tasks/pushNotificationConfig/set",
-        "tasks/pushNotificationConfig/get",
-        "tasks/pushNotificationConfig/list",
-        "tasks/pushNotificationConfig/delete",
         "tasks/resubscribe",
-        "agent/getAuthenticatedExtendedCard",
     }
 )
 _REQUEST_BODY_BYTES: ContextVar[bytes | None] = ContextVar(
