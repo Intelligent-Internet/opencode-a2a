@@ -52,6 +52,8 @@ class TaskWritePolicy(ABC):
 
 
 class FirstTerminalStateWinsPolicy(TaskWritePolicy):
+    """Treat terminal task snapshots as immutable once persisted."""
+
     def evaluate(
         self,
         *,

@@ -607,6 +607,53 @@ async def test_streaming_includes_usage_in_final_status_metadata() -> None:
 
 
 @pytest.mark.asyncio
+async def test_streaming_emits_final_text_artifact_before_terminal_status() -> None:
+    client = DummyStreamingClient(
+        stream_events_payload=[
+            _event(session_id="ses-1", role="assistant", part_type="text", delta="partial "),
+            _step_finish_usage_event(
+                session_id="ses-1",
+                input_tokens=9,
+                output_tokens=3,
+                total_tokens=12,
+                cost=0.0007,
+            ),
+        ],
+        response_text="partial final answer",
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=True)
+    executor._should_stream = lambda context: True  # type: ignore[method-assign]
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-terminal-order",
+            context_id="ctx-terminal-order",
+            text="hello",
+        ),
+        queue,
+    )
+
+    final_text_index = max(
+        index
+        for index, event in enumerate(queue.events)
+        if event in _artifact_updates(queue)
+        and _artifact_stream_meta(event)["block_type"] == "text"
+        and _part_text(event) == "partial final answer"
+    )
+    final_status_index = next(
+        index
+        for index, event in enumerate(queue.events)
+        if isinstance(event, TaskStatusUpdateEvent) and _is_terminal_status_event(event)
+    )
+
+    assert final_text_index < final_status_index
+    final_status = queue.events[final_status_index]
+    assert isinstance(final_status, TaskStatusUpdateEvent)
+    assert _status_shared_meta(final_status)["usage"]["total_tokens"] == 12
+
+
+@pytest.mark.asyncio
 async def test_streaming_ignores_non_step_finish_usage_like_part_payloads() -> None:
     client = DummyStreamingClient(
         stream_events_payload=[
