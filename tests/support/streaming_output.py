@@ -10,10 +10,11 @@ from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from tests.support.helpers import (
     DummyEventQueue,
 )
+from tests.support.interrupt_clients import InterruptRequestClientMixin
 from tests.support.settings import make_settings
 
 
-class DummyStreamingClient:
+class DummyStreamingClient(InterruptRequestClientMixin):
     def __init__(
         self,
         *,
@@ -36,8 +37,8 @@ class DummyStreamingClient:
         self.max_in_flight_send = 0
         self.stream_timeout = None
         self.directory = None
-        self._interrupt_sessions: dict[str, str] = {}
-        self._interrupt_requests: dict[str, dict] = {}
+        self._interrupt_requests: dict[str, dict[str, str | None]] = {}
+        self._interrupt_request_details: dict[str, dict | None] = {}
         self.settings = make_settings(
             test_bearer_token="test",
             opencode_base_url="http://localhost",
@@ -89,36 +90,6 @@ class DummyStreamingClient:
             for event in self._stream_events_payload
         ):
             yield {"type": "session.idle", "properties": {"sessionID": "ses-1"}}
-
-    async def remember_interrupt_request(
-        self,
-        *,
-        request_id: str,
-        session_id: str,
-        interrupt_type: str | None = None,
-        identity: str | None = None,
-        task_id: str | None = None,
-        context_id: str | None = None,
-        details: dict | None = None,
-        ttl_seconds: float | None = None,
-    ) -> None:
-        del ttl_seconds
-        self._interrupt_sessions[request_id] = session_id
-        self._interrupt_requests[request_id] = {
-            "session_id": session_id,
-            "interrupt_type": interrupt_type,
-            "identity": identity,
-            "task_id": task_id,
-            "context_id": context_id,
-            "details": details,
-        }
-
-    async def resolve_interrupt_session(self, request_id: str) -> str | None:
-        return self._interrupt_sessions.get(request_id)
-
-    async def discard_interrupt_request(self, request_id: str) -> None:
-        self._interrupt_sessions.pop(request_id, None)
-        self._interrupt_requests.pop(request_id, None)
 
 
 def _event(

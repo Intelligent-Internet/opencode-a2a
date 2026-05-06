@@ -414,6 +414,86 @@ async def test_interrupt_callback_extension_rejects_unknown_request_id(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_interrupt_callback_extension_accepts_legacy_session_only_client(monkeypatch):
+    import opencode_a2a.server.application as app_module
+
+    class LegacyInterruptClient:
+        def __init__(self, _settings: Settings, **kwargs) -> None:
+            del kwargs
+            self.settings = _settings
+            self.directory = None
+            self.stream_timeout = None
+            self.permission_reply_calls: list[dict] = []
+            self._active_requests = {"perm-legacy"}
+
+        async def close(self) -> None:
+            return None
+
+        async def resolve_interrupt_session(self, request_id: str) -> str | None:
+            if request_id in self._active_requests:
+                return "ses-legacy"
+            return None
+
+        async def permission_reply(
+            self,
+            request_id: str,
+            *,
+            reply: str,
+            message: str | None = None,
+            directory: str | None = None,
+            workspace_id: str | None = None,
+        ) -> bool:
+            self.permission_reply_calls.append(
+                {
+                    "request_id": request_id,
+                    "reply": reply,
+                    "message": message,
+                    "directory": directory,
+                    "workspace_id": workspace_id,
+                }
+            )
+            return True
+
+        async def discard_interrupt_request(self, request_id: str) -> None:
+            self._active_requests.discard(request_id)
+
+    dummy = LegacyInterruptClient(
+        make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
+    app = app_module.create_app(
+        make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
+        resp = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 161,
+                "method": "a2a.interrupt.permission.reply",
+                "params": {"request_id": "perm-legacy", "reply": "once"},
+            },
+        )
+        payload = resp.json()
+        assert payload.get("error") is None
+        assert payload["result"] == {"ok": True, "request_id": "perm-legacy"}
+        assert dummy.permission_reply_calls == [
+            {
+                "request_id": "perm-legacy",
+                "reply": "once",
+                "message": None,
+                "directory": None,
+                "workspace_id": None,
+            }
+        ]
+        assert "perm-legacy" not in dummy._active_requests
+
+
+@pytest.mark.asyncio
 async def test_interrupt_callback_extension_rejects_interrupt_type_mismatch(monkeypatch):
     import opencode_a2a.server.application as app_module
 
