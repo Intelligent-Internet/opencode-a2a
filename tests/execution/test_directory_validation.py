@@ -7,7 +7,8 @@ from a2a.types import TaskState
 
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.opencode_upstream_client import OpencodeUpstreamClient
-from tests.support.helpers import make_request_context_mock, make_settings
+from tests.support.helpers import make_request_context_mock
+from tests.support.settings import make_settings
 
 
 @pytest.fixture

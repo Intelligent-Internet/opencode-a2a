@@ -52,23 +52,18 @@ _parse_bool_field = partial(
 )
 
 
-def _parse_query_object(params: dict[str, Any]) -> dict[str, Any]:
-    raw_query = params.get("query")
-    if raw_query is None:
-        return {}
-    if not isinstance(raw_query, dict):
-        raise JsonRpcParamsValidationError(
-            message="query must be an object",
-            data={"type": "INVALID_FIELD", "field": "query"},
-        )
-    return dict(raw_query)
+def _reject_nested_query_params(params: dict[str, Any]) -> None:
+    if "query" not in params:
+        return
+    raise JsonRpcParamsValidationError(
+        message="query is not supported; use top-level params",
+        data={"type": "INVALID_FIELD", "field": "query"},
+    )
 
 
-def _validate_pagination_fields(params: dict[str, Any], query: dict[str, Any]) -> None:
+def _validate_pagination_fields(params: dict[str, Any]) -> None:
     unsupported_fields = tuple(SESSION_QUERY_PAGINATION_UNSUPPORTED)
-    if any(field in params for field in unsupported_fields) or any(
-        field in query for field in unsupported_fields
-    ):
+    if any(field in params for field in unsupported_fields):
         raise JsonRpcParamsValidationError(
             message="Only limit pagination is supported",
             data={
@@ -81,18 +76,9 @@ def _validate_pagination_fields(params: dict[str, Any], query: dict[str, Any]) -
 
 def _normalize_session_query_limit(
     *,
-    params: dict[str, Any],
-    query: dict[str, Any],
+    limit: Any,
 ) -> dict[str, Any]:
-    top_level_limit = _parse_required_positive_int(params.get("limit"), field="limit")
-    query_limit = _parse_required_positive_int(query.get("limit"), field="limit")
-    if top_level_limit is not None and query_limit is not None and top_level_limit != query_limit:
-        raise JsonRpcParamsValidationError(
-            message="limit is ambiguous between params.limit and params.query.limit",
-            data={"type": "INVALID_FIELD", "field": "limit"},
-        )
-
-    normalized_limit = top_level_limit if top_level_limit is not None else query_limit
+    normalized_limit = _parse_required_positive_int(limit, field="limit")
     if normalized_limit is None:
         normalized_limit = SESSION_QUERY_DEFAULT_LIMIT
     elif normalized_limit > SESSION_QUERY_MAX_LIMIT:
@@ -105,53 +91,39 @@ def _normalize_session_query_limit(
             },
         )
 
-    normalized_query = dict(query)
-    normalized_query["limit"] = normalized_limit
-    return normalized_query
+    return {"limit": normalized_limit}
 
 
 def _normalize_alias_field(
     *,
     params: dict[str, Any],
-    query: dict[str, Any],
     field: str,
     parser,
 ) -> Any:
-    top_level_value = parser(params.get(field), field=field)
-    query_value = parser(query.get(field), field=field)
-    if top_level_value is not None and query_value is not None and top_level_value != query_value:
-        raise JsonRpcParamsValidationError(
-            message=f"{field} is ambiguous between params.{field} and params.query.{field}",
-            data={"type": "INVALID_FIELD", "field": field},
-        )
-    return top_level_value if top_level_value is not None else query_value
+    return parser(params.get(field), field=field)
 
 
 def parse_list_sessions_params(params: dict[str, Any]) -> dict[str, Any]:
-    query = _parse_query_object(params)
-    _validate_pagination_fields(params, query)
-    normalized_query = _normalize_session_query_limit(params=params, query=query)
+    _reject_nested_query_params(params)
+    _validate_pagination_fields(params)
+    normalized_query = _normalize_session_query_limit(limit=params.get("limit"))
     directory = _normalize_alias_field(
         params=params,
-        query=query,
         field="directory",
         parser=_parse_string_field,
     )
     roots = _normalize_alias_field(
         params=params,
-        query=query,
         field="roots",
         parser=_parse_bool_field,
     )
     start = _normalize_alias_field(
         params=params,
-        query=query,
         field="start",
         parser=_parse_non_negative_int,
     )
     search = _normalize_alias_field(
         params=params,
-        query=query,
         field="search",
         parser=_parse_string_field,
     )
@@ -183,12 +155,11 @@ def parse_get_session_messages_params(params: dict[str, Any]) -> tuple[str, dict
             data={"type": "MISSING_FIELD", "field": "session_id"},
         )
 
-    query = _parse_query_object(params)
-    _validate_pagination_fields(params, query)
-    normalized_query = _normalize_session_query_limit(params=params, query=query)
+    _reject_nested_query_params(params)
+    _validate_pagination_fields(params)
+    normalized_query = _normalize_session_query_limit(limit=params.get("limit"))
     before = _normalize_alias_field(
         params=params,
-        query=query,
         field="before",
         parser=_parse_string_field,
     )

@@ -35,7 +35,8 @@ from opencode_a2a.server.task_store_sdk_compat import (
     _task_model_to_core,
     _task_row_values,
 )
-from tests.support.helpers import make_request_context_mock, make_settings
+from tests.support.helpers import make_request_context_mock
+from tests.support.settings import make_settings
 
 
 def _task(task_id: str, *, context_id: str = "ctx-1") -> Task:

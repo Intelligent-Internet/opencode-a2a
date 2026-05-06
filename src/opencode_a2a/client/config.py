@@ -74,13 +74,13 @@ def _normalize_transport(value: str) -> str:
     normalized = value.strip().lower()
     if normalized in {"jsonrpc", "json-rpc", "json_rpc"}:
         return "JSONRPC"
-    if normalized in {"http+json", "http_json", "http-json", "httpjson", "http+json+"}:
+    if normalized in {"http+json", "http-json", "http_json"}:
         return "HTTP+JSON"
     if normalized in {"grpc"}:
         return "GRPC"
     if not normalized:
         return "JSONRPC"
-    return value.strip()
+    raise ValueError(f"supported_transports contains unsupported transport {value!r}")
 
 
 def _parse_transports(

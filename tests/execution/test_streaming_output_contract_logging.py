@@ -8,8 +8,8 @@ from opencode_a2a.execution.executor import (
 from tests.support.helpers import (
     DummyEventQueue,
     make_request_context,
-    make_settings,
 )
+from tests.support.settings import make_settings
 from tests.support.streaming_output import (
     DummyStreamingClient,
     _artifact_stream_meta,

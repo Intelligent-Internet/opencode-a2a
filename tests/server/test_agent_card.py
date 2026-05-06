@@ -24,7 +24,7 @@ from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from opencode_a2a.server.agent_card import (
     build_agent_card,
 )
-from tests.support.helpers import make_settings
+from tests.support.settings import make_settings
 
 
 def _security_requirements(card) -> list[dict[str, dict[str, list[str]]]]:
@@ -476,18 +476,11 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "roots",
         "start",
         "search",
-        "query.limit",
-        "query.directory",
-        "query.roots",
-        "query.start",
-        "query.search",
     ]
     assert messages_contract["params"]["optional"] == [
         "limit",
         "before",
         "metadata.opencode.workspace.id",
-        "query.limit",
-        "query.before",
     ]
     assert messages_contract["result"]["fields"] == ["items", "next_cursor"]
     assert list_contract["notification_response_status"] == 204

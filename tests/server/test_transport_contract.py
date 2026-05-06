@@ -45,8 +45,8 @@ from tests.support.helpers import (
     DummyChatOpencodeUpstreamClient,
     DummySessionQueryOpencodeUpstreamClient,
     make_basic_auth_header,
-    make_settings,
 )
+from tests.support.settings import make_settings
 
 
 def _task_for_listing(

@@ -6,9 +6,10 @@ import opencode_a2a.server.application as app_module
 from opencode_a2a.a2a_protocol import CORE_JSONRPC_METHODS
 from opencode_a2a.contracts.extensions import SESSION_MANAGEMENT_EXTENSION_URI
 from opencode_a2a.jsonrpc.application import OpencodeSessionManagementJSONRPCApplication
-from tests.support.helpers import DummySessionQueryOpencodeUpstreamClient, make_settings
+from tests.support.helpers import DummySessionQueryOpencodeUpstreamClient
 from tests.support.jsonrpc_error_assertions import assert_v1_error_reason, error_context_detail
 from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers, _jsonrpc_app
+from tests.support.settings import make_settings
 
 
 @pytest.mark.asyncio
@@ -100,10 +101,19 @@ async def test_sdk_owned_non_chat_jsonrpc_methods_delegate_to_base_app(monkeypat
 
 
 def test_core_jsonrpc_methods_are_canonical_pascalcase() -> None:
-    assert "SendMessage" in CORE_JSONRPC_METHODS
-    assert "SendStreamingMessage" in CORE_JSONRPC_METHODS
-    assert "GetTask" in CORE_JSONRPC_METHODS
-    assert "CancelTask" in CORE_JSONRPC_METHODS
+    assert CORE_JSONRPC_METHODS == (
+        "SendMessage",
+        "SendStreamingMessage",
+        "GetTask",
+        "ListTasks",
+        "CancelTask",
+        "CreateTaskPushNotificationConfig",
+        "GetTaskPushNotificationConfig",
+        "ListTaskPushNotificationConfigs",
+        "DeleteTaskPushNotificationConfig",
+        "SubscribeToTask",
+        "GetExtendedAgentCard",
+    )
     assert "message/send" not in CORE_JSONRPC_METHODS
     assert "tasks/get" not in CORE_JSONRPC_METHODS
 
