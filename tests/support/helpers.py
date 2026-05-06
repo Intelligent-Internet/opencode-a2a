@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, PropertyMock
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.types import Message, Part, Role, SendMessageConfiguration, SendMessageRequest
+from pydantic_settings import PydanticBaseSettingsSource
 
 from opencode_a2a.config import Settings
 from opencode_a2a.contracts.extensions import (
@@ -18,6 +19,20 @@ from opencode_a2a.contracts.extensions import (
 )
 from opencode_a2a.opencode_upstream_client import OpencodeMessage, OpencodeMessagePage
 from opencode_a2a.server.context_helpers import normalize_server_call_context
+
+
+class _IsolatedTestSettings(Settings):
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[Settings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        del settings_cls, env_settings, dotenv_settings, file_secret_settings
+        return (init_settings,)
 
 
 def _build_test_static_auth_credentials(**overrides: Any) -> tuple[dict[str, Any], ...]:
@@ -74,7 +89,7 @@ def make_settings(**overrides: Any) -> Settings:
     }
     base.update(overrides)
     base["a2a_static_auth_credentials"] = _build_test_static_auth_credentials(**base)
-    return Settings(**base)
+    return _IsolatedTestSettings(**base)
 
 
 def make_basic_auth_header(username: str, password: str) -> dict[str, str]:
