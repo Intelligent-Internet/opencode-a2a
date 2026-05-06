@@ -4,7 +4,6 @@ from typing import Any
 
 from opencode_a2a.config import Settings
 from opencode_a2a.opencode_upstream_client import OpencodeMessagePage
-
 from tests.support.interrupt_clients import InterruptRequestClientMixin
 from tests.support.workspace_control_client import WorkspaceControlClientMixin
 
