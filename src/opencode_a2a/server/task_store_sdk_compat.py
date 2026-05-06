@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from ..task_states import TERMINAL_TASK_STATES
+from .database import redact_database_url_for_logs
 
 _ATOMIC_TERMINAL_GUARD_DIALECTS = frozenset({"postgresql", "sqlite"})
 _TERMINAL_TASK_STATE_VALUES = tuple(TaskState.Name(int(state)) for state in TERMINAL_TASK_STATES)
@@ -66,7 +67,9 @@ class DatabaseTaskStoreCompat:
         await self._task_store.initialize()
 
     async def validate_schema(self) -> None:
-        database_url = self._task_store.engine.url.render_as_string(hide_password=True)
+        database_url = redact_database_url_for_logs(
+            self._task_store.engine.url.render_as_string(hide_password=True)
+        )
         table_name = self._shape.task_model.__table__.name
         required_indexes = frozenset({f"idx_{table_name}_owner_last_updated"})
         async with self._task_store.engine.begin() as conn:
