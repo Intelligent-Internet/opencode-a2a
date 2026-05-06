@@ -94,56 +94,23 @@ def _normalize_session_query_limit(
     return {"limit": normalized_limit}
 
 
-def _normalize_alias_field(
-    *,
-    params: dict[str, Any],
-    field: str,
-    parser,
-) -> Any:
-    return parser(params.get(field), field=field)
-
-
 def parse_list_sessions_params(params: dict[str, Any]) -> dict[str, Any]:
     _reject_nested_query_params(params)
     _validate_pagination_fields(params)
     normalized_query = _normalize_session_query_limit(limit=params.get("limit"))
-    directory = _normalize_alias_field(
-        params=params,
-        field="directory",
-        parser=_parse_string_field,
-    )
-    roots = _normalize_alias_field(
-        params=params,
-        field="roots",
-        parser=_parse_bool_field,
-    )
-    start = _normalize_alias_field(
-        params=params,
-        field="start",
-        parser=_parse_non_negative_int,
-    )
-    search = _normalize_alias_field(
-        params=params,
-        field="search",
-        parser=_parse_string_field,
-    )
+    directory = _parse_string_field(params.get("directory"), field="directory")
+    roots = _parse_bool_field(params.get("roots"), field="roots")
+    start = _parse_non_negative_int(params.get("start"), field="start")
+    search = _parse_string_field(params.get("search"), field="search")
 
     if directory is not None:
         normalized_query["directory"] = directory
-    else:
-        normalized_query.pop("directory", None)
     if roots is not None:
         normalized_query["roots"] = roots
-    else:
-        normalized_query.pop("roots", None)
     if start is not None:
         normalized_query["start"] = start
-    else:
-        normalized_query.pop("start", None)
     if search is not None:
         normalized_query["search"] = search
-    else:
-        normalized_query.pop("search", None)
     return normalized_query
 
 
@@ -158,13 +125,7 @@ def parse_get_session_messages_params(params: dict[str, Any]) -> tuple[str, dict
     _reject_nested_query_params(params)
     _validate_pagination_fields(params)
     normalized_query = _normalize_session_query_limit(limit=params.get("limit"))
-    before = _normalize_alias_field(
-        params=params,
-        field="before",
-        parser=_parse_string_field,
-    )
+    before = _parse_string_field(params.get("before"), field="before")
     if before is not None:
         normalized_query["before"] = before
-    else:
-        normalized_query.pop("before", None)
     return raw_session_id.strip(), normalized_query

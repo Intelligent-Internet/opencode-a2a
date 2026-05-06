@@ -3,15 +3,15 @@ from pathlib import Path
 import httpx
 import pytest
 
-from tests.support.helpers import (
-    DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
-)
 from tests.support.jsonrpc_error_assertions import assert_v1_error_reason
 from tests.support.session_extensions import (
     _BASE_SETTINGS,
     _extension_headers,
     _jsonrpc_app,
     _session_meta,
+)
+from tests.support.session_query_client import (
+    DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
 from tests.support.settings import make_settings
 

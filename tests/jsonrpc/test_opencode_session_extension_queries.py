@@ -9,14 +9,14 @@ from opencode_a2a.contracts.extensions import (
     SESSION_QUERY_MAX_LIMIT,
 )
 from opencode_a2a.opencode_upstream_client import UpstreamConcurrencyLimitError
-from tests.support.helpers import (
-    DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
-)
 from tests.support.jsonrpc_error_assertions import (
     assert_v1_error_reason,
     error_context_detail,
 )
 from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers, _session_meta
+from tests.support.session_query_client import (
+    DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
+)
 from tests.support.settings import make_settings
 
 

@@ -43,9 +43,9 @@ from opencode_a2a.server.middleware import (
 from opencode_a2a.trace_context import parse_traceparent
 from tests.support.helpers import (
     DummyChatOpencodeUpstreamClient,
-    DummySessionQueryOpencodeUpstreamClient,
     make_basic_auth_header,
 )
+from tests.support.session_query_client import DummySessionQueryOpencodeUpstreamClient
 from tests.support.settings import make_settings
 
 

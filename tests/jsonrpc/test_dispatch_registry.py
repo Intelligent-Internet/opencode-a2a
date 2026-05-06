@@ -6,9 +6,9 @@ import opencode_a2a.server.application as app_module
 from opencode_a2a.a2a_protocol import CORE_JSONRPC_METHODS
 from opencode_a2a.contracts.extensions import SESSION_MANAGEMENT_EXTENSION_URI
 from opencode_a2a.jsonrpc.application import OpencodeSessionManagementJSONRPCApplication
-from tests.support.helpers import DummySessionQueryOpencodeUpstreamClient
 from tests.support.jsonrpc_error_assertions import assert_v1_error_reason, error_context_detail
 from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers, _jsonrpc_app
+from tests.support.session_query_client import DummySessionQueryOpencodeUpstreamClient
 from tests.support.settings import make_settings
 
 

@@ -1,15 +1,15 @@
 import httpx
 import pytest
 
-from tests.support.helpers import (
-    DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
-)
 from tests.support.helpers import make_basic_auth_header
 from tests.support.jsonrpc_error_assertions import (
     assert_v1_error_metadata_contains,
     assert_v1_error_reason,
 )
 from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers
+from tests.support.session_query_client import (
+    DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
+)
 from tests.support.settings import make_settings
 
 
