@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import httpx
@@ -46,6 +49,92 @@ from tests.support.helpers import (
 )
 from tests.support.helpers import make_settings
 from tests.support.session_extensions import _extension_headers
+
+
+@pytest.mark.parametrize(
+    ("builder", "kwargs"),
+    [
+        pytest.param(
+            build_compatibility_profile_params,
+            {"protocol_version": "2.0"},
+            id="compatibility-profile-protocol-version",
+        ),
+        pytest.param(
+            build_compatibility_profile_params,
+            {"protocol_version": "invalid"},
+            id="compatibility-profile-invalid-protocol-version",
+        ),
+        pytest.param(
+            build_compatibility_profile_params,
+            {"default_protocol_version": "2.0"},
+            id="compatibility-profile-default-protocol-version",
+        ),
+        pytest.param(
+            build_compatibility_profile_params,
+            {"supported_protocol_versions": ["1.0", "2.0"]},
+            id="compatibility-profile-supported-protocol-versions",
+        ),
+        pytest.param(
+            build_wire_contract_params,
+            {"protocol_version": "2.0"},
+            id="wire-contract-protocol-version",
+        ),
+        pytest.param(
+            build_wire_contract_params,
+            {"protocol_version": "invalid"},
+            id="wire-contract-invalid-protocol-version",
+        ),
+        pytest.param(
+            build_wire_contract_params,
+            {"default_protocol_version": "2.0"},
+            id="wire-contract-default-protocol-version",
+        ),
+        pytest.param(
+            build_wire_contract_params,
+            {"supported_protocol_versions": ["1.0", "2.0"]},
+            id="wire-contract-supported-protocol-versions",
+        ),
+    ],
+)
+def test_provider_private_contract_builders_reject_non_1_0_protocol_lines(
+    builder,
+    kwargs: dict[str, object],
+) -> None:
+    runtime_profile = build_runtime_profile(make_settings(test_bearer_token="test-token"))
+    call_kwargs = {
+        "protocol_version": A2A_PROTOCOL_VERSION,
+        "runtime_profile": runtime_profile,
+        **kwargs,
+    }
+
+    with pytest.raises(ValueError, match="provider-private A2A protocol version '1\\.0'"):
+        builder(**call_kwargs)
+
+
+@pytest.mark.parametrize(
+    "builder",
+    [
+        build_compatibility_profile_params,
+        build_wire_contract_params,
+    ],
+)
+def test_provider_private_contract_builders_canonicalize_1_0_protocol_inputs(builder) -> None:
+    runtime_profile = build_runtime_profile(make_settings(test_bearer_token="test-token"))
+
+    params = builder(
+        protocol_version="1.0.0",
+        default_protocol_version="1.0.0",
+        supported_protocol_versions=["1.0.0"],
+        runtime_profile=runtime_profile,
+    )
+
+    assert params["default_protocol_version"] == A2A_PROTOCOL_VERSION
+    assert params["supported_protocol_versions"] == [A2A_PROTOCOL_VERSION]
+    if builder is build_wire_contract_params:
+        assert params["protocol_version"] == A2A_PROTOCOL_VERSION
+        assert params["profile"]["protocol_version"] == A2A_PROTOCOL_VERSION
+    else:
+        assert params["protocol_version"] == A2A_PROTOCOL_VERSION
 
 
 def test_extension_uris_map_to_repository_spec_documents() -> None:
@@ -404,3 +493,24 @@ async def test_extension_notification_contracts_return_204(
             json={"jsonrpc": "2.0", "method": method, "params": params},
         )
     assert response.status_code == 204
+
+
+def test_server_application_imports_in_fresh_interpreter() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    existing_pythonpath = os.environ.get("PYTHONPATH")
+    pythonpath_entries = [str(repo_root / "src")]
+    if existing_pythonpath:
+        pythonpath_entries.append(existing_pythonpath)
+    result = subprocess.run(
+        [sys.executable, "-c", "import opencode_a2a.server.application"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(pythonpath_entries),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr

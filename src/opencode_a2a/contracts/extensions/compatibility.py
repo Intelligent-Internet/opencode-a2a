@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...profile.runtime import RuntimeProfile
+from ...protocol_versions import A2A_PROTOCOL_VERSION, normalize_protocol_version
 from . import catalog, identifiers
 from .capabilities import JsonRpcCapabilitySnapshot, build_capability_snapshot
 
@@ -18,17 +19,53 @@ DECLARED_EXTENSION_URIS: tuple[str, ...] = (
 )
 
 
-def _build_declared_protocol_versions(
+def _normalize_provider_private_protocol_version(
+    value: str,
+    *,
+    field_name: str,
+) -> str:
+    try:
+        normalized_version = normalize_protocol_version(value)
+    except (AttributeError, ValueError) as exc:
+        raise ValueError(
+            f"{field_name} must resolve to provider-private A2A protocol version "
+            f"{A2A_PROTOCOL_VERSION!r}; got {value!r}."
+        ) from exc
+    if normalized_version != A2A_PROTOCOL_VERSION:
+        raise ValueError(
+            f"{field_name} must resolve to provider-private A2A protocol version "
+            f"{A2A_PROTOCOL_VERSION!r}; got {value!r}."
+        )
+    return normalized_version
+
+
+def _build_provider_private_protocol_versions(
     *,
     protocol_version: str,
     supported_protocol_versions: tuple[str, ...] | list[str] | None,
     default_protocol_version: str | None,
-) -> tuple[str, list[str]]:
-    declared_default_protocol_version = default_protocol_version or protocol_version
-    declared_supported_protocol_versions = list(
-        supported_protocol_versions or (declared_default_protocol_version,)
+) -> tuple[str, str, list[str]]:
+    normalized_protocol_version = _normalize_provider_private_protocol_version(
+        protocol_version,
+        field_name="protocol_version",
     )
-    return declared_default_protocol_version, declared_supported_protocol_versions
+    normalized_default_protocol_version = _normalize_provider_private_protocol_version(
+        default_protocol_version or normalized_protocol_version,
+        field_name="default_protocol_version",
+    )
+    declared_supported_protocol_versions = supported_protocol_versions or (
+        normalized_default_protocol_version,
+    )
+    for index, version in enumerate(declared_supported_protocol_versions):
+        _normalize_provider_private_protocol_version(
+            version,
+            field_name=f"supported_protocol_versions[{index}]",
+        )
+    return (
+        normalized_protocol_version,
+        normalized_default_protocol_version,
+        [A2A_PROTOCOL_VERSION],
+    )
 
 
 def _build_core_contract_surface() -> dict[str, list[str]]:
@@ -188,12 +225,14 @@ def build_compatibility_profile_params(
     supported_protocol_versions: tuple[str, ...] | list[str] | None = None,
     default_protocol_version: str | None = None,
 ) -> dict[str, Any]:
-    declared_default_protocol_version, declared_supported_protocol_versions = (
-        _build_declared_protocol_versions(
-            protocol_version=protocol_version,
-            supported_protocol_versions=supported_protocol_versions,
-            default_protocol_version=default_protocol_version,
-        )
+    (
+        declared_protocol_version,
+        declared_default_protocol_version,
+        declared_supported_protocol_versions,
+    ) = _build_provider_private_protocol_versions(
+        protocol_version=protocol_version,
+        supported_protocol_versions=supported_protocol_versions,
+        default_protocol_version=default_protocol_version,
     )
     protocol_compatibility = build_protocol_compatibility_params(
         supported_protocol_versions=declared_supported_protocol_versions,
@@ -202,7 +241,7 @@ def build_compatibility_profile_params(
     capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
     service_behaviors = build_service_behavior_contract_params()
     return {
-        **runtime_profile.summary_dict(protocol_version=protocol_version),
+        **runtime_profile.summary_dict(protocol_version=declared_protocol_version),
         "default_protocol_version": declared_default_protocol_version,
         "supported_protocol_versions": declared_supported_protocol_versions,
         "protocol_compatibility": protocol_compatibility,
@@ -312,12 +351,14 @@ def build_wire_contract_params(
     supported_protocol_versions: tuple[str, ...] | list[str] | None = None,
     default_protocol_version: str | None = None,
 ) -> dict[str, Any]:
-    declared_default_protocol_version, declared_supported_protocol_versions = (
-        _build_declared_protocol_versions(
-            protocol_version=protocol_version,
-            supported_protocol_versions=supported_protocol_versions,
-            default_protocol_version=default_protocol_version,
-        )
+    (
+        declared_protocol_version,
+        declared_default_protocol_version,
+        declared_supported_protocol_versions,
+    ) = _build_provider_private_protocol_versions(
+        protocol_version=protocol_version,
+        supported_protocol_versions=supported_protocol_versions,
+        default_protocol_version=default_protocol_version,
     )
     protocol_compatibility = build_protocol_compatibility_params(
         supported_protocol_versions=declared_supported_protocol_versions,
@@ -327,11 +368,11 @@ def build_wire_contract_params(
     service_behaviors = build_service_behavior_contract_params()
 
     return {
-        "protocol_version": protocol_version,
+        "protocol_version": declared_protocol_version,
         "default_protocol_version": declared_default_protocol_version,
         "supported_protocol_versions": declared_supported_protocol_versions,
         "protocol_compatibility": protocol_compatibility,
-        "profile": runtime_profile.summary_dict(protocol_version=protocol_version),
+        "profile": runtime_profile.summary_dict(protocol_version=declared_protocol_version),
         "preferred_transport": "HTTP+JSON",
         "additional_transports": ["JSON-RPC"],
         "core": _build_core_contract_surface(),
