@@ -13,12 +13,9 @@ This document summarizes the current interpretation rules for external TCK runs 
 
 When a TCK run fails, classify the result before changing the runtime:
 
-- `Runtime gap`
-  - the failure reproduces against the current v1-only runtime and contradicts the repository's declared machine-readable contract
-- `TCK assumption mismatch`
-  - the failure depends on method names, payload shapes, or schema expectations that do not match the current A2A v1 SDK/runtime contract
-- `Local experiment artifact`
-  - the failure depends on dummy-backed local behavior, environment heuristics, or unrelated tooling/setup issues
+- `Runtime gap` - the failure reproduces against the current v1-only runtime and contradicts the repository's declared machine-readable contract
+- `TCK assumption mismatch` - the failure depends on method names, payload shapes, or schema expectations that do not match the current A2A v1 SDK/runtime contract
+- `Local experiment artifact` - the failure depends on dummy-backed local behavior, environment heuristics, or unrelated tooling/setup issues
 
 ## Current Guidance
 
