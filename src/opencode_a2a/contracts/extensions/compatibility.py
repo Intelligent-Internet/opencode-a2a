@@ -26,7 +26,7 @@ def _normalize_provider_private_protocol_version(
 ) -> str:
     try:
         normalized_version = normalize_protocol_version(value)
-    except ValueError as exc:
+    except (AttributeError, ValueError) as exc:
         raise ValueError(
             f"{field_name} must resolve to provider-private A2A protocol version "
             f"{A2A_PROTOCOL_VERSION!r}; got {value!r}."

@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -60,6 +61,11 @@ from tests.support.session_extensions import _extension_headers
         ),
         pytest.param(
             build_compatibility_profile_params,
+            {"protocol_version": "invalid"},
+            id="compatibility-profile-invalid-protocol-version",
+        ),
+        pytest.param(
+            build_compatibility_profile_params,
             {"default_protocol_version": "2.0"},
             id="compatibility-profile-default-protocol-version",
         ),
@@ -72,6 +78,11 @@ from tests.support.session_extensions import _extension_headers
             build_wire_contract_params,
             {"protocol_version": "2.0"},
             id="wire-contract-protocol-version",
+        ),
+        pytest.param(
+            build_wire_contract_params,
+            {"protocol_version": "invalid"},
+            id="wire-contract-invalid-protocol-version",
         ),
         pytest.param(
             build_wire_contract_params,
@@ -486,12 +497,20 @@ async def test_extension_notification_contracts_return_204(
 
 def test_server_application_imports_in_fresh_interpreter() -> None:
     repo_root = Path(__file__).resolve().parents[2]
+    existing_pythonpath = os.environ.get("PYTHONPATH")
+    pythonpath_entries = [str(repo_root / "src")]
+    if existing_pythonpath:
+        pythonpath_entries.append(existing_pythonpath)
     result = subprocess.run(
         [sys.executable, "-c", "import opencode_a2a.server.application"],
         cwd=repo_root,
         capture_output=True,
         text=True,
         check=False,
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(pythonpath_entries),
+        },
     )
 
     assert result.returncode == 0, result.stderr
