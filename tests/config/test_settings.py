@@ -11,6 +11,7 @@ from opencode_a2a.protocol_versions import (
     A2A_PROTOCOL_VERSION,
     A2A_SUPPORTED_PROTOCOL_VERSIONS,
 )
+from tests.support.settings import make_settings
 
 
 def test_settings_missing_required():
@@ -91,6 +92,35 @@ def test_settings_valid():
         assert settings.a2a_version == __version__
         assert A2A_PROTOCOL_VERSION == "1.0"
         assert A2A_SUPPORTED_PROTOCOL_VERSIONS == ("1.0",)
+
+
+def test_make_settings_ignores_ambient_environment_sources(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "OPENCODE_BASE_URL=http://dotenv-upstream.test",
+                "A2A_PUBLIC_URL=http://dotenv-public.test",
+                "A2A_HOST=dotenv-host",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with mock.patch.dict(
+        os.environ,
+        {
+            "OPENCODE_BASE_URL": "http://env-upstream.test",
+            "A2A_PUBLIC_URL": "http://env-public.test",
+            "A2A_HOST": "env-host",
+        },
+        clear=False,
+    ):
+        settings = make_settings()
+
+    assert settings.opencode_base_url == "http://127.0.0.1:4096"
+    assert settings.a2a_public_url == "http://127.0.0.1:8000"
+    assert settings.a2a_host == "127.0.0.1"
 
 
 def test_settings_allow_explicit_memory_backend() -> None:
