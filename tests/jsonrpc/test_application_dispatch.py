@@ -14,8 +14,9 @@ import opencode_a2a.server.application as app_module
 from opencode_a2a.contracts.extensions import SESSION_MANAGEMENT_EXTENSION_URI
 from opencode_a2a.jsonrpc.models import JSONRPCRequest
 from tests.support.async_iterators import iter_async
-from tests.support.helpers import DummySessionQueryOpencodeUpstreamClient, make_settings
+from tests.support.helpers import DummySessionQueryOpencodeUpstreamClient
 from tests.support.session_extensions import _BASE_SETTINGS, _jsonrpc_app
+from tests.support.settings import make_settings
 
 
 def _build_dispatcher(monkeypatch: pytest.MonkeyPatch):

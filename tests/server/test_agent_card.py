@@ -24,7 +24,7 @@ from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
 from opencode_a2a.server.agent_card import (
     build_agent_card,
 )
-from tests.support.helpers import make_settings
+from tests.support.settings import make_settings
 
 
 def _security_requirements(card) -> list[dict[str, dict[str, list[str]]]]:

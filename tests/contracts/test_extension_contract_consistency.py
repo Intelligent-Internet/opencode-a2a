@@ -47,8 +47,8 @@ from opencode_a2a.server.application import create_app
 from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
-from tests.support.helpers import make_settings
 from tests.support.session_extensions import _extension_headers
+from tests.support.settings import make_settings
 
 
 @pytest.mark.parametrize(

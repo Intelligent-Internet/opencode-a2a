@@ -4,7 +4,7 @@ import pytest
 from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
-from tests.support.helpers import make_basic_auth_header, make_settings
+from tests.support.helpers import make_basic_auth_header
 from tests.support.jsonrpc_error_assertions import (
     assert_v1_error_context,
     assert_v1_error_metadata_contains,
@@ -16,6 +16,7 @@ from tests.support.session_extensions import (
     _jsonrpc_app,
     _session_meta,
 )
+from tests.support.settings import make_settings
 
 
 @pytest.mark.asyncio

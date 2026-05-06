@@ -3,7 +3,7 @@ import pytest
 
 from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
 from opencode_a2a.server.application import create_app
-from tests.support.helpers import make_settings
+from tests.support.settings import make_settings
 
 
 @pytest.mark.asyncio

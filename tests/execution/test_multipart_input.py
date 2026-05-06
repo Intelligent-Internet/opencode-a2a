@@ -4,7 +4,8 @@ from a2a.types import Part, TaskState
 from opencode_a2a.a2a_utils import make_data_part
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
-from tests.support.helpers import DummyEventQueue, make_request_context_with_parts, make_settings
+from tests.support.helpers import DummyEventQueue, make_request_context_with_parts
+from tests.support.settings import make_settings
 
 
 class RecordingMultipartClient:

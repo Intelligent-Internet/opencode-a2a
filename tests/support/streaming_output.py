@@ -9,8 +9,8 @@ from google.protobuf.json_format import MessageToDict
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from tests.support.helpers import (
     DummyEventQueue,
-    make_settings,
 )
+from tests.support.settings import make_settings
 
 
 class DummyStreamingClient:

@@ -13,7 +13,7 @@ from opencode_a2a.opencode_upstream_client import (
     UpstreamContractError,
 )
 from opencode_a2a.trace_context import TraceContext, bind_trace_context
-from tests.support.helpers import make_settings
+from tests.support.settings import make_settings
 
 
 class _DummyResponse:

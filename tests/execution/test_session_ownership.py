@@ -19,8 +19,8 @@ from opencode_a2a.server.state_store import (
 from tests.support.helpers import (
     configure_mock_client_runtime,
     make_request_context_mock,
-    make_settings,
 )
+from tests.support.settings import make_settings
 
 
 @pytest.fixture

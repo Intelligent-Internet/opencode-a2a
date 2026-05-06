@@ -16,7 +16,7 @@ from opencode_a2a.contracts.extensions import (
 )
 from opencode_a2a.opencode_upstream_client import OpencodeMessage, OpencodeMessagePage
 from opencode_a2a.server.context_helpers import normalize_server_call_context
-from tests.support.settings import make_settings
+from tests.support import settings as test_settings
 
 
 def make_basic_auth_header(username: str, password: str) -> dict[str, str]:
@@ -97,7 +97,7 @@ def configure_mock_client_runtime(
     if settings_overrides:
         overrides.update(settings_overrides)
     type(client).directory = PropertyMock(return_value=directory)
-    type(client).settings = PropertyMock(return_value=make_settings(**overrides))
+    type(client).settings = PropertyMock(return_value=test_settings.make_settings(**overrides))
 
 
 def make_request_context(
@@ -175,7 +175,9 @@ class DummyChatOpencodeUpstreamClient:
         self.created_workspace_ids: list[str | None] = []
         self.stream_timeout = None
         self.directory = None
-        self.settings = settings or make_settings(opencode_base_url="http://localhost")
+        self.settings = settings or test_settings.make_settings(
+            opencode_base_url="http://localhost"
+        )
 
     async def close(self) -> None:
         return None

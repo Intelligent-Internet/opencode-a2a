@@ -12,7 +12,7 @@ from opencode_a2a.auth import (
     build_static_auth_credentials,
     request_has_capability,
 )
-from tests.support.helpers import make_settings
+from tests.support.settings import make_settings
 
 
 def _request_with_principal(principal: AuthenticatedPrincipal | None) -> Request:

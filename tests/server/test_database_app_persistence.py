@@ -7,8 +7,8 @@ import pytest
 from a2a.types import Task, TaskState, TaskStatus
 
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
-from tests.support.helpers import make_settings
 from tests.support.session_extensions import _extension_headers
+from tests.support.settings import make_settings
 
 
 def _task(task_id: str, *, context_id: str = "ctx-1") -> Task:

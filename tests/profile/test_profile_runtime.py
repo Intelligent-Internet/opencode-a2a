@@ -1,6 +1,6 @@
 from opencode_a2a.profile.runtime import build_runtime_profile
 from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
-from tests.support.helpers import make_settings
+from tests.support.settings import make_settings
 
 
 def test_profile_runtime_splits_deployment_runtime_features_and_health_payload() -> None:

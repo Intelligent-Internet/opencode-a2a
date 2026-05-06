@@ -6,7 +6,6 @@ import pytest
 from tests.support.helpers import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
-from tests.support.helpers import make_settings
 from tests.support.jsonrpc_error_assertions import assert_v1_error_reason
 from tests.support.session_extensions import (
     _BASE_SETTINGS,
@@ -14,6 +13,7 @@ from tests.support.session_extensions import (
     _jsonrpc_app,
     _session_meta,
 )
+from tests.support.settings import make_settings
 
 
 def _identity_for_token(token: str) -> str:

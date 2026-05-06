@@ -21,7 +21,7 @@ from opencode_a2a.server.state_store import (
     build_session_state_repository,
     initialize_state_repository,
 )
-from tests.support.helpers import make_settings
+from tests.support.settings import make_settings
 
 
 async def _read_state_store_schema_version(engine) -> int | None:  # noqa: ANN001

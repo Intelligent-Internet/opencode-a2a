@@ -80,8 +80,8 @@ from tests.support.async_iterators import iter_async
 from tests.support.helpers import (
     DummyChatOpencodeUpstreamClient,
     make_basic_auth_header,
-    make_settings,
 )
+from tests.support.settings import make_settings
 
 
 def _agent_card() -> AgentCard:

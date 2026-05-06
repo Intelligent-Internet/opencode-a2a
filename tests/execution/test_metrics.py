@@ -20,7 +20,8 @@ from a2a.types import (
 
 from opencode_a2a.execution.executor import OpencodeAgentExecutor, _StreamOutputState
 from opencode_a2a.server.application import OpencodeRequestHandler
-from tests.support.helpers import DummyEventQueue, make_settings
+from tests.support.helpers import DummyEventQueue
+from tests.support.settings import make_settings
 
 
 def _make_message_send_params() -> SendMessageRequest:
