@@ -8,6 +8,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ...contracts.extensions import INTERRUPT_ERROR_BUSINESS_CODES
+from ...interrupt_request_tracker import BoundInterruptRequestTracker
 from ...opencode_upstream_client import UpstreamConcurrencyLimitError
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import (
@@ -81,18 +82,21 @@ async def handle_interrupt_callback_request(
     expected_interrupt_type = (
         "permission" if base_request.method == context.method_reply_permission else "question"
     )
-    resolve_request = getattr(context.upstream_client, "resolve_interrupt_request", None)
-    if callable(resolve_request):
-        status, binding = await resolve_request(request_id)
-        if status != "active" or binding is None:
-            return context.error_response(
-                base_request.id,
-                interrupt_not_found_error(
-                    ERR_INTERRUPT_EXPIRED if status == "expired" else ERR_INTERRUPT_NOT_FOUND,
-                    request_id=request_id,
-                    expired=status == "expired",
-                ),
-            )
+    interrupt_requests = BoundInterruptRequestTracker(context.upstream_client)
+    resolution = await interrupt_requests.resolve_request(request_id)
+    if resolution.status != "active":
+        return context.error_response(
+            base_request.id,
+            interrupt_not_found_error(
+                ERR_INTERRUPT_EXPIRED
+                if resolution.status == "expired"
+                else ERR_INTERRUPT_NOT_FOUND,
+                request_id=request_id,
+                expired=resolution.status == "expired",
+            ),
+        )
+    binding = resolution.binding
+    if binding is not None:
         if binding.interrupt_type != expected_interrupt_type:
             return context.error_response(
                 base_request.id,
@@ -122,16 +126,6 @@ async def handle_interrupt_callback_request(
             and binding.credential_id
             and binding.credential_id != request_credential_id
         ):
-            return context.error_response(
-                base_request.id,
-                interrupt_not_found_error(
-                    ERR_INTERRUPT_NOT_FOUND,
-                    request_id=request_id,
-                ),
-            )
-    else:
-        resolve_session = getattr(context.upstream_client, "resolve_interrupt_session", None)
-        if callable(resolve_session) and not await resolve_session(request_id):
             return context.error_response(
                 base_request.id,
                 interrupt_not_found_error(
@@ -183,9 +177,7 @@ async def handle_interrupt_callback_request(
                 request_id,
                 **routing_kwargs,
             )
-        discard_request = getattr(context.upstream_client, "discard_interrupt_request", None)
-        if callable(discard_request):
-            await discard_request(request_id)
+        await interrupt_requests.discard_request(request_id)
     except ValueError as exc:
         return context.error_response(
             base_request.id,
@@ -194,9 +186,7 @@ async def handle_interrupt_callback_request(
     except httpx.HTTPStatusError as exc:
         upstream_status = exc.response.status_code
         if upstream_status == 404:
-            discard_request = getattr(context.upstream_client, "discard_interrupt_request", None)
-            if callable(discard_request):
-                await discard_request(request_id)
+            await interrupt_requests.discard_request(request_id)
             return context.error_response(
                 base_request.id,
                 interrupt_not_found_error(

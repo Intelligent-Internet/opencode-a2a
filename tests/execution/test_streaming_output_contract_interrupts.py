@@ -83,7 +83,7 @@ async def test_streaming_emits_interrupt_status_for_permission_asked_event() -> 
     assert "metadata" not in interrupt["details"]
     assert "tool" not in interrupt["details"]
     assert interrupt_statuses[0].status.state == TaskState.TASK_STATE_INPUT_REQUIRED
-    assert client._interrupt_requests["perm-req-1"]["details"] == {
+    assert client._interrupt_request_details["perm-req-1"] == {
         "permission": "read",
         "patterns": ["/data/project/.env.secret"],
     }
@@ -132,7 +132,7 @@ async def test_streaming_emits_interrupt_status_for_question_asked_event() -> No
     ]
     assert "tool" not in interrupt["details"]
     assert interrupt_statuses[0].status.state == TaskState.TASK_STATE_INPUT_REQUIRED
-    assert client._interrupt_requests["q-req-1"]["details"] == {
+    assert client._interrupt_request_details["q-req-1"] == {
         "questions": [
             {
                 "header": "Confirm",

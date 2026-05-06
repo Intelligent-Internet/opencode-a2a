@@ -67,6 +67,10 @@ class RecordingMultipartClient:
     async def remember_interrupt_request(self, **_kwargs) -> None:
         return None
 
+    async def resolve_interrupt_request(self, request_id: str):
+        del request_id
+        return "missing", None
+
     async def resolve_interrupt_session(self, request_id: str) -> str | None:
         del request_id
         return None

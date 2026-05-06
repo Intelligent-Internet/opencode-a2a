@@ -145,6 +145,10 @@ async def test_streaming_metrics_capture_tool_call_and_interrupt_events(caplog) 
             del interrupt_type, identity, task_id, context_id, details, ttl_seconds
             self._interrupt_requests[request_id] = session_id
 
+        async def resolve_interrupt_request(self, request_id: str):
+            del request_id
+            return "missing", None
+
         async def discard_interrupt_request(self, request_id: str) -> None:
             self._interrupt_requests.pop(request_id, None)
 

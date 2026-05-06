@@ -16,6 +16,7 @@ from a2a.types import (
 )
 
 from ..a2a_utils import make_data_part
+from ..interrupt_request_tracker import BoundInterruptRequestTracker
 from .event_helpers import _enqueue_artifact_update
 from .stream_events import (
     BlockType,
@@ -85,6 +86,7 @@ class StreamRuntime:
         pending_deltas: defaultdict[str, list[_PendingDelta]] = defaultdict(list)
         backoff = 0.5
         max_backoff = 5.0
+        interrupt_requests = BoundInterruptRequestTracker(self._client)
 
         async def _emit_chunks(chunks: list[_NormalizedStreamChunk]) -> None:
             for chunk in chunks:
@@ -490,21 +492,15 @@ class StreamRuntime:
                             if asked is not None:
                                 request_id = asked["request_id"]
                                 if stream_state.mark_interrupt_pending(request_id):
-                                    remember_request = getattr(
-                                        self._client,
-                                        "remember_interrupt_request",
-                                        None,
+                                    await interrupt_requests.remember_request(
+                                        request_id=request_id,
+                                        session_id=session_id,
+                                        interrupt_type=asked["interrupt_type"],
+                                        identity=identity,
+                                        task_id=task_id,
+                                        context_id=context_id,
+                                        details=asked["details"],
                                     )
-                                    if callable(remember_request):
-                                        await remember_request(
-                                            request_id=request_id,
-                                            session_id=session_id,
-                                            interrupt_type=asked["interrupt_type"],
-                                            identity=identity,
-                                            task_id=task_id,
-                                            context_id=context_id,
-                                            details=asked["details"],
-                                        )
                                     await _emit_interrupt_status(
                                         state=TaskState.TASK_STATE_INPUT_REQUIRED,
                                         request_id=request_id,
@@ -518,13 +514,7 @@ class StreamRuntime:
                                 cleared_pending = stream_state.clear_interrupt_pending(
                                     resolved_request_id
                                 )
-                                discard_request = getattr(
-                                    self._client,
-                                    "discard_interrupt_request",
-                                    None,
-                                )
-                                if callable(discard_request):
-                                    await discard_request(resolved_request_id)
+                                await interrupt_requests.discard_request(resolved_request_id)
                                 if cleared_pending:
                                     await _emit_interrupt_status(
                                         state=TaskState.TASK_STATE_WORKING,

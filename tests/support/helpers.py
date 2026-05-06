@@ -17,6 +17,7 @@ from opencode_a2a.contracts.extensions import (
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from opencode_a2a.server.context_helpers import normalize_server_call_context
 from tests.support import settings as test_settings
+from tests.support.interrupt_clients import InterruptRequestClientMixin
 
 
 def make_basic_auth_header(username: str, password: str) -> dict[str, str]:
@@ -160,7 +161,7 @@ def make_request_context_with_parts(
     )
 
 
-class DummyChatOpencodeUpstreamClient:
+class DummyChatOpencodeUpstreamClient(InterruptRequestClientMixin):
     def __init__(
         self,
         settings: Settings | None = None,
@@ -178,6 +179,8 @@ class DummyChatOpencodeUpstreamClient:
         self.settings = settings or test_settings.make_settings(
             opencode_base_url="http://localhost"
         )
+        self._interrupt_requests: dict[str, dict[str, str | None]] = {}
+        self._interrupt_request_details: dict[str, dict[str, Any] | None] = {}
 
     async def close(self) -> None:
         return None
@@ -226,35 +229,3 @@ class DummyChatOpencodeUpstreamClient:
         del stop_event, directory, workspace_id
         for _ in ():
             yield {}
-
-    async def remember_interrupt_request(
-        self,
-        *,
-        request_id: str,
-        session_id: str,
-        interrupt_type: str | None = None,
-        identity: str | None = None,
-        credential_id: str | None = None,
-        task_id: str | None = None,
-        context_id: str | None = None,
-        details: dict[str, Any] | None = None,
-        ttl_seconds: float | None = None,
-    ) -> None:
-        del (
-            request_id,
-            session_id,
-            interrupt_type,
-            identity,
-            credential_id,
-            task_id,
-            context_id,
-            details,
-            ttl_seconds,
-        )
-
-    async def resolve_interrupt_session(self, request_id: str) -> str | None:
-        del request_id
-        return None
-
-    async def discard_interrupt_request(self, request_id: str) -> None:
-        del request_id
