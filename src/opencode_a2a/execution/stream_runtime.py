@@ -16,7 +16,7 @@ from a2a.types import (
 )
 
 from ..a2a_utils import make_data_part
-from ..interrupt_request_tracker import bind_interrupt_request_tracker
+from ..interrupt_request_tracker import BoundInterruptRequestTracker
 from .event_helpers import _enqueue_artifact_update
 from .stream_events import (
     BlockType,
@@ -86,7 +86,7 @@ class StreamRuntime:
         pending_deltas: defaultdict[str, list[_PendingDelta]] = defaultdict(list)
         backoff = 0.5
         max_backoff = 5.0
-        interrupt_requests = bind_interrupt_request_tracker(self._client)
+        interrupt_requests = BoundInterruptRequestTracker(self._client)
 
         async def _emit_chunks(chunks: list[_NormalizedStreamChunk]) -> None:
             for chunk in chunks:

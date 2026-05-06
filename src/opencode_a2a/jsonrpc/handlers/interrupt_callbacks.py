@@ -8,7 +8,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ...contracts.extensions import INTERRUPT_ERROR_BUSINESS_CODES
-from ...interrupt_request_tracker import bind_interrupt_request_tracker
+from ...interrupt_request_tracker import BoundInterruptRequestTracker
 from ...opencode_upstream_client import UpstreamConcurrencyLimitError
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import (
@@ -82,7 +82,7 @@ async def handle_interrupt_callback_request(
     expected_interrupt_type = (
         "permission" if base_request.method == context.method_reply_permission else "question"
     )
-    interrupt_requests = bind_interrupt_request_tracker(context.upstream_client)
+    interrupt_requests = BoundInterruptRequestTracker(context.upstream_client)
     resolution = await interrupt_requests.resolve_request(request_id)
     if resolution.status != "active":
         return context.error_response(

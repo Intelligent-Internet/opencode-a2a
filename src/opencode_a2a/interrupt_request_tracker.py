@@ -73,7 +73,3 @@ class BoundInterruptRequestTracker:
         if self._discard_request is None:
             return
         await self._discard_request(request_id)
-
-
-def bind_interrupt_request_tracker(client: object) -> BoundInterruptRequestTracker:
-    return BoundInterruptRequestTracker(client)
