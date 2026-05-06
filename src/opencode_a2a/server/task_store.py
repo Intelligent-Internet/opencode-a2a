@@ -18,7 +18,7 @@ from ..a2a_utils import proto_equals
 from ..config import Settings
 from ..task_states import TERMINAL_TASK_STATES
 from .context_helpers import normalize_server_call_context
-from .database import build_database_engine
+from .database import build_database_engine, redact_database_url_for_logs
 from .task_store_sdk_compat import DatabaseTaskStoreCompat
 
 if TYPE_CHECKING:
@@ -341,7 +341,7 @@ def describe_lightweight_persistence_backend(settings: Settings) -> dict[str, st
     if settings.a2a_task_store_backend != "database":
         return summary
     url = make_url(cast(str, settings.a2a_task_store_database_url))
-    summary["database_url"] = url.render_as_string(hide_password=True)
+    summary["database_url"] = redact_database_url_for_logs(url.render_as_string(hide_password=True))
     summary["sqlite_tuning"] = (
         "local_durability_defaults" if url.drivername.startswith("sqlite") else "not_applicable"
     )

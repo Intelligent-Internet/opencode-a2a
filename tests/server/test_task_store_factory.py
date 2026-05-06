@@ -4,6 +4,7 @@ import logging
 import warnings
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 from a2a.server.context import ServerCallContext
@@ -13,7 +14,7 @@ from google.protobuf.json_format import MessageToDict
 from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import text
 
-from opencode_a2a.server.database import build_database_engine
+from opencode_a2a.server.database import build_database_engine, redact_database_url_for_logs
 from opencode_a2a.server.task_store import (
     FirstTerminalStateWinsPolicy,
     GuardedTaskStore,
@@ -157,6 +158,41 @@ def test_describe_lightweight_persistence_backend_marks_sqlite_first_scope() -> 
         "scope": "sdk_tasks_and_adapter_state",
         "database_url": "sqlite+aiosqlite:///./opencode-a2a.db",
         "sqlite_tuning": "local_durability_defaults",
+    }
+
+
+def test_redact_database_url_for_logs_masks_sensitive_query_values() -> None:
+    redacted = redact_database_url_for_logs(
+        "postgresql+asyncpg://user:***@db.example.com/app"
+        "?sslmode=require&token=super-secret&API_KEY=top-secret&pool_size=5"
+    )
+
+    assert redacted == (
+        "postgresql+asyncpg://user:***@db.example.com/app"
+        "?sslmode=require&token=%2A%2A%2A&API_KEY=%2A%2A%2A&pool_size=5"
+    )
+
+
+def test_describe_lightweight_persistence_backend_redacts_sensitive_query_values() -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_task_store_database_url=(
+            "postgresql+asyncpg://db.example.com/app"
+            "?sslmode=require&token=super-secret&api_key=top-secret&pool_size=5"
+        ),
+    )
+
+    summary = describe_lightweight_persistence_backend(settings)
+
+    assert summary["backend"] == "database"
+    assert summary["scope"] == "sdk_tasks_and_adapter_state"
+    assert summary["sqlite_tuning"] == "not_applicable"
+    assert summary["database_url"].startswith("postgresql+asyncpg://db.example.com/app?")
+    assert dict(parse_qsl(urlsplit(summary["database_url"]).query, keep_blank_values=True)) == {
+        "sslmode": "require",
+        "token": "***",
+        "api_key": "***",
+        "pool_size": "5",
     }
 
 

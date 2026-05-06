@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy import event
 from sqlalchemy.engine import make_url
@@ -12,6 +13,9 @@ from ..config import Settings
 _SQLITE_JOURNAL_MODE = "WAL"
 _SQLITE_BUSY_TIMEOUT_MS = 30_000
 _SQLITE_SYNCHRONOUS_MODE = "NORMAL"
+_SENSITIVE_DATABASE_QUERY_KEYS = frozenset(
+    {"password", "passwd", "pwd", "token", "secret", "api_key", "apikey", "access_token"}
+)
 
 
 def _configure_sqlite_connection(dbapi_connection: Any, _connection_record: Any) -> None:
@@ -22,6 +26,20 @@ def _configure_sqlite_connection(dbapi_connection: Any, _connection_record: Any)
         cursor.execute(f"PRAGMA synchronous={_SQLITE_SYNCHRONOUS_MODE}")
     finally:
         cursor.close()
+
+
+def redact_database_url_for_logs(database_url: str) -> str:
+    parts = urlsplit(database_url)
+    if not parts.query:
+        return database_url
+
+    redacted_query = []
+    for key, value in parse_qsl(parts.query, keep_blank_values=True):
+        if key.lower() in _SENSITIVE_DATABASE_QUERY_KEYS:
+            redacted_query.append((key, "***"))
+            continue
+        redacted_query.append((key, value))
+    return urlunsplit(parts._replace(query=urlencode(redacted_query)))
 
 
 def build_database_engine(settings: Settings) -> AsyncEngine:
