@@ -72,9 +72,9 @@ def _coerce_optional_str(name: str, value: Any) -> str | None:
 
 def _normalize_transport(value: str) -> str:
     normalized = value.strip().lower()
-    if normalized in {"jsonrpc", "json-rpc"}:
+    if normalized in {"jsonrpc", "json-rpc", "json_rpc"}:
         return "JSONRPC"
-    if normalized in {"http+json", "http-json"}:
+    if normalized in {"http+json", "http-json", "http_json"}:
         return "HTTP+JSON"
     if normalized in {"grpc"}:
         return "GRPC"
