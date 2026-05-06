@@ -101,10 +101,19 @@ async def test_sdk_owned_non_chat_jsonrpc_methods_delegate_to_base_app(monkeypat
 
 
 def test_core_jsonrpc_methods_are_canonical_pascalcase() -> None:
-    assert "SendMessage" in CORE_JSONRPC_METHODS
-    assert "SendStreamingMessage" in CORE_JSONRPC_METHODS
-    assert "GetTask" in CORE_JSONRPC_METHODS
-    assert "CancelTask" in CORE_JSONRPC_METHODS
+    assert CORE_JSONRPC_METHODS == (
+        "SendMessage",
+        "SendStreamingMessage",
+        "GetTask",
+        "ListTasks",
+        "CancelTask",
+        "CreateTaskPushNotificationConfig",
+        "GetTaskPushNotificationConfig",
+        "ListTaskPushNotificationConfigs",
+        "DeleteTaskPushNotificationConfig",
+        "SubscribeToTask",
+        "GetExtendedAgentCard",
+    )
     assert "message/send" not in CORE_JSONRPC_METHODS
     assert "tasks/get" not in CORE_JSONRPC_METHODS
 

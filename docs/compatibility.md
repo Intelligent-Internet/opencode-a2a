@@ -8,7 +8,7 @@ This document defines the compatibility promises `opencode-a2a` currently uphold
 - A2A SDK line: `1.x.y`
 - Supported A2A protocol line: `1.0`
 
-The repository currently pins one concrete SDK release in `pyproject.toml` within that v1 line. Upgrade the SDK deliberately rather than relying on floating dependency resolution.
+The repository currently pins one concrete SDK release in `pyproject.toml` within that v1 line. Upgrade the SDK deliberately rather than relying on floating dependency resolution. The SDK-owned core JSON-RPC method set follows that pinned release and is locked by repository tests so SDK upgrades trigger an explicit compatibility review.
 
 ## Contract Honesty
 
@@ -53,6 +53,7 @@ This repository still ships as an alpha project. Within that alpha line, these d
 - authenticated extended card and OpenAPI wire-contract metadata
 
 Changes to those surfaces should be treated as compatibility-sensitive and should include corresponding test updates.
+- provider-private session query params use one top-level request shape; the repository does not promise parallel nested `query.*` aliases for the same filters.
 
 Service-level behavior layered on top of those core methods should also be declared explicitly when interoperability depends on it. Current examples:
 

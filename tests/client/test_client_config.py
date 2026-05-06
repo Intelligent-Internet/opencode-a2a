@@ -48,6 +48,12 @@ def test_load_settings_invalid_transport_raises() -> None:
         load_settings({"A2A_CLIENT_SUPPORTED_TRANSPORTS": 1})
 
 
+@pytest.mark.parametrize("value", ("json_rpc", "httpjson", "http+json+"))
+def test_load_settings_rejects_obsolete_transport_aliases(value: str) -> None:
+    with pytest.raises(ValueError, match="unsupported transport"):
+        load_settings({"A2A_CLIENT_SUPPORTED_TRANSPORTS": value})
+
+
 def test_load_settings_invalid_bool_raises() -> None:
     with pytest.raises(ValueError, match="boolean-like"):
         load_settings({"A2A_CLIENT_USE_CLIENT_PREFERENCE": "maybe"})

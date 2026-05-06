@@ -16,11 +16,12 @@ def test_parse_list_sessions_params_applies_default_limit() -> None:
     assert parse_list_sessions_params({}) == {"limit": SESSION_QUERY_DEFAULT_LIMIT}
 
 
-def test_parse_list_sessions_params_accepts_equivalent_query_and_top_level_limit() -> None:
-    assert parse_list_sessions_params({"limit": "10", "query": {"limit": 10, "tag": "ops"}}) == {
-        "tag": "ops",
-        "limit": 10,
-    }
+def test_parse_list_sessions_params_rejects_nested_query_object() -> None:
+    with pytest.raises(JsonRpcParamsValidationError) as exc_info:
+        parse_list_sessions_params({"limit": "10", "query": {"limit": 10}})
+
+    assert str(exc_info.value) == "query is not supported; use top-level params"
+    assert exc_info.value.data == {"type": "INVALID_FIELD", "field": "query"}
 
 
 def test_parse_list_sessions_params_accepts_filters() -> None:
@@ -81,19 +82,19 @@ def test_parse_get_session_messages_params_accepts_before_cursor() -> None:
     assert query == {"limit": 5, "before": "cursor-1"}
 
 
-def test_parse_get_session_messages_params_rejects_ambiguous_limit() -> None:
+def test_parse_get_session_messages_params_rejects_nested_query_object() -> None:
     with pytest.raises(JsonRpcParamsValidationError) as exc_info:
-        parse_get_session_messages_params({"session_id": "s-1", "limit": 5, "query": {"limit": 6}})
+        parse_get_session_messages_params({"session_id": "s-1", "limit": 5, "query": {"limit": 5}})
 
-    assert str(exc_info.value) == "limit is ambiguous between params.limit and params.query.limit"
-    assert exc_info.value.data == {"type": "INVALID_FIELD", "field": "limit"}
+    assert str(exc_info.value) == "query is not supported; use top-level params"
+    assert exc_info.value.data == {"type": "INVALID_FIELD", "field": "query"}
 
 
-def test_parse_list_sessions_params_rejects_non_object_query() -> None:
+def test_parse_list_sessions_params_rejects_query_field_even_when_null() -> None:
     with pytest.raises(JsonRpcParamsValidationError) as exc_info:
-        parse_list_sessions_params({"query": "invalid"})
+        parse_list_sessions_params({"query": None})
 
-    assert str(exc_info.value) == "query must be an object"
+    assert str(exc_info.value) == "query is not supported; use top-level params"
     assert exc_info.value.data == {"type": "INVALID_FIELD", "field": "query"}
 
 
@@ -115,22 +116,6 @@ def test_parse_list_sessions_params_rejects_boolean_limit() -> None:
 
     assert str(exc_info.value) == "limit must be an integer"
     assert exc_info.value.data == {"type": "INVALID_FIELD", "field": "limit"}
-
-
-def test_parse_list_sessions_params_rejects_ambiguous_directory() -> None:
-    with pytest.raises(JsonRpcParamsValidationError) as exc_info:
-        parse_list_sessions_params(
-            {
-                "directory": "services/api",
-                "query": {"directory": "services/web"},
-            }
-        )
-
-    assert (
-        str(exc_info.value)
-        == "directory is ambiguous between params.directory and params.query.directory"
-    )
-    assert exc_info.value.data == {"type": "INVALID_FIELD", "field": "directory"}
 
 
 def test_parse_get_session_messages_params_rejects_invalid_before_type() -> None:

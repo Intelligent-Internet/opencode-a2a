@@ -476,18 +476,11 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "roots",
         "start",
         "search",
-        "query.limit",
-        "query.directory",
-        "query.roots",
-        "query.start",
-        "query.search",
     ]
     assert messages_contract["params"]["optional"] == [
         "limit",
         "before",
         "metadata.opencode.workspace.id",
-        "query.limit",
-        "query.before",
     ]
     assert messages_contract["result"]["fields"] == ["items", "next_cursor"]
     assert list_contract["notification_response_status"] == 204

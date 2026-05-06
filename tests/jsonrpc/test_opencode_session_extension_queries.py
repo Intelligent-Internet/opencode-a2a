@@ -1082,7 +1082,7 @@ async def test_session_query_extension_rejects_limit_above_max(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_session_query_extension_accepts_equivalent_string_and_integer_limit(
+async def test_session_query_extension_rejects_nested_query_object(
     monkeypatch,
 ):
     import opencode_a2a.server.application as app_module
@@ -1122,8 +1122,10 @@ async def test_session_query_extension_accepts_equivalent_string_and_integer_lim
         payload = resp.json()
         assert payload["jsonrpc"] == "2.0"
         assert payload["id"] == 4
-        assert "error" not in payload
-        assert dummy.last_sessions_params == {"limit": 2}
+        assert payload["error"]["code"] == -32602
+        assert payload["error"]["message"] == "Invalid parameters"
+        assert payload["error"]["data"] == {"field": "query"}
+        assert dummy.last_sessions_params is None
 
 
 @pytest.mark.asyncio

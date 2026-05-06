@@ -286,6 +286,7 @@ Current behavior:
 - `all_jsonrpc_methods` is the runtime truth for the current deployment.
 - The current SDK-owned core JSON-RPC surface includes `GetExtendedAgentCard` and `tasks/pushNotificationConfig/*`.
 - The current SDK-owned REST surface also includes `GET /v1/tasks` and the task push notification config routes.
+- The SDK-owned core JSON-RPC method set follows the pinned `a2a-sdk` release and is locked by repository tests; review that surface deliberately when upgrading the SDK.
 - Push notification config routes/methods are currently exposed only because they are part of the SDK-owned core surface. This runtime does not configure a push config store or push sender, so push notification operations remain unsupported. REST routes currently return HTTP `501`, while JSON-RPC methods surface SDK-owned unsupported error envelopes.
 
 When `A2A_ENABLE_SESSION_SHELL=false`, `opencode.sessions.shell` is omitted from `all_jsonrpc_methods` and exposed only through `extensions.conditionally_available_methods`.
@@ -621,11 +622,13 @@ Detailed contract discovery for this provider-private surface is intentionally a
 - Session list filters:
   - optional `directory`, `roots`, `start`, `search`, `limit`
   - optional `metadata.opencode.workspace.id`
+  - nested `query` objects are not supported; pass filters at the top level only
   - `directory` is normalized through the same workspace-boundary rules used by other OpenCode directory overrides before reaching upstream
   - when `metadata.opencode.workspace.id` is present, the adapter routes by workspace and ignores `directory`
 - Session message history filters:
   - optional `limit`, `before`
   - optional `metadata.opencode.workspace.id`
+  - nested `query` objects are not supported; pass filters at the top level only
   - `before` is an opaque cursor for loading older messages and is only supported on `opencode.sessions.messages.list`
 - Mutation methods:
   - `opencode.sessions.fork`
