@@ -1263,8 +1263,7 @@ If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscr
 - Terminal subscribe contract: calling `SubscribeToTask` or `GET /v1/tasks/{task_id}:subscribe` on a terminal task replays one terminal `Task` snapshot and then closes the stream.
 - Terminal persistence contract: once a terminal task snapshot is persisted, this service treats it as immutable. Producers must emit final text and artifact updates before the terminal event, and any final usage or stream metadata must be attached to that terminal event itself. Late terminal-state mutations are rejected by the task-store write policy.
 - These two semantics are also declared as machine-readable `service_behaviors` in the compatibility profile and wire contract extensions.
-- At `A2A_LOG_LEVEL=DEBUG`, the service emits lightweight metric log records
-  (`logger=opencode_a2a.execution.executor`):
+- At `A2A_LOG_LEVEL=DEBUG`, the service emits lightweight metric log records (`logger=opencode_a2a.execution.executor`):
   - `a2a_stream_requests_total`
   - `a2a_stream_active` (`value=1` when a stream starts, `value=-1` when it closes)
   - `opencode_stream_retries_total`
