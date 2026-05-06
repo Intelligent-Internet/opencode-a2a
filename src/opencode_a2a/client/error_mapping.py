@@ -238,10 +238,7 @@ def map_agent_card_error(
 ) -> A2AClientError:
     if isinstance(exc, AgentCardResolutionError):
         if exc.status_code is not None:
-            return _attach_http_status(
-                map_client_error("agent-card/fetch", SDKClientError(str(exc))),
-                exc.status_code,
-            )
+            return map_http_error("agent-card/fetch", exc)
         return A2APeerProtocolError(
             "Remote A2A peer returned an invalid agent card payload",
             error_code="invalid_agent_card",

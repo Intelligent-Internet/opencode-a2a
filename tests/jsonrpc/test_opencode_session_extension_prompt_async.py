@@ -7,15 +7,15 @@ from opencode_a2a.opencode_upstream_client import (
     UpstreamConcurrencyLimitError,
     UpstreamContractError,
 )
-from tests.support.helpers import (
-    DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
-)
 from tests.support.jsonrpc_error_assertions import (
     assert_v1_error_metadata_contains,
     assert_v1_error_reason,
     error_context_detail,
 )
 from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers, _jsonrpc_app
+from tests.support.session_query_client import (
+    DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
+)
 from tests.support.settings import make_settings
 
 

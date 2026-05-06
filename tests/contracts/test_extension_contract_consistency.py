@@ -44,10 +44,10 @@ from opencode_a2a.profile.runtime import build_runtime_profile
 from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
 from opencode_a2a.server.agent_card import build_agent_card
 from opencode_a2a.server.application import create_app
-from tests.support.helpers import (
+from tests.support.session_extensions import _extension_headers
+from tests.support.session_query_client import (
     DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
 )
-from tests.support.session_extensions import _extension_headers
 from tests.support.settings import make_settings
 
 

@@ -3,14 +3,14 @@ import pytest
 
 from opencode_a2a.config import Settings
 from opencode_a2a.opencode_upstream_client import UpstreamConcurrencyLimitError
-from tests.support.helpers import (
-    DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
-)
 from tests.support.jsonrpc_error_assertions import (
     assert_v1_error_reason,
     error_context_detail,
 )
 from tests.support.session_extensions import _BASE_SETTINGS, _extension_headers
+from tests.support.session_query_client import (
+    DummySessionQueryOpencodeUpstreamClient as DummyOpencodeUpstreamClient,
+)
 from tests.support.settings import make_settings
 
 
