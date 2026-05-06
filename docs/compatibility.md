@@ -123,9 +123,12 @@ Each new extension proposal should answer:
 
 This repository distinguishes between three layers:
 
-- core A2A surface - standard send / stream / task methods
-- shared extensions - repo-family conventions such as session binding, model selection, stream hints, and interrupt callbacks
-- OpenCode-specific extensions - `opencode.*` JSON-RPC methods plus `metadata.opencode.*`
+- core A2A surface
+  - standard send / stream / task methods
+- shared extensions
+  - repo-family conventions such as session binding, model selection, stream hints, and interrupt callbacks
+- OpenCode-specific extensions
+  - `opencode.*` JSON-RPC methods plus `metadata.opencode.*`
 
 Important note:
 

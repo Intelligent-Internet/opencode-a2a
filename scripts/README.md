@@ -4,8 +4,10 @@ Executable scripts live in this directory. This file is the entry index for the 
 
 ## Product Contract vs Script Docs
 
-- Product/API behavior (transport, protocol contracts, extension semantics): [`../docs/guide.md`](../docs/guide.md)
-- Security boundary and disclosure guidance: [`../SECURITY.md`](../SECURITY.md)
+- Product/API behavior (transport, protocol contracts, extension semantics):
+  - [`../docs/guide.md`](../docs/guide.md)
+- Security boundary and disclosure guidance:
+  - [`../SECURITY.md`](../SECURITY.md)
 
 ## Other Scripts
 
