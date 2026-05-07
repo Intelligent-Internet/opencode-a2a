@@ -53,26 +53,42 @@ def select_public_extension_params(
     return {key: params[key] for key in keys if key in params}
 
 
+_DECLARED_SHARED_STREAM_FIELD_KEYS = ("block_type", "sequence")
+_DECLARED_SHARED_PROGRESS_FIELD_KEYS = ("type", "status")
+_DECLARED_SHARED_USAGE_FIELD_KEYS = ("input_tokens", "output_tokens", "total_tokens")
+
+
+def _build_declared_streaming_metadata_fields(
+    params: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    return (
+        select_public_extension_params(
+            params["stream_fields"],
+            keys=_DECLARED_SHARED_STREAM_FIELD_KEYS,
+        ),
+        select_public_extension_params(
+            params["progress_fields"],
+            keys=_DECLARED_SHARED_PROGRESS_FIELD_KEYS,
+        ),
+        select_public_extension_params(
+            params["usage_fields"],
+            keys=_DECLARED_SHARED_USAGE_FIELD_KEYS,
+        ),
+    )
+
+
 def build_public_streaming_extension_params(
     params: dict[str, Any],
 ) -> dict[str, Any]:
+    stream_fields, progress_fields, usage_fields = _build_declared_streaming_metadata_fields(params)
     return {
         "artifact_metadata_field": params["artifact_metadata_field"],
         "progress_metadata_field": params["progress_metadata_field"],
         "usage_metadata_field": params["usage_metadata_field"],
         "block_types": params["block_types"],
-        "stream_fields": select_public_extension_params(
-            params["stream_fields"],
-            keys=("block_type", "sequence"),
-        ),
-        "progress_fields": select_public_extension_params(
-            params["progress_fields"],
-            keys=("type", "status"),
-        ),
-        "usage_fields": select_public_extension_params(
-            params["usage_fields"],
-            keys=("input_tokens", "output_tokens", "total_tokens"),
-        ),
+        "stream_fields": stream_fields,
+        "progress_fields": progress_fields,
+        "usage_fields": usage_fields,
     }
 
 
@@ -177,6 +193,28 @@ def build_model_selection_extension_params(
 
 
 def build_streaming_extension_params() -> dict[str, Any]:
+    stream_fields = {
+        "block_type": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.block_type",
+        "sequence": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.sequence",
+    }
+    progress_fields = {
+        "type": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.type",
+        "status": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.status",
+    }
+    usage_fields = {
+        "input_tokens": f"{identifiers.SHARED_USAGE_METADATA_FIELD}.input_tokens",
+        "output_tokens": f"{identifiers.SHARED_USAGE_METADATA_FIELD}.output_tokens",
+        "total_tokens": f"{identifiers.SHARED_USAGE_METADATA_FIELD}.total_tokens",
+    }
+    declared_stream_fields, declared_progress_fields, declared_usage_fields = (
+        _build_declared_streaming_metadata_fields(
+            {
+                "stream_fields": stream_fields,
+                "progress_fields": progress_fields,
+                "usage_fields": usage_fields,
+            }
+        )
+    )
     return {
         "artifact_metadata_field": identifiers.SHARED_STREAM_METADATA_FIELD,
         "status_metadata_field": identifiers.SHARED_STREAM_METADATA_FIELD,
@@ -207,31 +245,9 @@ def build_streaming_extension_params() -> dict[str, Any]:
                 },
             },
         },
-        "stream_fields": {
-            "block_type": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.block_type",
-            "message_id": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.message_id",
-            "event_id": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.event_id",
-            "sequence": f"{identifiers.SHARED_STREAM_METADATA_FIELD}.sequence",
-        },
-        "progress_fields": {
-            "type": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.type",
-            "status": f"{identifiers.SHARED_PROGRESS_METADATA_FIELD}.status",
-        },
-        "usage_fields": {
-            "input_tokens": f"{identifiers.SHARED_USAGE_METADATA_FIELD}.input_tokens",
-            "output_tokens": f"{identifiers.SHARED_USAGE_METADATA_FIELD}.output_tokens",
-            "total_tokens": f"{identifiers.SHARED_USAGE_METADATA_FIELD}.total_tokens",
-            "reasoning_tokens": (f"{identifiers.SHARED_USAGE_METADATA_FIELD}.reasoning_tokens"),
-            "cost": f"{identifiers.SHARED_USAGE_METADATA_FIELD}.cost",
-            "cache_tokens": {
-                "read_tokens": (
-                    f"{identifiers.SHARED_USAGE_METADATA_FIELD}.cache_tokens.read_tokens"
-                ),
-                "write_tokens": (
-                    f"{identifiers.SHARED_USAGE_METADATA_FIELD}.cache_tokens.write_tokens"
-                ),
-            },
-        },
+        "stream_fields": declared_stream_fields,
+        "progress_fields": declared_progress_fields,
+        "usage_fields": declared_usage_fields,
     }
 
 

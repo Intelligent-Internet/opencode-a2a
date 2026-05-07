@@ -69,8 +69,15 @@ Extension URI: `urn:opencode-a2a:extension:shared:stream-hints:v1`
 - Scope: shared response/task/stream metadata for block identity, progress, and usage hints
 - Disclosure: public Agent Card and authenticated extended Agent Card
 - Activation: client requests the URI via `A2A-Extensions`; runtime emits shared metadata on streamed events and final task payloads
-- Runtime fields: `metadata.shared.stream`, `metadata.shared.progress`, `metadata.shared.usage`
-- Detailed-only correlation fields: `metadata.shared.stream.message_id` and `metadata.shared.stream.event_id` may be emitted for timeline stitching and diagnostics, but are not part of the minimum public consumer contract
+- Declared field map:
+  - `metadata.shared.stream.block_type`
+  - `metadata.shared.stream.sequence`
+  - `metadata.shared.progress.type`
+  - `metadata.shared.progress.status`
+  - `metadata.shared.usage.input_tokens`
+  - `metadata.shared.usage.output_tokens`
+  - `metadata.shared.usage.total_tokens`
+- Clients must not treat undeclared metadata under this namespace as part of the shared v1 contract
 - Dependencies: none declared by this version
 - Security boundary: this extension is observational metadata only; callback methods are defined by the separate shared interactive interrupt extension
 - Versioning: breaking changes require a new versioned URI
