@@ -229,9 +229,7 @@ If one deployment works while another fails against the same upstream provider, 
   - text chunks use a stable text artifact ID
   - reasoning chunks use a stable reasoning artifact ID
   - tool-call updates use a stable per-tool-part artifact ID when the upstream part is identifiable
-- `artifact.metadata.shared.stream.event_id` preserves the original cross-artifact stream timeline, even when different logical lanes use different artifact IDs.
-- `artifact.metadata.shared.stream.message_id` remains best-effort metadata: when upstream omits `message_id`, the service falls back to a stable request-scoped message identity.
-- `message_id` and `event_id` are advanced correlation fields: they help timeline stitching, deduplication, diagnostics, and advanced UI linking, but generic A2A consumers must not require them.
+- The shared stream-hints v1 contract only declares `block_type` and `sequence` under `artifact.metadata.shared.stream`.
 - `artifact.metadata.shared.stream.sequence` carries the canonical per-request stream sequence.
 - A final complete text snapshot is emitted only when streaming chunks did not already produce the same final text.
 - That final complete text snapshot uses `append=false` on the text artifact so clients and the task store can treat it as the canonical replace-on-finish version rather than another fragment.
@@ -242,7 +240,7 @@ If one deployment works while another fails against the same upstream provider, 
 - If `application/json` is not accepted but `text/plain` is still accepted, those `tool_call` blocks are downgraded to stable compact JSON text so text-only clients retain the same observable state transitions.
 - When a request restricts `acceptedOutputModes`, the stream applies the same output filtering before persistence so later task snapshots do not re-expose filtered structured blocks.
 - Persistence is canonicalized separately from transport: stream subscribers still receive incremental artifact updates, while task-store persistence rewrites those updates into compact per-artifact snapshots so `GetTask` and terminal replay do not accumulate token-level fragments.
-- Final status event metadata may include normalized token usage at `metadata.shared.usage` with fields such as `input_tokens`, `output_tokens`, `total_tokens`, optional `reasoning_tokens`, optional `cache_tokens.read_tokens` / `cache_tokens.write_tokens`, and optional `cost`.
+- The shared stream-hints v1 contract declares normalized usage fields `input_tokens`, `output_tokens`, and `total_tokens` at `metadata.shared.usage`.
 - Progress metadata at `metadata.shared.progress` is emitted only when the client negotiated `urn:opencode-a2a:extension:shared:stream-hints:v1`; baseline streams do not emit duplicate generic `working` status updates just to carry progress hints.
 - Usage is extracted from documented info payloads and supported usage parts such as `step-finish`; non-usage parts with similar fields are ignored.
 - Interrupt events (`permission.asked` / `question.asked`) are mapped to `TaskStatusUpdateEvent(final=false, state=input-required)` with details at `metadata.shared.interrupt` when the client negotiated `urn:opencode-a2a:extension:shared:interactive-interrupt:v1`.
@@ -572,24 +570,25 @@ Runtime payload:
 Shared runtime fields:
 
 - `metadata.shared.stream`
-  - block-level stream metadata such as `block_type`, `message_id`, `event_id`, and `sequence`
+  - declared shared v1 fields: `block_type` and `sequence`
 - `metadata.shared.usage`
-  - normalized usage data such as `input_tokens`, `output_tokens`, `total_tokens`, optional `reasoning_tokens`, optional `cache_tokens.read_tokens` / `cache_tokens.write_tokens`, and optional `cost`
+  - declared shared v1 fields: `input_tokens`, `output_tokens`, and `total_tokens`
+- clients must ignore undeclared fields when interpreting the shared v1 contract
 
 Consumer guidance:
 
 - Use the extension declaration to know the server emits canonical shared stream hints.
 - Use runtime metadata to render block timelines, progress states, and token usage.
-- Treat `message_id` and `event_id` as optional advanced correlation fields rather than baseline consumer requirements.
+- Do not rely on undeclared fields under `metadata.shared.stream` or `metadata.shared.usage` as stable contract surface.
 - Do not infer capability support only from seeing one runtime field on one response; rely on Agent Card discovery first when possible.
 
 Minimal stream semantics summary:
 
 - `text`, `reasoning`, and `tool_call` are emitted as canonical block types
 - `text` and `reasoning` blocks use text parts, while `tool_call` uses structured v1 part payloads
-- `message_id` and `event_id` preserve stable timeline identity where possible and are emitted only as optional advanced correlation hints
+- only `block_type` and `sequence` are part of the declared shared stream field map
 - `sequence` is the per-request canonical stream sequence
-- final task/status metadata may repeat normalized usage after the streaming phase ends
+- final task/status metadata may repeat declared usage totals
 
 ## OpenCode Session Management A2A Extension
 

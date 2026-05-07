@@ -172,6 +172,14 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
             "phase": "metadata.shared.interrupt.phase",
         },
     }
+    assert (
+        extended_ext_by_uri[STREAMING_EXTENSION_URI].params["stream_fields"]
+        == ext_by_uri[STREAMING_EXTENSION_URI].params["stream_fields"]
+    )
+    assert (
+        extended_ext_by_uri[STREAMING_EXTENSION_URI].params["usage_fields"]
+        == ext_by_uri[STREAMING_EXTENSION_URI].params["usage_fields"]
+    )
 
     for uri in AUTHENTICATED_ONLY_EXTENSION_URIS:
         assert uri not in ext_by_uri
@@ -320,12 +328,6 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         "input_tokens": "metadata.shared.usage.input_tokens",
         "output_tokens": "metadata.shared.usage.output_tokens",
         "total_tokens": "metadata.shared.usage.total_tokens",
-        "reasoning_tokens": "metadata.shared.usage.reasoning_tokens",
-        "cost": "metadata.shared.usage.cost",
-        "cache_tokens": {
-            "read_tokens": "metadata.shared.usage.cache_tokens.read_tokens",
-            "write_tokens": "metadata.shared.usage.cache_tokens.write_tokens",
-        },
     }
 
     session_management = ext_by_uri[SESSION_MANAGEMENT_EXTENSION_URI]
