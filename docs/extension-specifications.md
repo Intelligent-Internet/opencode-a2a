@@ -16,7 +16,6 @@ Provider-private contract note:
 - Shared `metadata.shared.*` contracts are intended to remain low-risk and transportable.
 - Compatibility and wire-contract URIs are descriptive metadata contracts, not activatable runtime capabilities.
 - URI path segments identify the contract, not its auth or disclosure tier; public-vs-extended disclosure is controlled by Agent Card and OpenAPI surfaces.
-- Extension classification is expressed through the URI, scope, and disclosure columns below; `opencode-a2a` does not emit a separate `family` field on Agent Card extensions.
 
 ## SDK and Discovery Compatibility
 
