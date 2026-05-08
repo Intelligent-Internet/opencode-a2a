@@ -171,10 +171,6 @@ def _build_jsonrpc_extension_openapi_examples() -> dict[str, Any]:
     }
 
 
-def _with_extension_uri(params: dict[str, Any], *, uri: str) -> dict[str, Any]:
-    return {"extension_uri": uri, **params}
-
-
 def _build_rest_message_openapi_examples() -> dict[str, Any]:
     return {
         "basic_message": {
@@ -280,12 +276,13 @@ def _patch_jsonrpc_openapi_contract(
                     post["summary"] = "Handle A2A JSON-RPC Requests"
                     post["description"] = _build_jsonrpc_extension_openapi_description()
                     post["x-a2a-extension-contracts"] = {
-                        "session_binding": _with_extension_uri(
-                            build_public_session_binding_extension_params(session_binding),
-                            uri=SESSION_BINDING_EXTENSION_URI,
-                        ),
-                        "model_selection": _with_extension_uri(
-                            select_public_extension_params(
+                        "session_binding": {
+                            "extension_uri": SESSION_BINDING_EXTENSION_URI,
+                            **build_public_session_binding_extension_params(session_binding),
+                        },
+                        "model_selection": {
+                            "extension_uri": MODEL_SELECTION_EXTENSION_URI,
+                            **select_public_extension_params(
                                 model_selection,
                                 keys=(
                                     "metadata_field",
@@ -296,14 +293,14 @@ def _patch_jsonrpc_openapi_contract(
                                     "fields",
                                 ),
                             ),
-                            uri=MODEL_SELECTION_EXTENSION_URI,
-                        ),
-                        "streaming": _with_extension_uri(
-                            build_public_streaming_extension_params(streaming),
-                            uri=STREAMING_EXTENSION_URI,
-                        ),
-                        "interrupt_callback": _with_extension_uri(
-                            select_public_extension_params(
+                        },
+                        "streaming": {
+                            "extension_uri": STREAMING_EXTENSION_URI,
+                            **build_public_streaming_extension_params(streaming),
+                        },
+                        "interrupt_callback": {
+                            "extension_uri": INTERRUPT_CALLBACK_EXTENSION_URI,
+                            **select_public_extension_params(
                                 build_public_interrupt_callback_extension_params(
                                     interrupt_callback
                                 ),
@@ -315,8 +312,7 @@ def _patch_jsonrpc_openapi_contract(
                                     "interrupt_fields",
                                 ),
                             ),
-                            uri=INTERRUPT_CALLBACK_EXTENSION_URI,
-                        ),
+                        },
                     }
 
                     request_body = post.setdefault("requestBody", {})
