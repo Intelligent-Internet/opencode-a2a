@@ -247,6 +247,8 @@ If one deployment works while another fails against the same upstream provider, 
 - Resolved interrupt events (`permission.replied` / `question.replied` / `question.rejected`) are emitted as `TaskStatusUpdateEvent(final=false, state=working)` with `metadata.shared.interrupt.phase=resolved` only when the same interactive interrupt extension is negotiated.
 - Duplicate or unknown resolved events are suppressed unless the matching request is still pending.
 - Non-streaming requests return a `Task` directly. When `configuration.returnImmediately=true`, the initial response is a working `Task` snapshot and completion continues in the background for later `GetTask` reads.
+- For successful non-streaming `message:send` completions, `Task.artifacts` is the canonical carrier for the assistant result text.
+- The terminal `Task.status.message` may carry a short completion status such as `Completed.`, but it does not duplicate the full result text.
 - Non-streaming `message:send` responses may include normalized token usage at `Task.metadata.shared.usage` with the same field schema.
 
 ## Auth, Limits, and Failure Contract

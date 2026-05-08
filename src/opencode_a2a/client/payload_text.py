@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Iterable, Mapping
+from typing import Any, cast
 
 from a2a.types import Message, Part, StreamResponse
 from google.protobuf.json_format import MessageToDict
@@ -11,8 +11,13 @@ from google.protobuf.message import Message as ProtoMessage
 
 
 def extract_text(payload: Any) -> str | None:
+    def is_item_sequence(value: Any) -> bool:
+        return isinstance(value, Iterable) and not isinstance(
+            value, (str, bytes, bytearray, Mapping)
+        )
+
     def extract_from_iterable(items: Any) -> str | None:
-        if not isinstance(items, (list, tuple)):
+        if not is_item_sequence(items):
             return None
         for item in items:
             extracted = extract_text(item)
@@ -21,7 +26,7 @@ def extract_text(payload: Any) -> str | None:
         return None
 
     def extract_from_parts(parts: Any) -> str | None:
-        if not isinstance(parts, (list, tuple)):
+        if not is_item_sequence(parts):
             return None
         collected: list[str] = []
         for part in parts:
@@ -47,14 +52,14 @@ def extract_text(payload: Any) -> str | None:
     def extract_from_mapping(payload_map: Mapping[str, Any]) -> str | None:
         for key in (
             "content",
-            "message",
-            "messages",
             "result",
-            "status",
             "text",
             "parts",
             "artifact",
             "artifacts",
+            "message",
+            "messages",
+            "status",
             "history",
             "events",
             "root",
@@ -76,7 +81,7 @@ def extract_text(payload: Any) -> str | None:
                 artifact_text = extract_text(value)
                 if artifact_text:
                     return artifact_text
-            if isinstance(value, (list, tuple)) and key in (
+            if is_item_sequence(value) and key in (
                 "messages",
                 "artifacts",
                 "history",
@@ -90,7 +95,7 @@ def extract_text(payload: Any) -> str | None:
                 return nested_text
         return None
 
-    if isinstance(payload, (list, tuple)):
+    if is_item_sequence(payload):
         return extract_from_iterable(payload)
 
     if isinstance(payload, Message):
@@ -110,11 +115,20 @@ def extract_text(payload: Any) -> str | None:
     if isinstance(payload, str):
         return payload.strip() or None
 
-    status_payload = getattr(payload, "status", None)
-    if status_payload is not None:
-        text = extract_text(status_payload)
+    artifact_payload = getattr(payload, "artifact", None)
+    if artifact_payload is not None:
+        text = extract_text(artifact_payload)
         if text:
             return text
+
+    artifacts = getattr(payload, "artifacts", None)
+    if is_item_sequence(artifacts):
+        for artifact in cast(Iterable[Any], artifacts):
+            artifact_parts = getattr(artifact, "parts", None)
+            if is_item_sequence(artifact_parts):
+                text = extract_from_parts(artifact_parts)
+                if text:
+                    return text
 
     message_payload = getattr(payload, "message", None)
     if message_payload is not None:
@@ -122,9 +136,9 @@ def extract_text(payload: Any) -> str | None:
         if text:
             return text
 
-    artifact_payload = getattr(payload, "artifact", None)
-    if artifact_payload is not None:
-        text = extract_text(artifact_payload)
+    status_payload = getattr(payload, "status", None)
+    if status_payload is not None:
+        text = extract_text(status_payload)
         if text:
             return text
 
@@ -135,20 +149,11 @@ def extract_text(payload: Any) -> str | None:
             return text
 
     history = getattr(payload, "history", None)
-    if isinstance(history, (list, tuple)) and history:
-        for item in reversed(history):
+    if is_item_sequence(history) and history:
+        for item in reversed(list(cast(Iterable[Any], history))):
             text = extract_text(item)
             if text:
                 return text
-
-    artifacts = getattr(payload, "artifacts", None)
-    if isinstance(artifacts, (list, tuple)):
-        for artifact in artifacts:
-            artifact_parts = getattr(artifact, "parts", None)
-            if isinstance(artifact_parts, (list, tuple)):
-                text = extract_from_parts(artifact_parts)
-                if text:
-                    return text
 
     text = extract_from_parts(getattr(payload, "parts", None))
     if text:

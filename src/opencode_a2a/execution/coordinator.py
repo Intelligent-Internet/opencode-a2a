@@ -445,10 +445,10 @@ class ExecutionCoordinator:
         resolved_token_usage: Mapping[str, Any] | None,
     ) -> None:
         response_text = response_text or "(No text content returned by OpenCode.)"
-        assistant_message = Message(
+        status_message = Message(
             message_id=resolved_message_id or str(uuid.uuid4()),
             role=Role.ROLE_AGENT,
-            parts=[Part(text=response_text)],
+            parts=[Part(text="Completed.")],
             task_id=self._task_id,
             context_id=self._context_id,
         )
@@ -477,7 +477,7 @@ class ExecutionCoordinator:
                 include_interrupt_metadata=self._prepared.emit_interrupt_metadata,
             ),
         )
-        task.status.message.CopyFrom(assistant_message)
+        task.status.message.CopyFrom(status_message)
         await self._event_queue.enqueue_event(task)
 
     def _build_initial_task_snapshot(self) -> Task:

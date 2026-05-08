@@ -233,6 +233,8 @@ async def test_agent_uses_stable_fallback_message_id_when_upstream_missing_messa
     task = next(event for event in q.events if isinstance(event, Task))
     assert "message_id" not in task.metadata["shared"]["session"]
     assert task.status.message.message_id == "t-fallback:c-fallback:assistant"
+    assert task.status.message.parts[0].text == "Completed."
+    assert task.artifacts[0].parts[0].text == "echo:hello"
 
 
 @pytest.mark.asyncio
@@ -435,9 +437,10 @@ async def test_execution_coordinator_handles_tool_loop() -> None:
 
     assert client.call_count == 2
     task = next(event for event in q.events if isinstance(event, Task))
+    assert task.status.message.parts[0].text == "Completed."
     assert (
-        getattr(task.status.message.parts[0], "text", None)
-        or getattr(getattr(task.status.message.parts[0], "root", None), "text", "")
+        getattr(task.artifacts[0].parts[0], "text", None)
+        or getattr(getattr(task.artifacts[0].parts[0], "root", None), "text", "")
     ) == "done"
 
 

@@ -46,6 +46,30 @@ def test_extract_text_reads_task_status_message() -> None:
     assert extract_text(task) == "status message text"
 
 
+def test_extract_text_prefers_task_artifacts_over_completion_status() -> None:
+    task = Task(
+        id="remote-task",
+        context_id="remote-context",
+        status=TaskStatus(
+            state=TaskState.TASK_STATE_COMPLETED,
+            message=Message(
+                role=Role.ROLE_AGENT,
+                message_id="m1",
+                parts=[Part(text="Completed.")],
+            ),
+        ),
+        artifacts=[
+            Artifact(
+                artifact_id="artifact-1",
+                name="response",
+                parts=[Part(text="artifact result text")],
+            )
+        ],
+    )
+
+    assert extract_text(task) == "artifact result text"
+
+
 def test_extract_text_reads_nested_mapping_payload() -> None:
     payload = {
         "result": {
