@@ -1,5 +1,6 @@
 import json
 
+from a2a.types import AgentExtension
 from google.protobuf.json_format import MessageToDict
 
 from opencode_a2a.contracts.extensions import (
@@ -135,6 +136,7 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
             "modelID": "metadata.shared.model.modelID",
         },
     }
+
     assert ext_by_uri[STREAMING_EXTENSION_URI].params == {
         "artifact_metadata_field": "metadata.shared.stream",
         "progress_metadata_field": "metadata.shared.progress",
@@ -201,6 +203,23 @@ def test_public_agent_card_is_slimmed_but_keeps_core_shared_contract_hints() -> 
     )
     assert public_size < extended_size
     assert public_size < 10000
+
+
+def test_agent_card_extensions_do_not_emit_family_field() -> None:
+    card = build_agent_card(
+        make_settings(test_bearer_token="test-token"),
+        include_detailed_contracts=True,
+    )
+
+    assert [field.name for field in AgentExtension.DESCRIPTOR.fields] == [
+        "uri",
+        "description",
+        "required",
+        "params",
+    ]
+    assert all(
+        "family" not in MessageToDict(extension) for extension in card.capabilities.extensions or []
+    )
 
 
 def test_agent_card_injects_profile_into_extensions() -> None:
