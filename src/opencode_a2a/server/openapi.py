@@ -6,7 +6,11 @@ from fastapi import FastAPI
 
 from ..config import Settings
 from ..contracts.extensions import (
+    INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
+    MODEL_SELECTION_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
+    STREAMING_EXTENSION_URI,
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
     build_public_interrupt_callback_extension_params,
@@ -272,31 +276,43 @@ def _patch_jsonrpc_openapi_contract(
                     post["summary"] = "Handle A2A JSON-RPC Requests"
                     post["description"] = _build_jsonrpc_extension_openapi_description()
                     post["x-a2a-extension-contracts"] = {
-                        "session_binding": build_public_session_binding_extension_params(
-                            session_binding
-                        ),
-                        "model_selection": select_public_extension_params(
-                            model_selection,
-                            keys=(
-                                "metadata_field",
-                                "behavior",
-                                "applies_to_methods",
-                                "supported_metadata",
-                                "provider_private_metadata",
-                                "fields",
+                        "session_binding": {
+                            "extension_uri": SESSION_BINDING_EXTENSION_URI,
+                            **build_public_session_binding_extension_params(session_binding),
+                        },
+                        "model_selection": {
+                            "extension_uri": MODEL_SELECTION_EXTENSION_URI,
+                            **select_public_extension_params(
+                                model_selection,
+                                keys=(
+                                    "metadata_field",
+                                    "behavior",
+                                    "applies_to_methods",
+                                    "supported_metadata",
+                                    "provider_private_metadata",
+                                    "fields",
+                                ),
                             ),
-                        ),
-                        "streaming": build_public_streaming_extension_params(streaming),
-                        "interrupt_callback": select_public_extension_params(
-                            build_public_interrupt_callback_extension_params(interrupt_callback),
-                            keys=(
-                                "methods",
-                                "supported_interrupt_events",
-                                "request_id_field",
-                                "interrupt_metadata_field",
-                                "interrupt_fields",
+                        },
+                        "streaming": {
+                            "extension_uri": STREAMING_EXTENSION_URI,
+                            **build_public_streaming_extension_params(streaming),
+                        },
+                        "interrupt_callback": {
+                            "extension_uri": INTERRUPT_CALLBACK_EXTENSION_URI,
+                            **select_public_extension_params(
+                                build_public_interrupt_callback_extension_params(
+                                    interrupt_callback
+                                ),
+                                keys=(
+                                    "methods",
+                                    "supported_interrupt_events",
+                                    "request_id_field",
+                                    "interrupt_metadata_field",
+                                    "interrupt_fields",
+                                ),
                             ),
-                        ),
+                        },
                     }
 
                     request_body = post.setdefault("requestBody", {})

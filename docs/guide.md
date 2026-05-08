@@ -241,12 +241,14 @@ If one deployment works while another fails against the same upstream provider, 
 - When a request restricts `acceptedOutputModes`, the stream applies the same output filtering before persistence so later task snapshots do not re-expose filtered structured blocks.
 - Persistence is canonicalized separately from transport: stream subscribers still receive incremental artifact updates, while task-store persistence rewrites those updates into compact per-artifact snapshots so `GetTask` and terminal replay do not accumulate token-level fragments.
 - The shared stream-hints v1 contract declares normalized usage fields `input_tokens`, `output_tokens`, and `total_tokens` at `metadata.shared.usage`.
-- Progress metadata at `metadata.shared.progress` is emitted only when the client negotiated `urn:opencode-a2a:extension:shared:stream-hints:v1`; baseline streams do not emit duplicate generic `working` status updates just to carry progress hints.
+- Progress metadata at `metadata.shared.progress` is emitted only when the client negotiated `urn:opencode-a2a:extension:stream-hints:v1`; baseline streams do not emit duplicate generic `working` status updates just to carry progress hints.
 - Usage is extracted from documented info payloads and supported usage parts such as `step-finish`; non-usage parts with similar fields are ignored.
-- Interrupt events (`permission.asked` / `question.asked`) are mapped to `TaskStatusUpdateEvent(final=false, state=input-required)` with details at `metadata.shared.interrupt` when the client negotiated `urn:opencode-a2a:extension:shared:interactive-interrupt:v1`.
+- Interrupt events (`permission.asked` / `question.asked`) are mapped to `TaskStatusUpdateEvent(final=false, state=input-required)` with details at `metadata.shared.interrupt` when the client negotiated `urn:opencode-a2a:extension:interactive-interrupt:v1`.
 - Resolved interrupt events (`permission.replied` / `question.replied` / `question.rejected`) are emitted as `TaskStatusUpdateEvent(final=false, state=working)` with `metadata.shared.interrupt.phase=resolved` only when the same interactive interrupt extension is negotiated.
 - Duplicate or unknown resolved events are suppressed unless the matching request is still pending.
 - Non-streaming requests return a `Task` directly. When `configuration.returnImmediately=true`, the initial response is a working `Task` snapshot and completion continues in the background for later `GetTask` reads.
+- For successful non-streaming `message:send` completions, `Task.artifacts` is the canonical carrier for the assistant result text.
+- The terminal `Task.status.message` may carry a short completion status such as `Completed.`, but it does not duplicate the full result text.
 - Non-streaming `message:send` responses may include normalized token usage at `Task.metadata.shared.usage` with the same field schema.
 
 ## Auth, Limits, and Failure Contract
@@ -457,7 +459,7 @@ Important distinction:
 
 Stable specification URI:
 
-- `urn:opencode-a2a:extension:shared:session-binding:v1`
+- `urn:opencode-a2a:extension:session-binding:v1`
 
 This section focuses on how clients should use the binding at runtime. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
@@ -504,7 +506,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 Stable specification URI:
 
-- `urn:opencode-a2a:extension:shared:model-selection:v1`
+- `urn:opencode-a2a:extension:model-selection:v1`
 
 This section focuses on request-scoped usage. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 
@@ -557,7 +559,7 @@ curl -sS http://127.0.0.1:8000/v1/message:send \
 
 Stable specification URI:
 
-- `urn:opencode-a2a:extension:shared:stream-hints:v1`
+- `urn:opencode-a2a:extension:stream-hints:v1`
 
 This section focuses on how clients should interpret runtime metadata. For the stable URI record and public-vs-extended disclosure policy, see [`extension-specifications.md`](./extension-specifications.md).
 

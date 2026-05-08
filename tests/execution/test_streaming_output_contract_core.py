@@ -972,7 +972,10 @@ async def test_non_streaming_response_task_state_is_completed() -> None:
 
     tasks = [event for event in queue.events if isinstance(event, Task)]
     assert tasks
-    assert tasks[-1].status.state == TaskState.TASK_STATE_COMPLETED
+    task = tasks[-1]
+    assert task.status.state == TaskState.TASK_STATE_COMPLETED
+    assert task.status.message.parts[0].text == "Completed."
+    assert task.artifacts[0].parts[0].text == "answer"
 
 
 @pytest.mark.asyncio
