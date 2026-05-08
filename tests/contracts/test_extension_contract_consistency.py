@@ -142,6 +142,18 @@ def test_extension_uris_map_to_repository_spec_documents() -> None:
     index_path = repo_root / "docs" / "extension-specifications.md"
     index_text = index_path.read_text(encoding="utf-8")
 
+    assert ALL_EXTENSION_URIS == (
+        "urn:opencode-a2a:extension:session-binding:v1",
+        "urn:opencode-a2a:extension:model-selection:v1",
+        "urn:opencode-a2a:extension:stream-hints:v1",
+        "urn:opencode-a2a:extension:interactive-interrupt:v1",
+        "urn:opencode-a2a:extension:session-management:v1",
+        "urn:opencode-a2a:extension:provider-discovery:v1",
+        "urn:opencode-a2a:extension:workspace-control:v1",
+        "urn:opencode-a2a:extension:interrupt-recovery:v1",
+        "urn:opencode-a2a:extension:compatibility-profile:v1",
+        "urn:opencode-a2a:extension:wire-contract:v1",
+    )
     spec_paths = {repo_root / path for path in EXTENSION_SPEC_DOCUMENT_PATHS_BY_URI.values()}
     assert spec_paths == {index_path}
 
@@ -149,11 +161,16 @@ def test_extension_uris_map_to_repository_spec_documents() -> None:
         assert uri.startswith(EXTENSION_URI_NAMESPACE), (
             "Extension URI drifted away from the permanent URN namespace."
         )
+        assert ":shared:" not in uri
+        assert ":private:" not in uri
         local_spec_path = repo_root / EXTENSION_SPEC_DOCUMENT_PATHS_BY_URI[uri]
         assert local_spec_path.is_file(), (
             f"Extension URI {uri!r} does not map to a checked-in spec document."
         )
         assert uri in index_text
+
+    assert "urn:opencode-a2a:extension:shared:" not in index_text
+    assert "urn:opencode-a2a:extension:private:" not in index_text
 
 
 def test_extension_ssot_matches_agent_card_contracts() -> None:
@@ -270,6 +287,10 @@ def test_openapi_jsonrpc_contract_extension_matches_public_disclosure_policy() -
     expected_session_binding = build_public_session_binding_extension_params(
         build_session_binding_extension_params(runtime_profile=runtime_profile),
     )
+    expected_session_binding = {
+        "extension_uri": SESSION_BINDING_EXTENSION_URI,
+        **expected_session_binding,
+    }
     expected_model_selection = select_public_extension_params(
         build_model_selection_extension_params(runtime_profile=runtime_profile),
         keys=(
@@ -281,10 +302,22 @@ def test_openapi_jsonrpc_contract_extension_matches_public_disclosure_policy() -
             "fields",
         ),
     )
+    expected_model_selection = {
+        "extension_uri": MODEL_SELECTION_EXTENSION_URI,
+        **expected_model_selection,
+    }
     expected_streaming = build_public_streaming_extension_params(build_streaming_extension_params())
+    expected_streaming = {
+        "extension_uri": STREAMING_EXTENSION_URI,
+        **expected_streaming,
+    }
     expected_interrupt_callback = build_public_interrupt_callback_extension_params(
         build_interrupt_callback_extension_params(runtime_profile=runtime_profile),
     )
+    expected_interrupt_callback = {
+        "extension_uri": INTERRUPT_CALLBACK_EXTENSION_URI,
+        **expected_interrupt_callback,
+    }
 
     assert session_binding == expected_session_binding, (
         "OpenAPI public session binding contract drifted from disclosure policy."

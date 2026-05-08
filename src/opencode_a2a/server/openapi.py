@@ -6,7 +6,11 @@ from fastapi import FastAPI
 
 from ..config import Settings
 from ..contracts.extensions import (
+    INTERRUPT_CALLBACK_EXTENSION_URI,
     INTERRUPT_CALLBACK_METHODS,
+    MODEL_SELECTION_EXTENSION_URI,
+    SESSION_BINDING_EXTENSION_URI,
+    STREAMING_EXTENSION_URI,
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
     build_public_interrupt_callback_extension_params,
@@ -167,6 +171,10 @@ def _build_jsonrpc_extension_openapi_examples() -> dict[str, Any]:
     }
 
 
+def _with_extension_uri(params: dict[str, Any], *, uri: str) -> dict[str, Any]:
+    return {"extension_uri": uri, **params}
+
+
 def _build_rest_message_openapi_examples() -> dict[str, Any]:
     return {
         "basic_message": {
@@ -272,30 +280,42 @@ def _patch_jsonrpc_openapi_contract(
                     post["summary"] = "Handle A2A JSON-RPC Requests"
                     post["description"] = _build_jsonrpc_extension_openapi_description()
                     post["x-a2a-extension-contracts"] = {
-                        "session_binding": build_public_session_binding_extension_params(
-                            session_binding
+                        "session_binding": _with_extension_uri(
+                            build_public_session_binding_extension_params(session_binding),
+                            uri=SESSION_BINDING_EXTENSION_URI,
                         ),
-                        "model_selection": select_public_extension_params(
-                            model_selection,
-                            keys=(
-                                "metadata_field",
-                                "behavior",
-                                "applies_to_methods",
-                                "supported_metadata",
-                                "provider_private_metadata",
-                                "fields",
+                        "model_selection": _with_extension_uri(
+                            select_public_extension_params(
+                                model_selection,
+                                keys=(
+                                    "metadata_field",
+                                    "behavior",
+                                    "applies_to_methods",
+                                    "supported_metadata",
+                                    "provider_private_metadata",
+                                    "fields",
+                                ),
                             ),
+                            uri=MODEL_SELECTION_EXTENSION_URI,
                         ),
-                        "streaming": build_public_streaming_extension_params(streaming),
-                        "interrupt_callback": select_public_extension_params(
-                            build_public_interrupt_callback_extension_params(interrupt_callback),
-                            keys=(
-                                "methods",
-                                "supported_interrupt_events",
-                                "request_id_field",
-                                "interrupt_metadata_field",
-                                "interrupt_fields",
+                        "streaming": _with_extension_uri(
+                            build_public_streaming_extension_params(streaming),
+                            uri=STREAMING_EXTENSION_URI,
+                        ),
+                        "interrupt_callback": _with_extension_uri(
+                            select_public_extension_params(
+                                build_public_interrupt_callback_extension_params(
+                                    interrupt_callback
+                                ),
+                                keys=(
+                                    "methods",
+                                    "supported_interrupt_events",
+                                    "request_id_field",
+                                    "interrupt_metadata_field",
+                                    "interrupt_fields",
+                                ),
                             ),
+                            uri=INTERRUPT_CALLBACK_EXTENSION_URI,
                         ),
                     }
 

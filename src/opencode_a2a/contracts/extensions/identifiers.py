@@ -22,52 +22,42 @@ def _extension_uri(*segments: str) -> str:
 
 
 SESSION_BINDING_EXTENSION_URI = _extension_uri(
-    "shared",
     "session-binding",
     "v1",
 )
 MODEL_SELECTION_EXTENSION_URI = _extension_uri(
-    "shared",
     "model-selection",
     "v1",
 )
 STREAMING_EXTENSION_URI = _extension_uri(
-    "shared",
     "stream-hints",
     "v1",
 )
 SESSION_MANAGEMENT_EXTENSION_URI = _extension_uri(
-    "private",
     "session-management",
     "v1",
 )
 PROVIDER_DISCOVERY_EXTENSION_URI = _extension_uri(
-    "private",
     "provider-discovery",
     "v1",
 )
 INTERRUPT_CALLBACK_EXTENSION_URI = _extension_uri(
-    "shared",
     "interactive-interrupt",
     "v1",
 )
 INTERRUPT_RECOVERY_EXTENSION_URI = _extension_uri(
-    "private",
     "interrupt-recovery",
     "v1",
 )
 WORKSPACE_CONTROL_EXTENSION_URI = _extension_uri(
-    "private",
     "workspace-control",
     "v1",
 )
 COMPATIBILITY_PROFILE_EXTENSION_URI = _extension_uri(
-    "private",
     "compatibility-profile",
     "v1",
 )
 WIRE_CONTRACT_EXTENSION_URI = _extension_uri(
-    "private",
     "wire-contract",
     "v1",
 )
