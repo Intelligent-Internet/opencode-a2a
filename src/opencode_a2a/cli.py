@@ -101,7 +101,7 @@ CALL_HELP = (
     "  Service base URLs also work, but card URLs are the preferred example form."
 )
 
-ROOT_HELP_EPILOG = f"{OPENCODE_SETUP_HELP}\n\n{SERVE_ENVIRONMENT_HELP}\n\n{CALL_HELP}"
+ROOT_HELP_EPILOG = "Command-specific help:\n  opencode-a2a serve --help\n  opencode-a2a call --help"
 SERVE_HELP_EPILOG = f"{OPENCODE_SETUP_HELP}\n\n{SERVE_ENVIRONMENT_HELP}"
 CALL_HELP_EPILOG = CALL_HELP
 
