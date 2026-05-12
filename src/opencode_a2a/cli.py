@@ -14,7 +14,13 @@ from .client import A2AClient, load_settings
 from .config import Settings
 from .server.application import main as serve_main
 
-CLI_BRAND_BANNER = "OpenCode-A2A"
+CLI_BRAND_BANNER = (
+    "   _ \\\\                    __|            |              \\\\   _  )    \\\\   \n"
+    "  (   | _ \\\\   -_)    \\\\   (      _ \\\\   _` |   -_) ____| _ \\\\    /    _ \\\\  \n"
+    " \\\\___/ .__/ \\\\___| _| _| \\\\___| \\\\___/ \\\\__,_|"
+    " \\\\___|     _/  _\\\\ ___| _/  _\\\\ \n"
+    "      _|                                                                "
+)
 PROJECT_REPOSITORY_URL = "https://github.com/Intelligent-Internet/opencode-a2a"
 HELP_FLAGS = frozenset({"-h", "--help"})
 
