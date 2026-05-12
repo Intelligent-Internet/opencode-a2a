@@ -16,10 +16,6 @@ def clone_proto(message: ProtoT) -> ProtoT:
     return cloned
 
 
-def proto_equals(left: ProtoMessage, right: ProtoMessage) -> bool:
-    return bool(left == right)
-
-
 def _to_proto_value(value: Any) -> Value:
     proto_value = Value()
     if value is None:

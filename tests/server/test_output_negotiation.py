@@ -32,6 +32,7 @@ from opencode_a2a.contracts.extensions import (
 )
 from opencode_a2a.output_modes import (
     NegotiatingResultAggregator,
+    annotate_output_negotiation_metadata,
     apply_accepted_output_modes,
     build_output_negotiation_metadata,
     extract_accepted_output_modes_from_metadata,
@@ -133,6 +134,15 @@ def test_normalize_accepted_output_modes_treats_wildcards_as_unrestricted() -> N
     assert normalize_accepted_output_modes(["*"]) is None
 
 
+def test_normalize_accepted_output_modes_reads_attribute_sources_and_rejects_scalars() -> None:
+    class _Config:
+        acceptedOutputModes = [" TEXT/PLAIN ", "application/json", "text/plain", 3]
+
+    assert normalize_accepted_output_modes(_Config()) == ("text/plain", "application/json")
+    assert normalize_accepted_output_modes("text/plain") is None
+    assert normalize_accepted_output_modes({"accepted_output_modes": ["text/plain"]}) is None
+
+
 def test_apply_accepted_output_modes_downgrades_task_data_parts_to_text() -> None:
     task = Task(
         id="task-send",
@@ -164,6 +174,57 @@ def test_apply_accepted_output_modes_downgrades_task_data_parts_to_text() -> Non
     assert downgraded.artifacts is not None
     assert downgraded.artifacts[0].parts[0].HasField("text")
     assert downgraded.artifacts[0].parts[0].text == '{"status":"running","tool":"bash"}'
+
+
+def test_apply_accepted_output_modes_can_drop_artifact_event_and_clear_message_parts() -> None:
+    artifact_event = TaskArtifactUpdateEvent(
+        task_id="task-1",
+        context_id="ctx-1",
+        artifact=Artifact(
+            artifact_id="artifact-1",
+            parts=[Part(text="hello")],
+        ),
+        append=False,
+        last_chunk=False,
+    )
+    assert apply_accepted_output_modes(artifact_event, ["application/json"]) is None
+
+    message = Message(
+        message_id="msg-1",
+        role=Role.ROLE_AGENT,
+        parts=[Part(text="hello")],
+        task_id="task-1",
+        context_id="ctx-1",
+    )
+    cleared = apply_accepted_output_modes(message, ["application/json"])
+    assert isinstance(cleared, Message)
+    assert len(cleared.parts) == 0
+
+
+def test_annotate_output_negotiation_metadata_preserves_existing_event_metadata() -> None:
+    status_event = TaskStatusUpdateEvent(
+        task_id="task-1",
+        context_id="ctx-1",
+        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+        metadata={"shared": {"usage": {"total_tokens": 5}}},
+    )
+    annotated_status = annotate_output_negotiation_metadata(status_event, ["text/plain"])
+    assert extract_accepted_output_modes_from_metadata(annotated_status.metadata) == ("text/plain",)
+    assert annotated_status.metadata["shared"]["usage"]["total_tokens"] == 5
+
+    artifact_event = TaskArtifactUpdateEvent(
+        task_id="task-1",
+        context_id="ctx-1",
+        artifact=Artifact(artifact_id="artifact-1", parts=[Part(text="hello")]),
+        append=False,
+        last_chunk=False,
+        metadata={"shared": {"stream": {"block_type": "text"}}},
+    )
+    annotated_artifact = annotate_output_negotiation_metadata(artifact_event, ["text/plain"])
+    assert extract_accepted_output_modes_from_metadata(annotated_artifact.metadata) == (
+        "text/plain",
+    )
+    assert annotated_artifact.metadata["shared"]["stream"]["block_type"] == "text"
 
 
 @pytest.mark.asyncio

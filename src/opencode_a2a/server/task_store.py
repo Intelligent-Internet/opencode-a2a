@@ -14,7 +14,6 @@ from a2a.server.tasks.task_store import TaskStore
 from a2a.types import ListTasksRequest, ListTasksResponse, Task
 from sqlalchemy.engine import make_url
 
-from ..a2a_utils import proto_equals
 from ..config import Settings
 from ..task_states import TERMINAL_TASK_STATES
 from .context_helpers import normalize_server_call_context
@@ -67,7 +66,7 @@ class FirstTerminalStateWinsPolicy(TaskWritePolicy):
                 persist=False,
                 reason="state_overwrite_after_terminal_persistence",
             )
-        if not proto_equals(incoming, existing):
+        if incoming != existing:
             return TaskPersistenceDecision(
                 persist=False,
                 reason="late_mutation_after_terminal_persistence",
@@ -238,7 +237,7 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
             if (
                 existing is not None
                 and existing.status.state in TERMINAL_TASK_STATES
-                and proto_equals(existing, task)
+                and existing == task
             ):
                 return
             raise RuntimeError(

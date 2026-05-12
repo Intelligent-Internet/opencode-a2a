@@ -118,8 +118,10 @@ def test_cli_help_does_not_require_runtime_settings(capsys: pytest.CaptureFixtur
     assert (
         "OpenCode A2A runtime for explicit service startup and peer calls. A2A Protocol 1.0 only."
     ) in help_text
-    assert "___                    ____" in help_text
-    assert "| | | | '_ \\ / _ \\ '_ \\| |   / _ \\ / _` |/ _ \\_____ / _ \\" in help_text
+    assert "██████╗ ██████╗ ███████╗███╗   ██╗ ██████╗" in help_text
+    assert "██║   ██║██████╔╝█████╗" in help_text
+    assert "█████╗█████╗" in help_text
+    assert "█████╗ ██████╗  █████╗" in help_text
     assert "opencode-a2a <command> [arguments] [options]" in help_text
     assert "A2A_STATIC_AUTH_CREDENTIALS" in help_text
     assert "opencode serve --hostname 127.0.0.1 --port 4096" in help_text

@@ -37,30 +37,19 @@ _STREAM_METADATA_STREAM_KEY = "stream"
 _STREAM_METADATA_BLOCK_TYPE_KEY = "block_type"
 
 
-def _accepted_output_modes_source(source: Any) -> Iterable[str] | None:
+def normalize_accepted_output_modes(source: Any) -> tuple[str, ...] | None:
     if source is None:
         return None
-
     accepted = getattr(source, "accepted_output_modes", None) or getattr(
         source, "acceptedOutputModes", None
     )
     if accepted is not None:
         source = accepted
-
-    if isinstance(source, str | bytes | bytearray | dict):
-        return None
-    if not isinstance(source, Iterable):
-        return None
-    return cast(Iterable[str], source)
-
-
-def normalize_accepted_output_modes(source: Any) -> tuple[str, ...] | None:
-    accepted = _accepted_output_modes_source(source)
-    if accepted is None:
+    if isinstance(source, str | bytes | bytearray | dict) or not isinstance(source, Iterable):
         return None
 
     normalized: list[str] = []
-    for value in accepted:
+    for value in cast(Iterable[str], source):
         if not isinstance(value, str):
             continue
         mode = value.strip().lower()
@@ -194,9 +183,11 @@ def apply_accepted_output_modes(
         return replace_artifact_event_artifact(payload, artifact)
 
     if isinstance(payload, TaskStatusUpdateEvent):
-        message = None
-        if payload.status.HasField("message"):
-            message = _filter_optional_message(payload.status.message, normalized)
+        message = (
+            _filter_message(payload.status.message, normalized)
+            if payload.status.HasField("message")
+            else None
+        )
         return replace_status_event_message(payload, message)
 
     if isinstance(payload, Task):
@@ -375,7 +366,7 @@ class NegotiatingResultAggregator(ResultAggregator):
 def _filter_task(task: Task, accepted_output_modes: Collection[str]) -> Task:
     updated = clone_proto(task)
     if updated.status.HasField("message"):
-        filtered_message = _filter_optional_message(updated.status.message, accepted_output_modes)
+        filtered_message = _filter_message(updated.status.message, accepted_output_modes)
         if filtered_message is None:
             updated.status.ClearField("message")
         else:
@@ -404,15 +395,6 @@ def _filter_task(task: Task, accepted_output_modes: Collection[str]) -> Task:
     return updated
 
 
-def _filter_optional_message(
-    message: Message | None,
-    accepted_output_modes: Collection[str],
-) -> Message | None:
-    if message is None:
-        return None
-    return _filter_message(message, accepted_output_modes)
-
-
 def _filter_message(
     message: Message,
     accepted_output_modes: Collection[str],
@@ -439,7 +421,14 @@ def _filter_parts(
 ) -> list[Part]:
     filtered: list[Part] = []
     for part in parts:
-        media_type = _part_media_type(part)
+        if part.HasField("text"):
+            media_type = _TEXT_PLAIN_MEDIA_TYPE
+        elif part.HasField("data"):
+            media_type = _APPLICATION_JSON_MEDIA_TYPE
+        elif part.HasField("raw") or part.HasField("url"):
+            media_type = part.media_type or "application/octet-stream"
+        else:
+            media_type = None
         if media_type is None or accepts_output_mode(accepted_output_modes, media_type):
             filtered.append(part)
             continue
@@ -459,13 +448,3 @@ def _filter_parts(
                     )
                 )
     return filtered
-
-
-def _part_media_type(part: Part) -> str | None:
-    if part.HasField("text"):
-        return _TEXT_PLAIN_MEDIA_TYPE
-    if part.HasField("data"):
-        return _APPLICATION_JSON_MEDIA_TYPE
-    if part.HasField("raw") or part.HasField("url"):
-        return part.media_type or "application/octet-stream"
-    return None

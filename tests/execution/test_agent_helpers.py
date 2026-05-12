@@ -146,6 +146,39 @@ def test_format_upstream_errors_include_detail_and_provider_auth_paths() -> None
     assert "error=SomeOtherError" in inband.message
 
 
+def test_format_upstream_error_helpers_cover_status_and_generic_paths() -> None:
+    terminal = _format_stream_terminal_error(detail=None, status=503, error_name=None)
+    assert terminal.state == TaskState.TASK_STATE_FAILED
+    assert terminal.error_type == "UPSTREAM_SERVER_ERROR"
+    assert terminal.upstream_status == 503
+
+    terminal_with_detail = _format_stream_terminal_error(
+        detail="tool crashed",
+        status=None,
+        error_name=None,
+    )
+    assert terminal_with_detail.error_type == "UPSTREAM_EXECUTION_ERROR"
+    assert "detail=tool crashed" in terminal_with_detail.message
+
+    inband_with_status = _format_inband_upstream_error(
+        source="message.updated",
+        detail=None,
+        status=429,
+        error_name=None,
+    )
+    assert inband_with_status.error_type == "UPSTREAM_QUOTA_EXCEEDED"
+    assert "status=429" in inband_with_status.message
+
+    provider_auth = _format_inband_upstream_error(
+        source="message.updated",
+        detail=None,
+        status=None,
+        error_name="ProviderAuthError",
+    )
+    assert provider_auth.state == TaskState.TASK_STATE_AUTH_REQUIRED
+    assert provider_auth.error_type == "UPSTREAM_UNAUTHORIZED"
+
+
 @pytest.mark.asyncio
 async def test_await_stream_terminal_signal_handles_shortcuts_and_missing_signal() -> None:
     loop = asyncio.get_running_loop()

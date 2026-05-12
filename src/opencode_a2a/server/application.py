@@ -260,17 +260,6 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         return "Task store unavailable."
 
     @classmethod
-    def _task_store_failure_metadata(cls, operation: str) -> dict[str, dict[str, dict[str, str]]]:
-        return {
-            "opencode": {
-                "error": {
-                    "type": TASK_STORE_ERROR_TYPE,
-                    "operation": operation,
-                }
-            }
-        }
-
-    @classmethod
     def _task_store_server_error(cls, exc: TaskStoreOperationError) -> InternalError:
         return InternalError(message=cls._task_store_failure_message(exc.operation))
 
@@ -295,7 +284,14 @@ class OpencodeRequestHandler(LegacyRequestHandler):
             context_id=context_id,
             status=TaskStatus(state=TaskState.TASK_STATE_FAILED, message=error_message),
             history=[error_message],
-            metadata=cls._task_store_failure_metadata(operation),
+            metadata={
+                "opencode": {
+                    "error": {
+                        "type": TASK_STORE_ERROR_TYPE,
+                        "operation": operation,
+                    }
+                }
+            },
         )
 
     @classmethod
@@ -322,7 +318,14 @@ class OpencodeRequestHandler(LegacyRequestHandler):
                 task_id=task_id,
                 context_id=context_id,
                 status=TaskStatus(state=TaskState.TASK_STATE_FAILED),
-                metadata=cls._task_store_failure_metadata(operation),
+                metadata={
+                    "opencode": {
+                        "error": {
+                            "type": TASK_STORE_ERROR_TYPE,
+                            "operation": operation,
+                        }
+                    }
+                },
             ),
         )
 

@@ -10,18 +10,6 @@ from ..models import JSONRPCRequest
 from .common import build_internal_error_response, build_success_response, reject_unknown_fields
 
 
-def _binding_to_result_item(binding: Any) -> dict[str, Any]:
-    return {
-        "request_id": binding.request_id,
-        "session_id": binding.session_id,
-        "interrupt_type": binding.interrupt_type,
-        "task_id": binding.task_id,
-        "context_id": binding.context_id,
-        "details": dict(binding.details) if isinstance(binding.details, dict) else None,
-        "expires_at": binding.expires_at,
-    }
-
-
 async def handle_interrupt_query_request(
     context: ExtensionHandlerContext,
     base_request: JSONRPCRequest,
@@ -58,5 +46,18 @@ async def handle_interrupt_query_request(
     return build_success_response(
         context,
         base_request.id,
-        {"items": [_binding_to_result_item(item) for item in items]},
+        {
+            "items": [
+                {
+                    "request_id": item.request_id,
+                    "session_id": item.session_id,
+                    "interrupt_type": item.interrupt_type,
+                    "task_id": item.task_id,
+                    "context_id": item.context_id,
+                    "details": dict(item.details) if isinstance(item.details, dict) else None,
+                    "expires_at": item.expires_at,
+                }
+                for item in items
+            ]
+        },
     )
