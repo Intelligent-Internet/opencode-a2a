@@ -118,13 +118,17 @@ def test_cli_help_does_not_require_runtime_settings(capsys: pytest.CaptureFixtur
     assert (
         "OpenCode A2A runtime for explicit service startup and peer calls. A2A Protocol 1.0 only."
     ) in help_text
-    assert "___                    ____" in help_text
-    assert "| | | | '_ \\ / _ \\ '_ \\| |   / _ \\ / _` |/ _ \\_____ / _ \\" in help_text
+    assert "██████╗ ██████╗ ███████╗███╗   ██╗ ██████╗" in help_text
+    assert "███████║ █████╔╝███████║" in help_text
     assert "opencode-a2a <command> [arguments] [options]" in help_text
-    assert "A2A_STATIC_AUTH_CREDENTIALS" in help_text
-    assert "opencode serve --hostname 127.0.0.1 --port 4096" in help_text
-    assert "A2A_CLIENT_BEARER_TOKEN=peer-token" in help_text
-    assert "/.well-known/agent-card.json" in help_text
+    assert "uv tool install --upgrade opencode-a2a\n\nOpenCode A2A runtime" in help_text
+    assert "Command-specific help:" in help_text
+    assert "opencode-a2a serve --help" in help_text
+    assert "opencode-a2a call --help" in help_text
+    assert "A2A_STATIC_AUTH_CREDENTIALS" not in help_text
+    assert "opencode serve --hostname 127.0.0.1 --port 4096" not in help_text
+    assert "A2A_CLIENT_BEARER_TOKEN=peer-token" not in help_text
+    assert "/.well-known/agent-card.json" not in help_text
     assert "{call}" not in help_text
     assert "serve" in help_text
     assert "deploy-release" not in help_text
@@ -180,8 +184,26 @@ def test_cli_serve_subcommand_with_invalid_configuration_prints_help(
 
     help_text = capsys.readouterr().out
     assert "Run the OpenCode A2A service. A2A Protocol 1.0 only." in help_text
+    assert "A2A_STATIC_AUTH_CREDENTIALS" in help_text
+    assert "opencode serve --hostname 127.0.0.1 --port 4096" in help_text
     assert "configuration errors:" in help_text
     assert "Configure runtime authentication via A2A_STATIC_AUTH_CREDENTIALS" in help_text
+    serve_mock.assert_not_called()
+
+
+def test_cli_serve_help_prints_serve_specific_examples(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with mock.patch("opencode_a2a.cli.serve_main") as serve_mock:
+        with pytest.raises(SystemExit) as excinfo:
+            cli.main(["serve", "--help"])
+
+    assert excinfo.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "Run the OpenCode A2A service. A2A Protocol 1.0 only." in help_text
+    assert "A2A_STATIC_AUTH_CREDENTIALS" in help_text
+    assert "opencode serve --hostname 127.0.0.1 --port 4096" in help_text
+    assert "A2A_CLIENT_BEARER_TOKEN=peer-token" not in help_text
     serve_mock.assert_not_called()
 
 

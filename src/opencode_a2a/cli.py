@@ -15,12 +15,18 @@ from .config import Settings
 from .server.application import main as serve_main
 
 CLI_BRAND_BANNER = (
-    "  ___                    ____          _              _    ____     _    \n"
-    " / _ \\ _ __   ___ _ __  / ___|___   __| | ___        / \\  |___ \\   / \\   \n"
-    "| | | | '_ \\ / _ \\ '_ \\| |   / _ \\ / _` |/ _ \\_____ / _ \\   __) | / _ \\  \n"
-    "| |_| | |_) |  __/ | | | |__| (_) | (_| |  __/_____/ ___ \\ / __/ / ___ \\ \n"
-    " \\___/| .__/ \\___|_| |_|\\____\\___/ \\__,_|\\___|    /_/   \\_\\_____/_/   \\_\\\n"
-    "      |_|                                                                "
+    " ██████╗ ██████╗ ███████╗███╗   ██╗ ██████╗ ██████╗"
+    " ██████╗ ███████╗     █████╗ ██████╗  █████╗ \n"
+    "██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔════╝██╔═══██╗"
+    "██╔══██╗██╔════╝    ██╔══██╗╚════██╗██╔══██╗\n"
+    "██║   ██║██████╔╝█████╗  ██╔██╗ ██║██║     ██║   ██║"
+    "██║  ██║█████╗█████╗███████║ █████╔╝███████║\n"
+    "██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║██║     ██║   ██║"
+    "██║  ██║██╔══╝╚════╝██╔══██║██╔═══╝ ██╔══██║\n"
+    "╚██████╔╝██║     ███████╗██║ ╚████║╚██████╗╚██████╔╝"
+    "██████╔╝███████╗    ██║  ██║███████╗██║  ██║\n"
+    " ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═════╝"
+    " ╚═════╝ ╚══════╝    ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝"
 )
 PROJECT_REPOSITORY_URL = "https://github.com/Intelligent-Internet/opencode-a2a"
 HELP_FLAGS = frozenset({"-h", "--help"})
@@ -95,7 +101,7 @@ CALL_HELP = (
     "  Service base URLs also work, but card URLs are the preferred example form."
 )
 
-ROOT_HELP_EPILOG = f"{OPENCODE_SETUP_HELP}\n\n{SERVE_ENVIRONMENT_HELP}\n\n{CALL_HELP}"
+ROOT_HELP_EPILOG = "Command-specific help:\n  opencode-a2a serve --help\n  opencode-a2a call --help"
 SERVE_HELP_EPILOG = f"{OPENCODE_SETUP_HELP}\n\n{SERVE_ENVIRONMENT_HELP}"
 CALL_HELP_EPILOG = CALL_HELP
 
@@ -224,7 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
             CLI_BRAND_BANNER
             + "\n\n"
             + f"repo: {PROJECT_REPOSITORY_URL}\n"
-            + "uv tool install --upgrade opencode-a2a\n"
+            + "uv tool install --upgrade opencode-a2a\n\n"
             + ROOT_DESCRIPTION
         ),
         formatter_class=RootHelpFormatter,
