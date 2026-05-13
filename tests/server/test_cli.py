@@ -121,6 +121,7 @@ def test_cli_help_does_not_require_runtime_settings(capsys: pytest.CaptureFixtur
     assert "██████╗ ██████╗ ███████╗███╗   ██╗ ██████╗" in help_text
     assert "███████║ █████╔╝███████║" in help_text
     assert "opencode-a2a <command> [arguments] [options]" in help_text
+    assert "uv tool install --upgrade opencode-a2a\n\nOpenCode A2A runtime" in help_text
     assert "Command-specific help:" in help_text
     assert "opencode-a2a serve --help" in help_text
     assert "opencode-a2a call --help" in help_text

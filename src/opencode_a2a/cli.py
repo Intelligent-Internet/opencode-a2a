@@ -230,7 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
             CLI_BRAND_BANNER
             + "\n\n"
             + f"repo: {PROJECT_REPOSITORY_URL}\n"
-            + "uv tool install --upgrade opencode-a2a\n"
+            + "uv tool install --upgrade opencode-a2a\n\n"
             + ROOT_DESCRIPTION
         ),
         formatter_class=RootHelpFormatter,
