@@ -5,6 +5,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # a2a-sdk still constrains protobuf to <7, so major protobuf bumps are unsatisfiable.
+      - dependency-name: "protobuf"
+        update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 1
     commit-message:
       prefix: "deps"
