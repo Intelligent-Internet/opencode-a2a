@@ -26,8 +26,7 @@ from .contracts.extensions import (
     WORKSPACE_CONTROL_METHODS,
 )
 
-_STREAMING_SHARED_METADATA_KEYS = frozenset({"stream", "progress", "usage"})
-_INTERRUPT_SHARED_METADATA_KEYS = frozenset({"interrupt"})
+_STREAMING_SHARED_METADATA_KEYS = ("stream", "progress", "usage")
 
 JSONRPC_EXTENSION_URI_BY_METHOD: dict[str, str] = {
     **{method: SESSION_MANAGEMENT_EXTENSION_URI for method in SESSION_METHODS.values()},
@@ -107,8 +106,7 @@ def _set_filtered_metadata(
             for key in _STREAMING_SHARED_METADATA_KEYS:
                 filtered_shared.pop(key, None)
         if INTERRUPT_CALLBACK_EXTENSION_URI not in requested_extensions:
-            for key in _INTERRUPT_SHARED_METADATA_KEYS:
-                filtered_shared.pop(key, None)
+            filtered_shared.pop("interrupt", None)
         if filtered_shared:
             filtered_metadata["shared"] = filtered_shared
         else:

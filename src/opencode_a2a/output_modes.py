@@ -32,9 +32,6 @@ OUTPUT_NEGOTIATION_ACCEPTED_OUTPUT_MODES_FIELD = "accepted_output_modes"
 _OPENCODE_METADATA_KEY = "opencode"
 _APPLICATION_JSON_MEDIA_TYPE = "application/json"
 _TEXT_PLAIN_MEDIA_TYPE = "text/plain"
-_STREAM_METADATA_SHARED_KEY = "shared"
-_STREAM_METADATA_STREAM_KEY = "stream"
-_STREAM_METADATA_BLOCK_TYPE_KEY = "block_type"
 
 
 def normalize_accepted_output_modes(source: Any) -> tuple[str, ...] | None:
@@ -208,13 +205,13 @@ def _extract_artifact_stream_block_type(artifact: Artifact | None) -> str | None
     metadata = _normalize_metadata_mapping(artifact.metadata)
     if not metadata:
         return None
-    shared = metadata.get(_STREAM_METADATA_SHARED_KEY)
+    shared = metadata.get("shared")
     if not isinstance(shared, dict):
         return None
-    stream = shared.get(_STREAM_METADATA_STREAM_KEY)
+    stream = shared.get("stream")
     if not isinstance(stream, dict):
         return None
-    block_type = stream.get(_STREAM_METADATA_BLOCK_TYPE_KEY)
+    block_type = stream.get("block_type")
     return block_type.strip() if isinstance(block_type, str) and block_type.strip() else None
 
 

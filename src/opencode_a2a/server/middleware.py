@@ -14,7 +14,7 @@ from starlette.responses import StreamingResponse
 
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
-    EXTENDED_AGENT_CARD_PATHS,
+    EXTENDED_AGENT_CARD_PATH,
 )
 from ..auth import (
     authenticate_static_credential,
@@ -289,7 +289,7 @@ def install_runtime_middlewares(
         path = request.url.path
         if path == AGENT_CARD_WELL_KNOWN_PATH:
             supported_extensions = PUBLIC_EXTENSION_URIS
-        elif path in EXTENDED_AGENT_CARD_PATHS:
+        elif path == EXTENDED_AGENT_CARD_PATH:
             supported_extensions = ALL_EXTENSION_URIS
         elif path == "/" or path.startswith("/v1/"):
             supported_extensions = PUBLIC_EXTENSION_URIS
@@ -313,7 +313,7 @@ def install_runtime_middlewares(
 
         path = request.url.path
         is_public_card = path == AGENT_CARD_WELL_KNOWN_PATH
-        is_extended_card = path in EXTENDED_AGENT_CARD_PATHS
+        is_extended_card = path == EXTENDED_AGENT_CARD_PATH
         if not is_public_card and not is_extended_card:
             return await call_next(request)
 
