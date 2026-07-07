@@ -280,7 +280,7 @@ class ExecutionCoordinator:
         if self._prepared.streaming_request:
             self._stream_terminal_signal = asyncio.get_running_loop().create_future()
             self._stream_task = asyncio.create_task(
-                self._executor._consume_opencode_stream(
+                self._executor._stream_runtime.consume(
                     session_id=self._session_id,
                     identity=self._prepared.identity,
                     task_id=self._task_id,

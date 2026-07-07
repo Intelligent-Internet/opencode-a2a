@@ -18,7 +18,8 @@ from a2a.types import (
     TaskStatus,
 )
 
-from opencode_a2a.execution.executor import OpencodeAgentExecutor, _StreamOutputState
+from opencode_a2a.execution.executor import OpencodeAgentExecutor
+from opencode_a2a.execution.stream_state import _StreamOutputState
 from opencode_a2a.server.application import OpencodeRequestHandler
 from tests.support.helpers import DummyEventQueue
 from tests.support.settings import make_settings
@@ -156,7 +157,7 @@ async def test_streaming_metrics_capture_tool_call_and_interrupt_events(caplog) 
     terminal_signal = asyncio.get_running_loop().create_future()
 
     with caplog.at_level(logging.DEBUG, logger="opencode_a2a.execution.executor"):
-        await executor._consume_opencode_stream(
+        await executor._stream_runtime.consume(
             session_id="ses-1",
             identity="user-1",
             task_id="task-1",
@@ -207,7 +208,7 @@ async def test_streaming_retry_metric_increments_once_per_retry(monkeypatch, cap
     terminal_signal = asyncio.get_running_loop().create_future()
 
     with caplog.at_level(logging.DEBUG, logger="opencode_a2a.execution.executor"):
-        await executor._consume_opencode_stream(
+        await executor._stream_runtime.consume(
             session_id="ses-1",
             identity="user-1",
             task_id="task-1",

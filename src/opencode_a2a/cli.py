@@ -103,7 +103,6 @@ CALL_HELP = (
 
 ROOT_HELP_EPILOG = "Command-specific help:\n  opencode-a2a serve --help\n  opencode-a2a call --help"
 SERVE_HELP_EPILOG = f"{OPENCODE_SETUP_HELP}\n\n{SERVE_ENVIRONMENT_HELP}"
-CALL_HELP_EPILOG = CALL_HELP
 
 
 class RootHelpFormatter(
@@ -264,7 +263,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Call an A2A agent.",
         description="Call an A2A agent using the A2A protocol. A2A Protocol 1.0 only.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=CALL_HELP_EPILOG,
+        epilog=CALL_HELP,
     )
     call_parser.add_argument(
         "agent_url",

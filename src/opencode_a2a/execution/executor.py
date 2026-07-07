@@ -46,12 +46,6 @@ from .event_helpers import _enqueue_artifact_update
 from .metrics import emit_metric
 from .session_manager import SessionManager
 from .stream_runtime import StreamRuntime
-from .stream_state import (
-    _StreamOutputState,
-)
-from .upstream_error_translator import (
-    _StreamTerminalSignal,
-)
 
 logger = logging.getLogger(__name__)
 _TEXT_PLAIN_MEDIA_TYPE = "text/plain"
@@ -497,40 +491,3 @@ class OpencodeAgentExecutor(AgentExecutor):
         # JSON-RPC transport sets method in call context state.
         method = call_context.state.get("method")
         return method == "SendStreamingMessage"
-
-    async def _consume_opencode_stream(
-        self,
-        *,
-        session_id: str,
-        identity: str,
-        task_id: str,
-        context_id: str,
-        artifact_id: str,
-        stream_state: _StreamOutputState,
-        event_queue: EventQueue,
-        stop_event: asyncio.Event,
-        terminal_signal: asyncio.Future[_StreamTerminalSignal],
-        directory: str | None = None,
-        workspace_id: str | None = None,
-        allow_structured_output: bool = True,
-        emit_session_metadata: bool = True,
-        emit_streaming_metadata: bool = True,
-        emit_interrupt_metadata: bool = True,
-    ) -> None:
-        await self._stream_runtime.consume(
-            session_id=session_id,
-            identity=identity,
-            task_id=task_id,
-            context_id=context_id,
-            artifact_id=artifact_id,
-            stream_state=stream_state,
-            event_queue=event_queue,
-            stop_event=stop_event,
-            terminal_signal=terminal_signal,
-            directory=directory,
-            workspace_id=workspace_id,
-            allow_structured_output=allow_structured_output,
-            emit_session_metadata=emit_session_metadata,
-            emit_streaming_metadata=emit_streaming_metadata,
-            emit_interrupt_metadata=emit_interrupt_metadata,
-        )

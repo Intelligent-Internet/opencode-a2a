@@ -71,13 +71,12 @@ class DatabaseTaskStoreCompat:
             self._task_store.engine.url.render_as_string(hide_password=True)
         )
         table_name = self._shape.task_model.__table__.name
-        required_indexes = frozenset({f"idx_{table_name}_owner_last_updated"})
         async with self._task_store.engine.begin() as conn:
             await conn.run_sync(
                 lambda sync_conn: _validate_sdk_task_table_schema(
                     sync_conn,
                     table_name=table_name,
-                    required_indexes=required_indexes,
+                    required_index=f"idx_{table_name}_owner_last_updated",
                     database_url=database_url,
                 )
             )
@@ -247,7 +246,7 @@ def _validate_sdk_task_table_schema(
     connection: Any,
     *,
     table_name: str,
-    required_indexes: frozenset[str],
+    required_index: str,
     database_url: str,
 ) -> None:
     inspector = inspect(connection)
@@ -257,7 +256,7 @@ def _validate_sdk_task_table_schema(
     existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
     existing_indexes = {index["name"] for index in inspector.get_indexes(table_name)}
     missing_columns = sorted(_REQUIRED_SCHEMA_COLUMNS - existing_columns)
-    missing_indexes = sorted(required_indexes - existing_indexes)
+    missing_indexes = [] if required_index in existing_indexes else [required_index]
     if not missing_columns and not missing_indexes:
         return
 
