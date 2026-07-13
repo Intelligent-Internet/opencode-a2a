@@ -47,9 +47,9 @@ Key variables to understand protocol behavior:
 - `A2A_INTERRUPT_REQUEST_TTL_SECONDS`: active retention window for the interrupt request binding registry used by `a2a.interrupt.*` callback methods. Default: `10800` seconds (`180` minutes).
 - `A2A_INTERRUPT_REQUEST_TOMBSTONE_TTL_SECONDS`: retention window for expired interrupt tombstones after active TTL has elapsed. During this window, repeated replies keep returning `INTERRUPT_REQUEST_EXPIRED` instead of falling through to `INTERRUPT_REQUEST_NOT_FOUND`. Default: `600` seconds (`10` minutes).
 - `A2A_CANCEL_ABORT_TIMEOUT_SECONDS`: best-effort timeout for upstream `session.abort` in cancel flow.
-- `OPENCODE_TIMEOUT` / `OPENCODE_TIMEOUT_STREAM`: upstream request timeout and optional stream timeout override.
-- `OPENCODE_MAX_CONCURRENT_REQUESTS`: optional fast-fail concurrency limit for unary/control upstream calls. `0` disables the limit.
-- `OPENCODE_MAX_CONCURRENT_STREAMS`: optional fast-fail concurrency limit for long-lived upstream `/event` streams. `0` disables the limit.
+- `OPENCODE_TIMEOUT` / `OPENCODE_TIMEOUT_STREAM`: upstream request timeout and stream timeout. Defaults: `120` and `900` seconds.
+- `OPENCODE_MAX_CONCURRENT_REQUESTS`: fast-fail concurrency limit for unary/control upstream calls. Default: `32`; `0` disables the limit explicitly.
+- `OPENCODE_MAX_CONCURRENT_STREAMS`: fast-fail concurrency limit for long-lived upstream `/event` streams. Default: `8`; `0` disables the limit explicitly.
 - `A2A_CLIENT_TIMEOUT_SECONDS`: outbound client timeout. Default: `30` seconds.
 - `A2A_CLIENT_CARD_FETCH_TIMEOUT_SECONDS`: outbound Agent Card fetch timeout. Default: `5` seconds.
 - `A2A_CLIENT_USE_CLIENT_PREFERENCE`: whether the outbound client prefers its own transport choices.
@@ -174,11 +174,13 @@ With the default `database` backend, the unified lightweight persistence layer p
 - pending preferred-session claims
 - interrupt request bindings and tombstones
 
-This project is SQLite-first for local single-instance deployments. The runtime configures local durability-oriented SQLite connection settings (`WAL`, `busy_timeout`, `synchronous=NORMAL`) and creates missing parent directories for file-backed database paths.
+The supported persistence profile is one `opencode-a2a` application process using its own local SQLite database. Run Uvicorn with one worker and do not share the SQLite file between processes, containers, or replicas. Horizontal application scaling and PostgreSQL deployments are outside the supported deployment matrix. SQLAlchemy remains an internal implementation detail rather than a promise of dialect portability.
+
+The runtime configures local durability-oriented SQLite connection settings (`WAL`, `busy_timeout`, `synchronous=NORMAL`) and creates missing parent directories for file-backed database paths.
 
 The runtime automatically applies lightweight schema migrations for its custom state tables and records the applied version in `a2a_schema_version`. Schema-version writes are idempotent across concurrent first-start races, pending preferred-session claims now persist absolute `expires_at` timestamps, legacy rows without `expires_at` are pruned during migration instead of being reconstructed from historical TTL assumptions, and the built-in path currently targets the local SQLite deployment profile without requiring Alembic.
 
-Database-backed task persistence also keeps the existing first-terminal-state-wins contract while tightening the SQLite path with an atomic terminal-write guard instead of relying only on process-local read-before-write checks. Any wider SQLAlchemy dialect compatibility should be treated as incidental implementation latitude rather than a documented deployment target.
+Database-backed task persistence also keeps the existing first-terminal-state-wins contract while tightening the SQLite path with an atomic terminal-write guard instead of relying only on process-local read-before-write checks.
 
 At startup, the runtime logs a concise persistence summary covering the active backend, the redacted database URL when applicable, the shared persistence scope, and whether the SQLite local durability profile is active.
 

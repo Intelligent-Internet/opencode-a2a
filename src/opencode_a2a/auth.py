@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import secrets
 from dataclasses import dataclass
 
 from starlette.requests import Request
@@ -83,7 +84,7 @@ def authenticate_static_credential(
         for credential in credentials:
             if credential.auth_scheme != "bearer" or credential.token is None:
                 continue
-            if auth_value == credential.token:
+            if secrets.compare_digest(auth_value, credential.token):
                 return AuthenticatedPrincipal(
                     identity=credential.principal,
                     auth_scheme="bearer",
@@ -102,7 +103,11 @@ def authenticate_static_credential(
     for credential in credentials:
         if credential.auth_scheme != "basic":
             continue
-        if credential.username == username and credential.password == password:
+        if credential.username is None or credential.password is None:
+            continue
+        username_matches = secrets.compare_digest(username, credential.username)
+        password_matches = secrets.compare_digest(password, credential.password)
+        if username_matches and password_matches:
             return AuthenticatedPrincipal(
                 identity=credential.principal,
                 auth_scheme="basic",

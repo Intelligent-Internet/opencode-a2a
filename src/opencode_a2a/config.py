@@ -154,14 +154,14 @@ class Settings(BaseSettings):
     opencode_system: str | None = Field(default=None, alias="OPENCODE_SYSTEM")
     opencode_variant: str | None = Field(default=None, alias="OPENCODE_VARIANT")
     opencode_timeout: float = Field(default=120.0, alias="OPENCODE_TIMEOUT")
-    opencode_timeout_stream: float | None = Field(default=None, alias="OPENCODE_TIMEOUT_STREAM")
+    opencode_timeout_stream: float | None = Field(default=900.0, alias="OPENCODE_TIMEOUT_STREAM")
     opencode_max_concurrent_requests: int = Field(
-        default=0,
+        default=32,
         ge=0,
         alias="OPENCODE_MAX_CONCURRENT_REQUESTS",
     )
     opencode_max_concurrent_streams: int = Field(
-        default=0,
+        default=8,
         ge=0,
         alias="OPENCODE_MAX_CONCURRENT_STREAMS",
     )

@@ -23,6 +23,14 @@ def test_settings_missing_required():
         )
 
 
+def test_settings_use_bounded_upstream_defaults() -> None:
+    settings = make_settings()
+
+    assert settings.opencode_timeout_stream == 900.0
+    assert settings.opencode_max_concurrent_requests == 32
+    assert settings.opencode_max_concurrent_streams == 8
+
+
 def test_settings_valid():
     env = {
         "A2A_STATIC_AUTH_CREDENTIALS": json.dumps(

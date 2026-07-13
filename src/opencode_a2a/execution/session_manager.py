@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import weakref
+from typing import TypeVar
 
 from ..server.state_store import MemorySessionStateRepository, SessionStateRepository
+
+_LockKey = TypeVar("_LockKey")
 
 
 class SessionManager:
@@ -22,11 +25,29 @@ class SessionManager:
             maxsize=session_cache_maxsize,
             pending_claim_ttl_seconds=pending_session_claim_ttl_seconds,
         )
-        self._lock = asyncio.Lock()
+        self._registry_lock = asyncio.Lock()
         self._inflight_session_creates: dict[tuple[str, str], asyncio.Task[str]] = {}
+        self._context_locks: weakref.WeakValueDictionary[tuple[str, str], asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )
+        self._ownership_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )
         self._session_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
+
+    async def _get_registered_lock(
+        self,
+        registry: weakref.WeakValueDictionary[_LockKey, asyncio.Lock],
+        key: _LockKey,
+    ) -> asyncio.Lock:
+        async with self._registry_lock:
+            lock = registry.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                registry[key] = lock
+            return lock
 
     async def get_or_create_session(
         self,
@@ -44,7 +65,9 @@ class SessionManager:
                 session_id=preferred_session_id,
             )
             if not pending_claim:
-                async with self._lock:
+                cache_key = (identity, context_id)
+                context_lock = await self._get_registered_lock(self._context_locks, cache_key)
+                async with context_lock:
                     await self._state_repository.set_session(
                         identity=identity,
                         context_id=context_id,
@@ -54,49 +77,55 @@ class SessionManager:
 
         task: asyncio.Task[str] | None = None
         cache_key = (identity, context_id)
-        async with self._lock:
+        context_lock = await self._get_registered_lock(self._context_locks, cache_key)
+        async with context_lock:
             existing = await self._state_repository.get_session(
                 identity=cache_key[0],
                 context_id=cache_key[1],
             )
             if existing:
                 return existing, False
-            task = self._inflight_session_creates.get(cache_key)
-            if task is None:
-                create_session_kwargs: dict[str, str] = {}
-                if directory is not None:
-                    create_session_kwargs["directory"] = directory
-                if workspace_id is not None:
-                    create_session_kwargs["workspace_id"] = workspace_id
-                task = asyncio.create_task(
-                    self._client.create_session(
-                        title=title,
-                        **create_session_kwargs,
+            async with self._registry_lock:
+                task = self._inflight_session_creates.get(cache_key)
+                if task is None:
+                    create_session_kwargs: dict[str, str] = {}
+                    if directory is not None:
+                        create_session_kwargs["directory"] = directory
+                    if workspace_id is not None:
+                        create_session_kwargs["workspace_id"] = workspace_id
+                    task = asyncio.create_task(
+                        self._client.create_session(
+                            title=title,
+                            **create_session_kwargs,
+                        )
                     )
-                )
-                self._inflight_session_creates[cache_key] = task
+                    self._inflight_session_creates[cache_key] = task
 
         try:
             session_id = await task
         except Exception:
-            async with self._lock:
+            async with self._registry_lock:
                 if self._inflight_session_creates.get(cache_key) is task:
                     self._inflight_session_creates.pop(cache_key, None)
             raise
 
-        async with self._lock:
-            owner = await self._state_repository.get_owner(session_id=session_id)
-            if owner and owner != identity:
-                if self._inflight_session_creates.get(cache_key) is task:
-                    self._inflight_session_creates.pop(cache_key, None)
-                raise PermissionError(f"Session {session_id} is not owned by you")
-            await self._state_repository.set_session(
-                identity=cache_key[0],
-                context_id=cache_key[1],
-                session_id=session_id,
-            )
-            if not owner:
-                await self._state_repository.set_owner(session_id=session_id, identity=identity)
+        async with context_lock:
+            ownership_lock = await self._get_registered_lock(self._ownership_locks, session_id)
+            async with ownership_lock:
+                owner = await self._state_repository.get_owner(session_id=session_id)
+                if owner and owner != identity:
+                    async with self._registry_lock:
+                        if self._inflight_session_creates.get(cache_key) is task:
+                            self._inflight_session_creates.pop(cache_key, None)
+                    raise PermissionError(f"Session {session_id} is not owned by you")
+                await self._state_repository.set_session(
+                    identity=cache_key[0],
+                    context_id=cache_key[1],
+                    session_id=session_id,
+                )
+                if not owner:
+                    await self._state_repository.set_owner(session_id=session_id, identity=identity)
+        async with self._registry_lock:
             if self._inflight_session_creates.get(cache_key) is task:
                 self._inflight_session_creates.pop(cache_key, None)
         return session_id, False
@@ -109,7 +138,9 @@ class SessionManager:
         session_id: str,
     ) -> None:
         await self.finalize_session_claim(identity=identity, session_id=session_id)
-        async with self._lock:
+        cache_key = (identity, context_id)
+        context_lock = await self._get_registered_lock(self._context_locks, cache_key)
+        async with context_lock:
             await self._state_repository.set_session(
                 identity=identity,
                 context_id=context_id,
@@ -117,7 +148,8 @@ class SessionManager:
             )
 
     async def claim_preferred_session(self, *, identity: str, session_id: str) -> bool:
-        async with self._lock:
+        ownership_lock = await self._get_registered_lock(self._ownership_locks, session_id)
+        async with ownership_lock:
             owner = await self._state_repository.get_owner(session_id=session_id)
             pending_owner = await self._state_repository.get_pending_claim(session_id=session_id)
             if owner and owner != identity:
@@ -130,7 +162,8 @@ class SessionManager:
             return True
 
     async def finalize_session_claim(self, *, identity: str, session_id: str) -> None:
-        async with self._lock:
+        ownership_lock = await self._get_registered_lock(self._ownership_locks, session_id)
+        async with ownership_lock:
             owner = await self._state_repository.get_owner(session_id=session_id)
             pending_owner = await self._state_repository.get_pending_claim(session_id=session_id)
             if owner and owner != identity:
@@ -144,19 +177,15 @@ class SessionManager:
             )
 
     async def release_preferred_session_claim(self, *, identity: str, session_id: str) -> None:
-        async with self._lock:
+        ownership_lock = await self._get_registered_lock(self._ownership_locks, session_id)
+        async with ownership_lock:
             await self._state_repository.clear_pending_claim(
                 session_id=session_id,
                 identity=identity,
             )
 
     async def get_session_lock(self, session_id: str) -> asyncio.Lock:
-        async with self._lock:
-            lock = self._session_locks.get(session_id)
-            if lock is None:
-                lock = asyncio.Lock()
-                self._session_locks[session_id] = lock
-            return lock
+        return await self._get_registered_lock(self._session_locks, session_id)
 
     async def pop_cached_session(
         self,
@@ -164,6 +193,9 @@ class SessionManager:
         identity: str,
         context_id: str,
     ) -> asyncio.Task[str] | None:
-        async with self._lock:
+        cache_key = (identity, context_id)
+        context_lock = await self._get_registered_lock(self._context_locks, cache_key)
+        async with context_lock:
             await self._state_repository.pop_session(identity=identity, context_id=context_id)
-            return self._inflight_session_creates.pop((identity, context_id), None)
+            async with self._registry_lock:
+                return self._inflight_session_creates.pop(cache_key, None)

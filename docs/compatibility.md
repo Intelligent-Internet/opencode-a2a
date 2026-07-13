@@ -41,7 +41,7 @@ External TCK runs and local conformance experiments are investigation inputs. Th
 
 ## Compatibility-Sensitive Surface
 
-This repository still ships as an alpha project. Within that alpha line, these declared surfaces should not drift silently:
+This repository ships as a beta project. Its documented public contracts are intended to remain stable, while implementation details and explicitly provider-private surfaces may continue to evolve. These declared surfaces should not drift silently:
 
 - core A2A send / stream / task methods
 - v1-only request/response payloads and enum values
@@ -88,7 +88,7 @@ Task-store behavior that should remain stable for clients:
 - accepted output-mode negotiation for a task is persisted with the task so later reads keep the same filtered output contract
 - adapter-managed migrations only own adapter state tables; SDK-managed task schema remains SDK-owned
 
-The default SQLite-first profile is intended for local or controlled single-instance deployments. Wider SQLAlchemy dialect compatibility should be treated as implementation latitude rather than a strong public promise unless explicitly documented later.
+The supported persistence profile is one application process using its own local SQLite database. Multiple Uvicorn workers or application replicas must not share that SQLite file. PostgreSQL and other SQLAlchemy dialects are not supported deployment targets; any apparent dialect compatibility is implementation latitude rather than a public promise.
 
 ## Extension Stability
 
