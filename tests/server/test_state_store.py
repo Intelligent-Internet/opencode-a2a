@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import inspect, text
-from sqlalchemy.dialects.postgresql import dialect as postgresql_dialect
 from sqlalchemy.exc import IntegrityError
 
 import opencode_a2a.server.migrations as migrations_module
@@ -64,31 +63,6 @@ async def _read_pending_claim_row(engine, session_id: str) -> dict[str, object] 
         )
         row = result.mappings().one_or_none()
         return None if row is None else dict(row)
-
-
-def test_add_missing_nullable_column_supports_non_sqlite_dialects(monkeypatch) -> None:
-    executed: list[str] = []
-
-    class _FakeInspector:
-        def get_columns(self, _table_name: str) -> list[dict[str, str]]:
-            return []
-
-    class _FakeConnection:
-        def __init__(self) -> None:
-            self.dialect = postgresql_dialect()
-
-        def execute(self, clause) -> None:  # noqa: ANN001
-            executed.append(str(clause))
-
-    monkeypatch.setattr(migrations_module, "inspect", lambda _connection: _FakeInspector())
-
-    migrations_module._add_missing_nullable_column(
-        _FakeConnection(),
-        table=_INTERRUPT_REQUESTS,
-        column_name="credential_id",
-    )
-
-    assert executed == ["ALTER TABLE a2a_interrupt_requests ADD COLUMN credential_id VARCHAR"]
 
 
 def test_write_schema_version_recovers_from_concurrent_first_insert_race() -> None:

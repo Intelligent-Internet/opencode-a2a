@@ -173,7 +173,6 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
         super().__init__(inner)
         self._write_policy = write_policy or FirstTerminalStateWinsPolicy()
         self._save_lock = asyncio.Lock()
-        self._atomic_guard_fallback_logged = False
 
     async def save(
         self,
@@ -211,17 +210,6 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
         context: ServerCallContext,
     ) -> None:
         compat = DatabaseTaskStoreCompat(task_store)
-        if not compat.supports_atomic_terminal_guard():
-            if not self._atomic_guard_fallback_logged:
-                logger.warning(
-                    "Database-backed task store dialect does not support atomic terminal guard; "
-                    "falling back to read-before-write policy dialect=%s",
-                    compat.dialect_name,
-                )
-                self._atomic_guard_fallback_logged = True
-            await self._save_with_read_before_write(task, context)
-            return
-
         try:
             if await compat.atomic_save(task, context):
                 return

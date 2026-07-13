@@ -292,6 +292,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "A2A_TASK_STORE_DATABASE_URL is required when A2A_TASK_STORE_BACKEND=database"
             )
+        if (
+            self.a2a_task_store_backend == "database"
+            and self.a2a_task_store_database_url
+            and not self.a2a_task_store_database_url.startswith("sqlite+aiosqlite:")
+        ):
+            raise ValueError("A2A_TASK_STORE_DATABASE_URL must use the sqlite+aiosqlite scheme")
         if self.a2a_static_auth_credentials:
             if not any(credential.enabled for credential in self.a2a_static_auth_credentials):
                 raise ValueError(
