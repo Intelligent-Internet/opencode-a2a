@@ -329,9 +329,7 @@ def describe_lightweight_persistence_backend(settings: Settings) -> dict[str, st
         return summary
     url = make_url(cast(str, settings.a2a_task_store_database_url))
     summary["database_url"] = redact_database_url_for_logs(url.render_as_string(hide_password=True))
-    summary["sqlite_tuning"] = (
-        "local_durability_defaults" if url.drivername.startswith("sqlite") else "not_applicable"
-    )
+    summary["sqlite_tuning"] = "local_durability_defaults"
     return summary
 
 

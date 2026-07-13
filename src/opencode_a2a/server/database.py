@@ -45,18 +45,13 @@ def redact_database_url_for_logs(database_url: str) -> str:
 def build_database_engine(settings: Settings) -> AsyncEngine:
     database_url = cast(str, settings.a2a_task_store_database_url)
     url = make_url(database_url)
-    if url.drivername.startswith("sqlite"):
-        database_path = url.database
-        if database_path and database_path != ":memory:" and not database_path.startswith("file:"):
-            path = Path(database_path)
-            if not path.is_absolute():
-                path = (Path.cwd() / path).resolve()
-            path.parent.mkdir(parents=True, exist_ok=True)
+    database_path = url.database
+    if database_path and database_path != ":memory:" and not database_path.startswith("file:"):
+        path = Path(database_path)
+        if not path.is_absolute():
+            path = (Path.cwd() / path).resolve()
+        path.parent.mkdir(parents=True, exist_ok=True)
 
-    engine = create_async_engine(
-        database_url,
-        pool_pre_ping=not url.drivername.startswith("sqlite"),
-    )
-    if url.drivername.startswith("sqlite"):
-        event.listen(engine.sync_engine, "connect", _configure_sqlite_connection)
+    engine = create_async_engine(database_url)
+    event.listen(engine.sync_engine, "connect", _configure_sqlite_connection)
     return engine

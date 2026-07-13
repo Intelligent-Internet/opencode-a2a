@@ -162,12 +162,12 @@ def test_describe_lightweight_persistence_backend_marks_sqlite_first_scope() -> 
 
 def test_redact_database_url_for_logs_masks_sensitive_query_values() -> None:
     redacted = redact_database_url_for_logs(
-        "postgresql+asyncpg://user:***@db.example.com/app"
+        "sqlite+aiosqlite:////var/lib/opencode-a2a/opencode-a2a.db"
         "?sslmode=require&token=super-secret&API_KEY=top-secret&pool_size=5"
     )
 
     assert redacted == (
-        "postgresql+asyncpg://user:***@db.example.com/app"
+        "sqlite+aiosqlite:////var/lib/opencode-a2a/opencode-a2a.db"
         "?sslmode=require&token=%2A%2A%2A&API_KEY=%2A%2A%2A&pool_size=5"
     )
 
