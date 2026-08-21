@@ -29,7 +29,7 @@ Isolation:
 
 Requirements:
   - opencode CLI on PATH (or OPENCODE_BIN), any 1.18.x build
-  - uv, curl, python3
+  - uv, git, curl, python3
 
 Selected environment variables:
   OPENCODE_BIN                         Override the opencode binary path (default: opencode from PATH)
@@ -61,6 +61,16 @@ fi
 
 if ! command -v curl >/dev/null 2>&1; then
   echo "curl not found in PATH" >&2
+  exit 1
+fi
+
+if ! command -v git >/dev/null 2>&1; then
+  echo "git not found in PATH" >&2
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 not found in PATH" >&2
   exit 1
 fi
 
@@ -152,18 +162,18 @@ OPENCODE_SERVER_PASSWORD="${upstream_password}" \
 upstream_pid="$!"
 
 upstream_ready=""
-for _ in $(seq 1 100); do
+for _ in $(seq 1 60); do
   if ! kill -0 "${upstream_pid}" >/dev/null 2>&1; then
     echo "[live-smoke] upstream opencode exited before becoming ready" >&2
     cat "${upstream_log}" >&2
     exit 1
   fi
-  if curl -fsS -u "${upstream_username}:${upstream_password}" \
+  if curl -fsS --max-time 5 -u "${upstream_username}:${upstream_password}" \
     "${upstream_url}/doc" >/dev/null 2>&1; then
     upstream_ready="1"
     break
   fi
-  sleep 0.2
+  sleep 0.5
 done
 if [[ -z "${upstream_ready}" ]]; then
   echo "[live-smoke] upstream opencode did not become ready at ${upstream_url}" >&2
@@ -173,33 +183,37 @@ fi
 echo "[live-smoke] upstream opencode ready (${opencode_version})"
 
 echo "[live-smoke] starting opencode-a2a on ${a2a_url}"
-(
-  cd "${adapter_dir}"
-  OPENCODE_BASE_URL="${upstream_url}" \
-  OPENCODE_WORKSPACE_ROOT="${workspace_dir}" \
-  OPENCODE_AUTH_USERNAME="${upstream_username}" \
-  OPENCODE_AUTH_PASSWORD="${upstream_password}" \
-  A2A_STATIC_AUTH_CREDENTIALS="[{\"scheme\":\"bearer\",\"token\":\"${a2a_bearer_token}\",\"principal\":\"automation\"}]" \
-  A2A_HOST="127.0.0.1" \
-  A2A_PORT="${a2a_port}" \
-  A2A_PUBLIC_URL="${a2a_url}" \
-  uv run --project "${ROOT_DIR}" opencode-a2a serve >"${adapter_log}" 2>&1
-) &
+adapter_bin="${ROOT_DIR}/.venv/bin/opencode-a2a"
+if [[ ! -x "${adapter_bin}" ]]; then
+  echo "[live-smoke] ${adapter_bin} not found; run without LIVE_SMOKE_SKIP_SYNC=1 (or sync the repository first)." >&2
+  exit 1
+fi
+
+OPENCODE_BASE_URL="${upstream_url}" \
+OPENCODE_WORKSPACE_ROOT="${workspace_dir}" \
+OPENCODE_AUTH_USERNAME="${upstream_username}" \
+OPENCODE_AUTH_PASSWORD="${upstream_password}" \
+A2A_STATIC_AUTH_CREDENTIALS="[{\"scheme\":\"bearer\",\"token\":\"${a2a_bearer_token}\",\"principal\":\"automation\"}]" \
+A2A_HOST="127.0.0.1" \
+A2A_PORT="${a2a_port}" \
+A2A_PUBLIC_URL="${a2a_url}" \
+A2A_TASK_STORE_DATABASE_URL="sqlite+aiosqlite:///${run_dir}/adapter/opencode-a2a.db" \
+"${adapter_bin}" serve >"${adapter_log}" 2>&1 &
 adapter_pid="$!"
 
 a2a_ready=""
-for _ in $(seq 1 100); do
+for _ in $(seq 1 60); do
   if ! kill -0 "${adapter_pid}" >/dev/null 2>&1; then
     echo "[live-smoke] adapter exited before becoming ready" >&2
     cat "${adapter_log}" >&2
     exit 1
   fi
-  if curl -fsS -H "Authorization: Bearer ${a2a_bearer_token}" \
+  if curl -fsS --max-time 5 -H "Authorization: Bearer ${a2a_bearer_token}" \
     "${a2a_url}/health" >/dev/null 2>&1; then
     a2a_ready="1"
     break
   fi
-  sleep 0.2
+  sleep 0.5
 done
 if [[ -z "${a2a_ready}" ]]; then
   echo "[live-smoke] adapter did not become ready at ${a2a_url}" >&2
@@ -213,14 +227,14 @@ extension_header="A2A-Extensions: urn:opencode-a2a:extension:session-management:
 
 jsonrpc_probe() {
   local payload="$1"
-  curl -sS -H "${auth_header}" -H "${extension_header}" \
+  curl -sS --max-time 30 -H "${auth_header}" -H "${extension_header}" \
     -H "Content-Type: application/json" \
     -d "${payload}" "${a2a_url}/"
 }
 
 echo "[live-smoke] probe: upstream auth is enforced"
 unauth_status="$(
-  curl -sS -o /dev/null -w '%{http_code}' \
+  curl -sS --max-time 10 -o /dev/null -w '%{http_code}' \
     "${upstream_url}/session/status?directory=${workspace_dir}"
 )"
 if [[ "${unauth_status}" != "401" ]]; then

@@ -117,6 +117,16 @@ def test_settings_opencode_auth_defaults_to_opencode_username_without_password()
     assert settings.opencode_auth_password is None
 
 
+def test_settings_opencode_auth_repr_hides_password() -> None:
+    settings = make_settings(
+        opencode_auth_username="opencode",
+        opencode_auth_password="hunter2-secret",  # pragma: allowlist secret
+    )
+
+    assert "hunter2-secret" not in repr(settings)
+    assert "opencode_auth_password" not in repr(settings)
+
+
 def test_make_settings_ignores_ambient_environment_sources(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text(
