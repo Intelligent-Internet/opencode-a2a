@@ -165,6 +165,8 @@ class Settings(BaseSettings):
         ge=0,
         alias="OPENCODE_MAX_CONCURRENT_STREAMS",
     )
+    opencode_auth_username: str = Field(default="opencode", alias="OPENCODE_AUTH_USERNAME")
+    opencode_auth_password: str | None = Field(default=None, alias="OPENCODE_AUTH_PASSWORD")
 
     # A2A settings
     a2a_public_url: str = Field(default="http://127.0.0.1:8000", alias="A2A_PUBLIC_URL")
