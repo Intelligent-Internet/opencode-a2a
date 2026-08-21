@@ -43,7 +43,7 @@ from a2a.utils import proto_utils
 from a2a.utils.errors import (
     A2A_REST_ERROR_MAPPING,
     A2AError,
-    RestErrorMap,
+    ErrorMapping,
 )
 from a2a.utils.task import apply_history_length, validate_history_length
 from fastapi import FastAPI, Request
@@ -133,7 +133,7 @@ def _rest_error_response(
     if isinstance(error, A2AError):
         mapping = A2A_REST_ERROR_MAPPING.get(
             type(error),
-            RestErrorMap(500, "INTERNAL", "INTERNAL_ERROR"),
+            ErrorMapping(500, "INTERNAL", "INTERNAL_ERROR"),
         )
         message = getattr(error, "message", str(error))
         metadata = getattr(error, "data", None) or {}
