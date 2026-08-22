@@ -516,7 +516,14 @@ def build_agent_card(
         version=settings.a2a_version,
         supported_interfaces=[
             AgentInterface(
-                url=public_url,
+                # The HTTP+JSON surface lives under /v1 (see application.py
+                # route registration), so the advertised interface URL must
+                # carry that prefix: A2A clients resolve REST paths relative
+                # to the advertised URL (e.g. the official JS SDK appends
+                # `/message:send` to it). Advertising the bare base URL made
+                # conforming clients call the root path, which this server
+                # does not serve.
+                url=public_url + "/v1",
                 protocol_binding="HTTP+JSON",
                 protocol_version=A2A_PROTOCOL_VERSION,
             ),
