@@ -93,7 +93,7 @@ def _build_agent_card_description(
         "(GetExtendedAgentCard), task APIs (GetTask, CancelTask, "
         "SubscribeToTask; SDK-owned push notification config surfaces remain "
         "exposed but currently return unsupported; REST mappings include GET "
-        "/v1/tasks and GET /v1/tasks/{id}:subscribe), shared "
+        "/tasks and GET /tasks/{id}:subscribe), shared "
         "session-binding/model-selection/streaming contracts, provider-private "
         "OpenCode session/provider/model/workspace-control/interrupt recovery "
         "extensions, and shared interrupt callback extensions."

@@ -789,10 +789,10 @@ class IdentityAwareCallContextBuilder(DefaultServerCallContextBuilder):
         if isinstance(raw_path, (bytes, bytearray)):
             raw_value = raw_path.decode(errors="ignore")
         is_stream = (
-            path.endswith("/v1/message:stream")
-            or path.endswith("/v1/message%3Astream")
-            or raw_value.endswith("/v1/message:stream")
-            or raw_value.endswith("/v1/message%3Astream")
+            path.endswith("/message:stream")
+            or path.endswith("/message%3Astream")
+            or raw_value.endswith("/message:stream")
+            or raw_value.endswith("/message%3Astream")
         )
         if is_stream:
             context.state["a2a_streaming_request"] = True
@@ -955,22 +955,22 @@ def create_app(settings: Settings) -> FastAPI:
             )
 
     app.add_api_route(AGENT_CARD_WELL_KNOWN_PATH, public_agent_card_route, methods=["GET"])
-    app.add_api_route("/v1/message:send", rest_message_send_route, methods=["POST"])
-    app.add_api_route("/v1/message:stream", rest_message_send_stream_route, methods=["POST"])
-    app.add_api_route("/v1/tasks/{id}:cancel", rest_dispatcher.on_cancel_task, methods=["POST"])
+    app.add_api_route("/message:send", rest_message_send_route, methods=["POST"])
+    app.add_api_route("/message:stream", rest_message_send_stream_route, methods=["POST"])
+    app.add_api_route("/tasks/{id}:cancel", rest_dispatcher.on_cancel_task, methods=["POST"])
     app.add_api_route(
-        "/v1/tasks/{id}:subscribe",
+        "/tasks/{id}:subscribe",
         rest_dispatcher.on_subscribe_to_task,
         methods=["GET"],
         operation_id="subscribe_to_task_get",
     )
     app.add_api_route(
-        "/v1/tasks/{id}:subscribe",
+        "/tasks/{id}:subscribe",
         rest_dispatcher.on_subscribe_to_task,
         methods=["POST"],
         operation_id="subscribe_to_task_post",
     )
-    app.add_api_route("/v1/tasks/{id}", rest_dispatcher.on_get_task, methods=["GET"])
+    app.add_api_route("/tasks/{id}", rest_dispatcher.on_get_task, methods=["GET"])
 
     async def push_notifications_unsupported_route(request: Request) -> JSONResponse:
         del request
@@ -985,27 +985,27 @@ def create_app(settings: Settings) -> FastAPI:
         )
 
     app.add_api_route(
-        "/v1/tasks/{id}/pushNotificationConfigs/{push_id}",
+        "/tasks/{id}/pushNotificationConfigs/{push_id}",
         push_notifications_unsupported_route,
         methods=["GET"],
     )
     app.add_api_route(
-        "/v1/tasks/{id}/pushNotificationConfigs/{push_id}",
+        "/tasks/{id}/pushNotificationConfigs/{push_id}",
         push_notifications_unsupported_route,
         methods=["DELETE"],
     )
     app.add_api_route(
-        "/v1/tasks/{id}/pushNotificationConfigs",
+        "/tasks/{id}/pushNotificationConfigs",
         push_notifications_unsupported_route,
         methods=["POST"],
     )
     app.add_api_route(
-        "/v1/tasks/{id}/pushNotificationConfigs",
+        "/tasks/{id}/pushNotificationConfigs",
         push_notifications_unsupported_route,
         methods=["GET"],
     )
     app.add_api_route(
-        "/v1/tasks",
+        "/tasks",
         build_list_tasks_route(
             task_store=task_store,
             context_builder=context_builder.build,
