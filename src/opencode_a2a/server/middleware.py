@@ -194,6 +194,15 @@ def add_http_boundary_middleware(app: FastAPI, settings) -> None:  # noqa: ANN00
     """
 
     allowed_origins = _normalized_origins(getattr(settings, "a2a_allowed_origins", ()))
+    for entry in allowed_origins:
+        canonical_entry = _origin_of_url(entry)
+        if canonical_entry is not None and canonical_entry != entry:
+            logger.warning(
+                "A2A_ALLOWED_ORIGINS entry %r is not a normalized origin "
+                "(scheme://host[:port]); only %r will match requests",
+                entry,
+                canonical_entry,
+            )
     public_origin = _origin_of_url(getattr(settings, "a2a_public_url", ""))
     if public_origin is not None:
         allowed_origins.add(public_origin)
@@ -230,7 +239,9 @@ def add_http_boundary_middleware(app: FastAPI, settings) -> None:  # noqa: ANN00
         if origin is not None:
             normalized_origin = origin.strip().lower().rstrip("/")
             if normalized_origin not in allowed_origins:
-                return _boundary_rejection_response("Cross-origin request rejected")
+                canonical_origin = _origin_of_url(origin)
+                if canonical_origin is None or canonical_origin not in allowed_origins:
+                    return _boundary_rejection_response("Cross-origin request rejected")
 
         if enforce_host:
             host = request.headers.get("host")

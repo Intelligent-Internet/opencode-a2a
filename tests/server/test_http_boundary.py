@@ -73,6 +73,22 @@ async def test_configured_allowed_origin_passes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_origin_with_explicit_default_port_matches_public_origin() -> None:
+    settings = make_settings(a2a_public_url="https://a2a.example.com")
+    response = await _request(_boundary_app(settings), origin="https://a2a.example.com:443")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_cross_origin_with_default_port_is_rejected() -> None:
+    settings = make_settings(a2a_public_url="https://a2a.example.com")
+    response = await _request(_boundary_app(settings), origin="https://other.example:443")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_null_origin_is_rejected_by_default() -> None:
     settings = make_settings(a2a_public_url="http://127.0.0.1:8000")
     response = await _request(_boundary_app(settings), origin="null")
@@ -95,6 +111,34 @@ async def test_invalid_public_url_logs_warning(caplog: pytest.LogCaptureFixture)
         _boundary_app(settings)
 
     assert any("not a valid http(s) URL" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_allowlist_entry_with_path_logs_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = make_settings(
+        a2a_public_url="http://127.0.0.1:8000",
+        a2a_allowed_origins=("https://dashboard.example/app",),
+    )
+    with caplog.at_level(logging.WARNING, logger="opencode_a2a.server.application"):
+        _boundary_app(settings)
+
+    assert any("not a normalized origin" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_normalized_allowlist_entry_does_not_log_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = make_settings(
+        a2a_public_url="http://127.0.0.1:8000",
+        a2a_allowed_origins=("https://dashboard.example",),
+    )
+    with caplog.at_level(logging.WARNING, logger="opencode_a2a.server.application"):
+        _boundary_app(settings)
+
+    assert not any("not a normalized origin" in record.message for record in caplog.records)
 
 
 @pytest.mark.asyncio
