@@ -50,6 +50,10 @@ from .request_parsing import (
     _request_body_too_large_response,
     _RequestBodyTooLargeError,
 )
+from .runtime_limits import (
+    SlidingWindowRateLimiter,
+    build_rate_limit_response,
+)
 
 logger = logging.getLogger("opencode_a2a.server.application")
 PUBLIC_AGENT_CARD_CACHE_CONTROL = "public, max-age=300"
@@ -69,6 +73,26 @@ def _is_http_json_rest_path(path: str) -> bool:
     carried in the A2A-Version header instead.
     """
     return path.startswith("/message:") or path.startswith("/tasks")
+
+
+def _resolve_rate_limit_key(request: Request) -> str:
+    """Key the limiter by credential, principal, or peer IP.
+
+    Authenticated requests use ``credential_id`` when declared so independent
+    credentials never share a bucket; otherwise they fall back to the stable
+    principal. The public (unauthenticated) surface is keyed by the direct
+    peer IP; ``X-Forwarded-For`` is deliberately not trusted because it can be
+    spoofed by clients when the service is not behind a trusted proxy.
+    """
+    credential_id = getattr(request.state, "user_credential_id", None)
+    if credential_id:
+        return f"credential:{credential_id}"
+    identity = getattr(request.state, "user_identity", None)
+    if identity:
+        return f"principal:{identity}"
+    client = request.client
+    host = client.host if client is not None else "unknown"
+    return f"ip:{host}"
 
 
 def add_auth_middleware(app: FastAPI, settings) -> None:  # noqa: ANN001
@@ -531,6 +555,22 @@ def install_runtime_middlewares(
         finally:
             if token is not None:
                 _REQUEST_BODY_BYTES.reset(token)
+
+    rate_limiter = SlidingWindowRateLimiter(
+        max_requests=settings.a2a_rate_limit_max_requests,
+        window_seconds=settings.a2a_rate_limit_window_seconds,
+    )
+
+    @app.middleware("http")
+    async def enforce_rate_limit(request: Request, call_next):
+        if not settings.a2a_rate_limit_enabled or request.method == "OPTIONS":
+            return await call_next(request)
+        key = _resolve_rate_limit_key(request)
+        if not await rate_limiter.check_and_record(key):
+            retry_after = await rate_limiter.retry_after(key)
+            emit_metric("a2a_rate_limit_rejected_total")
+            return build_rate_limit_response(retry_after)
+        return await call_next(request)
 
     add_auth_middleware(app, settings)
 

@@ -31,6 +31,17 @@ def test_settings_use_bounded_upstream_defaults() -> None:
     assert settings.opencode_max_concurrent_streams == 8
 
 
+def test_settings_use_bounded_admission_defaults() -> None:
+    settings = make_settings()
+
+    assert settings.a2a_rate_limit_enabled is True
+    assert settings.a2a_rate_limit_window_seconds == 60.0
+    assert settings.a2a_rate_limit_max_requests == 120
+    assert settings.a2a_stream_max_bytes == 64 * 1024 * 1024
+    assert settings.a2a_stream_max_duration_seconds == 3600.0
+    assert settings.a2a_stream_idle_timeout_seconds == 120.0
+
+
 def test_settings_valid():
     env = {
         "A2A_STATIC_AUTH_CREDENTIALS": json.dumps(
@@ -51,6 +62,12 @@ def test_settings_valid():
         "OPENCODE_WORKSPACE_ROOT": "/srv/workspaces/alpha",
         "A2A_HTTP_GZIP_MINIMUM_SIZE": "2048",
         "A2A_MAX_REQUEST_BODY_BYTES": "2048",
+        "A2A_RATE_LIMIT_ENABLED": "false",
+        "A2A_RATE_LIMIT_WINDOW_SECONDS": "30",
+        "A2A_RATE_LIMIT_MAX_REQUESTS": "45",
+        "A2A_STREAM_MAX_BYTES": "1048576",
+        "A2A_STREAM_MAX_DURATION_SECONDS": "900",
+        "A2A_STREAM_IDLE_TIMEOUT_SECONDS": "45",
         "A2A_PENDING_SESSION_CLAIM_TTL_SECONDS": "45",
         "A2A_INTERRUPT_REQUEST_TTL_SECONDS": "7200",
         "A2A_INTERRUPT_REQUEST_TOMBSTONE_TTL_SECONDS": "120",
@@ -80,6 +97,12 @@ def test_settings_valid():
         assert settings.opencode_workspace_root == "/srv/workspaces/alpha"
         assert settings.a2a_http_gzip_minimum_size == 2048
         assert settings.a2a_max_request_body_bytes == 2048
+        assert settings.a2a_rate_limit_enabled is False
+        assert settings.a2a_rate_limit_window_seconds == 30.0
+        assert settings.a2a_rate_limit_max_requests == 45
+        assert settings.a2a_stream_max_bytes == 1_048_576
+        assert settings.a2a_stream_max_duration_seconds == 900.0
+        assert settings.a2a_stream_idle_timeout_seconds == 45.0
         assert settings.a2a_pending_session_claim_ttl_seconds == 45.0
         assert settings.a2a_interrupt_request_ttl_seconds == 7200.0
         assert settings.a2a_interrupt_request_tombstone_ttl_seconds == 120.0
@@ -335,6 +358,33 @@ def test_settings_reject_negative_max_request_body_bytes():
 
     field_names = [e["loc"][0] for e in excinfo.value.errors()]
     assert "A2A_MAX_REQUEST_BODY_BYTES" in field_names
+
+
+def test_settings_reject_invalid_admission_limits() -> None:
+    env = {
+        "A2A_STATIC_AUTH_CREDENTIALS": json.dumps(
+            [
+                {
+                    "scheme": "bearer",
+                    "token": "test-token",
+                    "principal": "automation",
+                }
+            ]
+        ),
+        "A2A_RATE_LIMIT_WINDOW_SECONDS": "0",
+        "A2A_RATE_LIMIT_MAX_REQUESTS": "0",
+        "A2A_STREAM_MAX_BYTES": "-1",
+        "A2A_STREAM_MAX_DURATION_SECONDS": "-1",
+        "A2A_STREAM_IDLE_TIMEOUT_SECONDS": "-1",
+    }
+    with mock.patch.dict(os.environ, env, clear=True):
+        with pytest.raises(ValidationError) as excinfo:
+            Settings()
+
+    field_names = {e["loc"][0] for e in excinfo.value.errors()}
+    assert {"A2A_RATE_LIMIT_WINDOW_SECONDS", "A2A_RATE_LIMIT_MAX_REQUESTS"} <= field_names
+    assert {"A2A_STREAM_MAX_BYTES", "A2A_STREAM_MAX_DURATION_SECONDS"} <= field_names
+    assert "A2A_STREAM_IDLE_TIMEOUT_SECONDS" in field_names
 
 
 def test_settings_reject_negative_http_gzip_minimum_size():

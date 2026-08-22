@@ -46,6 +46,8 @@ Key variables to understand protocol behavior:
 - Logs derive a stable `trace_id` from the active `traceparent` so request-scoped log lines can be correlated without introducing high-cardinality metric labels.
 - `A2A_HTTP_GZIP_MINIMUM_SIZE`: minimum eligible response-body size in bytes for global non-streaming HTTP gzip compression. Default: `8192`.
 - `A2A_MAX_REQUEST_BODY_BYTES`: runtime request-body limit. Oversized requests return HTTP `413`.
+- `A2A_RATE_LIMIT_ENABLED` / `A2A_RATE_LIMIT_WINDOW_SECONDS` / `A2A_RATE_LIMIT_MAX_REQUESTS`: per-credential sliding-window rate limiting (per-peer-IP for the unauthenticated Agent Card surface). Defaults: `true` / `60` seconds / `120` requests. Exceeding the window returns HTTP `429` with a `Retry-After` header; `A2A_RATE_LIMIT_ENABLED=false` disables the limiter.
+- `A2A_STREAM_MAX_BYTES` / `A2A_STREAM_MAX_DURATION_SECONDS` / `A2A_STREAM_IDLE_TIMEOUT_SECONDS`: streaming (SSE) response budgets for total bytes, total duration, and idle gap. Defaults: `67108864` bytes / `3600` seconds / `120` seconds; `0` disables the respective budget.
 - `A2A_PENDING_SESSION_CLAIM_TTL_SECONDS`: lease duration for pending preferred session claims before they expire and stop blocking other identities.
 - `A2A_INTERRUPT_REQUEST_TTL_SECONDS`: active retention window for the interrupt request binding registry used by `a2a.interrupt.*` callback methods. Default: `10800` seconds (`180` minutes).
 - `A2A_INTERRUPT_REQUEST_TOMBSTONE_TTL_SECONDS`: retention window for expired interrupt tombstones after active TTL has elapsed. During this window, repeated replies keep returning `INTERRUPT_REQUEST_EXPIRED` instead of falling through to `INTERRUPT_REQUEST_NOT_FOUND`. Default: `600` seconds (`10` minutes).
@@ -289,6 +291,8 @@ If one deployment works while another fails against the same upstream provider, 
 
 - Requests require either `Authorization: Bearer <token>` or a configured `Authorization: Basic <base64(username:password)>`; otherwise `401` is returned. Agent Card endpoints are public.
 - Requests above `A2A_MAX_REQUEST_BODY_BYTES` are rejected with HTTP `413` before transport handling.
+- Inbound requests are rate limited with a sliding window keyed by `credential_id` when configured, otherwise by the authenticated principal; the public Agent Card surface is keyed by the direct peer IP (never `X-Forwarded-For`). Exceeding `A2A_RATE_LIMIT_MAX_REQUESTS` within `A2A_RATE_LIMIT_WINDOW_SECONDS` returns HTTP `429` with a `Retry-After` header. The limiter is process-local; multi-process deployments should place a shared gateway in front or rely on per-instance limits.
+- Streaming responses (JSON-RPC `SendStreamingMessage` / `SubscribeToTask` and REST `/message:stream` / `/tasks/{id}:subscribe`) are bounded by `A2A_STREAM_MAX_BYTES`, `A2A_STREAM_MAX_DURATION_SECONDS`, and `A2A_STREAM_IDLE_TIMEOUT_SECONDS`; when a budget is exceeded the server ends the stream with an SSE `event: error` frame. If the very first event already exceeds the budget, REST requests are rejected with HTTP `429` `RESOURCE_EXHAUSTED` before the SSE stream starts.
 - For validation failures, missing context (`task_id` / `context_id`), or internal errors, the service attempts to return standard A2A failure events via `event_queue`.
 - Failure events include concrete error details with `failed` state.
 

@@ -22,6 +22,7 @@ from ..extension_negotiation import (
     requested_extensions_from_call_context,
 )
 from ..opencode_upstream_client import OpencodeUpstreamClient
+from ..server.runtime_limits import apply_stream_budget
 from .dispatch import (
     ExtensionHandlerContext,
     build_extension_method_registry,
@@ -58,6 +59,9 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         session_claim: Callable[..., Awaitable[bool]] | None = None,
         session_claim_finalize: Callable[..., Awaitable[None]] | None = None,
         session_claim_release: Callable[..., Awaitable[None]] | None = None,
+        stream_budget_max_bytes: int = 0,
+        stream_budget_max_duration_seconds: float = 0.0,
+        stream_budget_idle_timeout_seconds: float = 0.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(request_handler=http_handler, **kwargs)
@@ -115,6 +119,9 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         self._session_claim = cast(Callable[..., Awaitable[bool]], session_claim)
         self._session_claim_finalize = cast(Callable[..., Awaitable[None]], session_claim_finalize)
         self._session_claim_release = cast(Callable[..., Awaitable[None]], session_claim_release)
+        self._stream_budget_max_bytes = stream_budget_max_bytes
+        self._stream_budget_max_duration_seconds = stream_budget_max_duration_seconds
+        self._stream_budget_idle_timeout_seconds = stream_budget_idle_timeout_seconds
         self._extension_handler_context = ExtensionHandlerContext(
             upstream_client=self._upstream_client,
             method_session_status=self._method_session_status,
@@ -264,7 +271,12 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             except A2AError as error:
                 yield build_error_response(request_id, error)
 
-        return _wrap_stream(stream, first_event)
+        return apply_stream_budget(
+            _wrap_stream(stream, first_event),
+            max_bytes=self._stream_budget_max_bytes,
+            max_duration_seconds=self._stream_budget_max_duration_seconds,
+            idle_timeout_seconds=self._stream_budget_idle_timeout_seconds,
+        )
 
     async def _handle_core_request(
         self,
