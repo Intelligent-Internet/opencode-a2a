@@ -24,29 +24,73 @@ class WorkspaceControlClientMixin:
 
     async def list_projects(self):
         self.workspace_control_calls.append({"method": "list_projects"})
-        return [{"id": "proj-1", "name": "Alpha", "directory": "/workspace"}]
+        return [
+            {
+                "id": "proj-1",
+                "name": "Alpha",
+                "vcs": "git",
+                "canonical": "/workspace/alpha",
+                "directory": "/workspace/alpha",
+                "icon": {"url": "https://internal.local/icon.png"},
+                "apiKey": "sk-secret",  # pragma: allowlist secret
+            }
+        ]
 
     async def get_current_project(self):
         self.workspace_control_calls.append({"method": "get_current_project"})
-        return {"id": "proj-1", "name": "Alpha", "directory": "/workspace"}
+        return {
+            "id": "proj-1",
+            "name": "Alpha",
+            "vcs": "git",
+            "canonical": "/workspace/alpha",
+            "directory": "/workspace/alpha",
+            "apiKey": "sk-secret",  # pragma: allowlist secret
+        }
 
     async def list_workspaces(self):
         self.workspace_control_calls.append({"method": "list_workspaces"})
-        return [{"id": "wrk-1", "type": "git", "branch": "main", "directory": None}]
+        return [
+            {
+                "id": "wrk-1",
+                "type": "git",
+                "name": "Alpha workspace",
+                "branch": "main",
+                "directory": "/workspace/alpha",
+            }
+        ]
 
     async def create_workspace(self, request: dict[str, Any]):
         self.workspace_control_calls.append({"method": "create_workspace", "request": request})
-        return {"id": "wrk-2", **request}
+        return {
+            "id": "wrk-2",
+            "type": "git",
+            "name": "Created workspace",
+            "branch": "main",
+            "directory": "/tmp/created-workspace",
+            **request,
+        }
 
     async def remove_workspace(self, workspace_id: str):
         self.workspace_control_calls.append(
             {"method": "remove_workspace", "workspace_id": workspace_id}
         )
-        return {"id": workspace_id, "type": "git", "branch": "main", "directory": None}
+        return {
+            "id": workspace_id,
+            "type": "git",
+            "name": "Removed workspace",
+            "branch": "main",
+            "directory": None,
+        }
 
     async def list_worktrees(self):
         self.workspace_control_calls.append({"method": "list_worktrees"})
-        return ["/tmp/worktrees/alpha"]
+        return [
+            {
+                "name": "alpha",
+                "branch": "opencode/alpha",
+                "directory": "/tmp/worktrees/alpha",
+            }
+        ]
 
     async def create_worktree(self, request: dict[str, Any]):
         self.workspace_control_calls.append({"method": "create_worktree", "request": request})

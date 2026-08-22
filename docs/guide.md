@@ -32,6 +32,7 @@ Key variables to understand protocol behavior:
 - `A2A_ALLOW_DIRECTORY_OVERRIDE`: controls whether clients may pass `metadata.opencode.directory`.
 - `A2A_ENABLE_SESSION_SHELL`: gates high-risk JSON-RPC method `opencode.sessions.shell`.
 - `A2A_ENABLE_WORKSPACE_MUTATIONS`: gates operator-only workspace/worktree mutation methods such as `opencode.workspaces.create` and `opencode.worktrees.reset`.
+- `A2A_EXPOSE_WORKSPACE_ROOT_IN_CARD`: default `false`; controls whether the authenticated extended Agent Card includes the local `OPENCODE_WORKSPACE_ROOT` in the structured profile `runtime_context`. Keep disabled unless trusted callers explicitly need the host path.
 - `A2A_SANDBOX_MODE` / `A2A_SANDBOX_FILESYSTEM_SCOPE` / `A2A_SANDBOX_WRITABLE_ROOTS`: declarative execution-boundary metadata for sandbox mode, filesystem scope, and optional writable roots.
 - `A2A_NETWORK_ACCESS` / `A2A_NETWORK_ALLOWED_DOMAINS`: declarative execution-boundary metadata for network policy and optional allowlist disclosure.
 - `A2A_APPROVAL_POLICY` / `A2A_APPROVAL_ESCALATION_BEHAVIOR`: declarative execution-boundary metadata for approval workflow.
@@ -1067,6 +1068,7 @@ Behavior notes:
 - `metadata.opencode.workspace.id` is declared consistently across the adapter, but current workspace-control methods do not use it to change the target project.
 - `opencode.workspaces.*` and `opencode.worktrees.*` currently wrap upstream `/experimental/workspace` and `/experimental/worktree` endpoints; treat them as experimental-upstream surfaces even when declared by the adapter.
 - Mutating methods should be treated as operator-only control-plane actions and are disabled by default.
+- Discovery responses are normalized provider-private summaries: upstream entries are filtered to stable fields only (`id`/`name`/`vcs` for projects, `id`/`type`/`name`/`branch` for workspaces, `name`/`branch` for worktrees) and never include upstream local paths (`directory`, `canonical`, worktree paths), raw entries, or credential-like fields.
 
 ### Project Discovery (`opencode.projects.list`, `opencode.projects.current`)
 
@@ -1084,8 +1086,8 @@ curl -sS http://127.0.0.1:8000/ \
 
 Response:
 
-- `opencode.projects.list` => `{"items": [...]}`
-- `opencode.projects.current` => `{"item": {...}}`
+- `opencode.projects.list` => `{"items": [{"id": "<id>", "name": "<name>", "vcs": "<vcs>"}]}` (normalized summaries; no local paths)
+- `opencode.projects.current` => `{"item": {"id": "<id>", "name": "<name>", "vcs": "<vcs>"}}` (normalized summary; no local paths)
 
 ### Workspace Discovery
 
@@ -1103,7 +1105,7 @@ curl -sS http://127.0.0.1:8000/ \
 
 Response:
 
-- `opencode.workspaces.list` => `{"items": [...]}`
+- `opencode.workspaces.list` => `{"items": [{"id": "<id>", "type": "<type>", "name": "<name>", "branch": "<branch>"}]}` (normalized summaries; no local paths)
 
 ### Workspace Mutation
 

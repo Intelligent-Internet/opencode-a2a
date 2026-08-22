@@ -55,13 +55,70 @@ async def test_workspace_control_extension_supports_read_only_methods(monkeypatc
         )
 
     assert projects.status_code == 200
-    assert projects.json()["result"]["items"][0]["id"] == "proj-1"
+    assert projects.json()["result"]["items"][0] == {
+        "id": "proj-1",
+        "name": "Alpha",
+        "vcs": "git",
+    }
     assert current.status_code == 200
-    assert current.json()["result"]["item"]["id"] == "proj-1"
+    assert current.json()["result"]["item"] == {
+        "id": "proj-1",
+        "name": "Alpha",
+        "vcs": "git",
+    }
     assert workspaces.status_code == 200
-    assert workspaces.json()["result"]["items"][0]["id"] == "wrk-1"
+    assert workspaces.json()["result"]["items"][0] == {
+        "id": "wrk-1",
+        "type": "git",
+        "name": "Alpha workspace",
+        "branch": "main",
+    }
     assert worktrees.status_code == 200
-    assert worktrees.json()["result"]["items"] == ["/tmp/worktrees/alpha"]
+    assert worktrees.json()["result"]["items"] == [{"name": "alpha", "branch": "opencode/alpha"}]
+
+
+@pytest.mark.asyncio
+async def test_workspace_control_discovery_responses_exclude_internal_fields(
+    monkeypatch,
+) -> None:
+    import opencode_a2a.server.application as app_module
+
+    dummy = DummyOpencodeUpstreamClient(
+        make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", lambda _settings, **_kwargs: dummy)
+    app = app_module.create_app(
+        make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = _extension_headers({"Authorization": "Bearer t-1"})
+        responses = []
+        for method, request_id in (
+            ("opencode.projects.list", 1),
+            ("opencode.projects.current", 2),
+            ("opencode.workspaces.list", 3),
+            ("opencode.worktrees.list", 4),
+        ):
+            response = await client.post(
+                "/",
+                headers=headers,
+                json={"jsonrpc": "2.0", "id": request_id, "method": method, "params": {}},
+            )
+            assert response.status_code == 200
+            responses.append(response.json())
+
+    for payload in responses:
+        serialized = str(payload)
+        assert "directory" not in serialized
+        assert "canonical" not in serialized
+        assert "apiKey" not in serialized
+        assert "sk-secret" not in serialized
+        assert "icon" not in serialized
+        assert "internal.local" not in serialized
+        assert "/workspace" not in serialized
+        assert "/tmp/worktrees" not in serialized
 
 
 @pytest.mark.asyncio
@@ -139,10 +196,15 @@ async def test_workspace_control_extension_supports_mutating_methods(monkeypatch
 
     assert create_workspace.status_code == 200
     assert create_workspace.json()["result"]["item"]["type"] == "git"
+    assert "directory" not in str(create_workspace.json())
     assert remove_workspace.status_code == 200
     assert remove_workspace.json()["result"]["item"]["id"] == "wrk-1"
+    assert "directory" not in str(remove_workspace.json())
     assert create_worktree.status_code == 200
-    assert create_worktree.json()["result"]["item"]["directory"] == "/tmp/worktrees/feature-branch"
+    assert create_worktree.json()["result"]["item"] == {
+        "name": "feature-branch",
+        "branch": "opencode/feature-branch",
+    }
     assert remove_worktree.status_code == 200
     assert remove_worktree.json()["result"] == {"ok": True}
     assert reset_worktree.status_code == 200
@@ -314,3 +376,62 @@ async def test_workspace_control_extension_maps_upstream_http_error(monkeypatch)
         reason="UPSTREAM_HTTP_ERROR",
         metadata={"upstream_status": 503},
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "upstream_payload"),
+    (
+        ("opencode.projects.list", [{"name": "Alpha", "vcs": "git"}]),
+        ("opencode.workspaces.list", ["/workspace/raw-path"]),
+        ("opencode.worktrees.list", [{"branch": "opencode/alpha"}]),
+    ),
+)
+async def test_workspace_control_extension_maps_malformed_upstream_items_to_payload_error(
+    monkeypatch,
+    method: str,
+    upstream_payload: list[object],
+) -> None:
+    import opencode_a2a.server.application as app_module
+
+    class MalformedUpstreamClient(DummyOpencodeUpstreamClient):
+        pass
+
+    async def _list_projects(self):
+        return upstream_payload
+
+    async def _list_workspaces(self):
+        return upstream_payload
+
+    async def _list_worktrees(self):
+        return upstream_payload
+
+    if method == "opencode.projects.list":
+        MalformedUpstreamClient.list_projects = _list_projects
+    elif method == "opencode.workspaces.list":
+        MalformedUpstreamClient.list_workspaces = _list_workspaces
+    else:
+        MalformedUpstreamClient.list_worktrees = _list_worktrees
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", MalformedUpstreamClient)
+    app = app_module.create_app(
+        make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
+            json={
+                "jsonrpc": "2.0",
+                "id": 22,
+                "method": method,
+                "params": {},
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["error"]["code"] == -32005
+    assert_v1_error_reason(payload["error"], reason="UPSTREAM_PAYLOAD_ERROR")

@@ -440,6 +440,11 @@ async def test_provider_discovery_extension_returns_normalized_catalog(monkeypat
         assert providers_payload["connected"] == ["openai"]
         assert providers_payload["items"][0]["provider_id"] == "openai"
         assert providers_payload["items"][0]["default_model_id"] == "gpt-5"
+        assert "apiKey" not in str(providers_payload)
+        assert "sk-secret" not in str(providers_payload)
+        assert "internal" not in str(providers_payload)
+        assert "configPath" not in str(providers_payload)
+        assert "/home/user" not in str(providers_payload)
         assert dummy.workspace_control_calls[0]["workspace_id"] == "wrk-1"
 
         models_resp = await client.post(
@@ -458,6 +463,8 @@ async def test_provider_discovery_extension_returns_normalized_catalog(monkeypat
         assert models_payload["items"][0]["provider_id"] == "google"
         assert models_payload["items"][0]["model_id"] == "gemini-2.5-flash"
         assert models_payload["items"][0]["supports_attachments"] is True
+        assert "apiKey" not in str(models_payload)
+        assert "configPath" not in str(models_payload)
 
 
 @pytest.mark.asyncio

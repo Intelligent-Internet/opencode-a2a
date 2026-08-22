@@ -323,6 +323,7 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
         opencode_workspace_root="/workspace",
         opencode_agent="planner",
         opencode_variant="fast",
+        a2a_expose_workspace_root_in_card=True,
     )
 
     runtime_profile = build_runtime_profile(settings)
@@ -413,7 +414,7 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
         include_detailed_contracts=True,
     )
     assert "Deployment project: alpha." in extended_description
-    assert "Workspace root: /workspace." in extended_description
+    assert "Workspace root" not in extended_description
     assert "currently return unsupported" in extended_description
     assert any("project alpha" in item for item in _build_chat_examples("alpha"))
     assert all(
