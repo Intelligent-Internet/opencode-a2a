@@ -1068,8 +1068,8 @@ curl -sS http://127.0.0.1:8000/ \
 
 Response:
 
-- `opencode.projects.list` => `{"items": [{"id", "name", "vcs"}]}` (normalized summaries; no local paths)
-- `opencode.projects.current` => `{"item": {"id", "name", "vcs"}}` (normalized summary; no local paths)
+- `opencode.projects.list` => `{"items": [{"id": "<id>", "name": "<name>", "vcs": "<vcs>"}]}` (normalized summaries; no local paths)
+- `opencode.projects.current` => `{"item": {"id": "<id>", "name": "<name>", "vcs": "<vcs>"}}` (normalized summary; no local paths)
 
 ### Workspace Discovery
 
@@ -1087,7 +1087,7 @@ curl -sS http://127.0.0.1:8000/ \
 
 Response:
 
-- `opencode.workspaces.list` => `{"items": [{"id", "type", "name", "branch"}]}` (normalized summaries; no local paths)
+- `opencode.workspaces.list` => `{"items": [{"id": "<id>", "type": "<type>", "name": "<name>", "branch": "<branch>"}]}` (normalized summaries; no local paths)
 
 ### Workspace Mutation
 

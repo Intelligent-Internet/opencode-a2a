@@ -379,15 +379,39 @@ async def test_workspace_control_extension_maps_upstream_http_error(monkeypatch)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "upstream_payload"),
+    (
+        ("opencode.projects.list", [{"name": "Alpha", "vcs": "git"}]),
+        ("opencode.workspaces.list", ["/workspace/raw-path"]),
+        ("opencode.worktrees.list", [{"branch": "opencode/alpha"}]),
+    ),
+)
 async def test_workspace_control_extension_maps_malformed_upstream_items_to_payload_error(
     monkeypatch,
+    method: str,
+    upstream_payload: list[object],
 ) -> None:
     import opencode_a2a.server.application as app_module
 
     class MalformedUpstreamClient(DummyOpencodeUpstreamClient):
-        async def list_workspaces(self):
-            self.workspace_control_calls.append({"method": "list_workspaces"})
-            return ["/workspace/raw-path"]
+        pass
+
+    async def _list_projects(self):
+        return upstream_payload
+
+    async def _list_workspaces(self):
+        return upstream_payload
+
+    async def _list_worktrees(self):
+        return upstream_payload
+
+    if method == "opencode.projects.list":
+        MalformedUpstreamClient.list_projects = _list_projects
+    elif method == "opencode.workspaces.list":
+        MalformedUpstreamClient.list_workspaces = _list_workspaces
+    else:
+        MalformedUpstreamClient.list_worktrees = _list_worktrees
 
     monkeypatch.setattr(app_module, "OpencodeUpstreamClient", MalformedUpstreamClient)
     app = app_module.create_app(
@@ -402,7 +426,7 @@ async def test_workspace_control_extension_maps_malformed_upstream_items_to_payl
             json={
                 "jsonrpc": "2.0",
                 "id": 22,
-                "method": "opencode.workspaces.list",
+                "method": method,
                 "params": {},
             },
         )

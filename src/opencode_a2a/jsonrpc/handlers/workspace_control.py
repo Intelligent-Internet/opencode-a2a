@@ -193,18 +193,24 @@ def _pick_summary_fields(
 def _project_summary(item: Any) -> dict[str, Any]:
     if not isinstance(item, dict):
         raise ValueError("Upstream project items must be objects")
+    if not isinstance(item.get("id"), str) or not item["id"].strip():
+        raise ValueError("Upstream project items must include string field 'id'")
     return _pick_summary_fields(item, _PROJECT_SUMMARY_FIELDS)
 
 
 def _workspace_summary(item: Any) -> dict[str, Any]:
     if not isinstance(item, dict):
         raise ValueError("Upstream workspace items must be objects")
+    if not isinstance(item.get("id"), str) or not item["id"].strip():
+        raise ValueError("Upstream workspace items must include string field 'id'")
     return _pick_summary_fields(item, _WORKSPACE_SUMMARY_FIELDS)
 
 
 def _worktree_summary(item: Any) -> dict[str, Any]:
     if not isinstance(item, dict):
         raise ValueError("Upstream worktree items must be objects")
+    if not isinstance(item.get("name"), str) or not item["name"].strip():
+        raise ValueError("Upstream worktree items must include string field 'name'")
     return _pick_summary_fields(item, _WORKTREE_SUMMARY_FIELDS)
 
 
