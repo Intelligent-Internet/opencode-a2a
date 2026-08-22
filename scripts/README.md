@@ -13,6 +13,7 @@ Executable scripts live in this directory. This file is the entry index for the 
 
 - [`doctor.sh`](./doctor.sh): primary local development regression entrypoint with explicit fix/verify/package phases (uv sync + dependency compatibility + lint + mypy + tests + coverage + built-wheel smoke test)
 - [`conformance.sh`](./conformance.sh): local/manual external A2A conformance experiment entrypoint; caches the official TCK, can launch a dummy-backed local SUT, and preserves raw artifacts under `run/conformance/`
+- [`live_opencode_smoke.sh`](./live_opencode_smoke.sh): local/manual live integration smoke against a real OpenCode runtime; boots an isolated password-hardened `opencode serve` plus the opencode-a2a runtime in throwaway directories and verifies upstream auth, JSON-RPC extension reads, and a streaming prompt round-trip
 - [`dependency_health.sh`](./dependency_health.sh): development dependency review entrypoint (`sync`/`pip check` + outdated + dev audit), while blocking CI/publish audits focus on runtime dependencies
 - [`check_coverage.py`](./check_coverage.py): enforces the overall coverage floor and per-file minimums for critical modules
 - [`find_thin_wrappers.py`](./find_thin_wrappers.py): static analysis helper that reports local functions with low caller counts and flags likely thin forwarding wrappers for manual abstraction review

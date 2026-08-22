@@ -50,6 +50,8 @@ def test_settings_valid():
         "A2A_ENABLE_SESSION_SHELL": "true",
         "OPENCODE_MAX_CONCURRENT_REQUESTS": "12",
         "OPENCODE_MAX_CONCURRENT_STREAMS": "3",
+        "OPENCODE_AUTH_USERNAME": "service",
+        "OPENCODE_AUTH_PASSWORD": "s3cret",  # pragma: allowlist secret
         "A2A_CLIENT_BASIC_AUTH": "user:pass",
         "A2A_SANDBOX_MODE": "danger-full-access",
         "A2A_SANDBOX_FILESYSTEM_SCOPE": "unrestricted",
@@ -76,6 +78,8 @@ def test_settings_valid():
         assert settings.a2a_cancel_abort_timeout_seconds == 0.75
         assert settings.opencode_max_concurrent_requests == 12
         assert settings.opencode_max_concurrent_streams == 3
+        assert settings.opencode_auth_username == "service"
+        assert settings.opencode_auth_password == "s3cret"  # pragma: allowlist secret
         assert settings.a2a_enable_session_shell is True
         assert settings.a2a_client_basic_auth == "user:pass"
         assert settings.a2a_sandbox_mode == "danger-full-access"
@@ -92,6 +96,35 @@ def test_settings_valid():
         assert settings.a2a_version == __version__
         assert A2A_PROTOCOL_VERSION == "1.0"
         assert A2A_SUPPORTED_PROTOCOL_VERSIONS == ("1.0",)
+
+
+def test_settings_opencode_auth_defaults_to_opencode_username_without_password() -> None:
+    env = {
+        "A2A_STATIC_AUTH_CREDENTIALS": json.dumps(
+            [
+                {
+                    "scheme": "bearer",
+                    "token": "test-token",
+                    "principal": "automation",
+                }
+            ]
+        ),
+    }
+    with mock.patch.dict(os.environ, env, clear=True):
+        settings = Settings()
+
+    assert settings.opencode_auth_username == "opencode"
+    assert settings.opencode_auth_password is None
+
+
+def test_settings_opencode_auth_repr_hides_password() -> None:
+    settings = make_settings(
+        opencode_auth_username="opencode",
+        opencode_auth_password="hunter2-secret",  # pragma: allowlist secret
+    )
+
+    assert "hunter2-secret" not in repr(settings)
+    assert "opencode_auth_password" not in repr(settings)
 
 
 def test_make_settings_ignores_ambient_environment_sources(tmp_path, monkeypatch) -> None:

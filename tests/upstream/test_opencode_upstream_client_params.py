@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json as json_module
 import logging
 
@@ -66,6 +67,97 @@ class _HoldingStreamContext:
     async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
         del exc_type, exc, tb
         return False
+
+
+@pytest.mark.asyncio
+async def test_upstream_client_configures_basic_auth_header_when_password_set() -> None:
+    client = OpencodeUpstreamClient(
+        make_settings(
+            test_bearer_token="t-1",
+            opencode_auth_username="opencode",
+            opencode_auth_password="smoke-pass",  # pragma: allowlist secret
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+    expected = "Basic " + base64.b64encode(b"opencode:smoke-pass").decode("ascii")
+    assert client._client.headers.get("Authorization") == expected
+    await client.close()
+
+    unauthenticated = OpencodeUpstreamClient(
+        make_settings(
+            test_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+    assert "Authorization" not in unauthenticated._client.headers
+    await unauthenticated.close()
+
+
+@pytest.mark.asyncio
+async def test_upstream_requests_send_basic_auth_header_when_configured(monkeypatch) -> None:
+    captured_headers: list[str | None] = []
+
+    def capture_handler(request: httpx.Request) -> httpx.Response:
+        captured_headers.append(request.headers.get("Authorization"))
+        return httpx.Response(200, json={})
+
+    transport = httpx.MockTransport(capture_handler)
+    original_client_class = httpx.AsyncClient
+
+    def client_factory(*args, **kwargs):
+        return original_client_class(*args, **kwargs, transport=transport)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client_factory)
+
+    client = OpencodeUpstreamClient(
+        make_settings(
+            test_bearer_token="t-1",
+            opencode_auth_username="opencode",
+            opencode_auth_password="smoke-pass",  # pragma: allowlist secret
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+    await client.session_status()
+    await client.close()
+
+    expected = "Basic " + base64.b64encode(b"opencode:smoke-pass").decode("ascii")
+    assert captured_headers == [expected]
+
+
+@pytest.mark.asyncio
+async def test_upstream_requests_omit_auth_header_when_unset(monkeypatch) -> None:
+    captured_headers: list[str | None] = []
+
+    def capture_handler(request: httpx.Request) -> httpx.Response:
+        captured_headers.append(request.headers.get("Authorization"))
+        return httpx.Response(200, json={})
+
+    transport = httpx.MockTransport(capture_handler)
+    original_client_class = httpx.AsyncClient
+
+    def client_factory(*args, **kwargs):
+        return original_client_class(*args, **kwargs, transport=transport)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client_factory)
+
+    client = OpencodeUpstreamClient(
+        make_settings(
+            test_bearer_token="t-1",
+            opencode_timeout=1.0,
+            a2a_log_level="DEBUG",
+            a2a_log_payloads=False,
+        )
+    )
+    await client.session_status()
+    await client.close()
+
+    assert captured_headers == [None]
 
 
 @pytest.mark.asyncio

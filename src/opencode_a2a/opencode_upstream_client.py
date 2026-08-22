@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -131,10 +132,17 @@ class OpencodeUpstreamClient:
             category="stream",
             limit=settings.opencode_max_concurrent_streams,
         )
+        client_headers: dict[str, str] = {"Accept": "application/json"}
+        if settings.opencode_auth_password:
+            auth_credentials = (
+                f"{settings.opencode_auth_username}:{settings.opencode_auth_password}"
+            )
+            encoded_credentials = base64.b64encode(auth_credentials.encode("utf-8")).decode("ascii")
+            client_headers["Authorization"] = f"Basic {encoded_credentials}"
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=self._settings.opencode_timeout,
-            headers={"Accept": "application/json"},
+            headers=client_headers,
         )
 
     def _sync_interrupt_clock(self) -> None:
