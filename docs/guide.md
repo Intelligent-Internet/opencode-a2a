@@ -39,6 +39,8 @@ Key variables to understand protocol behavior:
 - `A2A_WRITE_ACCESS_SCOPE` / `A2A_WRITE_ACCESS_OUTSIDE_WORKSPACE`: declarative execution-boundary metadata for write scope and whether writes may extend outside the primary workspace boundary.
 - `A2A_HOST` / `A2A_PORT`: runtime bind address. Defaults: `127.0.0.1:8000`.
 - `A2A_PUBLIC_URL`: public base URL advertised by the Agent Card. Default: `http://127.0.0.1:8000`.
+- `A2A_ALLOWED_ORIGINS`: comma-separated extra browser-origin allowlist for inbound requests. Requests carrying an `Origin` header must match the origin of `A2A_PUBLIC_URL` or an entry here; mismatches are rejected with `403` (CSRF guard). Requests without an `Origin` header (CLI/SDK clients) are unaffected.
+- `A2A_ALLOWED_HOSTS`: comma-separated `Host` header allowlist (exact names or `*.example.com` wildcards). When configured, every inbound request must present a matching `Host` header. Binding to a non-loopback address without this allowlist logs a startup warning (DNS rebinding risk).
 - `A2A_LOG_LEVEL`: runtime log level. Default: `WARNING`.
 - `A2A_LOG_PAYLOADS` / `A2A_LOG_BODY_LIMIT`: payload logging behavior and truncation. When `A2A_LOG_LEVEL=DEBUG`, upstream OpenCode stream events are also logged with preview truncation controlled by `A2A_LOG_BODY_LIMIT`.
 - The runtime accepts W3C `traceparent` / `tracestate` headers on inbound requests. When `traceparent` is missing or invalid, the runtime generates a fresh valid value and exposes it on the HTTP response header.
@@ -86,6 +88,17 @@ Key variables to understand protocol behavior:
   - `A2A_CLIENT_BEARER_TOKEN`
   - `A2A_CLIENT_BASIC_AUTH`
   - `A2A_CLIENT_SUPPORTED_TRANSPORTS`
+
+## Inbound Origin and Host Boundary
+
+Browsers store and automatically attach Basic credentials, and they send an `Origin` header with every request. Without an origin boundary, a malicious web page could cross-site trigger `SendMessage`, `CancelTask`, or task subscription against a Basic-protected service. The runtime therefore enforces:
+
+- every request carrying an `Origin` header must match the origin of `A2A_PUBLIC_URL` (scheme, host, and non-default port) or an entry in `A2A_ALLOWED_ORIGINS`; mismatches return `403` before authentication. `Origin: null` (sandboxed iframes) is rejected unless explicitly allowlisted;
+- requests without an `Origin` header — normal CLI/SDK peers — are not subject to origin checks;
+- when `A2A_ALLOWED_HOSTS` is configured, every request must present a matching `Host` header (exact names, optional `host:port`, or `*.example.com` wildcards); mismatches return `403`. This also blocks DNS rebinding, where an attacker-controlled hostname resolves to the service address and the browser sends that hostname as `Host`;
+- binding to a non-loopback address (`0.0.0.0`, `::`, or a LAN/interface address) without `A2A_ALLOWED_HOSTS` logs a startup warning: the service is then exposed to DNS rebinding and should only run behind a trusted network boundary or a reverse proxy that validates `Host`.
+
+For browser-based clients, prefer the same origin as `A2A_PUBLIC_URL`, or explicitly allow the dashboard origin via `A2A_ALLOWED_ORIGINS` and treat `A2A_ALLOWED_HOSTS` as part of the deployment contract. Basic authentication should not be relied on as the sole browser-facing boundary: combine it with the origin/host checks above, short-lived credentials, and TLS at the public URL.
 
 ## Client Initialization Facade (Preview)
 
