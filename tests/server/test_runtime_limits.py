@@ -223,6 +223,29 @@ async def test_stream_budget_disabled_values_pass_through() -> None:
     assert received == ["x" * 10] * 20
 
 
+@pytest.mark.asyncio
+async def test_stream_budget_disabled_does_not_measure_events() -> None:
+    def exploding_size(_item: object) -> int:
+        raise AssertionError("size_of must not run when the byte budget is disabled")
+
+    async def source():
+        yield "x" * 10
+        yield "y" * 10
+
+    received = [
+        item
+        async for item in apply_stream_budget(
+            source(),
+            max_bytes=0,
+            max_duration_seconds=0,
+            idle_timeout_seconds=0,
+            size_of=exploding_size,
+        )
+    ]
+
+    assert received == ["x" * 10, "y" * 10]
+
+
 def _create_rate_limited_app(**settings_overrides: Any) -> Any:
     import opencode_a2a.server.application as app_module
 
