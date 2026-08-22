@@ -281,6 +281,14 @@ class Settings(BaseSettings):
         default=("JSONRPC", "HTTP+JSON"),
         alias="A2A_CLIENT_SUPPORTED_TRANSPORTS",
     )
+    a2a_client_allowed_hosts: DeclaredStringList = Field(
+        default=(),
+        alias="A2A_CLIENT_ALLOWED_HOSTS",
+    )
+    a2a_client_allow_private_hosts: bool = Field(
+        default=False,
+        alias="A2A_CLIENT_ALLOW_PRIVATE_HOSTS",
+    )
     # Task store settings
     a2a_task_store_backend: TaskStoreBackend = Field(
         default="database",
