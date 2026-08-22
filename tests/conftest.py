@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 
-@pytest.fixture(autouse=True)
-def dispose_app_database_engines(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
+@pytest_asyncio.fixture(autouse=True)
+async def dispose_app_database_engines(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[None]:
     import opencode_a2a.server.application as app_module
 
     tracked_engines: dict[int, AsyncEngine] = {}
@@ -22,15 +22,5 @@ def dispose_app_database_engines(monkeypatch: pytest.MonkeyPatch) -> Generator[N
     monkeypatch.setattr(app_module, "build_database_engine", _build_database_engine)
     yield
 
-    if not tracked_engines:
-        return
-
-    async def _dispose_tracked_engines() -> None:
-        for engine in tracked_engines.values():
-            await engine.dispose()
-
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(_dispose_tracked_engines())
-    finally:
-        loop.close()
+    for engine in tracked_engines.values():
+        await engine.dispose()

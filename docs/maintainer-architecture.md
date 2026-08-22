@@ -21,12 +21,11 @@ flowchart TD
 
     subgraph Upstream["OpenCode Upstream Layer"]
         UpstreamClient["opencode_upstream_client.py"]
-        Invocation["invocation.py"]
     end
 
     subgraph Extensions["Extension / Contract Layer"]
         Jsonrpc["jsonrpc/"]
-        Contracts["contracts/extensions.py"]
+        Contracts["contracts/extensions/"]
         Profile["profile/runtime.py"]
     end
 
@@ -61,7 +60,7 @@ flowchart TD
 
 1. `jsonrpc/application.py` owns the adapter-specific JSON-RPC application boundary.
 2. `jsonrpc/dispatch.py` and handler modules under `jsonrpc/handlers/` route provider-private methods.
-3. `contracts/extensions.py` remains the SSOT for extension metadata exposed through Agent Card and OpenAPI.
+3. `contracts/extensions/` remains the SSOT for extension metadata exposed through Agent Card and OpenAPI.
 4. Tests under `tests/contracts/` and `tests/jsonrpc/` guard contract drift.
 
 ### Outbound Peer Call Path
@@ -89,7 +88,7 @@ flowchart TD
 
 ### Extension and Contract Layer
 
-- `contracts/extensions.py`: SSOT for extension metadata, compatibility profile, and wire-contract payloads
+- `contracts/extensions/`: SSOT for extension metadata, compatibility profile, and wire-contract payloads
 - `jsonrpc/`: provider-private JSON-RPC extension surface
 - `profile/runtime.py`: runtime profile that feeds Agent Card, OpenAPI, and compatibility metadata
 - `protocol_versions.py`: protocol normalization and negotiation helpers
@@ -128,5 +127,5 @@ For maintainers new to the codebase, this order usually gives the fastest payoff
 2. `docs/architecture.md`
 3. `src/opencode_a2a/server/application.py`
 4. `src/opencode_a2a/execution/executor.py`
-5. `src/opencode_a2a/contracts/extensions.py`
+5. `src/opencode_a2a/contracts/extensions/`
 6. `docs/guide.md`

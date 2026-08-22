@@ -23,6 +23,14 @@ def test_settings_missing_required():
         )
 
 
+def test_settings_use_bounded_upstream_defaults() -> None:
+    settings = make_settings()
+
+    assert settings.opencode_timeout_stream == 900.0
+    assert settings.opencode_max_concurrent_requests == 32
+    assert settings.opencode_max_concurrent_streams == 8
+
+
 def test_settings_valid():
     env = {
         "A2A_STATIC_AUTH_CREDENTIALS": json.dumps(
@@ -173,6 +181,13 @@ def test_settings_allow_explicit_memory_backend() -> None:
         settings = Settings()
 
     assert settings.a2a_task_store_backend == "memory"
+
+
+def test_settings_reject_non_sqlite_database_url() -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        make_settings(a2a_task_store_database_url="postgresql+asyncpg://db.example.com/app")
+
+    assert "A2A_TASK_STORE_DATABASE_URL must use the sqlite+aiosqlite scheme" in str(excinfo.value)
 
 
 def test_settings_reject_legacy_runtime_auth_envs() -> None:

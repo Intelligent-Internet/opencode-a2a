@@ -173,7 +173,6 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
         super().__init__(inner)
         self._write_policy = write_policy or FirstTerminalStateWinsPolicy()
         self._save_lock = asyncio.Lock()
-        self._atomic_guard_fallback_logged = False
 
     async def save(
         self,
@@ -211,17 +210,6 @@ class PolicyAwareTaskStore(TaskStoreDecorator):
         context: ServerCallContext,
     ) -> None:
         compat = DatabaseTaskStoreCompat(task_store)
-        if not compat.supports_atomic_terminal_guard():
-            if not self._atomic_guard_fallback_logged:
-                logger.warning(
-                    "Database-backed task store dialect does not support atomic terminal guard; "
-                    "falling back to read-before-write policy dialect=%s",
-                    compat.dialect_name,
-                )
-                self._atomic_guard_fallback_logged = True
-            await self._save_with_read_before_write(task, context)
-            return
-
         try:
             if await compat.atomic_save(task, context):
                 return
@@ -341,9 +329,7 @@ def describe_lightweight_persistence_backend(settings: Settings) -> dict[str, st
         return summary
     url = make_url(cast(str, settings.a2a_task_store_database_url))
     summary["database_url"] = redact_database_url_for_logs(url.render_as_string(hide_password=True))
-    summary["sqlite_tuning"] = (
-        "local_durability_defaults" if url.drivername.startswith("sqlite") else "not_applicable"
-    )
+    summary["sqlite_tuning"] = "local_durability_defaults"
     return summary
 
 

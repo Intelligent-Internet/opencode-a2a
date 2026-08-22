@@ -159,6 +159,8 @@ This repository improves the service boundary around OpenCode, but it does not t
 - Provider auth and default model configuration remain on the OpenCode side; deployment-time precedence details and HOME/XDG state impact are documented in [docs/guide.md](docs/guide.md#troubleshooting-provider-auth-state).
 - Use `A2A_CLIENT_BEARER_TOKEN` for server-side outbound peer calls initiated by `a2a_call`.
 - Deployment supervision is intentionally BYO. Use `systemd`, Docker, Kubernetes, or another supervisor if you need long-running operation.
+- The supported persistence profile runs one `opencode-a2a` application process against its own local SQLite database. Do not run multiple Uvicorn workers or replicas against the same database file.
+- PostgreSQL and other SQLAlchemy dialects are not part of the supported deployment matrix.
 - For mutually untrusted tenants, run separate instance pairs with isolated users, containers, workspaces, credentials, and ports.
 
 Read before deployment:

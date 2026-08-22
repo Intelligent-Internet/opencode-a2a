@@ -10,13 +10,11 @@ from a2a.server.tasks.database_task_store import DatabaseTaskStore
 from a2a.types import Task, TaskState
 from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy import inspect, or_, select
-from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from ..task_states import TERMINAL_TASK_STATES
 from .database import redact_database_url_for_logs
 
-_ATOMIC_TERMINAL_GUARD_DIALECTS = frozenset({"postgresql", "sqlite"})
 _TERMINAL_TASK_STATE_VALUES = tuple(TaskState.Name(int(state)) for state in TERMINAL_TASK_STATES)
 _REQUIRED_TASK_MODEL_COLUMNS = frozenset(
     {
@@ -56,13 +54,6 @@ class DatabaseTaskStoreCompat:
         self._task_store = task_store
         self._shape = _resolve_database_task_store_shape(task_store)
 
-    @property
-    def dialect_name(self) -> str:
-        return self._task_store.engine.dialect.name
-
-    def supports_atomic_terminal_guard(self) -> bool:
-        return self.dialect_name in _ATOMIC_TERMINAL_GUARD_DIALECTS
-
     async def initialize(self) -> None:
         await self._task_store.initialize()
 
@@ -91,7 +82,6 @@ class DatabaseTaskStoreCompat:
             task=task,
             owner=self._shape.owner_resolver(context),
             task_table=self._shape.task_model.__table__,
-            dialect_name=self.dialect_name,
         )
         async with self._shape.session_maker.begin() as session:
             result = await session.execute(statement)
@@ -165,9 +155,7 @@ def _build_atomic_task_save_statement(
     task: Task,
     owner: str | None,
     task_table: Any,
-    dialect_name: str,
 ):
-    insert = _resolve_atomic_insert_factory(dialect_name)
     values = _task_row_values(task, owner=owner)
     status_state = task_table.c.status["state"].as_string()
     persist_guard = or_(
@@ -176,7 +164,7 @@ def _build_atomic_task_save_statement(
         status_state.not_in(_TERMINAL_TASK_STATE_VALUES),
     )
     return (
-        insert(task_table)
+        sqlite_insert(task_table)
         .values(**values)
         .on_conflict_do_update(
             index_elements=[task_table.c.id],
@@ -185,14 +173,6 @@ def _build_atomic_task_save_statement(
         )
         .returning(task_table.c.id)
     )
-
-
-def _resolve_atomic_insert_factory(dialect_name: str):
-    if dialect_name == "sqlite":
-        return sqlite_insert
-    if dialect_name == "postgresql":
-        return postgresql_insert
-    raise ValueError(f"Unsupported atomic task persistence dialect: {dialect_name}")
 
 
 def _task_row_values(task: Task, *, owner: str | None) -> dict[str, Any]:
