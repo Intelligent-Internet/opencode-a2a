@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 from ..client import A2AClient
+from ..client.network_policy import validate_agent_url
+
+logger = logging.getLogger(__name__)
 
 
 class A2AClientManager:
@@ -26,6 +31,8 @@ class A2AClientManager:
         )
         self._cache_ttl_seconds = float(settings.a2a_client_cache_ttl_seconds)
         self._cache_maxsize = int(settings.a2a_client_cache_maxsize)
+        self._allowed_hosts = tuple(getattr(settings, "a2a_client_allowed_hosts", ()) or ())
+        self._allow_private_hosts = bool(getattr(settings, "a2a_client_allow_private_hosts", False))
         self._now = time.monotonic
         self.clients: dict[str, _ClientCacheEntry] = {}
         self._lock = asyncio.Lock()
@@ -33,8 +40,27 @@ class A2AClientManager:
     @asynccontextmanager
     async def borrow_client(self, agent_url: str):
         url = agent_url.rstrip("/")
+        policy = await validate_agent_url(
+            url,
+            allowed_hosts=self._allowed_hosts,
+            allow_private_hosts=self._allow_private_hosts,
+        )
+        client_settings = self.client_settings
+        if not policy.credentials_allowed and (
+            client_settings.bearer_token or client_settings.basic_auth
+        ):
+            logger.warning(
+                "Outbound A2A credentials are configured but host=%s is not in "
+                "A2A_CLIENT_ALLOWED_HOSTS; credentials will not be sent",
+                policy.host,
+            )
+            client_settings = replace(
+                client_settings,
+                bearer_token=None,
+                basic_auth=None,
+            )
         if self._cache_maxsize <= 0:
-            client = A2AClient(url, settings=self.client_settings)
+            client = A2AClient(url, settings=client_settings)
             try:
                 yield client
             finally:
@@ -55,7 +81,7 @@ class A2AClientManager:
             to_close.extend(self._evict_locked(now=now, protected_keys={url}))
             if entry is None:
                 entry = _ClientCacheEntry(
-                    client=A2AClient(url, settings=self.client_settings),
+                    client=A2AClient(url, settings=client_settings),
                     last_used=now,
                     expires_at=None
                     if self._cache_ttl_seconds <= 0

@@ -59,6 +59,8 @@ Key variables to understand protocol behavior:
 - `A2A_CLIENT_BEARER_TOKEN`: optional bearer token attached to outbound peer calls made by the embedded A2A client and `a2a_call` tool path.
 - `A2A_CLIENT_BASIC_AUTH`: optional Basic auth credential attached to outbound peer calls made by the embedded A2A client and `a2a_call` tool path.
 - `A2A_CLIENT_SUPPORTED_TRANSPORTS`: ordered outbound transport preference list.
+- `A2A_CLIENT_ALLOWED_HOSTS`: comma-separated allowlist of outbound target hosts for the embedded A2A client and `a2a_call` tool path (exact names or `*.example.com` wildcards). When configured, outbound calls are restricted to matching hosts, and outbound credentials (`A2A_CLIENT_BEARER_TOKEN` / `A2A_CLIENT_BASIC_AUTH`) are only sent to allowlisted hosts.
+- `A2A_CLIENT_ALLOW_PRIVATE_HOSTS`: default `false`. When `false`, outbound `a2a_call(...)` targets that resolve to private, loopback, link-local, reserved, or multicast addresses are rejected (SSRF / DNS-rebinding guard). Set to `true` only when the deployment intentionally targets A2A peers on the local network.
 - `A2A_TASK_STORE_BACKEND`: unified lightweight persistence backend for SDK task rows plus adapter-managed session / interrupt state. Supported values: `database`, `memory`. Default: `database`.
 - `A2A_TASK_STORE_DATABASE_URL`: database URL used by the unified durable backend when `A2A_TASK_STORE_BACKEND=database`. Default: `sqlite+aiosqlite:///./opencode-a2a.db`.
 - On startup, the runtime only auto-migrates adapter-owned state tables; existing SDK-owned task tables must be upgraded explicitly with upstream `a2a-db`.
@@ -102,6 +104,14 @@ Current client facade API:
 - `A2AClient.subscribe_to_task()`
 
 Server-side outbound peer calls read outbound credentials from environment variables. Configure `A2A_CLIENT_BEARER_TOKEN` or `A2A_CLIENT_BASIC_AUTH` when the remote agent protects its runtime surface. CLI outbound calls follow the same environment-only model.
+
+The embedded `a2a_call(...)` tool lets the upstream model choose the target URL, so the adapter applies a fail-closed network policy before opening any connection:
+
+- only `http`/`https` schemes are accepted, and URLs carrying userinfo credentials are rejected;
+- when `A2A_CLIENT_ALLOWED_HOSTS` is set, the target host must match the allowlist (exact or `*.example.com` wildcard);
+- unless `A2A_CLIENT_ALLOW_PRIVATE_HOSTS=true`, the resolved addresses must be public; private/loopback/link-local/reserved addresses are rejected even when the hostname matches the allowlist (DNS rebinding defense);
+- outbound credentials are only attached to allowlisted hosts. If credentials are configured without an allowlist, they are never sent and a warning is logged;
+- the `opencode-a2a call` CLI remains a manual operator action and is not subject to the allowlist, but still rejects non-http(s) schemes through the shared client URL handling.
 
 CLI outbound example:
 

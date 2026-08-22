@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from opencode_a2a.client.network_policy import A2ANetworkPolicyError
 from opencode_a2a.server import client_manager as client_manager_module
 
 
@@ -17,6 +18,8 @@ def _make_settings(**overrides: object) -> SimpleNamespace:
         "a2a_client_supported_transports": ("JSONRPC", "HTTP+JSON"),
         "a2a_client_cache_ttl_seconds": 60.0,
         "a2a_client_cache_maxsize": 2,
+        "a2a_client_allowed_hosts": (),
+        "a2a_client_allow_private_hosts": True,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -55,6 +58,131 @@ async def test_client_manager_evicts_lru_idle_clients(monkeypatch: pytest.Monkey
     assert created[0].closed is True
     assert created[1].closed is False
     assert created[2].closed is False
+
+
+def _patch_private_dns(monkeypatch: pytest.MonkeyPatch, *addresses: str) -> None:
+    async def fake_resolve(host: str) -> tuple[str, ...]:
+        del host
+        return tuple(addresses)
+
+    monkeypatch.setattr(
+        "opencode_a2a.client.network_policy.resolve_host_addresses",
+        fake_resolve,
+    )
+
+
+@pytest.mark.asyncio
+async def test_client_manager_rejects_host_outside_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeClient:
+        def __init__(self, agent_url: str, *, settings) -> None:
+            del agent_url, settings
+
+        def is_busy(self) -> bool:
+            return False
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(client_manager_module, "A2AClient", _FakeClient)
+    manager = client_manager_module.A2AClientManager(
+        _make_settings(a2a_client_allowed_hosts=("peer.example.com",))
+    )
+
+    with pytest.raises(A2ANetworkPolicyError, match="not allowed"):
+        async with manager.borrow_client("https://other.org/"):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_client_manager_rejects_private_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeClient:
+        def __init__(self, agent_url: str, *, settings) -> None:
+            del agent_url, settings
+
+        def is_busy(self) -> bool:
+            return False
+
+        async def close(self) -> None:
+            pass
+
+    _patch_private_dns(monkeypatch, "169.254.169.254")
+    monkeypatch.setattr(client_manager_module, "A2AClient", _FakeClient)
+    manager = client_manager_module.A2AClientManager(
+        _make_settings(a2a_client_allow_private_hosts=False)
+    )
+
+    with pytest.raises(A2ANetworkPolicyError, match="private/loopback"):
+        async with manager.borrow_client("https://peer.example.com/"):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_client_manager_strips_credentials_without_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created: list[_RecordingClient] = []
+
+    class _RecordingClient:
+        def __init__(self, agent_url: str, *, settings) -> None:
+            self.agent_url = agent_url
+            self.settings = settings
+            created.append(self)
+
+        def is_busy(self) -> bool:
+            return False
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(client_manager_module, "A2AClient", _RecordingClient)
+    manager = client_manager_module.A2AClientManager(
+        _make_settings(
+            a2a_client_bearer_token="peer-token",
+            a2a_client_allowed_hosts=(),
+        )
+    )
+
+    async with manager.borrow_client("https://peer.example.com/"):
+        pass
+
+    assert created[0].settings.bearer_token is None
+    assert created[0].settings.basic_auth is None
+
+
+@pytest.mark.asyncio
+async def test_client_manager_keeps_credentials_for_allowlisted_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created: list[_RecordingClient] = []
+
+    class _RecordingClient:
+        def __init__(self, agent_url: str, *, settings) -> None:
+            self.agent_url = agent_url
+            self.settings = settings
+            created.append(self)
+
+        def is_busy(self) -> bool:
+            return False
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(client_manager_module, "A2AClient", _RecordingClient)
+    manager = client_manager_module.A2AClientManager(
+        _make_settings(
+            a2a_client_bearer_token="peer-token",
+            a2a_client_allowed_hosts=("peer.example.com",),
+        )
+    )
+
+    async with manager.borrow_client("https://peer.example.com/"):
+        pass
+
+    assert created[0].settings.bearer_token == "peer-token"
 
 
 @pytest.mark.asyncio

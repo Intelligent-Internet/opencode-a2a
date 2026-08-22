@@ -563,6 +563,8 @@ async def test_agent_a2a_call_uses_server_side_basic_auth_headers(
             a2a_client_supported_transports=("JSONRPC", "HTTP+JSON"),
             a2a_client_cache_ttl_seconds=60.0,
             a2a_client_cache_maxsize=1,
+            a2a_client_allowed_hosts=("remote",),
+            a2a_client_allow_private_hosts=True,
         )
     )
     results = await maybe_handle_tools(
@@ -624,6 +626,8 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
             a2a_client_supported_transports=("JSONRPC", "HTTP+JSON"),
             a2a_client_cache_ttl_seconds=60.0,
             a2a_client_cache_maxsize=1,
+            a2a_client_allowed_hosts=("remote",),
+            a2a_client_allow_private_hosts=True,
         )
     )
     with bind_trace_context(
