@@ -80,6 +80,11 @@ def _apply_private_sqlite_modes(path: Path) -> None:
                 f"Refusing SQLite sidecar file {sidecar}: expected a regular file, "
                 "not a symlink or special file."
             )
+        if sidecar_stat.st_uid != os.geteuid():
+            raise RuntimeError(
+                f"Refusing SQLite sidecar file {sidecar}: owned by uid "
+                f"{sidecar_stat.st_uid}, expected {os.geteuid()}."
+            )
         os.chmod(sidecar, _SQLITE_FILE_MODE)
 
 

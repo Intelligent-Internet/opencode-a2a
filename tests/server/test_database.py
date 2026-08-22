@@ -180,3 +180,40 @@ async def test_build_database_engine_rejects_symlink_wal_sidecar(tmp_path) -> No
 
     with pytest.raises(RuntimeError, match="sidecar"):
         build_database_engine(_settings_for(tmp_path))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file permission semantics")
+def test_apply_private_sqlite_modes_rejects_foreign_owned_sidecar(tmp_path, monkeypatch) -> None:
+    database_path = tmp_path / "runtime.db"
+    database_path.write_bytes(b"")
+    sidecar = tmp_path / "runtime.db-wal"
+    sidecar.write_bytes(b"")
+
+    current_euid = os.geteuid()
+    monkeypatch.setattr(database_module.os, "geteuid", lambda: current_euid + 100_000)
+
+    with pytest.raises(RuntimeError, match="owned by uid"):
+        database_module._apply_private_sqlite_modes(database_path)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file permission semantics")
+@pytest.mark.asyncio
+async def test_build_database_engine_rechecks_hardening_on_new_connection(tmp_path) -> None:
+    settings = _settings_for(tmp_path)
+    engine = build_database_engine(settings)
+    try:
+        async with engine.connect() as conn:
+            await conn.exec_driver_sql("CREATE TABLE sample (value INTEGER)")
+        await engine.dispose()
+
+        victim = tmp_path / "victim.db"
+        victim.write_bytes(b"")
+        database_path = tmp_path / "runtime.db"
+        database_path.unlink()
+        database_path.symlink_to(victim)
+
+        with pytest.raises(RuntimeError, match="symlink"):
+            async with engine.connect() as conn:
+                await conn.exec_driver_sql("SELECT 1")
+    finally:
+        await engine.dispose()
