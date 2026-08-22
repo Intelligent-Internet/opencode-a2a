@@ -326,7 +326,7 @@ def _patch_jsonrpc_openapi_contract(
                                 app_json["examples"] = _build_jsonrpc_extension_openapi_examples()
 
             rest_post_contracts: dict[str, dict[str, Any]] = {
-                "/v1/message:send": {
+                "/message:send": {
                     "summary": "Send Message (HTTP+JSON)",
                     "description": (
                         "A2A HTTP+JSON message send endpoint. "
@@ -335,7 +335,7 @@ def _patch_jsonrpc_openapi_contract(
                     ),
                     "schema_ref": "#/components/schemas/SendMessageRequest",
                 },
-                "/v1/message:stream": {
+                "/message:stream": {
                     "summary": "Stream Message (HTTP+JSON)",
                     "description": (
                         "A2A HTTP+JSON streaming endpoint. "

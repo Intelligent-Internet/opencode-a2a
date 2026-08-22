@@ -174,8 +174,8 @@ def test_rest_subscription_route_matches_current_sdk_contract() -> None:
     app = create_app(make_settings(test_bearer_token="test-token"))
     route_paths = {route.path for route in app.router.routes if hasattr(route, "path")}
 
-    assert "/v1/tasks/{id}:subscribe" in route_paths
-    assert "/v1/tasks/{id}:resubscribe" not in route_paths
+    assert "/tasks/{id}:subscribe" in route_paths
+    assert "/tasks/{id}:resubscribe" not in route_paths
 
 
 def test_rest_subscription_route_registers_distinct_get_and_post_operations() -> None:
@@ -183,7 +183,7 @@ def test_rest_subscription_route_registers_distinct_get_and_post_operations() ->
     subscribe_routes = [
         route
         for route in app.router.routes
-        if getattr(route, "path", None) == "/v1/tasks/{id}:subscribe"
+        if getattr(route, "path", None) == "/tasks/{id}:subscribe"
     ]
 
     assert len(subscribe_routes) == 2
@@ -251,7 +251,7 @@ async def test_list_tasks_route_returns_paginated_results(monkeypatch) -> None:
     headers = {"Authorization": "Bearer test-token"}
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         first_page = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers=headers,
             params={"contextId": "ctx-list", "pageSize": "1"},
         )
@@ -266,7 +266,7 @@ async def test_list_tasks_route_returns_paginated_results(monkeypatch) -> None:
         assert first_payload["nextPageToken"]
 
         second_page = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers=headers,
             params={
                 "contextId": "ctx-list",
@@ -316,7 +316,7 @@ async def test_list_tasks_route_respects_authenticated_owner_scope(monkeypatch) 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers={"Authorization": "Bearer test-token"},
             params={"contextId": "ctx-owner-scope"},
         )
@@ -371,7 +371,7 @@ async def test_list_tasks_route_cursor_stays_stable_when_newer_task_is_inserted(
     headers = {"Authorization": "Bearer test-token"}
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         first_page = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers=headers,
             params={"contextId": "ctx-cursor", "pageSize": "1"},
         )
@@ -388,7 +388,7 @@ async def test_list_tasks_route_cursor_stays_stable_when_newer_task_is_inserted(
         )
 
         second_page = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers=headers,
             params={
                 "contextId": "ctx-cursor",
@@ -442,7 +442,7 @@ async def test_list_tasks_route_supports_history_artifacts_and_filters(monkeypat
     headers = {"Authorization": "Bearer test-token"}
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers=headers,
             params={
                 "contextId": "ctx-filtered",
@@ -501,7 +501,7 @@ async def test_list_tasks_route_applies_persisted_output_negotiation(monkeypatch
     headers = {"Authorization": "Bearer test-token"}
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers=headers,
             params={
                 "contextId": "ctx-negotiated-list",
@@ -555,12 +555,12 @@ async def test_list_tasks_route_filters_unnegotiated_shared_extension_metadata(m
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         without_extensions = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers={"Authorization": "Bearer test-token"},
             params={"contextId": "ctx-shared-list"},
         )
         with_extensions = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers={
                 "Authorization": "Bearer test-token",
                 "A2A-Extensions": ",".join(
@@ -605,7 +605,7 @@ async def test_rest_message_route_echoes_only_activated_shared_extensions_header
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/v1/message:send",
+            "/message:send",
             headers={
                 "Authorization": "Bearer test-token",
                 "A2A-Extensions": ",".join(
@@ -701,7 +701,7 @@ async def test_list_tasks_route_tolerates_invalid_stored_status_timestamp(monkey
     headers = {"Authorization": "Bearer test-token"}
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers=headers,
             params={"contextId": "ctx-invalid-ts"},
         )
@@ -728,17 +728,17 @@ async def test_list_tasks_route_validates_query_parameters(monkeypatch) -> None:
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         page_size_error = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers=headers,
             params={"pageSize": "0"},
         )
         page_token_error = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers=headers,
             params={"pageToken": "invalid-token"},
         )
         status_error = await client.get(
-            "/v1/tasks",
+            "/tasks",
             headers=headers,
             params={"status": "completed"},
         )
@@ -811,8 +811,8 @@ def test_openapi_rest_message_routes_include_schema_and_examples() -> None:
     paths = openapi["paths"]
 
     expected: dict[str, str] = {
-        "/v1/message:send": "#/components/schemas/SendMessageRequest",
-        "/v1/message:stream": "#/components/schemas/SendStreamingMessageRequest",
+        "/message:send": "#/components/schemas/SendMessageRequest",
+        "/message:stream": "#/components/schemas/SendStreamingMessageRequest",
     }
     for path, expected_schema_ref in expected.items():
         post = paths[path]["post"]
@@ -953,7 +953,7 @@ async def test_rest_endpoints_reject_unsupported_protocol_version() -> None:
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/v1/message:send",
+            "/message:send",
             headers={
                 "Authorization": "Bearer test-token",
                 "A2A-Version": "2.0",
@@ -1002,7 +1002,7 @@ async def test_rest_endpoints_return_v1_status_body_for_v1_protocol_errors() -> 
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/v1/message:send?A2A-Version=1.1",
+            "/message:send?A2A-Version=1.1",
             headers={"Authorization": "Bearer test-token"},
             json={
                 "message": {
@@ -1124,7 +1124,7 @@ async def test_streaming_responses_remain_outside_gzip_middleware(monkeypatch) -
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         async with client.stream(
             "POST",
-            "/v1/message:stream",
+            "/message:stream",
             headers={
                 "Authorization": "Bearer test-token",
                 "Accept-Encoding": "gzip",
@@ -1172,7 +1172,7 @@ async def test_dual_stack_send_accepts_transport_native_payloads(monkeypatch) ->
     }
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        rest_resp = await client.post("/v1/message:send", headers=headers, json=rest_payload)
+        rest_resp = await client.post("/message:send", headers=headers, json=rest_payload)
         assert rest_resp.status_code == 200
 
         rpc_resp = await client.post("/", headers=headers, json=rpc_payload)
@@ -1255,7 +1255,7 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         rest_resp = await client.post(
-            "/v1/message:send",
+            "/message:send",
             headers=headers,
             json=rest_with_jsonrpc_shape,
         )
@@ -1276,7 +1276,7 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
         }
 
         rest_envelope_resp = await client.post(
-            "/v1/message:send",
+            "/message:send",
             headers=headers,
             json=full_jsonrpc_envelope,
         )
@@ -1296,18 +1296,18 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
                         "@type": "type.googleapis.com/google.rpc.ErrorInfo",
                         "reason": "INVALID_HTTP_JSON_PAYLOAD",
                         "domain": "a2a-protocol.org",
-                        "metadata": {"path": "/v1/message:send"},
+                        "metadata": {"path": "/message:send"},
                     },
                     {
                         "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
-                        "path": "/v1/message:send",
+                        "path": "/message:send",
                     },
                 ],
             }
         }
 
         v1_rest_resp = await client.post(
-            "/v1/message:send",
+            "/message:send",
             headers={**headers, "A2A-Version": "1.0"},
             json=rest_with_jsonrpc_shape,
         )
@@ -1372,7 +1372,7 @@ async def test_log_payloads_keeps_body_for_rest_handler(monkeypatch, caplog) -> 
     with caplog.at_level(logging.DEBUG, logger="opencode_a2a.server.application"):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
-                "/v1/message:send",
+                "/message:send",
                 headers=headers,
                 json=_rest_message_payload(),
             )
@@ -1380,7 +1380,7 @@ async def test_log_payloads_keeps_body_for_rest_handler(monkeypatch, caplog) -> 
             assert resp.status_code == 200
 
     assert any(
-        "A2A request POST /v1/message:send body=" in record.message for record in caplog.records
+        "A2A request POST /message:send body=" in record.message for record in caplog.records
     )
 
 
@@ -1398,7 +1398,7 @@ async def test_log_payloads_streaming_response_path(monkeypatch, caplog) -> None
     with caplog.at_level(logging.DEBUG, logger="opencode_a2a.server.application"):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             async with client.stream(
-                "POST", "/v1/message:stream", headers=headers, json=_rest_message_payload()
+                "POST", "/message:stream", headers=headers, json=_rest_message_payload()
             ) as resp:
                 assert resp.status_code == 200
                 assert "text/event-stream" in resp.headers.get("content-type", "")
@@ -1407,8 +1407,8 @@ async def test_log_payloads_streaming_response_path(monkeypatch, caplog) -> None
                         break
 
     assert any(
-        "A2A response /v1/message:stream status=200" in record.message
-        or "A2A response /v1/message:stream streaming" in record.message
+        "A2A response /message:stream status=200" in record.message
+        or "A2A response /message:stream streaming" in record.message
         for record in caplog.records
     )
 

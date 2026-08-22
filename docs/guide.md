@@ -5,7 +5,7 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
 ## Transport Contracts
 
 - The service supports both transports:
-  - HTTP+JSON (REST endpoints such as `/v1/message:send`)
+  - HTTP+JSON (REST endpoints such as `/message:send`)
   - JSON-RPC (`POST /`)
 - Agent Card exposes both HTTP+JSON and JSON-RPC through `supportedInterfaces`.
 - The public Agent Card is intentionally slimmed to the minimum discovery surface; per-extension disclosure policy is defined in [`extension-specifications.md`](./extension-specifications.md).
@@ -224,7 +224,7 @@ If one deployment works while another fails against the same upstream provider, 
 ## Streaming Contract
 
 - Streaming is always enabled in this server profile; `message:stream` is part of the stable runtime baseline.
-- Streaming (`/v1/message:stream`) emits an initial working `Task`, then incremental `TaskArtifactUpdateEvent` / `TaskStatusUpdateEvent` updates, and finally a terminal `TaskStatusUpdateEvent(final=true)`.
+- Streaming (`/message:stream`) emits an initial working `Task`, then incremental `TaskArtifactUpdateEvent` / `TaskStatusUpdateEvent` updates, and finally a terminal `TaskStatusUpdateEvent(final=true)`.
 - Stream artifacts carry `artifact.metadata.shared.stream.block_type` with values `text` / `reasoning` / `tool_call`.
 - Stream artifacts are scoped to logical output lanes rather than one shared catch-all artifact:
   - text chunks use a stable text artifact ID
@@ -286,7 +286,7 @@ Current behavior:
 - Shared metadata extension URIs such as session binding and streaming are listed under `extensions.extension_uris`.
 - `all_jsonrpc_methods` is the runtime truth for the current deployment.
 - The current SDK-owned core JSON-RPC surface includes `GetExtendedAgentCard` and `tasks/pushNotificationConfig/*`.
-- The current SDK-owned REST surface also includes `GET /v1/tasks` and the task push notification config routes.
+- The current SDK-owned REST surface also includes `GET /tasks` and the task push notification config routes.
 - The SDK-owned core JSON-RPC method set follows the pinned `a2a-sdk` release and is locked by repository tests; review that surface deliberately when upgrading the SDK.
 - Push notification config routes/methods are currently exposed only because they are part of the SDK-owned core surface. This runtime does not configure a push config store or push sender, so push notification operations remain unsupported. REST routes currently return HTTP `501`, while JSON-RPC methods surface SDK-owned unsupported error envelopes.
 
@@ -484,7 +484,7 @@ Consumer guidance:
 Minimal example:
 
 ```bash
-curl -sS http://127.0.0.1:8000/v1/message:send \
+curl -sS http://127.0.0.1:8000/message:send \
   -H 'content-type: application/json' \
   -H 'Authorization: Bearer <your-token>' \
   -d '{
@@ -536,7 +536,7 @@ Consumer guidance:
 Minimal example:
 
 ```bash
-curl -sS http://127.0.0.1:8000/v1/message:send \
+curl -sS http://127.0.0.1:8000/message:send \
   -H 'content-type: application/json' \
   -H 'Authorization: Bearer <your-token>' \
   -d '{
@@ -1223,7 +1223,7 @@ curl -sS http://127.0.0.1:8000/ \
 ## Authentication Example (curl)
 
 ```bash
-curl -sS http://127.0.0.1:8000/v1/message:send \
+curl -sS http://127.0.0.1:8000/message:send \
   -H 'content-type: application/json' \
   -H 'Authorization: Bearer <your-token>' \
   -d '{
@@ -1257,7 +1257,7 @@ curl -sS http://127.0.0.1:8000/ \
 
 ## Streaming Re-Subscription (`SubscribeToTask`)
 
-If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscribe while the task is still non-terminal.
+If an SSE connection drops, use `GET /tasks/{task_id}:subscribe` to re-subscribe while the task is still non-terminal.
 
 ## Cancellation Semantics (`CancelTask`)
 
@@ -1265,7 +1265,7 @@ If an SSE connection drops, use `GET /v1/tasks/{task_id}:subscribe` to re-subscr
 - For running tasks, the service attempts upstream OpenCode `POST /session/{sessionID}/abort` to stop generation.
 - Upstream interruption is best-effort: if upstream returns 404, network errors, or other HTTP errors, A2A cancellation still completes with `TaskState.TASK_STATE_CANCELED`.
 - Idempotency contract: repeated `CancelTask` on an already `canceled` task returns the current terminal task state without error.
-- Terminal subscribe contract: calling `SubscribeToTask` or `GET /v1/tasks/{task_id}:subscribe` on a terminal task replays one terminal `Task` snapshot and then closes the stream.
+- Terminal subscribe contract: calling `SubscribeToTask` or `GET /tasks/{task_id}:subscribe` on a terminal task replays one terminal `Task` snapshot and then closes the stream.
 - Terminal persistence contract: once a terminal task snapshot is persisted, this service treats it as immutable. Producers must emit final text and artifact updates before the terminal event, and any final usage or stream metadata must be attached to that terminal event itself. Late terminal-state mutations are rejected by the task-store write policy.
 - These two semantics are also declared as machine-readable `service_behaviors` in the compatibility profile and wire contract extensions.
 - At `A2A_LOG_LEVEL=DEBUG`, the service emits lightweight metric log records (`logger=opencode_a2a.execution.executor`):
