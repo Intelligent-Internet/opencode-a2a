@@ -40,6 +40,7 @@ from ..parts.mapping import (
     map_a2a_parts_to_opencode_parts,
     summarize_a2a_parts,
 )
+from ..redact import redact_absolute_paths
 from ..sandbox_policy import SandboxPolicy
 from .coordinator import ExecutionCoordinator, PreparedExecution, build_session_binding_context_id
 from .event_helpers import _enqueue_artifact_update
@@ -437,6 +438,7 @@ class OpencodeAgentExecutor(AgentExecutor):
         upstream_status: int | None = None,
         streaming_request: bool,
     ) -> None:
+        message = redact_absolute_paths(message)
         error_message = Message(
             message_id=str(uuid.uuid4()),
             role=Role.ROLE_AGENT,

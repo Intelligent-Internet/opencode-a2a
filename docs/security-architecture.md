@@ -99,6 +99,47 @@ All REST routes are served at the root path (no `/v1` prefix).
 - The upstream OpenCode client (`OPENCODE_BASE_URL`, auth, timeouts, concurrency
   caps) is the only other outbound path.
 
+## Security Controls
+
+### Error Text Redaction
+
+Client-visible error text must never expose absolute local filesystem paths.
+All error responses that can leave the process pass through a single
+deterministic masker (`opencode_a2a.redact.redact_absolute_paths`) before
+serialization; masked output uses the fixed placeholder `<redacted-path>`.
+
+Boundaries covered:
+
+- Streaming task error messages — `execution/executor.py:_emit_error`
+  (task status messages and streamed error artifacts).
+- JSON-RPC error responses — `jsonrpc/error_responses.py:adapt_jsonrpc_error`
+  (message, metadata values, and standard JSON-RPC error-code `data`).
+- REST/HTTP error bodies — `jsonrpc/error_responses.py:build_http_error_body`.
+- Raw-exception fallback — `jsonrpc/application.py:_generate_error_response`
+  (SDK base-class wrapping of non-JSON-RPC exceptions).
+
+Masked: POSIX/Windows/UNC absolute paths and `file://` local URIs. Preserved:
+remote URLs (`scheme://host/path`), relative paths, ordinary prose, and
+slash-prefixed API route tokens such as `/message:send` or `/tasks/{id}:cancel`
+(a path-like token immediately followed by a `:` method suffix or `{` route
+template is treated as an API route, not a local path). Server-side logs
+intentionally retain full exception context for diagnosability; logs that
+leave the host must be redacted or access-restricted before export.
+
+Remote peer error text (for example the upstream `detail` field surfaced by
+`execution/upstream_error_translator.py`) is remote content, not a local path
+leak; it is out of scope for this control and should be assessed separately if
+it becomes a trust concern.
+
+### Release Integrity
+
+Every GitHub Release must ship a `SHA256SUMS` checksum manifest alongside the
+wheel and sdist artifacts so consumers can verify artifact integrity
+independently of the registry. `.github/workflows/publish.yml` regenerates
+`dist/SHA256SUMS` at publish time from the built assets (sorted by basename,
+`sha256sum -c` compatible) and uploads it as a release asset; existing assets
+are skipped idempotently.
+
 ## End-to-End Mapping: Remote A2A Input → OpenCode Side Effects
 
 | A2A input | Adapter path | OpenCode / host side effects |
@@ -127,7 +168,8 @@ All REST routes are served at the root path (no `/v1` prefix).
 - This document is the canonical security-surface reference. Update the route
   table, mapping, or risk register in the same change that alters listeners,
   routes, authentication/authorization, input limits, outbound policy,
-  persistence hardening, or known residual risks.
+  persistence hardening, error-text redaction boundaries, release integrity,
+  or known residual risks.
 - Do not turn this document into a report for a specific review cycle: keep it
   focused on facts that remain true for the current code and must stay
   maintainable. One-off conclusions belong in issue/PR history.

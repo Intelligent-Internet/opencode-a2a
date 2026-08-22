@@ -6,10 +6,16 @@ from dataclasses import replace
 from typing import Any, cast
 
 from a2a.server.events import Event
+from a2a.server.jsonrpc_models import JSONRPCError as SDKJSONRPCError
 from a2a.server.request_handlers.response_helpers import agent_card_to_dict, build_error_response
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 from a2a.utils import proto_utils
-from a2a.utils.errors import JSON_RPC_ERROR_CODE_MAP, A2AError, UnsupportedOperationError
+from a2a.utils.errors import (
+    JSON_RPC_ERROR_CODE_MAP,
+    A2AError,
+    InternalError,
+    UnsupportedOperationError,
+)
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict, ParseDict
@@ -22,6 +28,7 @@ from ..extension_negotiation import (
     requested_extensions_from_call_context,
 )
 from ..opencode_upstream_client import OpencodeUpstreamClient
+from ..redact import redact_absolute_paths
 from ..server.runtime_limits import apply_stream_budget
 from .dispatch import (
     ExtensionHandlerContext,
@@ -176,6 +183,20 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
 
     def add_routes_to_app(self, app: FastAPI, *, rpc_url: str = "/") -> None:
         app.add_api_route(rpc_url, self.handle_requests, methods=["POST"])
+
+    def _generate_error_response(
+        self,
+        request_id: str | int | None,
+        error: Exception | SDKJSONRPCError | A2AError,
+    ) -> JSONResponse:
+        """Adapt and redact errors before the SDK serializes the response."""
+        if isinstance(error, A2AError | JSONRPCError):
+            adapted = adapt_jsonrpc_error(error)
+        elif isinstance(error, SDKJSONRPCError):
+            adapted = adapt_jsonrpc_error(cast(Any, error))
+        else:
+            adapted = InternalError(message=redact_absolute_paths(str(error)))
+        return super()._generate_error_response(request_id, cast(Any, adapted))
 
     def _generate_protocol_error_response(
         self,

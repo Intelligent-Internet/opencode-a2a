@@ -11,6 +11,7 @@ from a2a.utils.errors import (
 )
 
 from ..protocol_versions import A2A_PROTOCOL_VERSION
+from ..redact import redact_absolute_paths, redact_paths_in_value
 from .models import JSONRPCError
 
 A2A_ERROR_DOMAIN = "a2a-protocol.org"
@@ -57,10 +58,12 @@ def _camelize(value: Any) -> Any:
 
 def _stringify_metadata_value(value: Any) -> str:
     if isinstance(value, str):
-        return value
+        return redact_absolute_paths(value)
     if isinstance(value, bool | int | float):
         return str(value)
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return redact_absolute_paths(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
 
 
 def _build_error_info_detail(
@@ -85,7 +88,7 @@ def _build_error_info_detail(
 def _build_context_detail(type_name: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "@type": f"type.googleapis.com/opencode_a2a.{type_name}",
-        **_camelize(dict(payload)),
+        **_camelize({str(key): redact_paths_in_value(value) for key, value in payload.items()}),
     }
 
 
@@ -124,11 +127,11 @@ def adapt_jsonrpc_error(error: JSONRPCError | A2AError) -> JSONRPCError | A2AErr
     if root_error.code in STANDARD_JSONRPC_ERROR_CODES:
         adapted_data = None
         if isinstance(root_data, Mapping):
-            adapted_data = _camelize(
-                {str(key): value for key, value in root_data.items() if key != "type"}
+            adapted_data = redact_paths_in_value(
+                _camelize({str(key): value for key, value in root_data.items() if key != "type"})
             )
         elif root_data is not None:
-            adapted_data = root_data
+            adapted_data = redact_paths_in_value(root_data)
         return JSONRPCError(
             code=root_error.code,
             message=STANDARD_JSONRPC_ERROR_MESSAGES[root_error.code],
@@ -146,6 +149,7 @@ def adapt_jsonrpc_error(error: JSONRPCError | A2AError) -> JSONRPCError | A2AErr
     message = root_error.message
     if message is None:
         message = STANDARD_JSONRPC_ERROR_MESSAGES.get(root_error.code, "Internal error")
+    message = redact_absolute_paths(message)
 
     return JSONRPCError(
         code=root_error.code,
@@ -171,7 +175,7 @@ def build_http_error_body(
     error_payload: dict[str, Any] = {
         "code": status_code,
         "status": status,
-        "message": message,
+        "message": redact_absolute_paths(message),
     }
     if details:
         error_payload["details"] = details
