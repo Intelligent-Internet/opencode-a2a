@@ -184,19 +184,51 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
     def add_routes_to_app(self, app: FastAPI, *, rpc_url: str = "/") -> None:
         app.add_api_route(rpc_url, self.handle_requests, methods=["POST"])
 
+    @staticmethod
+    def _build_error_payload(error: JSONRPCError | A2AError) -> dict[str, Any]:
+        """Serialize an adapted error into a JSON-RPC ``error`` payload."""
+        if isinstance(error, A2AError):
+            error_payload: dict[str, Any] = {
+                "code": JSON_RPC_ERROR_CODE_MAP.get(type(error), -32603),
+                "message": error.message,
+            }
+            if error.data is not None:
+                error_payload["data"] = error.data
+        else:
+            error_payload = {
+                "code": error.code,
+                "message": error.message,
+            }
+            if error.data is not None:
+                error_payload["data"] = error.data
+        return error_payload
+
     def _generate_error_response(
         self,
         request_id: str | int | None,
         error: Exception | SDKJSONRPCError | A2AError,
     ) -> JSONResponse:
-        """Adapt and redact errors before the SDK serializes the response."""
+        """Adapt and redact errors before serializing the JSON-RPC response.
+
+        The response is built here (rather than delegated to the SDK base
+        class) so adapted ``opencode_a2a`` errors keep their structured code,
+        message, and data instead of being stringified as a wrapped internal
+        error.
+        """
         if isinstance(error, A2AError | JSONRPCError):
             adapted = adapt_jsonrpc_error(error)
         elif isinstance(error, SDKJSONRPCError):
             adapted = adapt_jsonrpc_error(cast(Any, error))
         else:
             adapted = InternalError(message=redact_absolute_paths(str(error)))
-        return super()._generate_error_response(request_id, cast(Any, adapted))
+        return JSONResponse(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": self._build_error_payload(adapted),
+            },
+            status_code=200,
+        )
 
     def _generate_protocol_error_response(
         self,
@@ -204,22 +236,12 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         error: JSONRPCError | A2AError,
     ) -> JSONResponse:
         adapted = adapt_jsonrpc_error(error)
-        if isinstance(adapted, A2AError):
-            error_payload = {
-                "code": JSON_RPC_ERROR_CODE_MAP.get(type(adapted), -32603),
-                "message": adapted.message,
-            }
-            if adapted.data is not None:
-                error_payload["data"] = adapted.data
-        else:
-            error_payload = {
-                "code": adapted.code,
-                "message": adapted.message,
-            }
-            if adapted.data is not None:
-                error_payload["data"] = adapted.data
         return JSONResponse(
-            {"jsonrpc": "2.0", "id": request_id, "error": error_payload},
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": self._build_error_payload(adapted),
+            },
             status_code=200,
         )
 

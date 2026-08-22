@@ -8,13 +8,9 @@ from opencode_a2a.redact import (
 
 
 def test_masks_posix_absolute_paths() -> None:
-    text = (
-        "FileNotFoundError: [Errno 2] No such file or directory: "
-        "'/home/ubuntu/secret/data.txt'"
-    )
+    text = "FileNotFoundError: [Errno 2] No such file or directory: '/home/ubuntu/secret/data.txt'"
     assert redact_absolute_paths(text) == (
-        "FileNotFoundError: [Errno 2] No such file or directory: "
-        f"'{REDACTED_PATH_PLACEHOLDER}'"
+        f"FileNotFoundError: [Errno 2] No such file or directory: '{REDACTED_PATH_PLACEHOLDER}'"
     )
 
 

@@ -4,7 +4,12 @@ import json
 
 from a2a.types import InvalidParamsError
 
-from opencode_a2a.jsonrpc.error_responses import adapt_jsonrpc_error, build_http_error_body
+from opencode_a2a.jsonrpc.error_responses import (
+    adapt_jsonrpc_error,
+    build_http_error_body,
+    session_not_found_error,
+    upstream_payload_error,
+)
 from opencode_a2a.jsonrpc.models import JSONRPCError
 from opencode_a2a.redact import REDACTED_PATH_PLACEHOLDER
 from opencode_a2a.server.application import create_app
@@ -71,3 +76,41 @@ def test_generate_error_response_redacts_raw_exception_text() -> None:
     body = response.body.decode("utf-8")
     assert REDACTED_PATH_PLACEHOLDER in body
     assert "/home/ubuntu/x" not in body
+
+
+def test_generate_error_response_serializes_opencode_jsonrpc_errors() -> None:
+    app = create_app(make_settings())
+    jsonrpc_app = app.state._jsonrpc_app
+
+    response = jsonrpc_app._generate_error_response(
+        "1",
+        session_not_found_error(-32001, session_id="s-404"),
+    )
+
+    payload = json.loads(response.body.decode("utf-8"))
+    error = payload["error"]
+    assert error["code"] == -32001
+    assert error["message"] == "Session not found"
+    assert error["data"][0]["reason"] == "SESSION_NOT_FOUND"
+    assert "-32603" not in payload["error"]["message"]
+
+
+def test_generate_error_response_redacts_and_serializes_upstream_payload_error() -> None:
+    app = create_app(make_settings())
+    jsonrpc_app = app.state._jsonrpc_app
+
+    response = jsonrpc_app._generate_error_response(
+        "2",
+        upstream_payload_error(
+            -32005,
+            detail="failed at /home/ubuntu/sessions/s1.json",
+            method="list_sessions",
+        ),
+    )
+
+    payload = json.loads(response.body.decode("utf-8"))
+    error = payload["error"]
+    assert error["code"] == -32005
+    dumped = json.dumps(error)
+    assert REDACTED_PATH_PLACEHOLDER in dumped
+    assert "/home/ubuntu/sessions/s1.json" not in dumped
