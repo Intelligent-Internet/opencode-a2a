@@ -91,9 +91,9 @@ curl http://127.0.0.1:8000/.well-known/agent-card.json
 
 ## Capabilities
 
-- A2A HTTP+JSON endpoints such as `/v1/message:send` and `/v1/message:stream`
+- A2A HTTP+JSON endpoints such as `/message:send` and `/message:stream`
 - A2A JSON-RPC support on `POST /`
-- SDK-owned A2A task surfaces such as `GET /v1/tasks`, task push notification config routes, JSON-RPC `GetExtendedAgentCard`, and HTTP `GET /extendedAgentCard`
+- SDK-owned A2A task surfaces such as `GET /tasks`, task push notification config routes, JSON-RPC `GetExtendedAgentCard`, and HTTP `GET /extendedAgentCard`
 - Peering capabilities: can act as a client via `opencode-a2a call`
 - Autonomous tool execution: supports `a2a_call` tool for outbound agent-to-agent communication
 - SSE streaming with normalized `text`, `reasoning`, and `tool_call` blocks

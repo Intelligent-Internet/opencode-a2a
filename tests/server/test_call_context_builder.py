@@ -46,7 +46,7 @@ def test_builder_sets_identity_for_non_stream_request():
 
 def test_builder_marks_rest_stream_request():
     builder = IdentityAwareCallContextBuilder()
-    context = builder.build(_request("/v1/message:stream"))
+    context = builder.build(_request("/message:stream"))
     assert context.state.get("identity") == "opaque:test-id"
     assert context.user.is_authenticated is True
     assert context.user.user_name == "opaque:test-id"
@@ -62,7 +62,7 @@ def test_builder_marks_rest_stream_request():
 
 def test_builder_marks_encoded_stream_request():
     builder = IdentityAwareCallContextBuilder()
-    context = builder.build(_request("/v1/message%3Astream", raw_path=b"/v1/message%3Astream"))
+    context = builder.build(_request("/message%3Astream", raw_path=b"/message%3Astream"))
     assert context.state.get("identity") == "opaque:test-id"
     assert context.user.is_authenticated is True
     assert context.user.user_name == "opaque:test-id"

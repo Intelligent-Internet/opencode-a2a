@@ -176,11 +176,11 @@ def test_request_payload_helpers_cover_edge_cases() -> None:
 
 
 def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
-    request_v1 = _request("/v1/message:send")
+    request_v1 = _request("/message:send")
     request_v1.state.a2a_protocol_version = "1.0"
     v1_error = _rest_error_response(
         request=request_v1,
-        error=InvalidRequestError(message="bad payload", data={"path": "/v1/message:send"}),
+        error=InvalidRequestError(message="bad payload", data={"path": "/message:send"}),
     )
     assert v1_error.status_code == 400
     assert json.loads(v1_error.body) == {
@@ -193,17 +193,17 @@ def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
                     "@type": "type.googleapis.com/google.rpc.ErrorInfo",
                     "reason": "INVALID_REQUEST",
                     "domain": "a2a-protocol.org",
-                    "metadata": {"path": "/v1/message:send"},
+                    "metadata": {"path": "/message:send"},
                 },
                 {
                     "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
-                    "path": "/v1/message:send",
+                    "path": "/message:send",
                 },
             ],
         }
     }
 
-    request_default = _request("/v1/message:send")
+    request_default = _request("/message:send")
     parse_error = _rest_error_response(
         request=request_default,
         error=ParseError("bad parse"),
@@ -636,7 +636,7 @@ async def test_rest_adapter_routes_and_preconsume_error() -> None:
 
     handler.on_subscribe_to_task = _stream
     response = await adapter.on_subscribe_to_task(
-        _request("/v1/tasks/x:subscribe", method="GET", path_params={"id": "x"})
+        _request("/tasks/x:subscribe", method="GET", path_params={"id": "x"})
     )
     assert response is not None
 
@@ -665,7 +665,7 @@ async def test_push_notification_routes_are_explicitly_unsupported(monkeypatch) 
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/v1/tasks/task-1/pushNotificationConfigs",
+            "/tasks/task-1/pushNotificationConfigs",
             headers={"Authorization": "Bearer test-token"},
             json={"pushNotificationConfig": {"url": "https://example.com/hook"}},
         )
@@ -841,8 +841,8 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
     }
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        send_response = await client.post("/v1/message:send", headers=headers, json=payload)
-        stream_response = await client.post("/v1/message:stream", headers=headers, json=payload)
+        send_response = await client.post("/message:send", headers=headers, json=payload)
+        stream_response = await client.post("/message:stream", headers=headers, json=payload)
 
     assert send_response.status_code == 200
     assert send_response.json() == {

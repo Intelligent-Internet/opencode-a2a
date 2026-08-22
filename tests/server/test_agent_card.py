@@ -772,11 +772,10 @@ def test_agent_card_injects_profile_into_extensions() -> None:
     assert INTERRUPT_RECOVERY_EXTENSION_URI in wire_contract.params["extensions"]["extension_uris"]
     assert "GetExtendedAgentCard" in wire_contract.params["all_jsonrpc_methods"]
     assert "GetTaskPushNotificationConfig" in wire_contract.params["all_jsonrpc_methods"]
-    assert "GET /v1/tasks" in wire_contract.params["core"]["http_endpoints"]
+    assert "GET /tasks" in wire_contract.params["core"]["http_endpoints"]
     assert "GET /extendedAgentCard" in wire_contract.params["core"]["http_endpoints"]
     assert (
-        "GET /v1/tasks/{id}/pushNotificationConfigs"
-        in wire_contract.params["core"]["http_endpoints"]
+        "GET /tasks/{id}/pushNotificationConfigs" in wire_contract.params["core"]["http_endpoints"]
     )
     assert "opencode.sessions.shell" not in wire_contract.params["all_jsonrpc_methods"]
     assert wire_contract.params["service_behaviors"] == expected_service_behaviors

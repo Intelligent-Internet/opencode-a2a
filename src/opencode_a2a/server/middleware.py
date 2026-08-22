@@ -60,6 +60,17 @@ _REQUEST_BODY_BYTES: ContextVar[bytes | None] = ContextVar(
 )
 
 
+def _is_http_json_rest_path(path: str) -> bool:
+    """Return True for root-based A2A HTTP+JSON REST paths.
+
+    A2A 1.0 resolves REST paths relative to the advertised interface URL
+    (spec sections 8.5/8.6), so this service serves the HTTP+JSON surface at
+    the root: no version prefix in the URL path, with protocol versioning
+    carried in the A2A-Version header instead.
+    """
+    return path.startswith("/message:") or path.startswith("/tasks")
+
+
 def add_auth_middleware(app: FastAPI, settings) -> None:  # noqa: ANN001
     configured_credentials = build_static_auth_credentials(settings)
     advertised_schemes = {credential.auth_scheme for credential in configured_credentials}
@@ -127,7 +138,7 @@ def install_runtime_middlewares(
     def _requires_protocol_negotiation(request: Request) -> bool:
         if request.url.path == "/" and request.method == "POST":
             return True
-        if request.url.path.startswith("/v1/"):
+        if _is_http_json_rest_path(request.url.path):
             return True
         return False
 
@@ -291,7 +302,7 @@ def install_runtime_middlewares(
             supported_extensions = PUBLIC_EXTENSION_URIS
         elif path == EXTENDED_AGENT_CARD_PATH:
             supported_extensions = ALL_EXTENSION_URIS
-        elif path == "/" or path.startswith("/v1/"):
+        elif path == "/" or _is_http_json_rest_path(path):
             supported_extensions = PUBLIC_EXTENSION_URIS
         else:
             return ()
@@ -381,8 +392,8 @@ def install_runtime_middlewares(
     async def guard_rest_payload_shape(request: Request, call_next):
         token: Token | None = None
         if request.method != "POST" or request.url.path not in {
-            "/v1/message:send",
-            "/v1/message:stream",
+            "/message:send",
+            "/message:stream",
         }:
             return await call_next(request)
 
