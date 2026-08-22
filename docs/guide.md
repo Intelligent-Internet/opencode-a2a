@@ -191,6 +191,24 @@ The supported persistence profile is one `opencode-a2a` application process usin
 
 The runtime configures local durability-oriented SQLite connection settings (`WAL`, `busy_timeout`, `synchronous=NORMAL`) and creates missing parent directories for file-backed database paths.
 
+### SQLite Persistence Hardening
+
+File-backed SQLite databases are hardened at startup and on every new connection on POSIX systems:
+
+- the database file must be a regular file; symlinks are rejected and fail startup;
+- the file must be owned by the user running `opencode-a2a`; a database owned by another user fails startup;
+- the database file is forced to mode `0600`, and existing SQLite sidecar files (`-wal`/`-shm`/`-journal`) are converged to the same mode;
+- the parent directory is created with mode `0700` when it does not exist; keep the database directory private (no group/world access);
+- if the database is replaced by a symlink, a special file, or a foreign-owned file while the service is running, the next connection fails closed.
+
+`A2A_TASK_STORE_DATABASE_URL` values that do not map to a plain file path are exempt: `:memory:` and `file:` URI-style database components (including in-memory shared-cache databases) are not hardened. Prefer a plain absolute file path for deployments that need the startup guarantees. Non-POSIX platforms rely on the user account ACLs of the hosting directory; the same private-directory requirement applies there.
+
+Deployment requirements:
+
+- run `opencode-a2a` as a dedicated user and keep the database directory outside world-readable workspace trees;
+- do not place the SQLite file on network-mounted or sync-managed directories;
+- when migrating an existing database, fix ownership and mode before startup: `chown <service-user> <db>` and `chmod 600 <db>`, and ensure the parent directory is not group/world accessible.
+
 The runtime automatically applies lightweight schema migrations for its custom state tables and records the applied version in `a2a_schema_version`. Schema-version writes are idempotent across concurrent first-start races, pending preferred-session claims now persist absolute `expires_at` timestamps, legacy rows without `expires_at` are pruned during migration instead of being reconstructed from historical TTL assumptions, and the built-in path currently targets the local SQLite deployment profile without requiring Alembic.
 
 Database-backed task persistence also keeps the existing first-terminal-state-wins contract while tightening the SQLite path with an atomic terminal-write guard instead of relying only on process-local read-before-write checks.
