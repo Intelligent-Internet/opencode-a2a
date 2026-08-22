@@ -212,6 +212,17 @@ def add_http_boundary_middleware(app: FastAPI, settings) -> None:  # noqa: ANN00
             "set a Host allowlist to defend against DNS rebinding",
             getattr(settings, "a2a_host", "127.0.0.1"),
         )
+    if enforce_host and public_origin is not None:
+        public_host = public_origin.split("://", 1)[1]
+        if public_host.lower() not in allowed_host_headers and not matches_allowed_host(
+            _hostname_from_host_header(public_host),
+            allowed_hosts,
+        ):
+            logger.warning(
+                "A2A_PUBLIC_URL host %r is not covered by A2A_ALLOWED_HOSTS; "
+                "requests matching the public origin may be rejected on Host",
+                public_host,
+            )
 
     @app.middleware("http")
     async def enforce_http_boundary(request: Request, call_next):

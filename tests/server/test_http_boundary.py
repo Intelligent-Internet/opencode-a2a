@@ -94,9 +94,7 @@ async def test_invalid_public_url_logs_warning(caplog: pytest.LogCaptureFixture)
     with caplog.at_level(logging.WARNING, logger="opencode_a2a.server.application"):
         _boundary_app(settings)
 
-    assert any(
-        "not a valid http(s) URL" in record.message for record in caplog.records
-    )
+    assert any("not a valid http(s) URL" in record.message for record in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -207,4 +205,34 @@ async def test_loopback_bind_without_allowlist_does_not_log_warning(
     assert not any(
         "non-loopback" in record.message and "A2A_ALLOWED_HOSTS" in record.message
         for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_public_url_host_not_covered_logs_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = make_settings(
+        a2a_allowed_hosts=("a2a.example.com",),
+        a2a_public_url="http://other.example:8000",
+    )
+    with caplog.at_level(logging.WARNING, logger="opencode_a2a.server.application"):
+        _boundary_app(settings)
+
+    assert any("not covered by A2A_ALLOWED_HOSTS" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_public_url_host_covered_does_not_log_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = make_settings(
+        a2a_allowed_hosts=("a2a.example.com",),
+        a2a_public_url="http://a2a.example.com:8000",
+    )
+    with caplog.at_level(logging.WARNING, logger="opencode_a2a.server.application"):
+        _boundary_app(settings)
+
+    assert not any(
+        "not covered by A2A_ALLOWED_HOSTS" in record.message for record in caplog.records
     )
