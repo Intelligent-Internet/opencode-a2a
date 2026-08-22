@@ -146,11 +146,30 @@ jobs:
 
           ensure_release
 
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+
+          dist_dir = Path("dist")
+          lines = []
+          for asset in sorted(
+              (
+                  path
+                  for path in dist_dir.iterdir()
+                  if path.is_file() and path.name.endswith((".whl", ".tar.gz"))
+              ),
+              key=lambda item: item.name,
+          ):
+              digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+              lines.append(f"{digest}  {asset.name}")
+          (dist_dir / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
           mapfile -t existing_assets < <(
             retry 3 5 gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name'
           )
 
-          for asset in dist/*.tar.gz dist/*.whl; do
+          for asset in dist/*.tar.gz dist/*.whl dist/SHA256SUMS; do
             asset_name="$(basename "$asset")"
             if printf '%s\n' "${existing_assets[@]}" | grep -Fxq "$asset_name"; then
               echo "Release asset already present: $asset_name"
