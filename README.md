@@ -176,6 +176,7 @@ Read before deployment:
 - [docs/maintainer-architecture.md](docs/maintainer-architecture.md) Internal module boundaries and maintainer call chains.
 - [docs/compatibility.md](docs/compatibility.md) Compatibility-sensitive surface and contract-honesty guidance.
 - [docs/guide.md](docs/guide.md) Usage guide, transport details, streaming behavior, extensions, and examples.
+- [docs/security-architecture.md](docs/security-architecture.md) Security surface, boundaries, and residual-risk register.
 - [docs/conformance.md](docs/conformance.md) External TCK experiment workflow and artifact handling.
 - [SECURITY.md](SECURITY.md) Threat model, deployment caveats, and vulnerability disclosure guidance.
 
