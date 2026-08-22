@@ -102,6 +102,9 @@ Browsers store and automatically attach Basic credentials, and they send an `Ori
 
 For browser-based clients, prefer the same origin as `A2A_PUBLIC_URL`, or explicitly allow the dashboard origin via `A2A_ALLOWED_ORIGINS` and treat `A2A_ALLOWED_HOSTS` as part of the deployment contract. Basic authentication should not be relied on as the sole browser-facing boundary: combine it with the origin/host checks above, short-lived credentials, and TLS at the public URL.
 
+The consolidated audit network-surface mapping and residual-risk register live
+in [security-audit-499.md](./security-audit-499.md).
+
 ## Client Initialization Facade (Preview)
 
 `opencode-a2a` now includes a minimal client bootstrap module in `src/opencode_a2a/client/` to support downstream consumer usage while keeping server and client concerns separate.

@@ -96,6 +96,7 @@ Use the docs by responsibility:
 - [Usage Guide](guide.md): runtime configuration, transport contracts, extensions, and examples
 - [Maintainer Architecture Guide](maintainer-architecture.md): internal module boundaries, request call chains, and persistence touchpoints
 - [Extension Specifications](extension-specifications.md): stable extension URI/spec index and disclosure policy
+- [Security Audit #499](security-audit-499.md): audit network-surface mapping and residual-risk register
 - [Conformance Notes](conformance.md): external TCK experiment workflow
 - [Contributing Guide](../CONTRIBUTING.md): contributor workflow and validation
 - [Security Policy](../SECURITY.md): threat model and disclosure guidance
