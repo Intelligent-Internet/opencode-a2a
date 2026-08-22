@@ -1017,19 +1017,34 @@ def create_app(settings: Settings) -> FastAPI:
                 error=error,
             )
 
+    async def rest_subscribe_route(request: Request):
+        try:
+
+            async def _handler(context):
+                params = SubscribeToTaskRequest(id=request.path_params["id"])
+                async for event in handler.on_subscribe_to_task(params, context):
+                    yield MessageToDict(proto_utils.to_stream_response(event))
+
+            return await rest_dispatcher._handle_streaming(request, _handler)
+        except Exception as error:  # noqa: BLE001 - mirrors SDK rest_stream_error_handler
+            return _rest_error_response(
+                request=request,
+                error=error,
+            )
+
     app.add_api_route(AGENT_CARD_WELL_KNOWN_PATH, public_agent_card_route, methods=["GET"])
     app.add_api_route("/message:send", rest_message_send_route, methods=["POST"])
     app.add_api_route("/message:stream", rest_message_send_stream_route, methods=["POST"])
     app.add_api_route("/tasks/{id}:cancel", rest_dispatcher.on_cancel_task, methods=["POST"])
     app.add_api_route(
         "/tasks/{id}:subscribe",
-        rest_dispatcher.on_subscribe_to_task,
+        rest_subscribe_route,
         methods=["GET"],
         operation_id="subscribe_to_task_get",
     )
     app.add_api_route(
         "/tasks/{id}:subscribe",
-        rest_dispatcher.on_subscribe_to_task,
+        rest_subscribe_route,
         methods=["POST"],
         operation_id="subscribe_to_task_post",
     )

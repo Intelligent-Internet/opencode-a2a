@@ -11,6 +11,10 @@ from opencode_a2a.server.runtime_limits import (
     StreamBudgetExceeded,
     apply_stream_budget,
 )
+from tests.server.test_transport_contract import (
+    _authenticated_task_context,
+    _task_for_listing,
+)
 from tests.support.helpers import DummyChatOpencodeUpstreamClient, make_basic_auth_header
 from tests.support.settings import make_settings
 
@@ -374,3 +378,50 @@ async def test_streaming_byte_budget_integration_terminates_jsonrpc_sse(monkeypa
 
     assert b"event: error" in body
     assert b"byte budget" in body
+
+
+@pytest.mark.asyncio
+async def test_subscribe_missing_task_returns_not_found(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = _create_rate_limited_app(test_bearer_token="test-token")
+    headers = {"Authorization": "Bearer test-token"}
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/tasks/missing:subscribe", headers=headers)
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_streaming_byte_budget_integration_rejects_subscribe_before_sse(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = _create_rate_limited_app(
+        test_bearer_token="test-token",
+        a2a_stream_max_bytes=128,
+        a2a_stream_max_duration_seconds=0,
+        a2a_stream_idle_timeout_seconds=0,
+    )
+    task_store = app.state.task_store
+    await task_store.save(
+        _task_for_listing(
+            task_id="task-sub",
+            context_id="ctx-sub",
+            timestamp="2026-08-22T00:00:00+00:00",
+        ),
+        _authenticated_task_context(),
+    )
+    headers = {"Authorization": "Bearer test-token"}
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/tasks/task-sub:subscribe", headers=headers)
+
+    assert response.status_code == 429
+    error_payload = response.json()["error"]
+    assert error_payload["status"] == "RESOURCE_EXHAUSTED"
+    assert error_payload["message"] == "Stream budget exceeded: byte budget"
