@@ -107,6 +107,7 @@ from .request_parsing import (
     _parse_json_body,
 )
 from .rest_tasks import build_list_tasks_route
+from .runtime_limits import StreamBudgetExceeded, apply_stream_budget
 from .state_store import (
     build_runtime_state_runtime,
 )
@@ -152,6 +153,21 @@ def _rest_error_response(
                 metadata=metadata,
             ),
             status_code=mapping.http_code,
+        )
+
+    if isinstance(error, StreamBudgetExceeded):
+        logger.warning(
+            "REST stream rejected before SSE start: %s",
+            error,
+        )
+        return JSONResponse(
+            build_http_error_body(
+                status_code=429,
+                status="RESOURCE_EXHAUSTED",
+                message=str(error),
+                reason="STREAM_BUDGET_EXCEEDED",
+            ),
+            status_code=429,
         )
 
     if isinstance(error, ParseError):
@@ -210,10 +226,12 @@ def _parse_rest_send_message_request(body: bytes):
 
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import AsyncIterator, Awaitable, Callable
 
     from a2a.server.agent_execution import AgentExecutor, RequestContextBuilder
     from a2a.server.context import ServerCallContext
+    from a2a.server.request_handlers.request_handler import RequestHandler
+    from a2a.server.routes.common import ServerCallContextBuilder
     from a2a.server.tasks import (
         PushNotificationConfigStore,
         PushNotificationSender,
@@ -820,6 +838,45 @@ class IdentityAwareCallContextBuilder(DefaultServerCallContextBuilder):
         return context
 
 
+class BudgetedRestDispatcher(RestDispatcher):
+    """REST dispatcher that applies streaming output budgets to SSE streams."""
+
+    def __init__(
+        self,
+        request_handler: RequestHandler,
+        context_builder: ServerCallContextBuilder,
+        *,
+        stream_budget_max_bytes: int,
+        stream_budget_max_duration_seconds: float,
+        stream_budget_idle_timeout_seconds: float,
+    ) -> None:
+        super().__init__(
+            request_handler=request_handler,
+            context_builder=context_builder,
+        )
+        self._stream_budget_max_bytes = stream_budget_max_bytes
+        self._stream_budget_max_duration_seconds = stream_budget_max_duration_seconds
+        self._stream_budget_idle_timeout_seconds = stream_budget_idle_timeout_seconds
+
+    async def _handle_streaming(
+        self,
+        request: Request,
+        handler_func: Callable[[ServerCallContext], AsyncIterator[Any]],
+    ) -> Any:
+        async def budgeted_handler(
+            context: ServerCallContext,
+        ) -> AsyncIterator[Any]:
+            async for item in apply_stream_budget(
+                aiter(handler_func(context)),
+                max_bytes=self._stream_budget_max_bytes,
+                max_duration_seconds=self._stream_budget_max_duration_seconds,
+                idle_timeout_seconds=self._stream_budget_idle_timeout_seconds,
+            ):
+                yield item
+
+        return await super()._handle_streaming(request, budgeted_handler)
+
+
 def create_app(settings: Settings) -> FastAPI:
     install_log_record_factory()
     database_engine = (
@@ -889,11 +946,17 @@ def create_app(settings: Settings) -> FastAPI:
             "release_preferred_session_claim",
             None,
         ),
+        stream_budget_max_bytes=settings.a2a_stream_max_bytes,
+        stream_budget_max_duration_seconds=settings.a2a_stream_max_duration_seconds,
+        stream_budget_idle_timeout_seconds=settings.a2a_stream_idle_timeout_seconds,
         methods=jsonrpc_methods,
     )
-    rest_dispatcher = RestDispatcher(
+    rest_dispatcher = BudgetedRestDispatcher(
         request_handler=handler,
         context_builder=context_builder,
+        stream_budget_max_bytes=settings.a2a_stream_max_bytes,
+        stream_budget_max_duration_seconds=settings.a2a_stream_max_duration_seconds,
+        stream_budget_idle_timeout_seconds=settings.a2a_stream_idle_timeout_seconds,
     )
     public_card_etag = build_agent_card_etag(agent_card)
     extended_card_etag = build_agent_card_etag(extended_agent_card)
@@ -954,19 +1017,34 @@ def create_app(settings: Settings) -> FastAPI:
                 error=error,
             )
 
+    async def rest_subscribe_route(request: Request):
+        try:
+
+            async def _handler(context):
+                params = SubscribeToTaskRequest(id=request.path_params["id"])
+                async for event in handler.on_subscribe_to_task(params, context):
+                    yield MessageToDict(proto_utils.to_stream_response(event))
+
+            return await rest_dispatcher._handle_streaming(request, _handler)
+        except Exception as error:  # noqa: BLE001 - mirrors SDK rest_stream_error_handler
+            return _rest_error_response(
+                request=request,
+                error=error,
+            )
+
     app.add_api_route(AGENT_CARD_WELL_KNOWN_PATH, public_agent_card_route, methods=["GET"])
     app.add_api_route("/message:send", rest_message_send_route, methods=["POST"])
     app.add_api_route("/message:stream", rest_message_send_stream_route, methods=["POST"])
     app.add_api_route("/tasks/{id}:cancel", rest_dispatcher.on_cancel_task, methods=["POST"])
     app.add_api_route(
         "/tasks/{id}:subscribe",
-        rest_dispatcher.on_subscribe_to_task,
+        rest_subscribe_route,
         methods=["GET"],
         operation_id="subscribe_to_task_get",
     )
     app.add_api_route(
         "/tasks/{id}:subscribe",
-        rest_dispatcher.on_subscribe_to_task,
+        rest_subscribe_route,
         methods=["POST"],
         operation_id="subscribe_to_task_post",
     )

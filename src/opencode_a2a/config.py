@@ -191,6 +191,32 @@ class Settings(BaseSettings):
         ge=0,
         alias="A2A_MAX_REQUEST_BODY_BYTES",
     )
+    a2a_rate_limit_enabled: bool = Field(default=True, alias="A2A_RATE_LIMIT_ENABLED")
+    a2a_rate_limit_window_seconds: float = Field(
+        default=60.0,
+        gt=0.0,
+        alias="A2A_RATE_LIMIT_WINDOW_SECONDS",
+    )
+    a2a_rate_limit_max_requests: int = Field(
+        default=120,
+        gt=0,
+        alias="A2A_RATE_LIMIT_MAX_REQUESTS",
+    )
+    a2a_stream_max_bytes: int = Field(
+        default=64 * 1024 * 1024,
+        ge=0,
+        alias="A2A_STREAM_MAX_BYTES",
+    )
+    a2a_stream_max_duration_seconds: float = Field(
+        default=3600.0,
+        ge=0.0,
+        alias="A2A_STREAM_MAX_DURATION_SECONDS",
+    )
+    a2a_stream_idle_timeout_seconds: float = Field(
+        default=120.0,
+        ge=0.0,
+        alias="A2A_STREAM_IDLE_TIMEOUT_SECONDS",
+    )
     a2a_documentation_url: str | None = Field(default=None, alias="A2A_DOCUMENTATION_URL")
     a2a_allow_directory_override: bool = Field(default=True, alias="A2A_ALLOW_DIRECTORY_OVERRIDE")
     a2a_enable_session_shell: bool = Field(default=False, alias="A2A_ENABLE_SESSION_SHELL")
