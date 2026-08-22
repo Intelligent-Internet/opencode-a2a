@@ -174,6 +174,8 @@ class Settings(BaseSettings):
 
     # A2A settings
     a2a_public_url: str = Field(default="http://127.0.0.1:8000", alias="A2A_PUBLIC_URL")
+    a2a_allowed_origins: DeclaredStringList = Field(default=(), alias="A2A_ALLOWED_ORIGINS")
+    a2a_allowed_hosts: DeclaredStringList = Field(default=(), alias="A2A_ALLOWED_HOSTS")
     a2a_project: str | None = Field(default=None, alias="A2A_PROJECT")
     a2a_title: str = Field(default="OpenCode A2A", alias="A2A_TITLE")
     a2a_description: str = Field(default="OpenCode A2A runtime", alias="A2A_DESCRIPTION")
