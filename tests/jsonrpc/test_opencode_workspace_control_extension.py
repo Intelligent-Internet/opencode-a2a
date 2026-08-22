@@ -376,3 +376,38 @@ async def test_workspace_control_extension_maps_upstream_http_error(monkeypatch)
         reason="UPSTREAM_HTTP_ERROR",
         metadata={"upstream_status": 503},
     )
+
+
+@pytest.mark.asyncio
+async def test_workspace_control_extension_maps_malformed_upstream_items_to_payload_error(
+    monkeypatch,
+) -> None:
+    import opencode_a2a.server.application as app_module
+
+    class MalformedUpstreamClient(DummyOpencodeUpstreamClient):
+        async def list_workspaces(self):
+            self.workspace_control_calls.append({"method": "list_workspaces"})
+            return ["/workspace/raw-path"]
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", MalformedUpstreamClient)
+    app = app_module.create_app(
+        make_settings(test_bearer_token="t-1", a2a_log_payloads=False, **_BASE_SETTINGS)
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers=_extension_headers({"Authorization": "Bearer t-1"}),
+            json={
+                "jsonrpc": "2.0",
+                "id": 22,
+                "method": "opencode.workspaces.list",
+                "params": {},
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["error"]["code"] == -32005
+    assert_v1_error_reason(payload["error"], reason="UPSTREAM_PAYLOAD_ERROR")
