@@ -24,8 +24,8 @@ This project is currently best suited for trusted or internal environments. Impo
 - static credential auth only by default; stronger identity propagation is still a follow-up hardening area
 - operators remain responsible for host hardening, secret rotation, process access controls, and reverse-proxy exposure strategy
 
-For the consolidated audit network-surface mapping and residual-risk register,
-see [docs/security-audit-499.md](./docs/security-audit-499.md).
+For the security surface mapping and residual-risk register, see
+[docs/security-architecture.md](./docs/security-architecture.md).
 
 ## Reporting a Vulnerability
 

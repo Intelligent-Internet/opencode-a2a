@@ -129,6 +129,6 @@ For maintainers new to the codebase, this order usually gives the fastest payoff
 4. `src/opencode_a2a/execution/executor.py`
 5. `src/opencode_a2a/contracts/extensions/`
 
-For security-focused contributors, `docs/security-audit-499.md` additionally
-consolidates the audit network-surface mapping and residual-risk register.
+For security-focused contributors, `docs/security-architecture.md` additionally
+consolidates the security surface mapping and residual-risk register.
 6. `docs/guide.md`

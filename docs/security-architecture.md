@@ -1,38 +1,23 @@
-# Security Audit #499 — Network Surface Mapping and Residual Risk Register
+# Security Architecture, Surface, and Residual Risks
 
-This document consolidates the audit-mapping deliverables of
-[issue #499](https://github.com/Intelligent-Internet/opencode-a2a/issues/499)
-(system security audit aligned with codex-a2a #331):
+This document is the single source of truth for the adapter's security
+surface: network listeners and routes, authentication and authorization, input
+limits and boundary guards, outbound side effects, the end-to-end mapping from
+remote A2A input to OpenCode side effects, and the residual-risk register.
 
-- full network-surface mapping: listeners, routes, authentication and
-  authorization, input limits, and outbound side effects;
-- end-to-end mapping of remote A2A input to OpenCode session/tool/file side
-  effects;
-- the residual-risk register, including the risks called out during audit
-  close-out.
+It is a living document. Security-relevant changes must update the mapping and
+the risk register in the same change that alters the behavior. It complements,
+and does not replace:
 
-It is the single source of truth for the audit mapping and risk register.
-Operational configuration details live in [guide.md](./guide.md), the threat
-model lives in [SECURITY.md](../SECURITY.md), and the one-off security report,
-test plan, and supply-chain review record live in issue #499 and its closing PR
-(per maintainer decision, audit conclusions are not duplicated into repository
-docs to avoid drift).
+- [SECURITY.md](../SECURITY.md) — threat model, trust boundary, and
+  vulnerability reporting;
+- [guide.md](./guide.md) — operational configuration, defaults, and runbooks;
+- [compatibility.md](./compatibility.md) — wire-level compatibility promises.
 
-## Audit Scope and Baseline
+One-off audit conclusions, review records, and test plans are intentionally
+not stored here; they live in the issue/PR history of the repository.
 
-- Audit start baseline: `adf2a9b` (recorded in #499).
-- Reviewed head: `23f8968` (main).
-- Fixes landed via merged PRs:
-
-| Audit item | Issue | Fix PR |
-| --- | --- | --- |
-| Outbound SSRF / credential exfiltration | #500 | #505 |
-| SQLite persistence hardening | #501 | #507 |
-| Rate limits and streaming budgets | #502 | #509 |
-| Discovery response normalization | #503 | #506 |
-| Inbound Origin/Host boundary | #504 | #508 |
-
-## Network Surface Mapping
+## Network Surface
 
 ### Listeners and Bind
 
@@ -134,5 +119,15 @@ All REST routes are served at the root path (no `/v1` prefix).
 | R-3 | Non-loopback bind without `A2A_ALLOWED_HOSTS` only warns at startup | Accepted | Operator contract: trusted network or reverse proxy validates Host. [guide.md](./guide.md) "Inbound Origin and Host Boundary" |
 | R-4 | Single-tenant shared-workspace boundary; static credentials only by default | Accepted by design | Threat model and tenant guidance in [SECURITY.md](../SECURITY.md) |
 | R-5 | Payload logging can capture sensitive data when enabled | Accepted | Opt-in with `A2A_LOG_BODY_LIMIT` cap; treat logs as sensitive. [SECURITY.md](../SECURITY.md) |
-| R-6 | Push notification config surface exposed-but-unsupported (HTTP 501 / JSON-RPC unsupported) | Accepted | Contract kept explicit; capability recovery tracked separately in #451 |
+| R-6 | Push notification config surface exposed-but-unsupported (HTTP 501 / JSON-RPC unsupported) | Accepted | Contract kept explicitly unsupported; capability recovery is intentionally deferred |
 | R-7 | SQLite hardening exempts `:memory:` / `file:` URIs and non-POSIX platforms | Accepted | Plain absolute file path recommended for deployments. [guide.md](./guide.md) "SQLite Persistence Hardening" |
+
+## Maintenance Rules
+
+- This document is the canonical security-surface reference. Update the route
+  table, mapping, or risk register in the same change that alters listeners,
+  routes, authentication/authorization, input limits, outbound policy,
+  persistence hardening, or known residual risks.
+- Do not turn this document into a report for a specific review cycle: keep it
+  focused on facts that remain true for the current code and must stay
+  maintainable. One-off conclusions belong in issue/PR history.
