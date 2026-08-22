@@ -28,6 +28,19 @@ ERR_UPSTREAM_UNREACHABLE = WORKSPACE_CONTROL_ERROR_BUSINESS_CODES["UPSTREAM_UNRE
 ERR_UPSTREAM_HTTP_ERROR = WORKSPACE_CONTROL_ERROR_BUSINESS_CODES["UPSTREAM_HTTP_ERROR"]
 ERR_UPSTREAM_PAYLOAD_ERROR = WORKSPACE_CONTROL_ERROR_BUSINESS_CODES["UPSTREAM_PAYLOAD_ERROR"]
 
+_PROJECT_SUMMARY_FIELDS = ("id", "name", "vcs")
+_WORKSPACE_SUMMARY_FIELDS = ("id", "type", "name", "branch")
+_WORKTREE_SUMMARY_FIELDS = ("name", "branch")
+
+_LIST_METHODS = {"list_projects", "list_workspaces", "list_worktrees"}
+_ITEM_METHODS = {
+    "get_current_project",
+    "create_workspace",
+    "remove_workspace",
+    "create_worktree",
+}
+_BOOL_METHODS = {"remove_worktree", "reset_worktree"}
+
 
 def _invalid_field_response(
     context: ExtensionHandlerContext,
@@ -170,16 +183,55 @@ def _validate_allowed_fields(
     )
 
 
-def _validate_response_payload(method: str, payload: Any) -> dict[str, Any]:
-    if method in {"list_projects", "list_workspaces", "list_worktrees"}:
+def _pick_summary_fields(
+    item: dict[str, Any],
+    allowed_fields: tuple[str, ...],
+) -> dict[str, Any]:
+    return {key: item[key] for key in allowed_fields if key in item and item[key] is not None}
+
+
+def _project_summary(item: Any) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        raise ValueError("Upstream project items must be objects")
+    return _pick_summary_fields(item, _PROJECT_SUMMARY_FIELDS)
+
+
+def _workspace_summary(item: Any) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        raise ValueError("Upstream workspace items must be objects")
+    return _pick_summary_fields(item, _WORKSPACE_SUMMARY_FIELDS)
+
+
+def _worktree_summary(item: Any) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        raise ValueError("Upstream worktree items must be objects")
+    return _pick_summary_fields(item, _WORKTREE_SUMMARY_FIELDS)
+
+
+def _normalize_response_payload(method: str, payload: Any) -> dict[str, Any]:
+    if method in _LIST_METHODS:
         if not isinstance(payload, list):
             raise ValueError("Upstream list response must be an array")
-        return {"items": payload}
-    if method in {"get_current_project", "create_workspace", "remove_workspace", "create_worktree"}:
+        if method == "list_projects":
+            items = [_project_summary(item) for item in payload]
+        elif method == "list_workspaces":
+            items = [_workspace_summary(item) for item in payload]
+        else:
+            items = [_worktree_summary(item) for item in payload]
+        return {"items": items}
+    if method in _ITEM_METHODS:
         if payload is not None and not isinstance(payload, dict):
             raise ValueError("Upstream item response must be an object or null")
-        return {"item": payload}
-    if method in {"remove_worktree", "reset_worktree"}:
+        if payload is None:
+            return {"item": None}
+        if method == "get_current_project":
+            item = _project_summary(payload)
+        elif method == "create_worktree":
+            item = _worktree_summary(payload)
+        else:
+            item = _workspace_summary(payload)
+        return {"item": item}
+    if method in _BOOL_METHODS:
         if not isinstance(payload, bool):
             raise ValueError("Upstream boolean response must be a boolean")
         return {"ok": payload}
@@ -302,7 +354,7 @@ async def handle_workspace_control_request(
     assert raw_result is not None
 
     try:
-        result = _validate_response_payload(method_key, raw_result)
+        result = _normalize_response_payload(method_key, raw_result)
     except ValueError as exc:
         logger.warning("Upstream OpenCode workspace payload mismatch: %s", exc)
         return build_upstream_payload_error_response(

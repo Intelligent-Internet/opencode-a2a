@@ -221,6 +221,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
             a2a_approval_escalation_behavior="unsupported",
             a2a_write_access_scope="workspace_and_declared_roots",
             a2a_write_access_outside_workspace="disallowed",
+            a2a_expose_workspace_root_in_card=True,
         ),
         include_detailed_contracts=True,
     )
@@ -806,6 +807,23 @@ def test_agent_card_injects_profile_into_extensions() -> None:
         },
     }
     assert wire_contract.description.endswith("unified error contracts.")
+
+
+def test_agent_card_omits_workspace_root_by_default() -> None:
+    card = build_agent_card(
+        make_settings(
+            test_bearer_token="test-token",
+            a2a_project="alpha",
+            opencode_workspace_root="/srv/workspaces/alpha",
+        ),
+        include_detailed_contracts=True,
+    )
+
+    assert "Workspace root" not in card.description
+    assert "/srv/workspaces/alpha" not in card.description
+    ext_by_uri = {ext.uri: ext for ext in card.capabilities.extensions or []}
+    profile = ext_by_uri[SESSION_BINDING_EXTENSION_URI].params["profile"]
+    assert profile["runtime_context"] == {"project": "alpha"}
 
 
 def test_agent_card_chat_examples_include_project_hint_when_configured() -> None:

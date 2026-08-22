@@ -115,9 +115,6 @@ def _build_agent_card_description(
     project = runtime_context.get("project")
     if isinstance(project, str) and project.strip():
         parts.append(f"Deployment project: {project}.")
-    workspace_root = runtime_context.get("workspace_root")
-    if isinstance(workspace_root, str) and workspace_root.strip():
-        parts.append(f"Workspace root: {workspace_root}.")
     return " ".join(parts)
 
 

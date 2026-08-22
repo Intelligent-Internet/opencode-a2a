@@ -130,6 +130,7 @@ Extension URI: `urn:opencode-a2a:extension:workspace-control:v1`
 - Methods: stable project discovery plus experimental workspace/worktree discovery and deployment-conditional mutation methods
 - Dependencies: none declared by this version
 - Security boundary: this extension is provider-private, operator-scoped, and partly deployment-conditional
+- Response hygiene: discovery responses are normalized summaries; upstream local paths (`directory`, `canonical`, worktree paths), raw entries, and credential-like fields are excluded
 - Versioning: breaking changes require a new versioned URI
 
 ## OpenCode Interrupt Recovery v1

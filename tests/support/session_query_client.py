@@ -95,10 +95,15 @@ class DummySessionQueryOpencodeUpstreamClient(
                     "id": "openai",
                     "name": "OpenAI",
                     "source": "api",
+                    "apiKey": "sk-secret",  # pragma: allowlist secret
+                    "internal": {
+                        "configPath": "/home/user/.config/opencode/providers.json",
+                    },
                     "models": {
                         "gpt-5": {
                             "name": "GPT-5",
                             "status": "active",
+                            "apiKey": "sk-secret",  # pragma: allowlist secret
                             "limit": {"context": 200000, "output": 8192},
                             "capabilities": {
                                 "reasoning": True,
@@ -112,6 +117,7 @@ class DummySessionQueryOpencodeUpstreamClient(
                     "id": "google",
                     "name": "Google",
                     "source": "config",
+                    "configPath": "/home/user/.config/opencode/google.json",
                     "models": {
                         "gemini-2.5-flash": {
                             "name": "Gemini 2.5 Flash",

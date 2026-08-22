@@ -21,6 +21,7 @@ def test_profile_runtime_splits_deployment_runtime_features_and_health_payload()
         opencode_workspace_root="/workspace",
         opencode_agent="planner",
         opencode_variant="fast",
+        a2a_expose_workspace_root_in_card=True,
     )
 
     profile = build_runtime_profile(settings)
@@ -132,6 +133,18 @@ def test_profile_runtime_uses_conservative_execution_environment_defaults() -> N
         "availability": "disabled",
         "toggle": "A2A_ENABLE_WORKSPACE_MUTATIONS",
     }
+
+
+def test_profile_runtime_omits_workspace_root_from_runtime_context_by_default() -> None:
+    settings = make_settings(
+        test_bearer_token="test-token",
+        a2a_project="alpha",
+        opencode_workspace_root="/workspace",
+    )
+
+    profile = build_runtime_profile(settings)
+
+    assert profile.runtime_context.as_dict() == {"project": "alpha"}
 
 
 def test_profile_runtime_disables_shell_when_policy_is_read_only() -> None:

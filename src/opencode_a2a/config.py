@@ -198,6 +198,10 @@ class Settings(BaseSettings):
         default=False,
         alias="A2A_ENABLE_WORKSPACE_MUTATIONS",
     )
+    a2a_expose_workspace_root_in_card: bool = Field(
+        default=False,
+        alias="A2A_EXPOSE_WORKSPACE_ROOT_IN_CARD",
+    )
     a2a_sandbox_mode: SandboxMode = Field(default="unknown", alias="A2A_SANDBOX_MODE")
     a2a_sandbox_filesystem_scope: SandboxFilesystemScope = Field(
         default="unknown",
