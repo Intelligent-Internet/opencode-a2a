@@ -50,6 +50,7 @@ Key variables to understand protocol behavior:
 - `OPENCODE_TIMEOUT` / `OPENCODE_TIMEOUT_STREAM`: upstream request timeout and stream timeout. Defaults: `120` and `900` seconds.
 - `OPENCODE_MAX_CONCURRENT_REQUESTS`: fast-fail concurrency limit for unary/control upstream calls. Default: `32`; `0` disables the limit explicitly.
 - `OPENCODE_MAX_CONCURRENT_STREAMS`: fast-fail concurrency limit for long-lived upstream `/event` streams. Default: `8`; `0` disables the limit explicitly.
+- `OPENCODE_AUTH_USERNAME` / `OPENCODE_AUTH_PASSWORD`: optional HTTP Basic credentials sent on every upstream OpenCode call. Set both when the upstream `opencode serve` is hardened with `OPENCODE_SERVER_PASSWORD`; the username defaults to `opencode` and must match `OPENCODE_SERVER_USERNAME` when that is overridden upstream. When unset, no `Authorization` header is sent.
 - `A2A_CLIENT_TIMEOUT_SECONDS`: outbound client timeout. Default: `30` seconds.
 - `A2A_CLIENT_CARD_FETCH_TIMEOUT_SECONDS`: outbound Agent Card fetch timeout. Default: `5` seconds.
 - `A2A_CLIENT_USE_CLIENT_PREFERENCE`: whether the outbound client prefers its own transport choices.

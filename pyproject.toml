@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP",
 ]
 dependencies = [
-    "a2a-sdk==1.0.2",
+    "a2a-sdk==1.1.2",
     "aiosqlite>=0.20,<1.0",
     "fastapi>=0.139,<1.0",
     "httpx>=0.27,<1.0",
@@ -68,6 +68,13 @@ quote-style = "double"
 
 [tool.uv]
 package = true
+# Keep transitive dependency floors above versions with known vulnerabilities:
+# - click < 8.3.3: PYSEC-2026-2132 (pulled in via uvicorn)
+# - pyasn1 < 0.6.4: PYSEC-2026-3455/3456/3457 (pulled in via google-auth <- a2a-sdk)
+constraint-dependencies = [
+    "click>=8.3.3",
+    "pyasn1>=0.6.4",
+]
 
 [tool.setuptools_scm]
 fallback_version = "0+unknown"

@@ -7,6 +7,9 @@ This document defines the compatibility promises `opencode-a2a` currently uphold
 - Python versions: 3.11, 3.12, 3.13
 - A2A SDK line: `1.x.y`
 - Supported A2A protocol line: `1.0`
+- OpenCode runtime line: `1.18.x` (verified with `1.18.19`)
+
+This is the single canonical place where the supported upstream OpenCode version line is declared. Keep it updated together with the live integration smoke check (`./scripts/live_opencode_smoke.sh`) and do not duplicate the version line elsewhere.
 
 The repository currently pins one concrete SDK release in `pyproject.toml` within that v1 line. Upgrade the SDK deliberately rather than relying on floating dependency resolution. The SDK-owned core JSON-RPC method set follows that pinned release and is locked by repository tests so SDK upgrades trigger an explicit compatibility review.
 
