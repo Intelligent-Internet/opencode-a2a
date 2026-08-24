@@ -1,43 +1,43 @@
-name: 缺陷报告
-description: 报告可复现的运行时、协议或文档问题
+name: Bug report
+description: Report a reproducible runtime, protocol, or documentation issue
 title: "[Bug] "
 labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: 请使用简体中文描述问题；日志和协议载荷在提交前必须移除密钥与敏感数据。
+      value: Remove secrets and sensitive data from logs and protocol payloads before submitting.
   - type: textarea
     id: problem
     attributes:
-      label: 问题描述
-      description: 实际发生了什么？期望行为是什么？
+      label: Problem description
+      description: What happened, and what behavior did you expect?
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
-      label: 复现步骤
-      description: 提供最小、可重复执行的步骤和已脱敏请求。
+      label: Reproduction steps
+      description: Provide minimal, repeatable steps and sanitized requests.
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: 版本与环境
-      description: opencode-a2a、OpenCode、Python、操作系统版本。
+      label: Version and environment
+      description: Include the opencode-a2a, OpenCode, Python, and operating system versions.
     validations:
       required: true
   - type: textarea
     id: evidence
     attributes:
-      label: 补充证据
-      description: 已脱敏日志、错误响应或相关链接。
+      label: Supporting evidence
+      description: Include sanitized logs, error responses, or relevant links.
   - type: checkboxes
     id: checks
     attributes:
-      label: 提交前确认
+      label: Pre-submission checklist
       options:
-        - label: 我已搜索现有 open issues，未发现重复问题。
+        - label: I searched the open issues and found no duplicate report.
           required: true
-        - label: 我确认提交内容不包含 token、密码或 `.env` 内容。
+        - label: I confirm that this submission contains no tokens, passwords, or `.env` contents.
           required: true

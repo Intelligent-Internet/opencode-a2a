@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 安全漏洞报告指引
+  - name: Security vulnerability reporting
     url: https://github.com/Intelligent-Internet/opencode-a2a/blob/main/SECURITY.md
-    about: 请先阅读私密披露指引，不要在公开 issue 中提交敏感信息。
-  - name: 支持范围
+    about: Read the private disclosure guidance before reporting sensitive information. Do not disclose it in a public issue.
+  - name: Support scope
     url: https://github.com/Intelligent-Internet/opencode-a2a/blob/main/SUPPORT.md
-    about: 提交问题前请先确认支持边界。
+    about: Review the supported scope before opening an issue.

@@ -1,18 +1,18 @@
-## 变更说明
+## Summary
 
-请说明问题、方案和用户可见影响。
+Describe the problem, solution, and user-visible impact.
 
-## 关联 issue
+## Related issue
 
 Closes #
 
-## 验证
+## Validation
 
-- [ ] 已运行 `./scripts/doctor.sh`
-- [ ] 若修改 A2A transport/contract，已运行 `./scripts/conformance.sh`
-- [ ] 已检查 Agent Card、OpenAPI、机器可读契约与文档是否同步
-- [ ] 已确认日志、测试数据和提交内容不包含密钥或 `.env` 内容
+- [ ] Ran `./scripts/doctor.sh`
+- [ ] Ran `./scripts/conformance.sh` when changing an A2A transport or contract
+- [ ] Verified that the Agent Card, OpenAPI, machine-readable contracts, and documentation remain synchronized
+- [ ] Confirmed that logs, test data, and commits contain no secrets or `.env` contents
 
-## 兼容性与风险
+## Compatibility and risk
 
-请说明协议、SDK/Python 边界、部署或安全影响；不适用时填写“无”。
+Describe protocol, SDK or Python support boundaries, deployment impact, and security considerations. Write "None" when not applicable.
