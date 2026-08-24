@@ -102,3 +102,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "--cov=src/opencode_a2a --cov-report=term-missing --cov-report=json:.coverage.json --cov-fail-under=90"
+filterwarnings = [
+    "error::pytest.PytestUnhandledThreadExceptionWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+    "always:.*was deleted before being closed.*:ResourceWarning:aiosqlite.core",
+]

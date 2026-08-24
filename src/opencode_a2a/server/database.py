@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import stat
+from contextlib import suppress
 from functools import partial
 from pathlib import Path
 from typing import Any, cast
@@ -112,15 +113,33 @@ def _configure_sqlite_connection(
     *,
     database_path: Path | None = None,
 ) -> None:
-    if database_path is not None:
-        _harden_sqlite_file(database_path)
-    cursor = dbapi_connection.cursor()
     try:
-        cursor.execute(f"PRAGMA journal_mode={_SQLITE_JOURNAL_MODE}")
-        cursor.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS}")
-        cursor.execute(f"PRAGMA synchronous={_SQLITE_SYNCHRONOUS_MODE}")
-    finally:
-        cursor.close()
+        if database_path is not None:
+            _harden_sqlite_file(database_path)
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute(f"PRAGMA journal_mode={_SQLITE_JOURNAL_MODE}")
+            cursor.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS}")
+            cursor.execute(f"PRAGMA synchronous={_SQLITE_SYNCHRONOUS_MODE}")
+        finally:
+            cursor.close()
+    except BaseException:
+        # SQLAlchemy does not close a DBAPI connection when a connect listener
+        # fails, so release async driver resources before re-raising.
+        with suppress(Exception):
+            dbapi_connection.close()
+        raise
+
+
+def _harden_sqlite_before_connect(
+    _dialect: Any,
+    _connection_record: Any,
+    _connection_args: tuple[Any, ...],
+    _connection_params: dict[str, Any],
+    *,
+    database_path: Path,
+) -> None:
+    _harden_sqlite_file(database_path)
 
 
 def redact_database_url_for_logs(database_url: str) -> str:
@@ -144,6 +163,12 @@ def build_database_engine(settings: Settings) -> AsyncEngine:
         _harden_sqlite_file(sqlite_path)
 
     engine = create_async_engine(database_url)
+    if sqlite_path is not None:
+        event.listen(
+            engine.sync_engine,
+            "do_connect",
+            partial(_harden_sqlite_before_connect, database_path=sqlite_path),
+        )
     event.listen(
         engine.sync_engine,
         "connect",
