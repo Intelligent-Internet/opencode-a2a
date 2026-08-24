@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from a2a.server.events.event_queue import EventQueue
+from a2a.server.events import EventQueue, InMemoryQueueManager
 from a2a.types import TaskState, TaskStatusUpdateEvent
 
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
@@ -113,7 +113,7 @@ async def test_cancel_does_not_block_with_real_event_queue() -> None:
         context_id=None,
         call_context_enabled=False,
     )
-    queue = EventQueue()
+    queue = await InMemoryQueueManager().create_or_tap("test-cancel")
 
     await asyncio.wait_for(executor.cancel(context, queue), timeout=0.5)
 

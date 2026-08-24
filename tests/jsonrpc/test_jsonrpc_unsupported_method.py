@@ -81,8 +81,8 @@ async def test_sendmessage_uses_canonical_v1_method_dispatch() -> None:
     body = response.json()
     assert body["jsonrpc"] == "2.0"
     assert body["id"] == 123
-    assert body.get("error") is None
-    assert body["result"]["task"]["status"]["state"] == "TASK_STATE_FAILED"
+    assert body["error"]["code"] == -32602
+    assert body["error"]["message"] == "Invalid parameters"
 
 
 @pytest.mark.asyncio

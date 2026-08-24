@@ -35,6 +35,7 @@ def test_settings_use_bounded_admission_defaults() -> None:
     settings = make_settings()
 
     assert settings.a2a_rate_limit_enabled is True
+    assert settings.a2a_metrics_enabled is True
     assert settings.a2a_rate_limit_window_seconds == 60.0
     assert settings.a2a_rate_limit_max_requests == 120
     assert settings.a2a_stream_max_bytes == 64 * 1024 * 1024
@@ -63,6 +64,7 @@ def test_settings_valid():
         "A2A_HTTP_GZIP_MINIMUM_SIZE": "2048",
         "A2A_MAX_REQUEST_BODY_BYTES": "2048",
         "A2A_RATE_LIMIT_ENABLED": "false",
+        "A2A_METRICS_ENABLED": "false",
         "A2A_RATE_LIMIT_WINDOW_SECONDS": "30",
         "A2A_RATE_LIMIT_MAX_REQUESTS": "45",
         "A2A_STREAM_MAX_BYTES": "1048576",
@@ -98,6 +100,7 @@ def test_settings_valid():
         assert settings.a2a_http_gzip_minimum_size == 2048
         assert settings.a2a_max_request_body_bytes == 2048
         assert settings.a2a_rate_limit_enabled is False
+        assert settings.a2a_metrics_enabled is False
         assert settings.a2a_rate_limit_window_seconds == 30.0
         assert settings.a2a_rate_limit_max_requests == 45
         assert settings.a2a_stream_max_bytes == 1_048_576

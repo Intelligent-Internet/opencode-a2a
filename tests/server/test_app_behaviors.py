@@ -37,6 +37,7 @@ from fastapi import Request
 from google.protobuf.json_format import MessageToDict, ParseError
 
 import opencode_a2a.server.application as app_module
+from opencode_a2a.a2a_protocol import CORE_JSONRPC_METHODS
 from opencode_a2a.contracts.extensions import (
     MODEL_SELECTION_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
@@ -267,6 +268,19 @@ def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
     }
     with pytest.raises(InvalidRequestError, match="REST message payload must be a JSON object"):
         _parse_rest_send_message_request(b"[]")
+    with pytest.raises(InvalidRequestError, match="message is required"):
+        _parse_rest_send_message_request(b"{}")
+    with pytest.raises(InvalidRequestError, match="message.messageId is required"):
+        _parse_rest_send_message_request(
+            json.dumps(
+                {
+                    "message": {
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "hello"}],
+                    }
+                }
+            ).encode("utf-8")
+        )
     with pytest.raises(
         InvalidRequestError,
         match="REST message payload must use message.parts, not message.content.",
@@ -389,6 +403,13 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
                     "enabled": True,
                     "availability": "always",
                 },
+                "metrics_endpoint": {
+                    "enabled": True,
+                    "availability": "enabled",
+                    "path": "/metrics",
+                    "authentication": "required",
+                    "toggle": "A2A_METRICS_ENABLED",
+                },
             },
         },
         "runtime_context": {
@@ -429,8 +450,10 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
             capability_snapshot=capability_snapshot
         )
     )
-    assert "authenticated extended Agent Card" in _build_jsonrpc_extension_openapi_description()
-    assert "opencode.sessions.shell" not in _build_jsonrpc_extension_openapi_description()
+    jsonrpc_description = _build_jsonrpc_extension_openapi_description()
+    assert "authenticated extended Agent Card" in jsonrpc_description
+    assert "opencode.sessions.shell" not in jsonrpc_description
+    assert all(method in jsonrpc_description for method in CORE_JSONRPC_METHODS)
     assert "message_send_session_binding" in _build_jsonrpc_extension_openapi_examples()
     assert "session_shell" not in _build_jsonrpc_extension_openapi_examples()
     assert "worktrees_create" not in _build_jsonrpc_extension_openapi_examples()
@@ -599,6 +622,13 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch, caplog) -> No
                             "enabled": True,
                             "availability": "always",
                         },
+                        "metrics_endpoint": {
+                            "enabled": True,
+                            "availability": "enabled",
+                            "path": "/metrics",
+                            "authentication": "required",
+                            "toggle": "A2A_METRICS_ENABLED",
+                        },
                     },
                 },
             },
@@ -671,21 +701,48 @@ async def test_push_notification_routes_are_explicitly_unsupported(monkeypatch) 
             json={"pushNotificationConfig": {"url": "https://example.com/hook"}},
         )
 
-    assert response.status_code == 501
+    assert response.status_code == 400
     assert response.json() == {
         "error": {
-            "code": 501,
-            "status": "UNIMPLEMENTED",
+            "code": 400,
+            "status": "FAILED_PRECONDITION",
             "message": "Push notifications are not supported by the agent",
             "details": [
                 {
                     "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                    "reason": "PUSH_NOTIFICATIONS_UNSUPPORTED",
+                    "reason": "PUSH_NOTIFICATION_NOT_SUPPORTED",
                     "domain": "a2a-protocol.org",
                 }
             ],
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint_is_scrapeable_and_authenticated(monkeypatch) -> None:
+    monkeypatch.setattr(
+        app_module,
+        "OpencodeUpstreamClient",
+        DummyChatOpencodeUpstreamClient,
+    )
+    app = create_app(make_settings(test_bearer_token="test-token"))
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        anonymous = await client.get("/metrics")
+        authenticated = await client.get("/metrics", headers={"Authorization": "Bearer test-token"})
+
+    assert anonymous.status_code == 401
+    assert authenticated.status_code == 200
+    assert authenticated.headers["content-type"].startswith("text/plain; version=0.0.4")
+
+    disabled_app = create_app(
+        make_settings(test_bearer_token="test-token", a2a_metrics_enabled=False)
+    )
+    disabled_transport = httpx.ASGITransport(app=disabled_app)
+    async with httpx.AsyncClient(transport=disabled_transport, base_url="http://test") as client:
+        disabled = await client.get("/metrics", headers={"Authorization": "Bearer test-token"})
+    assert disabled.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -713,12 +770,12 @@ async def test_push_notification_jsonrpc_methods_remain_unsupported(monkeypatch)
     assert response.status_code == 200
     assert response.json() == {
         "error": {
-            "code": -32004,
-            "message": "This operation is not supported",
+            "code": -32003,
+            "message": "Push Notification is not supported",
             "data": [
                 {
                     "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                    "reason": "UNSUPPORTED_OPERATION",
+                    "reason": "PUSH_NOTIFICATION_NOT_SUPPORTED",
                     "domain": "a2a-protocol.org",
                 }
             ],
@@ -789,8 +846,9 @@ async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> N
         assert events == []
 
     task_store.get = AsyncMock(return_value=canceled_task)
-    events = [item async for item in handler.on_subscribe_to_task(subscribe_params)]
-    assert events == [canceled_task]
+    with pytest.raises(UnsupportedOperationError):
+        async for _item in handler.on_subscribe_to_task(subscribe_params):
+            pass
 
     task_store.get = AsyncMock(return_value=working_task)
 

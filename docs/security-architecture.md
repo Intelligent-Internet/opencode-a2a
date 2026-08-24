@@ -42,14 +42,17 @@ All REST routes are served at the root path (no `/v1` prefix).
 | GET | `/tasks` | List tasks | Credential |
 | GET/POST/DELETE | `/tasks/{id}/pushNotificationConfigs[/{push_id}]` | Push notification config (exposed-but-unsupported) | Credential |
 | POST | `/` | JSON-RPC endpoint (core + extensions) | Credential |
-| GET | `/health` | Health / runtime profile | Anonymous |
+| GET | `/health` | Health / runtime profile | Credential |
+| GET | `/metrics` | Process-local Prometheus metrics (when enabled) | Credential |
 | GET | `/openapi.json` | Sanitized OpenAPI contract | Anonymous |
 
 ### JSON-RPC Surface
 
-- Core A2A methods from the SDK dispatcher: `message/send`, `message/stream`,
-  `tasks/get`, `tasks/cancel`, `tasks/list`, `tasks/subscribe`,
-  `tasks/pushNotificationConfig/*`.
+- Core A2A methods from the SDK dispatcher: `SendMessage`,
+  `SendStreamingMessage`, `GetTask`, `ListTasks`, `CancelTask`,
+  `CreateTaskPushNotificationConfig`, `GetTaskPushNotificationConfig`,
+  `ListTaskPushNotificationConfigs`, `DeleteTaskPushNotificationConfig`,
+  `SubscribeToTask`, and `GetExtendedAgentCard`.
 - Provider-private `opencode.*` extensions (authenticated extended card only):
   - `opencode.sessions.*`: `status`, `list`, `messages.list`, `get`, `children`,
     `todo`, `diff`, `message.get`, `prompt_async`, `command`, `fork`, `share`,
@@ -87,6 +90,7 @@ All REST routes are served at the root path (no `/v1` prefix).
 | Rate limit | `A2A_RATE_LIMIT_ENABLED` / `_WINDOW_SECONDS` / `_MAX_REQUESTS` | On by default; 60 s window, 120 requests; 429 + `Retry-After` |
 | Stream budgets | `A2A_STREAM_MAX_BYTES` / `_MAX_DURATION_SECONDS` / `_IDLE_TIMEOUT_SECONDS` | 64 MiB / 3600 s / 120 s; `0` disables |
 | Payload logging | `A2A_LOG_PAYLOADS` / `A2A_LOG_BODY_LIMIT` | Opt-in; logs treated as sensitive |
+| Metrics | `A2A_METRICS_ENABLED` | On by default; authenticated `/metrics`; process-local values |
 
 ### Outbound Side Effects
 
@@ -160,7 +164,7 @@ are skipped idempotently.
 | R-3 | Non-loopback bind without `A2A_ALLOWED_HOSTS` only warns at startup | Accepted | Operator contract: trusted network or reverse proxy validates Host. [guide.md](./guide.md) "Inbound Origin and Host Boundary" |
 | R-4 | Single-tenant shared-workspace boundary; static credentials only by default | Accepted by design | Threat model and tenant guidance in [SECURITY.md](../SECURITY.md) |
 | R-5 | Payload logging can capture sensitive data when enabled | Accepted | Opt-in with `A2A_LOG_BODY_LIMIT` cap; treat logs as sensitive. [SECURITY.md](../SECURITY.md) |
-| R-6 | Push notification config surface exposed-but-unsupported (HTTP 501 / JSON-RPC unsupported) | Accepted | Contract kept explicitly unsupported; capability recovery is intentionally deferred |
+| R-6 | Push notification config surface exposed-but-unsupported | Accepted | A2A 1.0-specific errors are stable (REST 400 / JSON-RPC -32003); capability recovery is intentionally deferred |
 | R-7 | SQLite hardening exempts `:memory:` / `file:` URIs and non-POSIX platforms | Accepted | Plain absolute file path recommended for deployments. [guide.md](./guide.md) "SQLite Persistence Hardening" |
 
 ## Maintenance Rules

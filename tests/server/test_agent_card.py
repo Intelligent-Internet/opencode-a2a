@@ -752,13 +752,7 @@ def test_agent_card_injects_profile_into_extensions() -> None:
             "error": None,
         }
     }
-    assert compatibility.params["service_behaviors"]["methods"]["SubscribeToTask"][
-        "terminal_state_behavior"
-    ] == {
-        "behavior": "replay_terminal_task_once_then_close",
-        "delivery": "single_task_snapshot",
-        "closes_stream": True,
-    }
+    assert "SubscribeToTask" not in compatibility.params["service_behaviors"]["methods"]
     assert compatibility.params["protocol_compatibility"] == expected_protocol_compatibility
     assert compatibility.description.endswith("deployment-conditional methods.")
 

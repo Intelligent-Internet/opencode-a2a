@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 import pytest
+from a2a.types import TaskState
 
 from opencode_a2a.server.runtime_limits import (
     SlidingWindowRateLimiter,
@@ -434,6 +435,7 @@ async def test_streaming_byte_budget_integration_rejects_subscribe_before_sse(mo
         _task_for_listing(
             task_id="task-sub",
             context_id="ctx-sub",
+            state=TaskState.TASK_STATE_WORKING,
             timestamp="2026-08-22T00:00:00+00:00",
         ),
         _authenticated_task_context(),

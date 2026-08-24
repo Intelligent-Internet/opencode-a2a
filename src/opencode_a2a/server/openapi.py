@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from fastapi import FastAPI
 
+from ..a2a_protocol import CORE_JSONRPC_METHODS
 from ..config import Settings
 from ..contracts.extensions import (
     INTERRUPT_CALLBACK_EXTENSION_URI,
@@ -26,9 +27,10 @@ from ..profile.runtime import RuntimeProfile
 
 def _build_jsonrpc_extension_openapi_description() -> str:
     interrupt_methods = ", ".join(sorted(INTERRUPT_CALLBACK_METHODS.values()))
+    core_methods = ", ".join(CORE_JSONRPC_METHODS)
     return (
         "A2A JSON-RPC entrypoint. Supports core A2A methods "
-        "(SendMessage, SendStreamingMessage, GetTask, CancelTask, SubscribeToTask) "
+        f"({core_methods}) "
         "plus shared session binding, shared model-selection metadata, shared stream "
         "hints, and shared interrupt callback methods.\n\n"
         "Anonymous discovery intentionally exposes only the minimal shared extension "

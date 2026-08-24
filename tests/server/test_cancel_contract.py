@@ -15,6 +15,7 @@ from a2a.types import (
     TaskNotFoundError,
     TaskState,
     TaskStatus,
+    UnsupportedOperationError,
 )
 
 from opencode_a2a.server.application import OpencodeRequestHandler
@@ -117,7 +118,7 @@ async def test_cancel_is_race_safe_when_task_becomes_canceled_during_super_call(
 
 
 @pytest.mark.asyncio
-async def test_resubscribe_terminal_task_replays_final_snapshot_once() -> None:
+async def test_subscribe_terminal_task_is_unsupported() -> None:
     executor = AsyncMock()
     store = _store()
     handler = OpencodeRequestHandler(
@@ -128,13 +129,9 @@ async def test_resubscribe_terminal_task_replays_final_snapshot_once() -> None:
     task = _task(task_id="task-3", context_id="ctx-3", state=TaskState.TASK_STATE_CANCELED)
     await store.save(task, None)
 
-    events = []
-    async for event in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-3")):
-        events.append(event)
-
-    assert len(events) == 1
-    assert isinstance(events[0], Task)
-    assert events[0].status.state == TaskState.TASK_STATE_CANCELED
+    with pytest.raises(UnsupportedOperationError):
+        async for _event in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-3")):
+            pass
 
 
 @pytest.mark.asyncio

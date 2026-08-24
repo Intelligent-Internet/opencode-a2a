@@ -183,6 +183,7 @@ class Settings(BaseSettings):
     a2a_log_level: str = Field(default="WARNING", alias="A2A_LOG_LEVEL")
     a2a_log_payloads: bool = Field(default=False, alias="A2A_LOG_PAYLOADS")
     a2a_log_body_limit: int = Field(default=0, alias="A2A_LOG_BODY_LIMIT")
+    a2a_metrics_enabled: bool = Field(default=True, alias="A2A_METRICS_ENABLED")
     a2a_http_gzip_minimum_size: int = Field(
         default=8_192,
         ge=0,

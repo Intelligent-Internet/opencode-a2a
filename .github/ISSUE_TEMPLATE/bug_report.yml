@@ -1,0 +1,43 @@
+name: Bug report
+description: Report a reproducible runtime, protocol, or documentation issue
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Remove secrets and sensitive data from logs and protocol payloads before submitting.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem description
+      description: What happened, and what behavior did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Provide minimal, repeatable steps and sanitized requests.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and environment
+      description: Include the opencode-a2a, OpenCode, Python, and operating system versions.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Supporting evidence
+      description: Include sanitized logs, error responses, or relevant links.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched the open issues and found no duplicate report.
+          required: true
+        - label: I confirm that this submission contains no tokens, passwords, or `.env` contents.
+          required: true

@@ -1,67 +1,50 @@
-# External Conformance Experiments
+# Repository-Owned Compatibility Probes
 
-This repository keeps internal regression and external interoperability experiments separate on purpose.
+`./scripts/conformance.sh` runs black-box checks maintained and reviewed with this repository. It deliberately does not clone, pin, or execute the official A2A TCK.
 
 ## Scope
 
-- `./scripts/doctor.sh` remains the primary internal regression entrypoint.
-- `./scripts/conformance.sh` is a local/manual experiment entrypoint for official external tooling.
-- External conformance output should be treated as investigation input, not as an automatic merge gate.
+The probe verifies a small set of high-value A2A 1.0 invariants through public HTTP boundaries:
 
-## Current Experiment Shape
+- Agent Card discovery advertises both HTTP+JSON and JSON-RPC interfaces
+- empty `SendMessage` input is rejected before execution
+- unsupported push notification configuration uses the protocol-specific error
+- subscribing to a terminal task returns `UnsupportedOperationError` on both transports
+- `ListTasks` is reachable through both shipped transports
 
-The default `./scripts/conformance.sh` workflow does the following:
-
-1. Sync the repository environment unless explicitly skipped.
-2. Cache or refresh the official `a2aproject/a2a-tck` checkout.
-3. Start a local dummy-backed `opencode-a2a` runtime unless `CONFORMANCE_SUT_URL` points to an existing SUT.
-4. Run the requested TCK category, defaulting to `mandatory`.
-5. Preserve raw logs and machine-readable reports under `run/conformance/<timestamp>/`.
-
-The default local SUT uses the repository test double `DummyChatOpencodeUpstreamClient`. That keeps the experiment reproducible without requiring a live OpenCode upstream.
+These checks protect this runtime's declared contract. They are not a complete A2A conformance suite and must not be presented as certification.
 
 ## Usage
 
-Run the default mandatory experiment:
+Run against the local dummy-backed runtime:
 
 ```bash
 bash ./scripts/conformance.sh
 ```
 
-Run a different TCK category:
-
-```bash
-bash ./scripts/conformance.sh capabilities
-```
-
-Target an already running runtime instead of the local dummy-backed SUT:
+Run against an existing deployment:
 
 ```bash
 CONFORMANCE_SUT_URL=http://127.0.0.1:8000 \
-A2A_AUTH_TYPE=bearer \
-A2A_AUTH_TOKEN=dev-token \
-bash ./scripts/conformance.sh mandatory
+CONFORMANCE_AUTH_TOKEN=dev-token \
+CONFORMANCE_ALLOW_EXTERNAL=1 \
+bash ./scripts/conformance.sh
 ```
+
+The probe creates a real task and reads task state. Use a dedicated test deployment, never a production target. `CONFORMANCE_ALLOW_EXTERNAL=1` is a required explicit acknowledgement, and `CONFORMANCE_AUTH_TOKEN` is required for an existing deployment. The default `test-token` is used only for the locally launched test SUT.
+
+Use `CONFORMANCE_OUTPUT_DIR` to select the artifact directory and `CONFORMANCE_SKIP_REPO_SYNC=1` only when the locked environment has already been verified.
 
 ## Artifacts
 
-Each run keeps the following artifacts in the selected output directory:
+Each run writes:
 
-- `agent-card.json`: fetched public Agent Card
-- `health.json`: fetched authenticated health payload when the local SUT is used
-- `tck.log`: raw TCK console output
-- `pytest-report.json`: pytest-json-report output emitted by the TCK runner
-- `failed-tests.json`: compact list of failed/error node IDs for triage
-- `metadata.json`: experiment metadata including local repo commit and cached TCK commit
+- `agent-card.json`: the discovered public Agent Card
+- `report.json`: versioned check results and repository revision
+- `probe.log`: human-readable probe output
+- `sut.log`: local test-runtime output, when the script launches it
+- `repo-health.log`: repository environment checks, unless explicitly skipped
 
-## Interpretation Guidance
+## External Tools
 
-When a TCK run fails, inspect the raw report before changing the runtime:
-
-- Some failures may point to real runtime gaps.
-- Some failures may come from TCK assumptions that do not match the current `a2a-sdk 1.x.y` contract.
-- Some failures may come from local dummy-backed experiment behavior rather than a wire-level runtime defect.
-
-The experiment is useful only if those categories stay separate during triage.
-
-The current first-pass triage is recorded in [`./conformance-triage.md`](./conformance-triage.md).
+Maintainers may run third-party TCKs independently to investigate interoperability. Record exact tool revisions and wire payloads when reporting a finding. External output is evidence to triage, not an automatic merge gate, source of runtime truth, or reason to restore obsolete protocol behavior.

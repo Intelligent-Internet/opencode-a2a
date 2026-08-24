@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a new A2A, OpenCode, or engineering capability
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What specific problem needs to be solved? Avoid describing only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the expected behavior, protocol or extension boundary, and alternatives.
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - A2A core / transport
+        - OpenCode provider-private extension
+        - Operations / observability
+        - Documentation / open source engineering
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched the open issues and found no duplicate request.
+          required: true
+        - label: I explained whether this capability belongs to A2A core, a shared extension, or a provider-private surface.
+          required: true

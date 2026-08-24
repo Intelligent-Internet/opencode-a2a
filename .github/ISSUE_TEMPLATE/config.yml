@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability reporting
+    url: https://github.com/Intelligent-Internet/opencode-a2a/blob/main/SECURITY.md
+    about: Read the private disclosure guidance before reporting sensitive information. Do not disclose it in a public issue.
+  - name: Support scope
+    url: https://github.com/Intelligent-Internet/opencode-a2a/blob/main/SUPPORT.md
+    about: Review the supported scope before opening an issue.

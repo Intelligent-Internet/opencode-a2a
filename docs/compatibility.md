@@ -4,7 +4,7 @@ This document defines the compatibility promises `opencode-a2a` currently uphold
 
 ## Runtime Support
 
-- Python versions: 3.11, 3.12, 3.13
+- Python versions: 3.11, 3.12, 3.13, 3.14
 - A2A SDK line: `1.x.y`
 - Supported A2A protocol line: `1.0`
 - OpenCode runtime line: `1.18.x` (verified with `1.18.19`)
@@ -27,7 +27,7 @@ If runtime support is not implemented, do not publish it as a supported machine-
 
 Consumer guidance:
 
-- Treat the v1 core A2A methods (`SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`, `SubscribeToTask`) as the portable baseline.
+- Discover the complete SDK-owned v1 core method set from `core.jsonrpc_methods`; do not infer it from a shortened documentation list.
 - Treat `urn:opencode-a2a:extension:...` entries in this repository as repository-governed extension identifiers, not as a claim that they are part of the A2A core baseline.
 - Treat `opencode.*` methods and `metadata.opencode.*` fields as provider-private OpenCode control and discovery surfaces layered on top of the portable A2A baseline.
 - Treat [extension-specifications.md](./extension-specifications.md) as the stable URI/spec index, not as the main usage guide.
@@ -40,7 +40,7 @@ When docs or reference material disagree, treat these as normative in this order
 - machine-readable discovery output such as Agent Card, authenticated extended card, and OpenAPI metadata
 - repository-owned docs in `README.md`, `docs/`, and `CONTRIBUTING.md`
 
-External TCK runs and local conformance experiments are investigation inputs. They do not override the repository's declared contract by themselves.
+The repository-owned black-box compatibility probes protect selected runtime invariants but are not a complete conformance suite. Third-party TCK output is investigation input only and does not override the repository's declared contract by itself.
 
 ## Compatibility-Sensitive Surface
 
@@ -60,7 +60,7 @@ Changes to those surfaces should be treated as compatibility-sensitive and shoul
 
 Service-level behavior layered on top of those core methods should also be declared explicitly when interoperability depends on it. Current examples:
 
-- `SubscribeToTask` replay-once behavior for terminal updates
+- `SubscribeToTask` rejection with `UnsupportedOperationError` for terminal tasks
 - first-terminal-state-wins task persistence policy
 - task-scoped `acceptedOutputModes` negotiation persistence across send / stream / get / subscribe
 - request-body rejection behavior for oversized transport payloads
