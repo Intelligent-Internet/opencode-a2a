@@ -13,7 +13,7 @@ from a2a.types import (
     SecurityScheme,
 )
 
-from ..auth import has_configured_auth_scheme
+from ..auth import build_static_auth_credentials
 from ..config import Settings
 from ..contracts.extensions import (
     AUTHENTICATED_ONLY_EXTENSION_URIS,
@@ -483,7 +483,10 @@ def build_agent_card(
     runtime_profile = build_runtime_profile(settings)
     security_schemes: dict[str, SecurityScheme] = {}
     security_requirements: list[SecurityRequirement] = []
-    if has_configured_auth_scheme(settings, "bearer"):
+    configured_auth_schemes = {
+        credential.auth_scheme for credential in build_static_auth_credentials(settings)
+    }
+    if "bearer" in configured_auth_schemes:
         security_schemes["bearerAuth"] = SecurityScheme(
             http_auth_security_scheme=HTTPAuthSecurityScheme(
                 description="Bearer token authentication",
@@ -492,7 +495,7 @@ def build_agent_card(
             )
         )
         security_requirements.append(SecurityRequirement(schemes=cast(Any, {"bearerAuth": {}})))
-    if has_configured_auth_scheme(settings, "basic"):
+    if "basic" in configured_auth_schemes:
         security_schemes["basicAuth"] = SecurityScheme(
             http_auth_security_scheme=HTTPAuthSecurityScheme(
                 description="Basic authentication",
