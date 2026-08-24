@@ -91,9 +91,7 @@ class ExtensionMethodSpec:
 class ExtensionMethodRegistry:
     def __init__(self, specs: Iterable[ExtensionMethodSpec]) -> None:
         method_map: dict[str, ExtensionMethodSpec] = {}
-        normalized_specs: list[ExtensionMethodSpec] = []
         for spec in specs:
-            normalized_specs.append(spec)
             for method in spec.methods:
                 existing = method_map.get(method)
                 if existing is not None:
@@ -102,12 +100,7 @@ class ExtensionMethodRegistry:
                         f"{existing.name!r} and {spec.name!r}"
                     )
                 method_map[method] = spec
-        self._specs = tuple(normalized_specs)
         self._method_map = method_map
-
-    @property
-    def specs(self) -> tuple[ExtensionMethodSpec, ...]:
-        return self._specs
 
     def methods(self) -> frozenset[str]:
         return frozenset(self._method_map)
