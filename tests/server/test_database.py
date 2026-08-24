@@ -3,7 +3,10 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock
 
+import aiosqlite
 import pytest
 
 from opencode_a2a.server import database as database_module
@@ -198,7 +201,19 @@ def test_apply_private_sqlite_modes_rejects_foreign_owned_sidecar(tmp_path, monk
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX file permission semantics")
 @pytest.mark.asyncio
-async def test_build_database_engine_rechecks_hardening_on_new_connection(tmp_path) -> None:
+async def test_build_database_engine_rechecks_hardening_on_new_connection(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    created_connections: list[aiosqlite.Connection] = []
+    original_connect = aiosqlite.connect
+
+    def tracking_connect(*args: Any, **kwargs: Any) -> aiosqlite.Connection:
+        connection = original_connect(*args, **kwargs)
+        created_connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(aiosqlite, "connect", tracking_connect)
     settings = _settings_for(tmp_path)
     engine = build_database_engine(settings)
     try:
@@ -217,3 +232,17 @@ async def test_build_database_engine_rechecks_hardening_on_new_connection(tmp_pa
                 await conn.exec_driver_sql("SELECT 1")
     finally:
         await engine.dispose()
+
+    assert len(created_connections) == 1
+
+
+def test_configure_sqlite_connection_closes_connection_on_failure() -> None:
+    dbapi_connection = MagicMock()
+    cursor = dbapi_connection.cursor.return_value
+    cursor.execute.side_effect = RuntimeError("PRAGMA failed")
+
+    with pytest.raises(RuntimeError, match="PRAGMA failed"):
+        database_module._configure_sqlite_connection(dbapi_connection, MagicMock())
+
+    cursor.close.assert_called_once_with()
+    dbapi_connection.close.assert_called_once_with()

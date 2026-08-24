@@ -523,13 +523,17 @@ async def test_build_task_store_does_not_dispose_shared_engine(
         a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'shared-engine.db'}",
     )
     engine = build_database_engine(settings)
+    original_dispose = engine.dispose
     dispose_spy = AsyncMock()
     monkeypatch.setattr(type(engine), "dispose", dispose_spy)
 
-    store = build_task_store(settings, engine=engine)
-    await initialize_task_store(store)
+    try:
+        store = build_task_store(settings, engine=engine)
+        await initialize_task_store(store)
 
-    dispose_spy.assert_not_awaited()
+        dispose_spy.assert_not_awaited()
+    finally:
+        await original_dispose()
 
 
 @pytest.mark.asyncio
@@ -542,14 +546,18 @@ async def test_build_task_store_runtime_does_not_dispose_shared_engine(
         a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'shared-runtime-engine.db'}",
     )
     engine = build_database_engine(settings)
+    original_dispose = engine.dispose
     dispose_spy = AsyncMock()
     monkeypatch.setattr(type(engine), "dispose", dispose_spy)
 
-    runtime = build_task_store_runtime(settings, engine=engine)
-    await runtime.startup()
-    await runtime.shutdown()
+    try:
+        runtime = build_task_store_runtime(settings, engine=engine)
+        await runtime.startup()
+        await runtime.shutdown()
 
-    dispose_spy.assert_not_awaited()
+        dispose_spy.assert_not_awaited()
+    finally:
+        await original_dispose()
 
 
 @pytest.mark.asyncio

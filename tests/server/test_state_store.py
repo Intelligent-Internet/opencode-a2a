@@ -667,12 +667,16 @@ async def test_build_runtime_state_runtime_initializes_and_preserves_shared_engi
         a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'runtime-state.db'}",
     )
     engine = build_database_engine(settings)
+    original_dispose = engine.dispose
     dispose_spy = AsyncMock()
     monkeypatch.setattr(type(engine), "dispose", dispose_spy)
 
-    runtime = build_runtime_state_runtime(settings, engine=engine)
-    await runtime.startup()
-    await runtime.shutdown()
+    try:
+        runtime = build_runtime_state_runtime(settings, engine=engine)
+        await runtime.startup()
+        await runtime.shutdown()
 
-    assert await _read_state_store_schema_version(engine) == CURRENT_STATE_STORE_SCHEMA_VERSION
-    dispose_spy.assert_not_awaited()
+        assert await _read_state_store_schema_version(engine) == CURRENT_STATE_STORE_SCHEMA_VERSION
+        dispose_spy.assert_not_awaited()
+    finally:
+        await original_dispose()
