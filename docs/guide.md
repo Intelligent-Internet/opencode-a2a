@@ -122,7 +122,7 @@ Current client facade API:
 - `A2AClient.cancel_task()`
 - `A2AClient.subscribe_to_task()`
 
-Server-side outbound peer calls read outbound credentials from environment variables. Configure `A2A_CLIENT_BEARER_TOKEN` or `A2A_CLIENT_BASIC_AUTH` when the remote agent protects its runtime surface. CLI outbound calls follow the same environment-only model.
+Server-side outbound peer calls read outbound credentials from environment variables. Configure `A2A_CLIENT_BEARER_TOKEN` or `A2A_CLIENT_BASIC_AUTH` when the remote agent protects its runtime surface. The selected credential and fixed `A2A-Version` header are sent during Agent Card discovery and on subsequent peer operations such as `SendMessage` and `GetTask`. CLI outbound calls follow the same environment-only model.
 
 The embedded `a2a_call(...)` tool lets the upstream model choose the target URL, so the adapter applies a fail-closed network policy before opening any connection:
 

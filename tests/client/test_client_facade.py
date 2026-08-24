@@ -405,7 +405,8 @@ async def test_send_message_negotiates_extensions_via_service_parameters(
     assert len(result) == 1
     payload, _, kwargs = fake_client.send_message_inputs[0]
     assert kwargs["context"].service_parameters == {
-        "A2A-Extensions": "https://example.com/ext-a,https://example.com/ext-b"
+        "A2A-Version": "1.0",
+        "A2A-Extensions": "https://example.com/ext-a,https://example.com/ext-b",
     }
 
 
@@ -551,7 +552,8 @@ async def test_get_task_negotiates_extensions_via_service_parameters(
 
     _params, kwargs = fake_client.task_inputs[0]
     assert kwargs["context"].service_parameters == {
-        "A2A-Extensions": "https://example.com/ext-a,https://example.com/ext-b"
+        "A2A-Version": "1.0",
+        "A2A-Extensions": "https://example.com/ext-a,https://example.com/ext-b",
     }
 
 

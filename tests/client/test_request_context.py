@@ -83,6 +83,7 @@ def test_build_call_context_includes_fixed_protocol_version() -> None:
     assert context is not None
     assert context.state["headers"] == {"A2A-Version": "1.0"}
     assert context.state["http_kwargs"]["headers"] == {"A2A-Version": "1.0"}
+    assert context.service_parameters == {"A2A-Version": "1.0"}
 
 
 def test_build_call_context_includes_current_trace_headers() -> None:
@@ -101,6 +102,7 @@ def test_build_call_context_includes_current_trace_headers() -> None:
         "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
         "tracestate": "vendor=value",
     }
+    assert context.service_parameters == context.state["headers"]
 
 
 def test_build_call_context_preserves_explicit_trace_headers_over_current_context() -> None:
@@ -142,6 +144,7 @@ def test_build_call_context_carries_default_headers_without_interceptor_layer() 
         "A2A-Version": "1.0",
         "X-Trace-Id": "trace-1",
     }
+    assert context.service_parameters == context.state["headers"]
 
 
 def test_build_call_context_merges_extension_service_parameters() -> None:
@@ -153,7 +156,10 @@ def test_build_call_context_merges_extension_service_parameters() -> None:
 
     assert isinstance(context, ClientCallContext)
     assert context.service_parameters == {
-        "A2A-Extensions": "https://example.com/ext-a,https://example.com/ext-b"
+        "Authorization": "Bearer peer-token",
+        "A2A-Version": "1.0",
+        "X-Trace-Id": "trace-1",
+        "A2A-Extensions": "https://example.com/ext-a,https://example.com/ext-b",
     }
 
 

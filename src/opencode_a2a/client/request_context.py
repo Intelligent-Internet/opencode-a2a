@@ -79,12 +79,16 @@ def build_call_context(
     if extra_headers:
         merged_headers.update(extra_headers)
     normalized_extensions = [value for value in (extensions or ()) if value]
-    service_parameters = None
-    if normalized_extensions:
-        service_parameters = ServiceParametersFactory.create_from(
-            None,
-            [with_a2a_extensions(normalized_extensions)],
-        )
+    service_parameter_updates = (
+        [with_a2a_extensions(normalized_extensions)] if normalized_extensions else []
+    )
+    # a2a-sdk's HTTP transports serialize service parameters as request
+    # headers. Keep the same headers in state for transport-independent
+    # consumers, but use the SDK's HTTP header channel for on-wire delivery.
+    service_parameters = ServiceParametersFactory.create_from(
+        merged_headers,
+        service_parameter_updates,
+    )
     return ClientCallContext(
         state={
             "headers": dict(merged_headers),
