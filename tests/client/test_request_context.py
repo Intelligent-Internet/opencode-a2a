@@ -81,8 +81,8 @@ def test_build_call_context_includes_fixed_protocol_version() -> None:
     context = build_call_context(None, None)
 
     assert context is not None
-    assert context.state["headers"] == {"A2A-Version": "1.0"}
-    assert context.state["http_kwargs"]["headers"] == {"A2A-Version": "1.0"}
+    assert context.service_parameters == {"A2A-Version": "1.0"}
+    assert context.state == {}
 
 
 def test_build_call_context_includes_current_trace_headers() -> None:
@@ -96,7 +96,7 @@ def test_build_call_context_includes_current_trace_headers() -> None:
         context = build_call_context(None, None)
 
     assert context is not None
-    assert context.state["headers"] == {
+    assert context.service_parameters == {
         "A2A-Version": "1.0",
         "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
         "tracestate": "vendor=value",
@@ -120,7 +120,7 @@ def test_build_call_context_preserves_explicit_trace_headers_over_current_contex
         )
 
     assert context is not None
-    assert context.state["headers"] == {
+    assert context.service_parameters == {
         "Authorization": "Bearer peer-token",
         "A2A-Version": "1.0",
         "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
@@ -128,16 +128,11 @@ def test_build_call_context_preserves_explicit_trace_headers_over_current_contex
     }
 
 
-def test_build_call_context_carries_default_headers_without_interceptor_layer() -> None:
+def test_build_call_context_carries_headers_via_service_parameters() -> None:
     context = build_call_context("peer-token", {"X-Trace-Id": "trace-1"})
 
     assert isinstance(context, ClientCallContext)
-    assert context.state["headers"] == {
-        "Authorization": "Bearer peer-token",
-        "A2A-Version": "1.0",
-        "X-Trace-Id": "trace-1",
-    }
-    assert context.state["http_kwargs"]["headers"] == {
+    assert context.service_parameters == {
         "Authorization": "Bearer peer-token",
         "A2A-Version": "1.0",
         "X-Trace-Id": "trace-1",
@@ -153,7 +148,10 @@ def test_build_call_context_merges_extension_service_parameters() -> None:
 
     assert isinstance(context, ClientCallContext)
     assert context.service_parameters == {
-        "A2A-Extensions": "https://example.com/ext-a,https://example.com/ext-b"
+        "Authorization": "Bearer peer-token",
+        "A2A-Version": "1.0",
+        "X-Trace-Id": "trace-1",
+        "A2A-Extensions": "https://example.com/ext-a,https://example.com/ext-b",
     }
 
 

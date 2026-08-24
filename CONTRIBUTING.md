@@ -71,6 +71,14 @@ uv run pytest tests/contracts/test_extension_contract_consistency.py
 uv run mypy src/opencode_a2a
 ```
 
+If you change outbound authentication, tracing, protocol-version, or extension headers, run the SDK transport regression directly:
+
+```bash
+uv run pytest --no-cov tests/client/test_client_http_headers.py
+```
+
+Assertions against a mocked SDK client or `ClientCallContext` alone do not prove that headers reached the HTTP request. Keep at least one regression test across Agent Card resolution, the real SDK transport, and the final `httpx.Request` boundary.
+
 ## Change Expectations
 
 - Keep code, comments, and docs in English.

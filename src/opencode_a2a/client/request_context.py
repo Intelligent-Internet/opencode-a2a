@@ -79,16 +79,13 @@ def build_call_context(
     if extra_headers:
         merged_headers.update(extra_headers)
     normalized_extensions = [value for value in (extensions or ()) if value]
-    service_parameters = None
-    if normalized_extensions:
-        service_parameters = ServiceParametersFactory.create_from(
-            None,
-            [with_a2a_extensions(normalized_extensions)],
-        )
-    return ClientCallContext(
-        state={
-            "headers": dict(merged_headers),
-            "http_kwargs": {"headers": dict(merged_headers)},
-        },
-        service_parameters=service_parameters,
+    service_parameter_updates = (
+        [with_a2a_extensions(normalized_extensions)] if normalized_extensions else []
     )
+    # a2a-sdk transports serialize service parameters as HTTP headers or gRPC
+    # metadata. This is also the channel used by the SDK's AuthInterceptor.
+    service_parameters = ServiceParametersFactory.create_from(
+        merged_headers,
+        service_parameter_updates,
+    )
+    return ClientCallContext(service_parameters=service_parameters)
