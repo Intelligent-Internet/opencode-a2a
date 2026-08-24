@@ -43,6 +43,7 @@ Key variables to understand protocol behavior:
 - `A2A_ALLOWED_HOSTS`: comma-separated `Host` header allowlist (exact names or `*.example.com` wildcards). When configured, every inbound request must present a matching `Host` header. Binding to a non-loopback address without this allowlist logs a startup warning (DNS rebinding risk).
 - `A2A_LOG_LEVEL`: runtime log level. Default: `WARNING`.
 - `A2A_LOG_PAYLOADS` / `A2A_LOG_BODY_LIMIT`: payload logging behavior and truncation. When `A2A_LOG_LEVEL=DEBUG`, upstream OpenCode stream events are also logged with preview truncation controlled by `A2A_LOG_BODY_LIMIT`.
+- `A2A_METRICS_ENABLED`: expose process-local Prometheus text metrics at authenticated `GET /metrics`. Default: `true`.
 - The runtime accepts W3C `traceparent` / `tracestate` headers on inbound requests. When `traceparent` is missing or invalid, the runtime generates a fresh valid value and exposes it on the HTTP response header.
 - The active `traceparent` / `tracestate` pair is propagated across inbound A2A handling, OpenCode upstream requests, and outbound peer A2A calls triggered through the embedded client or `a2a_call` tool path.
 - Logs derive a stable `trace_id` from the active `traceparent` so request-scoped log lines can be correlated without introducing high-cardinality metric labels.
@@ -341,7 +342,7 @@ Current behavior:
 - The current SDK-owned core JSON-RPC surface includes `GetExtendedAgentCard` and `tasks/pushNotificationConfig/*`.
 - The current SDK-owned REST surface also includes `GET /tasks` and the task push notification config routes.
 - The SDK-owned core JSON-RPC method set follows the pinned `a2a-sdk` release and is locked by repository tests; review that surface deliberately when upgrading the SDK.
-- Push notification config routes/methods are currently exposed only because they are part of the SDK-owned core surface. This runtime does not configure a push config store or push sender, so push notification operations remain unsupported. REST routes currently return HTTP `501`, while JSON-RPC methods surface SDK-owned unsupported error envelopes.
+- Push notification config routes/methods are currently exposed only because they are part of the SDK-owned core surface. This runtime does not configure a push config store or push sender, so operations return the A2A 1.0 `PushNotificationNotSupportedError` contract: HTTP `400` for REST and JSON-RPC code `-32003`.
 
 When `A2A_ENABLE_SESSION_SHELL=false`, `opencode.sessions.shell` is omitted from `all_jsonrpc_methods` and exposed only through `extensions.conditionally_available_methods`.
 
@@ -384,7 +385,7 @@ Current compatibility matrix:
 | Transport payloads and enums | Supported | Request/response payloads, enums, and schema details follow the current SDK-owned v1 baseline. |
 | Error model | Supported | JSON-RPC and REST both use the v1 protocol-aware error shapes. |
 | Pagination and list semantics | Supported | Cursor/list behavior follows the current SDK baseline. |
-| Push notification surfaces | Unsupported | SDK-owned task push-notification routes are still exposed, but this runtime does not enable push sender/config-store support. REST routes return HTTP `501`, while JSON-RPC methods remain unsupported via SDK-owned error envelopes. |
+| Push notification surfaces | Unsupported | SDK-owned routes remain exposed, but the runtime has no push sender/config store. REST returns HTTP `400`; JSON-RPC returns `-32003` (`PUSH_NOTIFICATION_NOT_SUPPORTED`). |
 | Signatures and authenticated data | Supported | Security schemes and authenticated extended card discovery follow the shipped SDK schema. |
 
 ## Compatibility Profile
@@ -657,7 +658,7 @@ Detailed contract discovery for this provider-private surface is intentionally a
 - Privacy guard: when `A2A_LOG_PAYLOADS=true`, request/response bodies are still suppressed for `method=opencode.sessions.*`
 - Endpoint discovery: prefer `supportedInterfaces[]` with `protocolBinding=JSONRPC` from Agent Card
 - The runtime still delegates SDK-owned JSON-RPC methods such as `GetExtendedAgentCard` and `tasks/pushNotificationConfig/*` to the base A2A implementation; they are not OpenCode-specific extensions.
-- Push notification config methods remain effectively unsupported in the current runtime because no push config store or push sender is configured; REST routes return HTTP `501`, while JSON-RPC methods stay on SDK-owned unsupported error handling.
+- Push notification config methods remain unsupported because no push config store or sender is configured; REST returns HTTP `400` and JSON-RPC returns `-32003` with `PUSH_NOTIFICATION_NOT_SUPPORTED` details.
 - Notification behavior: for `opencode.sessions.*`, requests without `id` return HTTP `204 No Content`
 - Result format:
   - `opencode.sessions.status` => provider-private status summaries in `result.items`
@@ -1319,10 +1320,10 @@ If an SSE connection drops, use `GET /tasks/{task_id}:subscribe` to re-subscribe
 - For running tasks, the service attempts upstream OpenCode `POST /session/{sessionID}/abort` to stop generation.
 - Upstream interruption is best-effort: if upstream returns 404, network errors, or other HTTP errors, A2A cancellation still completes with `TaskState.TASK_STATE_CANCELED`.
 - Idempotency contract: repeated `CancelTask` on an already `canceled` task returns the current terminal task state without error.
-- Terminal subscribe contract: calling `SubscribeToTask` or `GET /tasks/{task_id}:subscribe` on a terminal task replays one terminal `Task` snapshot and then closes the stream.
+- Terminal subscribe contract: calling `SubscribeToTask` or `GET /tasks/{task_id}:subscribe` on a terminal task returns `UnsupportedOperationError`, as required by A2A 1.0.
 - Terminal persistence contract: once a terminal task snapshot is persisted, this service treats it as immutable. Producers must emit final text and artifact updates before the terminal event, and any final usage or stream metadata must be attached to that terminal event itself. Late terminal-state mutations are rejected by the task-store write policy.
-- These two semantics are also declared as machine-readable `service_behaviors` in the compatibility profile and wire contract extensions.
-- At `A2A_LOG_LEVEL=DEBUG`, the service emits lightweight metric log records (`logger=opencode_a2a.execution.executor`):
+- Cancellation and terminal-subscribe semantics are also declared as machine-readable `service_behaviors` in the compatibility profile and wire contract extensions.
+- The service records process-local metrics for authenticated Prometheus scraping at `GET /metrics`; `A2A_METRICS_ENABLED=false` disables the endpoint. At `A2A_LOG_LEVEL=DEBUG`, the same updates are emitted as lightweight metric log records (`logger=opencode_a2a.execution.executor`):
   - `a2a_stream_requests_total`
   - `a2a_stream_active` (`value=1` when a stream starts, `value=-1` when it closes)
   - `opencode_stream_retries_total`

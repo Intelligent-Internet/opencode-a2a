@@ -14,7 +14,7 @@ This repository maintains an OpenCode A2A runtime. Changes should keep runtime b
 
 Requirements:
 
-- Python 3.11, 3.12, or 3.13
+- Python 3.11, 3.12, 3.13, or 3.14
 - `uv`
 - A reachable OpenCode runtime if you need end-to-end manual checks
 
@@ -56,13 +56,13 @@ bash -n scripts/doctor.sh
 bash -n scripts/lint.sh
 ```
 
-External interoperability experiments stay outside the default regression baseline. When you need to reproduce current official-tool behavior, run:
+Repository-owned black-box compatibility probes stay outside the default regression baseline. Run them when transport or A2A protocol behavior changes:
 
 ```bash
 bash ./scripts/conformance.sh
 ```
 
-Treat that output as investigation input. Do not fold it into `doctor.sh` or the default CI quality gate unless the repository explicitly decides to promote a specific experiment into a maintained policy.
+The script does not download or bind to an external TCK. It checks the public Agent Card and both shipped transports against invariants maintained by this repository. A third-party TCK may be used independently as investigation input, but is not a repository dependency or certification claim.
 
 If you change extension methods, extension metadata, or Agent Card/OpenAPI contract surfaces, also make sure the targeted contract checks stay green:
 

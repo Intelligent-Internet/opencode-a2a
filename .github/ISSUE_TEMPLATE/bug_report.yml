@@ -1,0 +1,43 @@
+name: 缺陷报告
+description: 报告可复现的运行时、协议或文档问题
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 请使用简体中文描述问题；日志和协议载荷在提交前必须移除密钥与敏感数据。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么？期望行为是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 提供最小、可重复执行的步骤和已脱敏请求。
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本与环境
+      description: opencode-a2a、OpenCode、Python、操作系统版本。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 补充证据
+      description: 已脱敏日志、错误响应或相关链接。
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有 open issues，未发现重复问题。
+          required: true
+        - label: 我确认提交内容不包含 token、密码或 `.env` 内容。
+          required: true

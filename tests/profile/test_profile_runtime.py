@@ -85,6 +85,13 @@ def test_profile_runtime_splits_deployment_runtime_features_and_health_payload()
                     "enabled": True,
                     "availability": "always",
                 },
+                "metrics_endpoint": {
+                    "enabled": True,
+                    "availability": "enabled",
+                    "path": "/metrics",
+                    "authentication": "required",
+                    "toggle": "A2A_METRICS_ENABLED",
+                },
             },
         },
         "runtime_context": {

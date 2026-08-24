@@ -12,7 +12,7 @@ Executable scripts live in this directory. This file is the entry index for the 
 ## Other Scripts
 
 - [`doctor.sh`](./doctor.sh): primary local development regression entrypoint with explicit fix/verify/package phases (uv sync + dependency compatibility + lint + mypy + tests + coverage + built-wheel smoke test)
-- [`conformance.sh`](./conformance.sh): local/manual external A2A conformance experiment entrypoint; caches the official TCK, can launch a dummy-backed local SUT, and preserves raw artifacts under `run/conformance/`
+- [`conformance.sh`](./conformance.sh): repository-owned A2A 1.0 black-box compatibility probes; can launch a dummy-backed local SUT and preserves machine-readable artifacts under `run/conformance/`
 - [`live_opencode_smoke.sh`](./live_opencode_smoke.sh): local/manual live integration smoke against a real OpenCode runtime; boots an isolated password-hardened `opencode serve` plus the opencode-a2a runtime in throwaway directories and verifies upstream auth, JSON-RPC extension reads, and a streaming prompt round-trip
 - [`dependency_health.sh`](./dependency_health.sh): development dependency review entrypoint (`sync`/`pip check` + outdated + dev audit), while blocking CI/publish audits focus on runtime dependencies
 - [`check_coverage.py`](./check_coverage.py): enforces the overall coverage floor and per-file minimums for critical modules
@@ -26,4 +26,4 @@ Executable scripts live in this directory. This file is the entry index for the 
 - `doctor.sh` covers the default local validation baseline, while `dependency_health.sh` remains focused on standalone dependency review and audit flow.
 - `doctor.sh` stops early when `pre-commit` rewrites files so you can review the changes and rerun `doctor.sh` from the updated worktree.
 - [`.github/dependabot.yml`](../.github/dependabot.yml) prefers a single weekly grouped Dependabot PR for `uv`, while `dependency_health.sh` remains the explicit review/audit entrypoint.
-- External conformance experiments remain intentionally separate from the default regression path. See [`../docs/conformance.md`](../docs/conformance.md).
+- Repository-owned compatibility probes remain separate from the default regression path. See [`../docs/conformance.md`](../docs/conformance.md).

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 
+from a2a.types import SendMessageRequest
 from fastapi.responses import JSONResponse
 
 from ..contracts.extensions import (
@@ -14,6 +15,23 @@ from ..contracts.extensions import (
 from ..jsonrpc.error_responses import build_http_error_body
 
 logger = logging.getLogger(__name__)
+
+
+def validate_send_message_request(request: SendMessageRequest) -> None:
+    """Validate required A2A Message fields omitted by proto3 parsing."""
+    if not request.HasField("message"):
+        raise ValueError("params.message is required")
+
+    message = request.message
+    if not message.message_id.strip():
+        raise ValueError("params.message.messageId is required")
+    if message.role == 0:
+        raise ValueError("params.message.role is required")
+    if not message.parts:
+        raise ValueError("params.message.parts must contain at least one part")
+    for index, part in enumerate(message.parts):
+        if part.WhichOneof("content") is None:
+            raise ValueError(f"params.message.parts[{index}] must contain content")
 
 
 def _parse_json_body(body_bytes: bytes) -> dict | None:

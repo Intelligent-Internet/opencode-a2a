@@ -19,6 +19,7 @@ from a2a.types import (
 )
 
 from opencode_a2a.execution.executor import OpencodeAgentExecutor
+from opencode_a2a.execution.metrics import emit_metric, render_prometheus_metrics, reset_metrics
 from opencode_a2a.execution.stream_state import _StreamOutputState
 from opencode_a2a.server.application import OpencodeRequestHandler
 from tests.support.helpers import DummyEventQueue
@@ -37,6 +38,21 @@ def _make_message_send_params() -> SendMessageRequest:
 
 def _agent_card() -> AgentCard:
     return AgentCard(name="opencode-a2a", capabilities=AgentCapabilities(streaming=True))
+
+
+def test_metrics_registry_renders_counters_gauges_and_labels() -> None:
+    reset_metrics()
+    emit_metric("probe_requests_total", transport="jsonrpc")
+    emit_metric("probe_requests_total", transport="jsonrpc")
+    emit_metric("probe_active", 1)
+    emit_metric("probe_active", -1)
+
+    rendered = render_prometheus_metrics()
+
+    assert "# TYPE probe_requests_total counter" in rendered
+    assert 'probe_requests_total{transport="jsonrpc"} 2' in rendered
+    assert "# TYPE probe_active gauge" in rendered
+    assert "probe_active 0" in rendered
 
 
 @pytest.mark.asyncio

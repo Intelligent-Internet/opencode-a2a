@@ -14,6 +14,7 @@ from a2a.utils.errors import (
     JSON_RPC_ERROR_CODE_MAP,
     A2AError,
     InternalError,
+    PushNotificationNotSupportedError,
     UnsupportedOperationError,
 )
 from fastapi import FastAPI
@@ -29,6 +30,7 @@ from ..extension_negotiation import (
 )
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..redact import redact_absolute_paths
+from ..server.request_parsing import validate_send_message_request
 from ..server.runtime_limits import apply_stream_budget
 from .dispatch import (
     ExtensionHandlerContext,
@@ -331,7 +333,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         if canonical_method in _PUSH_NOTIFICATION_METHODS:
             return self._generate_protocol_error_response(
                 base_request.id,
-                UnsupportedOperationError(),
+                PushNotificationNotSupportedError(),
             )
         if canonical_method == "GetExtendedAgentCard":
             if base_request.id is None:
@@ -372,6 +374,8 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         try:
             params = body.get("params", {})
             specific_request = ParseDict(params, model_class())
+            if canonical_method in {"SendMessage", "SendStreamingMessage"}:
+                validate_send_message_request(specific_request)
         except Exception as exc:
             return self._generate_protocol_error_response(
                 base_request.id,

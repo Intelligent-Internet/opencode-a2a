@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a2a.server.context import ServerCallContext
-from a2a.server.events import EventConsumer, EventQueue
+from a2a.server.events import EventConsumer, InMemoryQueueManager
 from a2a.server.tasks import TaskManager
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
@@ -21,6 +21,7 @@ from a2a.types import (
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
+    UnsupportedOperationError,
 )
 
 from opencode_a2a.a2a_utils import make_data_part
@@ -238,7 +239,7 @@ async def test_negotiating_result_aggregator_persists_metadata_for_artifact_firs
         initial_message=None,
     )
     aggregator = NegotiatingResultAggregator(task_manager, ["text/plain"])
-    queue = EventQueue()
+    queue = await InMemoryQueueManager().create_or_tap("task-artifact-first")
 
     await queue.enqueue_event(
         TaskArtifactUpdateEvent(
@@ -289,7 +290,7 @@ async def test_negotiating_result_aggregator_compacts_stream_artifacts_for_persi
         initial_message=None,
     )
     aggregator = NegotiatingResultAggregator(task_manager, None)
-    queue = EventQueue()
+    queue = await InMemoryQueueManager().create_or_tap("task-stream-compact")
     stream_metadata = {
         "shared": {
             "stream": {
@@ -359,7 +360,7 @@ async def test_negotiating_result_aggregator_persists_terminal_usage_with_final_
         initial_message=None,
     )
     aggregator = NegotiatingResultAggregator(task_manager, None)
-    queue = EventQueue()
+    queue = await InMemoryQueueManager().create_or_tap("task-stream-terminal-contract")
     stream_metadata = {
         "shared": {
             "stream": {
@@ -438,7 +439,7 @@ async def test_on_get_task_applies_persisted_output_negotiation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_resubscribe_terminal_task_applies_persisted_output_negotiation() -> None:
+async def test_subscribe_terminal_task_is_unsupported_before_output_negotiation() -> None:
     store = _store()
     task = _task_with_negotiated_outputs(task_id="task-resub", context_id="ctx-resub")
     await store.save(task, ServerCallContext())
@@ -448,19 +449,9 @@ async def test_resubscribe_terminal_task_applies_persisted_output_negotiation() 
         agent_card=_agent_card(),
     )
 
-    events = []
-    async for event in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-resub")):
-        events.append(event)
-
-    assert len(events) == 1
-    assert isinstance(events[0], Task)
-    assert events[0].artifacts is not None
-    assert [artifact.artifact_id for artifact in events[0].artifacts] == [
-        "task-resub:text",
-        "task-resub:json",
-    ]
-    assert events[0].artifacts[1].parts[0].HasField("text")
-    assert events[0].artifacts[1].parts[0].text == '{"status":"completed","tool":"bash"}'
+    with pytest.raises(UnsupportedOperationError):
+        async for _event in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-resub")):
+            pass
 
 
 @pytest.mark.asyncio

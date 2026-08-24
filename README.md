@@ -100,6 +100,7 @@ curl http://127.0.0.1:8000/.well-known/agent-card.json
 - Session continuity through `metadata.shared.session.id`
 - Request-scoped model selection through `metadata.shared.model`
 - OpenCode-oriented JSON-RPC extensions for session and model/provider queries
+- Authenticated Prometheus-compatible process metrics at `GET /metrics`
 
 ## A2A Protocol Support
 
@@ -177,7 +178,7 @@ Read before deployment:
 - [docs/compatibility.md](docs/compatibility.md) Compatibility-sensitive surface and contract-honesty guidance.
 - [docs/guide.md](docs/guide.md) Usage guide, transport details, streaming behavior, extensions, and examples.
 - [docs/security-architecture.md](docs/security-architecture.md) Security surface, boundaries, and residual-risk register.
-- [docs/conformance.md](docs/conformance.md) External TCK experiment workflow and artifact handling.
+- [docs/conformance.md](docs/conformance.md) Repository-owned black-box compatibility probes and artifact handling.
 - [SECURITY.md](SECURITY.md) Threat model, deployment caveats, and vulnerability disclosure guidance.
 
 ## Development

@@ -92,11 +92,13 @@ class WorkspaceMutationsProfile:
 class ServiceFeaturesProfile:
     streaming: dict[str, Any]
     health_endpoint: dict[str, Any]
+    metrics_endpoint: dict[str, Any]
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "streaming": dict(self.streaming),
             "health_endpoint": dict(self.health_endpoint),
+            "metrics_endpoint": dict(self.metrics_endpoint),
         }
 
 
@@ -291,6 +293,13 @@ def build_runtime_profile(settings: Settings) -> RuntimeProfile:
         service_features=ServiceFeaturesProfile(
             streaming={"enabled": True, "availability": "always"},
             health_endpoint={"enabled": True, "availability": "always"},
+            metrics_endpoint={
+                "enabled": settings.a2a_metrics_enabled,
+                "availability": "enabled" if settings.a2a_metrics_enabled else "disabled",
+                "path": "/metrics",
+                "authentication": "required",
+                "toggle": "A2A_METRICS_ENABLED",
+            },
         ),
         runtime_context=RuntimeContext(
             project=settings.a2a_project,

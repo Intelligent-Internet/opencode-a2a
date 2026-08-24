@@ -26,6 +26,7 @@ from a2a.types import (
     InvalidRequestError,
     Message,
     Part,
+    PushNotificationNotSupportedError,
     Role,
     SendMessageRequest,
     SendMessageResponse,
@@ -47,7 +48,7 @@ from a2a.utils.errors import (
 )
 from a2a.utils.task import apply_history_length, validate_history_length
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from google.protobuf.message import Message as ProtoMessage
 from pydantic_settings import BaseSettings
@@ -67,6 +68,7 @@ from ..contracts.extensions import (
     build_capability_snapshot,
 )
 from ..execution.executor import OpencodeAgentExecutor
+from ..execution.metrics import render_prometheus_metrics
 from ..extension_negotiation import (
     ExtensionRequirement,
     filter_negotiated_extensions_from_payload,
@@ -105,6 +107,7 @@ from .openapi import (
 )
 from .request_parsing import (
     _parse_json_body,
+    validate_send_message_request,
 )
 from .rest_tasks import build_list_tasks_route
 from .runtime_limits import StreamBudgetExceeded, apply_stream_budget
@@ -222,7 +225,12 @@ def _parse_rest_send_message_request(body: bytes):
                             "such as text, raw, url, or data."
                         )
                     )
-    return ParseDict(payload, SendMessageRequest())
+    request = ParseDict(payload, SendMessageRequest())
+    try:
+        validate_send_message_request(request)
+    except ValueError as exc:
+        raise InvalidRequestError(message=str(exc)) from exc
+    return request
 
 
 if TYPE_CHECKING:
@@ -593,10 +601,10 @@ class OpencodeRequestHandler(LegacyRequestHandler):
             if not task:
                 raise TaskNotFoundError()
 
-            # Subscribe contract: terminal tasks replay once and then close stream.
             if task.status.state in TERMINAL_TASK_STATES:
-                yield self._apply_task_output_negotiation(task, context)
-                return
+                raise UnsupportedOperationError(
+                    message="Cannot subscribe to a task in a terminal state"
+                )
 
             yield self._apply_task_output_negotiation(task, context)
 
@@ -1051,15 +1059,9 @@ def create_app(settings: Settings) -> FastAPI:
     app.add_api_route("/tasks/{id}", rest_dispatcher.on_get_task, methods=["GET"])
 
     async def push_notifications_unsupported_route(request: Request) -> JSONResponse:
-        del request
-        return JSONResponse(
-            build_http_error_body(
-                status_code=501,
-                status="UNIMPLEMENTED",
-                message=PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE,
-                reason="PUSH_NOTIFICATIONS_UNSUPPORTED",
-            ),
-            status_code=501,
+        return _rest_error_response(
+            request=request,
+            error=PushNotificationNotSupportedError(message=PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE),
         )
 
     app.add_api_route(
@@ -1116,6 +1118,15 @@ def create_app(settings: Settings) -> FastAPI:
             version=settings.a2a_version,
             protocol_version=A2A_PROTOCOL_VERSION,
         )
+
+    if settings.a2a_metrics_enabled:
+
+        @app.get("/metrics", response_class=PlainTextResponse)
+        async def metrics_check() -> PlainTextResponse:
+            return PlainTextResponse(
+                render_prometheus_metrics(),
+                media_type="text/plain; version=0.0.4",
+            )
 
     return app
 

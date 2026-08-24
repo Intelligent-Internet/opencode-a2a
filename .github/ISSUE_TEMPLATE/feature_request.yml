@@ -1,0 +1,39 @@
+name: 功能建议
+description: 建议新的 A2A、OpenCode 或工程能力
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 用户问题
+      description: 需要解决的具体问题是什么？请避免只描述实现方案。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 说明预期行为、协议/扩展边界和替代方案。
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: 影响范围
+      options:
+        - A2A core / transport
+        - OpenCode provider-private extension
+        - 运维 / 可观测性
+        - 文档 / 开源工程
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有 open issues，未发现重复建议。
+          required: true
+        - label: 我已说明该能力应属于 A2A core、共享扩展还是 provider-private surface。
+          required: true

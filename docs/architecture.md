@@ -97,6 +97,6 @@ Use the docs by responsibility:
 - [Maintainer Architecture Guide](maintainer-architecture.md): internal module boundaries, request call chains, and persistence touchpoints
 - [Extension Specifications](extension-specifications.md): stable extension URI/spec index and disclosure policy
 - [Security Architecture](security-architecture.md): security surface mapping and residual-risk register
-- [Conformance Notes](conformance.md): external TCK experiment workflow
+- [Conformance Notes](conformance.md): repository-owned black-box compatibility probes
 - [Contributing Guide](../CONTRIBUTING.md): contributor workflow and validation
 - [Security Policy](../SECURITY.md): threat model and disclosure guidance

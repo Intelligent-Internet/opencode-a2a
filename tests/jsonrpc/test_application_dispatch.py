@@ -274,6 +274,27 @@ async def test_handle_core_request_invalid_params_and_handler_errors(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["SendMessage", "SendStreamingMessage"])
+async def test_handle_core_request_rejects_missing_message(
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+) -> None:
+    dispatcher = _build_dispatcher(monkeypatch)
+    base_request = JSONRPCRequest.model_validate(
+        {"jsonrpc": "2.0", "id": 140, "method": method, "params": {}}
+    )
+
+    response = await dispatcher._handle_core_request(
+        MagicMock(),
+        {"params": {}},
+        base_request,
+    )
+
+    assert response.status_code == 200
+    assert b'"code":-32602' in response.body
+
+
+@pytest.mark.asyncio
 async def test_handle_core_request_streaming_and_non_streaming_notifications(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
