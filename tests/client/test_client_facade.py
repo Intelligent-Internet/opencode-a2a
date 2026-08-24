@@ -333,7 +333,7 @@ async def test_send_message_adds_bearer_token_from_settings(
     request, _, kwargs = fake_client.send_message_inputs[0]
     assert request.metadata == {}
     assert kwargs["context"] is not None
-    assert kwargs["context"].state["headers"]["Authorization"] == "Bearer peer-token"
+    assert kwargs["context"].service_parameters["Authorization"] == "Bearer peer-token"
 
 
 @pytest.mark.asyncio
@@ -354,7 +354,7 @@ async def test_send_message_adds_basic_auth_from_settings(
     request, _, kwargs = fake_client.send_message_inputs[0]
     assert request.metadata == {}
     assert kwargs["context"] is not None
-    assert kwargs["context"].state["headers"]["Authorization"] == (
+    assert kwargs["context"].service_parameters["Authorization"] == (
         f"Basic {b64encode(b'user:pass').decode()}"
     )
 
@@ -382,7 +382,7 @@ async def test_send_message_preserves_explicit_authorization_metadata(
     assert result[0].HasField("message")
     request, _, kwargs = fake_client.send_message_inputs[0]
     assert request.metadata == {"trace_id": "trace-1"}
-    assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
+    assert kwargs["context"].service_parameters["Authorization"] == "Bearer explicit-token"
 
 
 @pytest.mark.asyncio
@@ -429,7 +429,7 @@ async def test_send_message_prefers_explicit_authorization_without_default_token
     assert result[0].HasField("message")
     request, _, kwargs = fake_client.send_message_inputs[0]
     assert request.metadata == {}
-    assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
+    assert kwargs["context"].service_parameters["Authorization"] == "Bearer explicit-token"
 
 
 @pytest.mark.asyncio
@@ -533,7 +533,7 @@ async def test_get_task_uses_authorization_header_context(
 
     params, kwargs = fake_client.task_inputs[0]
     assert params.id == "task-id"
-    assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
+    assert kwargs["context"].service_parameters["Authorization"] == "Bearer explicit-token"
     assert "request_metadata" not in kwargs
 
 
@@ -572,7 +572,7 @@ async def test_cancel_task_uses_authorization_header_context(
 
     params, kwargs = fake_client.cancel_inputs[0]
     assert params.metadata == {"trace_id": "trace-1"}
-    assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
+    assert kwargs["context"].service_parameters["Authorization"] == "Bearer explicit-token"
 
 
 @pytest.mark.asyncio
@@ -623,7 +623,7 @@ async def test_subscribe_to_task_uses_authorization_header_context(
     assert [event.task.status.state for event in result] == [TaskState.TASK_STATE_WORKING]
     params, kwargs = fake_client.subscribe_inputs[0]
     assert params.id == "task-id"
-    assert kwargs["context"].state["headers"]["Authorization"] == "Bearer explicit-token"
+    assert kwargs["context"].service_parameters["Authorization"] == "Bearer explicit-token"
     assert "request_metadata" not in kwargs
 
 

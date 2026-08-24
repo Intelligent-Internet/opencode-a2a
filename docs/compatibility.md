@@ -13,6 +13,8 @@ This is the single canonical place where the supported upstream OpenCode version
 
 The repository currently pins one concrete SDK release in `pyproject.toml` within that v1 line. Upgrade the SDK deliberately rather than relying on floating dependency resolution. The SDK-owned core JSON-RPC method set follows that pinned release and is locked by repository tests so SDK upgrades trigger an explicit compatibility review.
 
+SDK upgrade reviews must validate behavior at integration boundaries, not only object construction. In particular, outbound headers must be asserted on the final `httpx.Request` produced by the real SDK transport, and database compatibility changes must keep the SDK shape/parity tests green. A populated `ClientCallContext` by itself is not evidence that a transport consumed its values.
+
 ## Contract Honesty
 
 Machine-readable discovery surfaces must reflect actual runtime behavior:
@@ -90,6 +92,8 @@ Task-store behavior that should remain stable for clients:
 - task-store I/O failures are surfaced as stable service errors instead of leaking backend-specific exceptions
 - accepted output-mode negotiation for a task is persisted with the task so later reads keep the same filtered output contract
 - adapter-managed migrations only own adapter state tables; SDK-managed task schema remains SDK-owned
+
+`DatabaseTaskStoreCompat` is an intentional, fail-fast boundary around the SDK database store shape. It remains necessary for the repository's atomic first-terminal-state-wins write policy, which the SDK public `TaskStore` API does not provide. SDK upgrades must either preserve its shape/parity tests or replace it with an equivalent upstream public capability before removing the compatibility layer.
 
 The supported persistence profile is one application process using its own local SQLite database. Multiple Uvicorn workers or application replicas must not share that SQLite file. PostgreSQL and other SQLAlchemy dialects are not supported deployment targets; any apparent dialect compatibility is implementation latitude rather than a public promise.
 

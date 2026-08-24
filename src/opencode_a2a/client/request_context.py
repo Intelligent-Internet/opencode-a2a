@@ -82,17 +82,10 @@ def build_call_context(
     service_parameter_updates = (
         [with_a2a_extensions(normalized_extensions)] if normalized_extensions else []
     )
-    # a2a-sdk's HTTP transports serialize service parameters as request
-    # headers. Keep the same headers in state for transport-independent
-    # consumers, but use the SDK's HTTP header channel for on-wire delivery.
+    # a2a-sdk transports serialize service parameters as HTTP headers or gRPC
+    # metadata. This is also the channel used by the SDK's AuthInterceptor.
     service_parameters = ServiceParametersFactory.create_from(
         merged_headers,
         service_parameter_updates,
     )
-    return ClientCallContext(
-        state={
-            "headers": dict(merged_headers),
-            "http_kwargs": {"headers": dict(merged_headers)},
-        },
-        service_parameters=service_parameters,
-    )
+    return ClientCallContext(service_parameters=service_parameters)

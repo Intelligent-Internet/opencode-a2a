@@ -588,7 +588,7 @@ async def test_agent_a2a_call_uses_server_side_basic_auth_headers(
     assert results[0]["output"] == "remote response"
     _, _, kwargs = fake_sdk_client.send_message_inputs[0]
     assert kwargs["context"] is not None
-    assert kwargs["context"].state["headers"]["Authorization"] == (
+    assert kwargs["context"].service_parameters["Authorization"] == (
         f"Basic {b64encode(b'user:pass').decode()}"
     )
 
@@ -658,10 +658,10 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
     assert results[0]["output"] == "remote response"
     _, _, kwargs = fake_sdk_client.send_message_inputs[0]
     assert kwargs["context"] is not None
-    assert kwargs["context"].state["headers"]["traceparent"] == (
+    assert kwargs["context"].service_parameters["traceparent"] == (
         "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
     )
-    assert kwargs["context"].state["headers"]["tracestate"] == "vendor=value"
+    assert kwargs["context"].service_parameters["tracestate"] == "vendor=value"
 
     await manager.close_all()
 
