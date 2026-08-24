@@ -247,3 +247,22 @@ def test_configure_sqlite_connection_closes_connection_on_failure() -> None:
 
     cursor.close.assert_called_once_with()
     dbapi_connection.close.assert_called_once_with()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file permission semantics")
+def test_configure_sqlite_connection_closes_connection_on_hardening_failure(tmp_path) -> None:
+    victim = tmp_path / "victim.db"
+    victim.write_bytes(b"")
+    database_path = tmp_path / "runtime.db"
+    database_path.symlink_to(victim)
+    dbapi_connection = MagicMock()
+
+    with pytest.raises(RuntimeError, match="symlink"):
+        database_module._configure_sqlite_connection(
+            dbapi_connection,
+            MagicMock(),
+            database_path=database_path,
+        )
+
+    dbapi_connection.cursor.assert_not_called()
+    dbapi_connection.close.assert_called_once_with()

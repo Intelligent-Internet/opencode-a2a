@@ -110,8 +110,12 @@ def _harden_sqlite_file(path: Path) -> None:
 def _configure_sqlite_connection(
     dbapi_connection: Any,
     _connection_record: Any,
+    *,
+    database_path: Path | None = None,
 ) -> None:
     try:
+        if database_path is not None:
+            _harden_sqlite_file(database_path)
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute(f"PRAGMA journal_mode={_SQLITE_JOURNAL_MODE}")
@@ -168,6 +172,6 @@ def build_database_engine(settings: Settings) -> AsyncEngine:
     event.listen(
         engine.sync_engine,
         "connect",
-        _configure_sqlite_connection,
+        partial(_configure_sqlite_connection, database_path=sqlite_path),
     )
     return engine

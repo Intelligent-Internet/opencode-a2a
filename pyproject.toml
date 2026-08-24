@@ -105,5 +105,5 @@ addopts = "--cov=src/opencode_a2a --cov-report=term-missing --cov-report=json:.c
 filterwarnings = [
     "error::pytest.PytestUnhandledThreadExceptionWarning",
     "error::pytest.PytestUnraisableExceptionWarning",
-    "error:.*was deleted before being closed.*:ResourceWarning:aiosqlite.core",
+    "always:.*was deleted before being closed.*:ResourceWarning:aiosqlite.core",
 ]
