@@ -240,6 +240,7 @@ def test_configure_sqlite_connection_closes_connection_on_failure() -> None:
     dbapi_connection = MagicMock()
     cursor = dbapi_connection.cursor.return_value
     cursor.execute.side_effect = RuntimeError("PRAGMA failed")
+    dbapi_connection.close.side_effect = OSError("close failed")
 
     with pytest.raises(RuntimeError, match="PRAGMA failed"):
         database_module._configure_sqlite_connection(dbapi_connection, MagicMock())

@@ -120,8 +120,8 @@ def _configure_sqlite_connection(
         finally:
             cursor.close()
     except BaseException:
-        # SQLAlchemy does not own the connection yet when a connect listener
-        # fails, so close async DBAPI resources here before re-raising.
+        # SQLAlchemy does not close a DBAPI connection when a connect listener
+        # fails, so release async driver resources before re-raising.
         with suppress(Exception):
             dbapi_connection.close()
         raise
@@ -130,7 +130,7 @@ def _configure_sqlite_connection(
 def _harden_sqlite_before_connect(
     _dialect: Any,
     _connection_record: Any,
-    _connection_args: list[Any],
+    _connection_args: tuple[Any, ...],
     _connection_params: dict[str, Any],
     *,
     database_path: Path,
