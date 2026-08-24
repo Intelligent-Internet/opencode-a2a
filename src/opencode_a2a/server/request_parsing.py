@@ -20,18 +20,18 @@ logger = logging.getLogger(__name__)
 def validate_send_message_request(request: SendMessageRequest) -> None:
     """Validate required A2A Message fields omitted by proto3 parsing."""
     if not request.HasField("message"):
-        raise ValueError("params.message is required")
+        raise ValueError("message is required")
 
     message = request.message
     if not message.message_id.strip():
-        raise ValueError("params.message.messageId is required")
+        raise ValueError("message.messageId is required")
     if message.role == 0:
-        raise ValueError("params.message.role is required")
+        raise ValueError("message.role is required")
     if not message.parts:
-        raise ValueError("params.message.parts must contain at least one part")
+        raise ValueError("message.parts must contain at least one part")
     for index, part in enumerate(message.parts):
         if part.WhichOneof("content") is None:
-            raise ValueError(f"params.message.parts[{index}] must contain content")
+            raise ValueError(f"message.parts[{index}] must contain content")
 
 
 def _parse_json_body(body_bytes: bytes) -> dict | None:

@@ -45,4 +45,3 @@ EXTENSION_SPEC_DOCUMENT_PATHS_BY_URI = MappingProxyType(
 )
 SERVICE_BEHAVIOR_CLASSIFICATION = "service-level-semantic-enhancement"
 CANCEL_IDEMPOTENCY_BEHAVIOR = "return_current_terminal_task"
-TERMINAL_SUBSCRIBE_BEHAVIOR = "reject_with_unsupported_operation"

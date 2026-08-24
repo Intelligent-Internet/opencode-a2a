@@ -268,9 +268,9 @@ def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
     }
     with pytest.raises(InvalidRequestError, match="REST message payload must be a JSON object"):
         _parse_rest_send_message_request(b"[]")
-    with pytest.raises(InvalidRequestError, match="params.message is required"):
+    with pytest.raises(InvalidRequestError, match="message is required"):
         _parse_rest_send_message_request(b"{}")
-    with pytest.raises(InvalidRequestError, match="params.message.messageId is required"):
+    with pytest.raises(InvalidRequestError, match="message.messageId is required"):
         _parse_rest_send_message_request(
             json.dumps(
                 {

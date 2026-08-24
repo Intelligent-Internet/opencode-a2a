@@ -1322,7 +1322,7 @@ If an SSE connection drops, use `GET /tasks/{task_id}:subscribe` to re-subscribe
 - Idempotency contract: repeated `CancelTask` on an already `canceled` task returns the current terminal task state without error.
 - Terminal subscribe contract: calling `SubscribeToTask` or `GET /tasks/{task_id}:subscribe` on a terminal task returns `UnsupportedOperationError`, as required by A2A 1.0.
 - Terminal persistence contract: once a terminal task snapshot is persisted, this service treats it as immutable. Producers must emit final text and artifact updates before the terminal event, and any final usage or stream metadata must be attached to that terminal event itself. Late terminal-state mutations are rejected by the task-store write policy.
-- Cancellation and terminal-subscribe semantics are also declared as machine-readable `service_behaviors` in the compatibility profile and wire contract extensions.
+- The cancellation idempotency enhancement is also declared under machine-readable `service_behaviors`. Terminal-task subscription rejection remains a core A2A 1.0 rule and is therefore not republished as a custom enhancement.
 - The service records process-local metrics for authenticated Prometheus scraping at `GET /metrics`; `A2A_METRICS_ENABLED=false` disables the endpoint. At `A2A_LOG_LEVEL=DEBUG`, the same updates are emitted as lightweight metric log records (`logger=opencode_a2a.execution.executor`):
   - `a2a_stream_requests_total`
   - `a2a_stream_active` (`value=1` when a stream starts, `value=-1` when it closes)

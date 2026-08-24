@@ -19,6 +19,7 @@ Selected environment variables:
   CONFORMANCE_SUT_URL          Probe an already running runtime instead of a local test SUT
   CONFORMANCE_SUT_PORT         Local test SUT port (default: 8011)
   CONFORMANCE_AUTH_TOKEN       Bearer token (default: test-token for the local test SUT)
+  CONFORMANCE_ALLOW_EXTERNAL=1 Required acknowledgement when CONFORMANCE_SUT_URL is set
   CONFORMANCE_SKIP_REPO_SYNC=1 Skip uv sync/uv pip check
 EOF
 }
@@ -62,6 +63,12 @@ auth_token="${CONFORMANCE_AUTH_TOKEN:-}"
 if [[ -z "${sut_url}" ]]; then
   sut_url="http://127.0.0.1:${sut_port}"
   auth_token="${auth_token:-test-token}"
+  if ! uv run python -c \
+    'import socket, sys; server = socket.create_server(("127.0.0.1", int(sys.argv[1]))); server.close()' \
+    "${sut_port}"; then
+    echo "Local conformance port ${sut_port} is unavailable; choose CONFORMANCE_SUT_PORT." >&2
+    exit 1
+  fi
   CONFORMANCE_SUT_PORT="${sut_port}" \
   CONFORMANCE_SUT_URL="${sut_url}" \
   CONFORMANCE_AUTH_TOKEN="${auth_token}" \
@@ -87,6 +94,9 @@ if [[ -z "${sut_url}" ]]; then
     cat "${sut_log}" >&2 || true
     exit 1
   fi
+elif [[ "${CONFORMANCE_ALLOW_EXTERNAL:-0}" != "1" ]]; then
+  echo "Set CONFORMANCE_ALLOW_EXTERNAL=1 to acknowledge external SUT side effects." >&2
+  exit 2
 elif [[ -z "${auth_token}" ]]; then
   echo "CONFORMANCE_AUTH_TOKEN is required with CONFORMANCE_SUT_URL." >&2
   exit 2

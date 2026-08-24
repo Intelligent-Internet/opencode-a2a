@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 
 import uvicorn
-import opencode_a2a.server.application as app_module
 from tests.support.helpers import DummyChatOpencodeUpstreamClient
 from tests.support.settings import make_settings
+
+import opencode_a2a.server.application as app_module
 
 
 def main() -> None:

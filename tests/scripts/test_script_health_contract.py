@@ -1,3 +1,7 @@
+import json
+import os
+import socket
+import subprocess
 from pathlib import Path
 
 DOCTOR_TEXT = Path("scripts/doctor.sh").read_text()
@@ -79,6 +83,32 @@ def test_conformance_script_is_repository_owned_and_external_tck_independent() -
     assert "scripts.conformance_probe" in CONFORMANCE_TEXT
     assert "scripts.conformance_sut" in CONFORMANCE_TEXT
     assert "a2a-tck" not in CONFORMANCE_TEXT
+
+
+def test_conformance_entrypoint_runs_repository_owned_probes(tmp_path: Path) -> None:
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        port = server.getsockname()[1]
+    output_dir = tmp_path / "conformance"
+    env = {
+        **os.environ,
+        "CONFORMANCE_SKIP_REPO_SYNC": "1",
+        "CONFORMANCE_SUT_PORT": str(port),
+        "CONFORMANCE_OUTPUT_DIR": str(output_dir),
+    }
+
+    completed = subprocess.run(
+        ["bash", "./scripts/conformance.sh"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    report = json.loads((output_dir / "report.json").read_text())
+    assert report["scope"] == "repository-owned-a2a-1.0-compatibility-probes"
+    assert report["summary"] == {"failed": 0, "passed": 8, "total": 8}
 
 
 def test_smoke_test_requires_explicit_wheel_selection_when_dist_is_ambiguous() -> None:

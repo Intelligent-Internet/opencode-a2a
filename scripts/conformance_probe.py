@@ -181,9 +181,7 @@ def main() -> int:
         "schema_version": 1,
         "scope": "repository-owned-a2a-1.0-compatibility-probes",
         "sut_url": args.base_url,
-        "repo_commit": subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], text=True
-        ).strip(),
+        "repo_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         "summary": {
             "passed": len(results) - len(failures),
             "failed": len(failures),

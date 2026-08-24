@@ -27,10 +27,11 @@ Run against an existing deployment:
 ```bash
 CONFORMANCE_SUT_URL=http://127.0.0.1:8000 \
 CONFORMANCE_AUTH_TOKEN=dev-token \
+CONFORMANCE_ALLOW_EXTERNAL=1 \
 bash ./scripts/conformance.sh
 ```
 
-`CONFORMANCE_AUTH_TOKEN` is required for an existing deployment. The default `test-token` is used only for the locally launched test SUT.
+The probe creates a real task and reads task state. Use a dedicated test deployment, never a production target. `CONFORMANCE_ALLOW_EXTERNAL=1` is a required explicit acknowledgement, and `CONFORMANCE_AUTH_TOKEN` is required for an existing deployment. The default `test-token` is used only for the locally launched test SUT.
 
 Use `CONFORMANCE_OUTPUT_DIR` to select the artifact directory and `CONFORMANCE_SKIP_REPO_SYNC=1` only when the locked environment has already been verified.
 

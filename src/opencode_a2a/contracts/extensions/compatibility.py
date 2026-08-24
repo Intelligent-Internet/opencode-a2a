@@ -408,13 +408,5 @@ def build_service_behavior_contract_params() -> dict[str, Any]:
                     }
                 },
             },
-            "SubscribeToTask": {
-                "baseline": "core",
-                "retention": "stable",
-                "terminal_state_behavior": {
-                    "behavior": identifiers.TERMINAL_SUBSCRIBE_BEHAVIOR,
-                    "error": "UnsupportedOperationError",
-                },
-            },
         },
     }
