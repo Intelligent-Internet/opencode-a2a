@@ -13,5 +13,5 @@ def test_package_declares_runtime_protobuf_dependency() -> None:
     assert '"protobuf>=6.33.5,<7.0"' in PYPROJECT_TEXT
 
 
-def test_build_backend_pins_setuptools_scm_below_warninging_major_version() -> None:
-    assert 'requires = ["setuptools>=80", "setuptools-scm[toml]>=8,<10"]' in PYPROJECT_TEXT
+def test_build_backend_pins_setuptools_scm_below_next_major_version() -> None:
+    assert 'requires = ["setuptools>=80", "setuptools-scm[toml]>=8,<11"]' in PYPROJECT_TEXT
