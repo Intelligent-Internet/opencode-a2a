@@ -561,3 +561,110 @@ async def test_shutdown_drains_background_tasks_created_during_cancellation(stor
     assert len(late_tasks) == 1
     assert late_tasks[0].done()
     assert not any(not task.done() for task in handler._background_tasks)
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancellation_cannot_bypass_shutdown_barrier(store):
+    started = asyncio.Event()
+    stopping = asyncio.Event()
+    release = asyncio.Event()
+
+    async def execute(context, queue):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopping.set()
+            await release.wait()
+
+    handler = _handler(store, execute)
+    await handler._setup_message_execution(_request(), _context())
+    await started.wait()
+    close = asyncio.create_task(handler.aclose())
+    try:
+        await stopping.wait()
+        for _ in range(3):
+            close.cancel()
+            await asyncio.sleep(0)
+        assert not close.done()
+    finally:
+        release.set()
+        await asyncio.gather(close, return_exceptions=True)
+        await handler.aclose()
+    assert not handler._managed_producers
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_producer_storage_error_uses_stable_error_mapping(store, streaming):
+    from opencode_a2a.server.task_store import TaskStoreOperationError
+
+    handler = _handler(store, AsyncMock(side_effect=TaskStoreOperationError("save", "task")))
+    params = _request()
+    try:
+        if streaming:
+            events = [event async for event in handler.on_message_send_stream(params, _context())]
+            failed = events[-1]
+        else:
+            failed = await handler.on_message_send(params, _context())
+        assert failed.status.state == TaskState.TASK_STATE_FAILED
+        assert failed.metadata["opencode"]["error"]["type"] == "TASK_STORE_UNAVAILABLE"
+        assert failed.metadata["opencode"]["error"]["operation"] == "save"
+    finally:
+        await handler.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_shutdown_drains_completed_producer_output_before_closing_store(
+    store, monkeypatch, streaming
+):
+    from a2a.types import TaskStatusUpdateEvent
+
+    writing_terminal = asyncio.Event()
+    release_write = asyncio.Event()
+    original_save = store.save
+
+    async def delayed_save(task, context=None):
+        if task.status.state == TaskState.TASK_STATE_COMPLETED:
+            writing_terminal.set()
+            await release_write.wait()
+        await original_save(task, context)
+
+    monkeypatch.setattr(store, "save", delayed_save)
+
+    async def execute(context, queue):
+        await queue.enqueue_event(
+            Task(
+                id=context.task_id,
+                context_id=context.context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+            )
+        )
+        await queue.enqueue_event(
+            TaskStatusUpdateEvent(
+                task_id=context.task_id,
+                context_id=context.context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+            )
+        )
+
+    handler = _handler(store, execute)
+    params = _request()
+    params.configuration.return_immediately = True
+    if streaming:
+        stream = handler.on_message_send_stream(params, _context())
+        await anext(stream)
+        await stream.aclose()
+    else:
+        await handler.on_message_send(params, _context())
+    await writing_terminal.wait()
+    close = asyncio.create_task(handler.aclose())
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(close), 0.05)
+    finally:
+        release_write.set()
+        await close
+    saved = await store.get(params.message.task_id, _context())
+    assert saved.status.state == TaskState.TASK_STATE_COMPLETED

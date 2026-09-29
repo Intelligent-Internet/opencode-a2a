@@ -673,7 +673,7 @@ class OpencodeRequestHandler(ManagedLegacyRequestHandler):
                 )
             )
             detached_task.set_name(f"continue_stream_after_disconnect:{task_id}")
-            self._track_background_task(detached_task)
+            self._track_consumer_task(detached_task)
             stream_detached = True
             raise
         finally:
@@ -709,22 +709,47 @@ class OpencodeRequestHandler(ManagedLegacyRequestHandler):
         interrupted_or_non_blocking = False
         bg_consume_task: asyncio.Task | None = None
         try:
+            try:
 
-            async def push_notification_callback() -> None:
-                await self._send_push_notification_if_needed(task_id, result_aggregator)
+                async def push_notification_callback() -> None:
+                    await self._send_push_notification_if_needed(task_id, result_aggregator)
 
-            (
-                result,
-                interrupted_or_non_blocking,
-                bg_consume_task,
-            ) = await result_aggregator.consume_and_break_on_interrupt(
-                consumer,
-                blocking=blocking,
-                event_callback=push_notification_callback,
-            )
-            if bg_consume_task is not None:
-                bg_consume_task.set_name(f"continue_consuming:{task_id}")
-                self._track_background_task(bg_consume_task)
+                (
+                    result,
+                    interrupted_or_non_blocking,
+                    bg_consume_task,
+                ) = await result_aggregator.consume_and_break_on_interrupt(
+                    consumer,
+                    blocking=blocking,
+                    event_callback=push_notification_callback,
+                )
+                if bg_consume_task is not None:
+                    bg_consume_task.set_name(f"continue_consuming:{task_id}")
+                    self._track_consumer_task(bg_consume_task)
+            finally:
+                if interrupted_or_non_blocking:
+                    cleanup_task = asyncio.create_task(
+                        self._cleanup_producer(producer_task, task_id)
+                    )
+                    cleanup_task.set_name(f"cleanup_producer:{task_id}")
+                    self._track_background_task(cleanup_task)
+                else:
+                    try:
+                        current_task = asyncio.current_task()
+                        if current_task is not None and current_task.cancelled():
+                            logger.debug(
+                                "Client disconnected from message request. Cancelling task %s",
+                                task_id,
+                            )
+                            producer_task.cancel()
+                            await queue.close(immediate=True)
+
+                        await asyncio.shield(self._cleanup_producer(producer_task, task_id))
+                    except asyncio.CancelledError:
+                        pass
+
+            if producer_task.done() and not producer_task.cancelled():
+                producer_task.result()
         except TaskStoreOperationError as exc:
             logger.exception(
                 "Task store operation failed during SendMessage task_id=%s operation=%s",
@@ -739,27 +764,7 @@ class OpencodeRequestHandler(ManagedLegacyRequestHandler):
         except Exception:
             logger.exception("Agent execution failed")
             raise
-        finally:
-            if interrupted_or_non_blocking:
-                cleanup_task = asyncio.create_task(self._cleanup_producer(producer_task, task_id))
-                cleanup_task.set_name(f"cleanup_producer:{task_id}")
-                self._track_background_task(cleanup_task)
-            else:
-                try:
-                    current_task = asyncio.current_task()
-                    if current_task is not None and current_task.cancelled():
-                        logger.debug(
-                            "Client disconnected from message request. Cancelling task %s", task_id
-                        )
-                        producer_task.cancel()
-                        await queue.close(immediate=True)
 
-                    await asyncio.shield(self._cleanup_producer(producer_task, task_id))
-                except asyncio.CancelledError:
-                    pass
-
-        if producer_task.done() and not producer_task.cancelled():
-            producer_task.result()
         if not result:
             raise InternalError()
 

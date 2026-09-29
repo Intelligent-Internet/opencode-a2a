@@ -50,6 +50,7 @@ class ManagedLegacyRequestHandler(LegacyRequestHandler):
         self._closing = False
         self._close_task: asyncio.Task[None] | None = None
         self._managed_producers: dict[asyncio.Task, str] = {}
+        self._draining_consumers: set[asyncio.Task] = set()
 
     async def _persist_execution_failure(self, request: RequestContext) -> None:
         """Write independently of the closing queue, preserving terminal snapshots."""
@@ -110,9 +111,15 @@ class ManagedLegacyRequestHandler(LegacyRequestHandler):
                         self._running_agents.pop(task_id, None)
                 self._managed_producers.pop(producer_task, None)
 
+    def _track_consumer_task(self, task: asyncio.Task) -> None:
+        # These consumers can still be persisting output after the producer exits.
+        self._draining_consumers.add(task)
+        task.add_done_callback(self._draining_consumers.discard)
+        self._track_background_task(task)
+
     def _track_background_task(self, task: asyncio.Task) -> None:
         super()._track_background_task(task)
-        if self._closing:
+        if self._closing and task not in self._draining_consumers:
             task.cancel()
 
     async def aclose(self) -> None:
@@ -120,12 +127,18 @@ class ManagedLegacyRequestHandler(LegacyRequestHandler):
         if self._close_task is None:
             self._closing = True
             self._close_task = asyncio.create_task(self._drain_execution())
-        try:
-            await asyncio.shield(self._close_task)
-        except asyncio.CancelledError:
-            # Do not allow lifespan cancellation to close dependencies mid-drain.
-            await asyncio.shield(self._close_task)
-            raise
+        cancelled = False
+        while True:
+            try:
+                await asyncio.shield(self._close_task)
+                break
+            except asyncio.CancelledError:
+                if self._close_task.cancelled():
+                    raise
+                # Repeated cancellation must not let lifespan close dependencies early.
+                cancelled = True
+        if cancelled:
+            raise asyncio.CancelledError
 
     async def _drain_execution(self) -> None:
         # A setup already in flight must register its producer before the snapshot.
@@ -140,10 +153,15 @@ class ManagedLegacyRequestHandler(LegacyRequestHandler):
             *(self._cleanup_producer(task, task_id) for task, task_id in producers.items()),
             return_exceptions=True,
         )
-        # Cancellation of a consumer may itself register a deferred cleanup.
-        while pending := [task for task in self._background_tasks if not task.done()]:
+        # Queues are closed, so consumers finish naturally after persisting buffered
+        # output. Cancelling them here could leave a successful task stuck WORKING.
+        # Other background work can be cancelled and may register further cleanup.
+        while pending := [
+            task for task in self._background_tasks | self._draining_consumers if not task.done()
+        ]:
             for task in pending:
-                task.cancel()
+                if task not in self._draining_consumers:
+                    task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
         errors = [result for result in results if isinstance(result, Exception)]
         if errors:

@@ -40,7 +40,8 @@ request identity, including when no task row exists yet. Existing terminal
 snapshots remain immutable. Failure to persist is logged without storage error
 payloads and does not replace the execution error or skip queue cleanup. Both
 send paths explicitly check completed producers so queue closure cannot hide an
-execution exception. `GetTask` delegates parameter validation and history slicing
+execution exception; producer storage errors still use the adapter's stable error
+mapping. `GetTask` delegates parameter validation and history slicing
 to the pinned SDK, retaining adapter output negotiation and storage-error mapping.
 Empty IDs and negative history lengths are rejected as invalid parameters.
 

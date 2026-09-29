@@ -229,10 +229,13 @@ continue to use the executor's existing error events.
 At application shutdown, the handler rejects new execution setup and waits for
 setup already in progress to register its producers. It cancels and awaits local
 producers, marks interrupted nonterminal executions `FAILED` when storage is
-available, and drains/cancels tracked background consumers and cleanup tasks before
-closing outbound clients, the OpenCode HTTP client, state stores, and the database
-engine. Cleanup of the remaining resources is attempted even if a close operation
-fails. Shutdown is idempotent and does not wait for model generation to finish,
+available, and lets tracked consumers finish persisting buffered output from closed
+queues before cancelling other background cleanup tasks. This also preserves a
+completed producer's terminal output when its consumer is still writing to storage.
+Only then does it close outbound clients, the OpenCode HTTP client, state stores,
+and the database engine. Cleanup of the remaining resources is attempted even if a close operation
+fails. Repeated cancellation of the shutdown waiter does not bypass this ordering.
+Shutdown is idempotent and does not wait for model generation to finish,
 though executor cleanup and storage I/O must still complete. Supervisor shutdown
 budgets must allow that cleanup; a hard process kill cannot provide these guarantees.
 
