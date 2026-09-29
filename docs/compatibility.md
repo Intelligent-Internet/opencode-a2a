@@ -53,13 +53,29 @@ execution and persistence.
 SDK 1.1.5 still provides `EventQueueLegacy`, but documents its future removal.
 Replacing one queue constructor or changing the handler's parent class is not a
 complete migration: the legacy queue manager, consumer, cancellation, subscription,
-and output aggregation paths are coupled. Retain the pinned implementation until
-a deliberate SDK upgrade or a separately reviewed migration replaces these paths.
-Before accepting an SDK version that removes legacy interfaces, prove parity for
+and output aggregation paths are coupled. Full replacement remains unfinished
+code migration work, tracked in [#533](https://github.com/Intelligent-Internet/opencode-a2a/issues/533).
+It is not a database migration and is not waiting on production observation.
+The pinned SDK still supports the current implementation; this lifecycle patch
+does not upgrade that SDK or claim to remove its legacy dependency.
+
+In SDK 1.1.5, the newer handler ignores a second full `Task` snapshot after the
+initial task, whereas current executor paths use such snapshots. Its forced
+`aclose()` cancels consumers and does not itself persist interrupted execution as
+FAILED. Isolated probes with an initial WORKING task reproduce a retained WORKING
+state both after a final full COMPLETED task and after active execution shutdown.
+Migration must adapt these event and lifecycle contracts, not just swap imports.
+Before completing the migration or accepting an SDK that removes legacy APIs, prove parity for
 identity isolation, output/extension negotiation, cancel idempotency, first-terminal
 persistence, nonblocking sends, subscription, and disconnect/shutdown behavior on
 Python 3.11–3.14 with both memory and SQLite stores. Do not copy the SDK's queue
 implementation into this repository merely to suppress the deprecation.
+
+User upgrades are a separate contract: ship compatible code, version-matched
+migration tooling, and automated tests against historical data. See
+[Upgrading an Existing Database](guide.md#upgrading-an-existing-database).
+The acceptance gate is reproducible repository validation, not access to a live
+deployment. `migrations` is an optional install extra tied to the runtime SDK pin.
 
 ## Contract Honesty
 

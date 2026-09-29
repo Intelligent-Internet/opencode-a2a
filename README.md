@@ -59,6 +59,10 @@ Upgrade later with:
 uv tool upgrade opencode-a2a
 ```
 
+If you retain an older SQLite database, follow
+[Upgrading an Existing Database](docs/guide.md#upgrading-an-existing-database)
+for version-matched tooling, task ownership, and rollback instructions.
+
 Make sure provider credentials and a default model are configured on the OpenCode side, then start OpenCode:
 
 ```bash

@@ -300,6 +300,7 @@ def build_task_store_runtime(
         compat = DatabaseTaskStoreCompat(raw_task_store)
         await compat.validate_schema()
         await compat.initialize()
+        await compat.migrate_legacy_rows()
 
     async def _shutdown() -> None:
         if engine is None:
@@ -352,6 +353,7 @@ async def initialize_task_store(task_store: TaskStore) -> None:
         compat = DatabaseTaskStoreCompat(raw_task_store)
         await compat.validate_schema()
         await compat.initialize()
+        await compat.migrate_legacy_rows()
         return
     initialize = getattr(task_store, "initialize", None)
     if callable(initialize):

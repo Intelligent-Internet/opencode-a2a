@@ -9,13 +9,20 @@ from a2a.server.context import ServerCallContext
 from a2a.server.tasks.database_task_store import DatabaseTaskStore
 from a2a.types import Task, TaskState
 from google.protobuf.json_format import MessageToDict, ParseDict
-from sqlalchemy import inspect, or_, select
+from sqlalchemy import inspect, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from ..task_states import TERMINAL_TASK_STATES
 from .database import redact_database_url_for_logs
 
-_TERMINAL_TASK_STATE_VALUES = tuple(TaskState.Name(int(state)) for state in TERMINAL_TASK_STATES)
+_TERMINAL_TASK_STATE_VALUES = tuple(
+    value
+    for state in TERMINAL_TASK_STATES
+    for value in (
+        TaskState.Name(int(state)),
+        TaskState.Name(int(state)).removeprefix("TASK_STATE_").lower(),
+    )
+)
 _REQUIRED_TASK_MODEL_COLUMNS = frozenset(
     {
         "id",
@@ -56,6 +63,47 @@ class DatabaseTaskStoreCompat:
 
     async def initialize(self) -> None:
         await self._task_store.initialize()
+
+    async def migrate_legacy_rows(self) -> None:
+        """Normalize historical payloads before serving queries, in one transaction.
+
+        The SDK schema migrations retain v0.3 JSON and leave last_updated empty.
+        Read-time conversion alone cannot fix SQL status/time filters. The protocol
+        marker makes this resumable and leaves current rows and ownership unchanged.
+        """
+        model = self._shape.task_model
+        table = model.__table__
+        async with self._shape.session_maker.begin() as session:
+            after_id: str | None = None
+            while True:
+                statement = select(model).where(
+                    or_(model.protocol_version.is_(None), model.protocol_version == "0.3")
+                )
+                if after_id is not None:
+                    statement = statement.where(model.id > after_id)
+                rows = (
+                    (await session.execute(statement.order_by(model.id).limit(100))).scalars().all()
+                )
+                if not rows:
+                    return
+                for row in rows:
+                    try:
+                        task = _task_model_to_core(
+                            row,
+                            model_to_core_conversion=self._shape.model_to_core_conversion,
+                        )
+                    except Exception:
+                        raise TaskStoreSchemaCompatibilityError(
+                            "Cannot convert a legacy SDK task payload; restore the pre-upgrade "
+                            "backup or repair the legacy data before restarting."
+                        ) from None
+                    values = _task_row_values(task, owner=row.owner)
+                    if row.last_updated is not None:
+                        values["last_updated"] = row.last_updated
+                    await session.execute(
+                        update(table).where(table.c.id == row.id).values(**values)
+                    )
+                after_id = rows[-1].id
 
     async def validate_schema(self) -> None:
         database_url = redact_database_url_for_logs(
@@ -249,6 +297,9 @@ def _validate_sdk_task_table_schema(
     raise TaskStoreSchemaCompatibilityError(
         f"Legacy SDK task table schema detected for '{table_name}' "
         f"({'; '.join(details)}). Run "
-        f"`a2a-db --database-url {database_url}` before starting the service. "
-        "If `a2a-db` is unavailable, install the `a2a-sdk[db-cli]` extra first."
+        "the matching release's `a2a-db upgrade head` before starting the service; "
+        "install this release with the `opencode-a2a[migrations]` extra. "
+        "When adding owner, explicitly set "
+        "`--add_columns_owner_last_updated-default-owner` to the intended auth principal. "
+        f"Database: {database_url}. See docs/guide.md#upgrading-an-existing-database."
     )

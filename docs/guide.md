@@ -269,7 +269,7 @@ Database-backed task persistence also keeps the existing first-terminal-state-wi
 
 At startup, the runtime logs a concise persistence summary covering the active backend, the redacted database URL when applicable, the shared persistence scope, and whether the SQLite local durability profile is active.
 
-The adapter-owned state tables listed above remain managed by the internal migration runner. The SDK-owned `tasks` table does not use runtime auto-migration here; upgrade existing SDK task schemas explicitly with upstream `a2a-db` before starting the service after an SDK schema change. If `a2a-db` is unavailable in your environment, install the `a2a-sdk[db-cli]` extra first.
+The adapter-owned state tables listed above remain managed by the internal migration runner. The SDK-owned `tasks` table does not use runtime **schema** auto-migration here. Upgrade an old SDK task schema with the matching release's migration tool as described below. Once the schema is compatible, startup normalizes legacy task payloads before accepting requests.
 
 In-flight asyncio locks, outbound A2A client caches, and stream-local aggregation buffers remain process-local runtime state.
 
@@ -278,6 +278,60 @@ To opt into an ephemeral development profile, set:
 ```bash
 A2A_TASK_STORE_BACKEND=memory
 ```
+
+### Upgrading an Existing Database
+
+Queue/handler implementation changes concern process-local Python objects; they
+do not require a database migration. This lifecycle update keeps SDK 1.1.5 and
+does not introduce a new schema. A fresh installation or the `memory` backend
+needs no migration command. An existing compatible v1 database also needs no
+manual schema change.
+
+For an older SQLite database that startup rejects for missing `owner`,
+`last_updated`, `protocol_version`, or the owner/time index:
+
+1. Stop the application, make a consistent backup of its SQLite database, and
+   keep that backup with the previous application version for rollback. Use an
+   absolute database path to avoid upgrading a different file by accident.
+2. Install the target release. Run its migration tooling using the **same
+   application version**, so the runtime and migrations use the same pinned SDK:
+
+   ```bash
+   OPENCODE_A2A_VERSION="$(opencode-a2a --version | awk '{print $2}')"
+   uvx --from "opencode-a2a[migrations]==${OPENCODE_A2A_VERSION}" a2a-db upgrade head \
+     --database-url 'sqlite+aiosqlite:////absolute/path/opencode-a2a.db' \
+     --add_columns_owner_last_updated-default-owner automation
+   ```
+
+   For a source checkout, use `uv run --extra migrations a2a-db` with the same
+   arguments. For an existing Python virtual environment, install that release
+   with the `opencode-a2a[migrations]` extra and run its `a2a-db` executable.
+   Do not install a floating SDK release separately into the runtime environment.
+
+   Replace `automation` with the intended bearer credential's `principal` or
+   Basic credential's username. The upstream default,
+   `legacy_v03_no_user_info`, does not match the normal authenticated identity
+   and can make old tasks appear missing. This option assigns **all rows lacking
+   an owner column** to one identity; it cannot infer historical ownership.
+   If the old data needs multiple owners, establish the ownership mapping before
+   migration. Existing owner columns are preserved, and rerunning the command
+   with another owner does not reassign them.
+3. Start the new application. Before serving requests, it converts rows marked
+   `0.3` or with no protocol marker to the SDK's v1 task representation, preserves
+   owners and task contents, and backfills missing query timestamps from task
+   status timestamps. Rows without any historical timestamp remain undated.
+   Conversion uses one transaction, reads in bounded batches, and skips existing
+   v1 rows on subsequent starts. Malformed legacy payloads fail startup and roll
+   back the payload conversion; the completed schema upgrade remains in place.
+4. Verify a known task with `GetTask` and `ListTasks` under its original identity,
+   including status/time filters. Terminal snapshots remain immutable. To roll
+   back to an older application, restore the stopped database backup rather than
+   relying on a schema downgrade to undo converted JSON payloads.
+
+These upgrade paths are tested against disposable historical databases in
+`tests/server/test_task_store_upgrade.py`; no running deployment or live database
+is required for repository acceptance. Neither queue replacement nor payload
+conversion resumes executions that were interrupted before this release.
 
 ## Troubleshooting Provider Auth State
 
