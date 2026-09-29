@@ -87,3 +87,35 @@ jobs:
 
       - name: Run runtime regression tests
         run: uv run pytest --no-cov
+
+  protobuf-compatibility:
+    name: Validate Protobuf 6 Compatibility
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+
+      - name: Sync locked dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Install supported protobuf 6 release
+        run: |
+          uv pip install 'protobuf==6.33.6'
+          uv pip check
+
+      - name: Run protobuf 6 regression tests
+        env:
+          # Keep nested uv commands (including the conformance SUT) on protobuf 6.
+          UV_NO_SYNC: "1"
+        run: uv run pytest --no-cov
