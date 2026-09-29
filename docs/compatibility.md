@@ -26,7 +26,7 @@ The [SDK 1.1.2 to 1.1.5 changes](https://github.com/a2aproject/a2a-python/compar
 | Protobuf | Supports `>=6.33.5,<8.0`. The default CI uses locked 7.36.2; a separate Python 3.11 job installs 6.33.6 and disables uv synchronization throughout the test process tree, so nested protocol probes also exercise protobuf 6. SDK 1.1.5 removes the former protobuf 7 blocker, so the obsolete Dependabot ignore is removed. |
 | Security floors | `click>=8.3.3` and `pyasn1>=0.6.4` remain necessary because upstream metadata permits older versions. They are runtime requirements so wheel and sdist installs enforce them without uv-specific constraints. Installed-metadata tests protect these floors and the SQLAlchemy asyncio extra. |
 
-The missing-import typing overrides for `google.protobuf.*` and `jsonrpc.*` remain limited to those third-party modules. Runtime support is validated by the SDK and transport regressions, not inferred from the typing overrides. Ruff's pre-commit revision is aligned with the lockfile version when upgrading the lint toolchain.
+The missing-import typing overrides for `google.protobuf.*` and `jsonrpc.*` remain limited to those third-party modules. Runtime support is validated by the SDK and transport regressions, not inferred from the typing overrides. Ruff's local pre-commit hooks run through `uv run --locked --extra dev`, so `uv.lock` is the single version source for linting and formatting.
 
 ## Contract Honesty
 

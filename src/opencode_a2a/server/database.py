@@ -11,6 +11,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from sqlalchemy import event
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from ..config import Settings
 
@@ -162,7 +163,13 @@ def build_database_engine(settings: Settings) -> AsyncEngine:
     if sqlite_path is not None:
         _harden_sqlite_file(sqlite_path)
 
-    engine = create_async_engine(database_url)
+    url = make_url(database_url)
+    is_memory_database = (
+        not url.database or url.database == ":memory:" or url.query.get("mode") == "memory"
+    )
+    # Keep one connection for the lifetime of an in-memory database. SQLAlchemy 2.1
+    # deprecates inferring StaticPool from mode=memory; file databases keep the default.
+    engine = create_async_engine(database_url, poolclass=StaticPool if is_memory_database else None)
     if sqlite_path is not None:
         event.listen(
             engine.sync_engine,

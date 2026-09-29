@@ -12,12 +12,21 @@ repos:
       - id: shellcheck
         args: ["--severity=error"]
         files: ^scripts/.*\.sh$
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.8
+  - repo: local
     hooks:
       - id: ruff
+        name: ruff check
+        entry: uv run --locked --extra dev ruff check --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
         args: ["--fix"]
       - id: ruff-format
+        name: ruff format
+        entry: uv run --locked --extra dev ruff format --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter, markdown]
+        require_serial: true
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:

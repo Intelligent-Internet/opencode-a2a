@@ -211,6 +211,8 @@ The supported persistence profile is one `opencode-a2a` application process usin
 
 The runtime configures local durability-oriented SQLite connection settings (`WAL`, `busy_timeout`, `synchronous=NORMAL`) and creates missing parent directories for file-backed database paths.
 
+Empty SQLite URLs, `:memory:` URLs, and `mode=memory` URIs explicitly use `StaticPool` to share one database connection across checkouts. This preserves the existing ephemeral database behavior when SQLAlchemy changes its automatic pool selection. File-backed databases retain SQLAlchemy's default connection pool and the file hardening described below.
+
 The package declares `sqlalchemy[asyncio]` so standalone installs such as `uv tool install opencode-a2a` include `greenlet`, which is required by the async database engine. SQLAlchemy 2.1 no longer installs `greenlet` by default; declaring the extra in package metadata keeps wheel installs independent of the repository's `uv.lock`.
 
 Published package metadata also enforces the security floors `click>=8.3.3` and `pyasn1>=0.6.4`. These apply to standalone wheel/sdist installs as well as repository environments; no separate uv constraint configuration is needed.

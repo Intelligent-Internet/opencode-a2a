@@ -28,7 +28,10 @@ async def test_build_database_engine_configures_sqlite_pragmas(tmp_path) -> None
     engine = build_database_engine(settings)
 
     try:
-        async with engine.connect() as conn:
+        async with engine.connect() as conn, engine.connect() as other:
+            assert (await conn.get_raw_connection()).driver_connection is not (
+                await other.get_raw_connection()
+            ).driver_connection
             journal_mode = (await conn.exec_driver_sql("PRAGMA journal_mode")).scalar_one()
             busy_timeout = (await conn.exec_driver_sql("PRAGMA busy_timeout")).scalar_one()
             synchronous = (await conn.exec_driver_sql("PRAGMA synchronous")).scalar_one()
@@ -41,29 +44,37 @@ async def test_build_database_engine_configures_sqlite_pragmas(tmp_path) -> None
 
 
 @pytest.mark.asyncio
-async def test_build_database_engine_skips_hardening_for_memory_database() -> None:
-    settings = make_settings(
-        a2a_task_store_database_url="sqlite+aiosqlite:///:memory:",
-    )
+@pytest.mark.filterwarnings("error::sqlalchemy.exc.SADeprecationWarning")
+@pytest.mark.parametrize(
+    "database_url",
+    [
+        "sqlite+aiosqlite://",
+        "sqlite+aiosqlite:///:memory:",
+        "sqlite+aiosqlite:///file:memdb_shared?mode=memory&cache=shared&uri=true",
+        "sqlite+aiosqlite:///file:memdb_private?mode=memory&uri=true",
+    ],
+    ids=["implicit-memory", "memory", "shared-memory-uri", "private-memory-uri"],
+)
+async def test_memory_database_reuses_connection_and_preserves_state(
+    database_url: str, monkeypatch
+) -> None:
+    def reject_file_hardening(_path: Path) -> None:
+        pytest.fail("Memory databases must not perform filesystem hardening")
+
+    monkeypatch.setattr(database_module, "_harden_sqlite_file", reject_file_hardening)
+    settings = make_settings(a2a_task_store_database_url=database_url)
     engine = build_database_engine(settings)
     try:
-        async with engine.connect() as conn:
-            assert (await conn.exec_driver_sql("SELECT 1")).scalar_one() == 1
-    finally:
-        await engine.dispose()
+        async with engine.begin() as conn:
+            await conn.exec_driver_sql("CREATE TABLE sample (value INTEGER)")
+            await conn.exec_driver_sql("INSERT INTO sample VALUES (42)")
 
-
-@pytest.mark.asyncio
-async def test_build_database_engine_skips_hardening_for_inline_memory_file_uri() -> None:
-    settings = make_settings(
-        a2a_task_store_database_url=(
-            "sqlite+aiosqlite:///file:memdb_shared?mode=memory&cache=shared&uri=true"
-        ),
-    )
-    engine = build_database_engine(settings)
-    try:
-        async with engine.connect() as conn:
-            assert (await conn.exec_driver_sql("SELECT 1")).scalar_one() == 1
+        # Even overlapping checkouts must share the connection that owns the database.
+        async with engine.connect() as first, engine.connect() as second:
+            assert (await first.get_raw_connection()).driver_connection is (
+                await second.get_raw_connection()
+            ).driver_connection
+            assert (await second.exec_driver_sql("SELECT value FROM sample")).scalar_one() == 42
     finally:
         await engine.dispose()
 
