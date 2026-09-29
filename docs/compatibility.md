@@ -13,6 +13,8 @@ This is the single canonical place where the supported upstream OpenCode version
 
 The repository currently pins one concrete SDK release in `pyproject.toml` within that v1 line. Upgrade the SDK deliberately rather than relying on floating dependency resolution. The SDK-owned core JSON-RPC method set follows that pinned release and is locked by repository tests so SDK upgrades trigger an explicit compatibility review.
 
+The `a2a-sdk` 1.1.5 upgrade retains `DatabaseTaskStoreCompat`: the SDK's `DatabaseTaskStore.save` still performs an unconditional ORM merge, while this service requires an atomic first-terminal-state-wins guard. The task-store tests cover SDK shape drift, ORM conversion parity, and terminal-write protection across independent store instances. The existing protobuf version bound and transitive security floors remain unchanged; expanding dependency support requires a separate review.
+
 ## Contract Honesty
 
 Machine-readable discovery surfaces must reflect actual runtime behavior:
