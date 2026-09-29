@@ -217,33 +217,7 @@ The package declares `sqlalchemy[asyncio]` so standalone installs such as `uv to
 
 Published package metadata also enforces the security floors `click>=8.3.3` and `pyasn1>=0.6.4`. These apply to standalone wheel/sdist installs as well as repository environments; no separate uv constraint configuration is needed.
 
-### Execution Failure and Shutdown
-
-An unhandled execution error writes `FAILED` directly to the task store using the
-original request identity, then closes the producer queue and removes its runtime
-registration. An already persisted terminal task is never overwritten. If storage
-is unavailable, cleanup still runs, but a durable failure state cannot be promised.
-This also covers failures before the first task event; ordinary provider errors
-continue to use the executor's existing error events.
-
-At application shutdown, the handler rejects new execution setup and waits for
-setup already in progress to register its producers. It cancels and awaits local
-producers, marks interrupted nonterminal executions `FAILED` when storage is
-available, and lets tracked consumers finish persisting buffered output from closed
-queues before cancelling other background cleanup tasks. This also preserves a
-completed producer's terminal output when its consumer is still writing to storage.
-Only then does it close outbound clients, the OpenCode HTTP client, state stores,
-and the database engine. Cleanup of the remaining resources is attempted even if a close operation
-fails. Repeated cancellation of the shutdown waiter does not bypass this ordering.
-Shutdown is idempotent and does not wait for model generation to finish,
-though executor cleanup and storage I/O must still complete. Supervisor shutdown
-budgets must allow that cleanup; a hard process kill cannot provide these guarantees.
-
-This policy cancels adapter execution, not the independently running OpenCode
-session. To request a best-effort upstream session abort, use `CancelTask` before
-stopping the service. That explicit cancel path retains its `CANCELED` state and
-idempotency. An SSE client disconnect alone does not trigger application shutdown:
-the producer continues in the background and persists its remaining output.
+Unhandled execution errors and shutdown interruptions persist `FAILED` when storage is available, preserving existing terminal states. Shutdown drains buffered output before closing clients and stores. SSE disconnects allow execution to continue; use `CancelTask` to request an upstream abort before stopping the application.
 
 ### SQLite Persistence Hardening
 
@@ -269,7 +243,7 @@ Database-backed task persistence also keeps the existing first-terminal-state-wi
 
 At startup, the runtime logs a concise persistence summary covering the active backend, the redacted database URL when applicable, the shared persistence scope, and whether the SQLite local durability profile is active.
 
-The adapter-owned state tables listed above remain managed by the internal migration runner. The SDK-owned `tasks` table does not use runtime **schema** auto-migration here. Upgrade an old SDK task schema with the matching release's migration tool as described below. Once the schema is compatible, startup normalizes legacy task payloads before accepting requests.
+SDK task schemas require an explicit [upgrade](#upgrading-an-existing-database) when incompatible; startup then converts legacy task payloads transactionally. Existing v1 rows and task ownership are preserved.
 
 In-flight asyncio locks, outbound A2A client caches, and stream-local aggregation buffers remain process-local runtime state.
 
@@ -281,57 +255,18 @@ A2A_TASK_STORE_BACKEND=memory
 
 ### Upgrading an Existing Database
 
-Queue/handler implementation changes concern process-local Python objects; they
-do not require a database migration. This lifecycle update keeps SDK 1.1.5 and
-does not introduce a new schema. A fresh installation or the `memory` backend
-needs no migration command. An existing compatible v1 database also needs no
-manual schema change.
+If startup reports an incompatible task schema, stop the application and back up SQLite, then use the installed release's migration tool:
 
-For an older SQLite database that startup rejects for missing `owner`,
-`last_updated`, `protocol_version`, or the owner/time index:
+```bash
+OPENCODE_A2A_VERSION="$(opencode-a2a --version | awk '{print $2}')"
+uvx --from "opencode-a2a[migrations]==${OPENCODE_A2A_VERSION}" a2a-db upgrade head \
+  --database-url 'sqlite+aiosqlite:////absolute/path/opencode-a2a.db' \
+  --add_columns_owner_last_updated-default-owner automation
+```
 
-1. Stop the application, make a consistent backup of its SQLite database, and
-   keep that backup with the previous application version for rollback. Use an
-   absolute database path to avoid upgrading a different file by accident.
-2. Install the target release. Run its migration tooling using the **same
-   application version**, so the runtime and migrations use the same pinned SDK:
+For source checkouts, use `uv run --extra migrations a2a-db` with the same arguments. Replace `automation` with the intended bearer principal or Basic username: adding an owner column assigns all old tasks to that identity; existing owners are unchanged. Multiple historical owners require an explicit mapping before migration.
 
-   ```bash
-   OPENCODE_A2A_VERSION="$(opencode-a2a --version | awk '{print $2}')"
-   uvx --from "opencode-a2a[migrations]==${OPENCODE_A2A_VERSION}" a2a-db upgrade head \
-     --database-url 'sqlite+aiosqlite:////absolute/path/opencode-a2a.db' \
-     --add_columns_owner_last_updated-default-owner automation
-   ```
-
-   For a source checkout, use `uv run --extra migrations a2a-db` with the same
-   arguments. For an existing Python virtual environment, install that release
-   with the `opencode-a2a[migrations]` extra and run its `a2a-db` executable.
-   Do not install a floating SDK release separately into the runtime environment.
-
-   Replace `automation` with the intended bearer credential's `principal` or
-   Basic credential's username. The upstream default,
-   `legacy_v03_no_user_info`, does not match the normal authenticated identity
-   and can make old tasks appear missing. This option assigns **all rows lacking
-   an owner column** to one identity; it cannot infer historical ownership.
-   If the old data needs multiple owners, establish the ownership mapping before
-   migration. Existing owner columns are preserved, and rerunning the command
-   with another owner does not reassign them.
-3. Start the new application. Before serving requests, it converts rows marked
-   `0.3` or with no protocol marker to the SDK's v1 task representation, preserves
-   owners and task contents, and backfills missing query timestamps from task
-   status timestamps. Rows without any historical timestamp remain undated.
-   Conversion uses one transaction, reads in bounded batches, and skips existing
-   v1 rows on subsequent starts. Malformed legacy payloads fail startup and roll
-   back the payload conversion; the completed schema upgrade remains in place.
-4. Verify a known task with `GetTask` and `ListTasks` under its original identity,
-   including status/time filters. Terminal snapshots remain immutable. To roll
-   back to an older application, restore the stopped database backup rather than
-   relying on a schema downgrade to undo converted JSON payloads.
-
-These upgrade paths are tested against disposable historical databases in
-`tests/server/test_task_store_upgrade.py`; no running deployment or live database
-is required for repository acceptance. Neither queue replacement nor payload
-conversion resumes executions that were interrupted before this release.
+Restart and verify an old task under its owner. Startup converts legacy payloads and fills missing query timestamps; malformed payloads roll back conversion and prevent startup. Restore the backup to roll back the upgrade. Fresh installations and compatible schemas need no migration command.
 
 ## Troubleshooting Provider Auth State
 
