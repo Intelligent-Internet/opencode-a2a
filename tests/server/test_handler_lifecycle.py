@@ -616,8 +616,9 @@ async def test_producer_storage_error_uses_stable_error_mapping(store, streaming
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("producer_exit", ["completed", "canceled", "error"])
 async def test_shutdown_drains_completed_producer_output_before_closing_store(
-    store, monkeypatch, streaming
+    store, monkeypatch, streaming, producer_exit
 ):
     from a2a.types import TaskStatusUpdateEvent
 
@@ -648,6 +649,13 @@ async def test_shutdown_drains_completed_producer_output_before_closing_store(
                 status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
             )
         )
+        if producer_exit != "completed":
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                if producer_exit == "error":
+                    raise RuntimeError("executor cleanup failed") from None
+                raise
 
     handler = _handler(store, execute)
     params = _request()
@@ -668,3 +676,61 @@ async def test_shutdown_drains_completed_producer_output_before_closing_store(
         await close
     saved = await store.get(params.message.task_id, _context())
     assert saved.status.state == TaskState.TASK_STATE_COMPLETED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_shutdown_preserves_buffered_artifacts_before_marking_failed(
+    store, monkeypatch, streaming
+):
+    from a2a.types import Artifact, TaskArtifactUpdateEvent
+
+    writing_artifact = asyncio.Event()
+    release_write = asyncio.Event()
+    original_save = store.save
+
+    async def delayed_save(task, context=None):
+        if task.artifacts:
+            writing_artifact.set()
+            await release_write.wait()
+        await original_save(task, context)
+
+    monkeypatch.setattr(store, "save", delayed_save)
+
+    async def execute(context, queue):
+        await queue.enqueue_event(
+            Task(
+                id=context.task_id,
+                context_id=context.context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+            )
+        )
+        await queue.enqueue_event(
+            TaskArtifactUpdateEvent(
+                task_id=context.task_id,
+                context_id=context.context_id,
+                artifact=Artifact(artifact_id="partial", parts=[Part(text="keep this output")]),
+            )
+        )
+        await asyncio.Event().wait()
+
+    handler = _handler(store, execute)
+    params = _request()
+    params.configuration.return_immediately = True
+    if streaming:
+        stream = handler.on_message_send_stream(params, _context())
+        await anext(stream)
+        await stream.aclose()
+    else:
+        await handler.on_message_send(params, _context())
+    await writing_artifact.wait()
+    close = asyncio.create_task(handler.aclose())
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(close), 0.05)
+    finally:
+        release_write.set()
+        await close
+    saved = await store.get(params.message.task_id, _context())
+    assert saved.status.state == TaskState.TASK_STATE_FAILED
+    assert saved.artifacts[0].parts[0].text == "keep this output"

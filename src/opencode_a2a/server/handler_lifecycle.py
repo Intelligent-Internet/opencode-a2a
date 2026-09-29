@@ -51,6 +51,7 @@ class ManagedLegacyRequestHandler(LegacyRequestHandler):
         self._close_task: asyncio.Task[None] | None = None
         self._managed_producers: dict[asyncio.Task, str] = {}
         self._draining_consumers: set[asyncio.Task] = set()
+        self._shutdown_failures: list[RequestContext] = []
 
     async def _persist_execution_failure(self, request: RequestContext) -> None:
         """Write independently of the closing queue, preserving terminal snapshots."""
@@ -83,7 +84,7 @@ class ManagedLegacyRequestHandler(LegacyRequestHandler):
             await self.agent_executor.execute(request, queue)
         except asyncio.CancelledError:
             if self._closing:
-                await self._persist_execution_failure(request)
+                self._shutdown_failures.append(request)
             raise
         except Exception as exc:
             logger.error(
@@ -91,7 +92,10 @@ class ManagedLegacyRequestHandler(LegacyRequestHandler):
                 request.task_id,
                 type(exc).__name__,
             )
-            await self._persist_execution_failure(request)
+            if self._closing:
+                self._shutdown_failures.append(request)
+            else:
+                await self._persist_execution_failure(request)
             raise
         finally:
             await queue.close()
@@ -163,6 +167,11 @@ class ManagedLegacyRequestHandler(LegacyRequestHandler):
                 if task not in self._draining_consumers:
                     task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
+        # First-terminal-wins must not freeze a partial snapshot before buffered
+        # artifacts or a completed status have reached the store.
+        for request in self._shutdown_failures:
+            await self._persist_execution_failure(request)
+        self._shutdown_failures.clear()
         errors = [result for result in results if isinstance(result, Exception)]
         if errors:
             raise ExceptionGroup("Request handler cleanup failed", errors)
