@@ -13,7 +13,20 @@ This is the single canonical place where the supported upstream OpenCode version
 
 The repository currently pins one concrete SDK release in `pyproject.toml` within that v1 line. Upgrade the SDK deliberately rather than relying on floating dependency resolution. The SDK-owned core JSON-RPC method set follows that pinned release and is locked by repository tests so SDK upgrades trigger an explicit compatibility review.
 
-The `a2a-sdk` 1.1.5 upgrade retains `DatabaseTaskStoreCompat`: the SDK's `DatabaseTaskStore.save` still performs an unconditional ORM merge, while this service requires an atomic first-terminal-state-wins guard. The task-store tests cover SDK shape drift, ORM conversion parity, and terminal-write protection across independent store instances. The existing protobuf version bound and transitive security floors remain unchanged; expanding dependency support requires a separate review.
+### SDK and Dependency Review
+
+The [SDK 1.1.2 to 1.1.5 changes](https://github.com/a2aproject/a2a-python/compare/v1.1.2...v1.1.5) include cross-event-loop locking fixes, task-list ordering fixes, and protobuf 7 support. The adapter's reviewed integration boundaries are:
+
+| Boundary | Decision and regression evidence |
+| --- | --- |
+| `DatabaseTaskStoreCompat` | Retained: SDK `DatabaseTaskStore.save` still performs an unconditional ORM merge. The adapter needs an atomic first-terminal-state-wins guard; task-store tests cover shape drift, ORM conversion parity, and independent store instances. |
+| Legacy stored task conversion | Retained for SDK-owned persisted rows. This does not restore legacy A2A 0.3 wire support. |
+| Request-handler hooks and queue lifecycle | Retained for output negotiation, cancel idempotency, and persistence after client disconnect. Handler regressions exercise these behaviors against the pinned SDK; private hooks remain an SDK upgrade review boundary. |
+| Outbound header forwarding | Uses the SDK `service_parameters` channel. Client transport tests check the final HTTP request, including authentication and tracing headers. |
+| Protobuf | Supports `>=6.33.5,<8.0`; both 6.33.6 and 7.36.2 pass runtime regressions. SDK 1.1.5 removes the former protobuf 7 blocker, so the obsolete Dependabot ignore is removed. |
+| Security floors | `click>=8.3.3` and `pyasn1>=0.6.4` remain necessary because upstream metadata permits older versions. They are runtime requirements so wheel and sdist installs enforce them without uv-specific constraints. Installed-metadata tests protect these floors and the SQLAlchemy asyncio extra. |
+
+The missing-import typing overrides for `google.protobuf.*` and `jsonrpc.*` remain limited to those third-party modules. Runtime support is validated by the SDK and transport regressions, not inferred from the typing overrides. Ruff's pre-commit revision is aligned with the lockfile version when upgrading the lint toolchain.
 
 ## Contract Honesty
 

@@ -213,6 +213,8 @@ The runtime configures local durability-oriented SQLite connection settings (`WA
 
 The package declares `sqlalchemy[asyncio]` so standalone installs such as `uv tool install opencode-a2a` include `greenlet`, which is required by the async database engine. SQLAlchemy 2.1 no longer installs `greenlet` by default; declaring the extra in package metadata keeps wheel installs independent of the repository's `uv.lock`.
 
+Published package metadata also enforces the security floors `click>=8.3.3` and `pyasn1>=0.6.4`. These apply to standalone wheel/sdist installs as well as repository environments; no separate uv constraint configuration is needed.
+
 ### SQLite Persistence Hardening
 
 File-backed SQLite databases are hardened at startup and on every new connection on POSIX systems:

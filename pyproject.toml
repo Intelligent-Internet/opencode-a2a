@@ -27,11 +27,16 @@ classifiers = [
 dependencies = [
     "a2a-sdk==1.1.5",
     "aiosqlite>=0.20,<1.0",
+    # Carry transitive security floors into wheel metadata as well as uv installs.
+    # click: PYSEC-2026-2132 (via uvicorn).
+    "click>=8.3.3",
     "fastapi>=0.139,<1.0",
     "httpx>=0.27,<1.0",
     "pydantic>=2.6,<3.0",
     "pydantic-settings>=2.14.2,<3.0",
-    "protobuf>=6.33.5,<7.0",
+    "protobuf>=6.33.5,<8.0",
+    # pyasn1: PYSEC-2026-3455/3456/3457 (via google-auth <- a2a-sdk).
+    "pyasn1>=0.6.4",
     "sqlalchemy[asyncio]>=2.0,<3.0",
     "sse-starlette>=2.1,<4.0",
     "uvicorn>=0.29,<1.0",
@@ -69,13 +74,6 @@ quote-style = "double"
 
 [tool.uv]
 package = true
-# Keep transitive dependency floors above versions with known vulnerabilities:
-# - click < 8.3.3: PYSEC-2026-2132 (pulled in via uvicorn)
-# - pyasn1 < 0.6.4: PYSEC-2026-3455/3456/3457 (pulled in via google-auth <- a2a-sdk)
-constraint-dependencies = [
-    "click>=8.3.3",
-    "pyasn1>=0.6.4",
-]
 
 [tool.setuptools_scm]
 fallback_version = "0+unknown"
