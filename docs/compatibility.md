@@ -28,6 +28,38 @@ The [SDK 1.1.2 to 1.1.5 changes](https://github.com/a2aproject/a2a-python/compar
 
 The missing-import typing overrides for `google.protobuf.*` and `jsonrpc.*` remain limited to those third-party modules. Runtime support is validated by the SDK and transport regressions, not inferred from the typing overrides. Ruff's local pre-commit hooks run through `uv run --locked --extra dev`, so `uv.lock` is the single version source for linting and formatting.
 
+### Handler Lifecycle and Legacy Queue Migration
+
+The adapter still uses the SDK's `LegacyRequestHandler`, through the internal
+`ManagedLegacyRequestHandler` lifecycle boundary. It does not use the newer
+`DefaultRequestHandler`/`ActiveTaskRegistry`; the latter's early-failure handling
+and `aclose()` do not apply automatically to this adapter.
+
+Unhandled producer errors are persisted directly as `FAILED` under the original
+request identity, including when no task row exists yet. Existing terminal
+snapshots remain immutable. Failure to persist is logged without storage error
+payloads and does not replace the execution error or skip queue cleanup. Both
+send paths explicitly check completed producers so queue closure cannot hide an
+execution exception. `GetTask` delegates parameter validation and history slicing
+to the pinned SDK, retaining adapter output negotiation and storage-error mapping.
+Empty IDs and negative history lengths are rejected as invalid parameters.
+
+Application shutdown closes the handler before its clients and stores. See the
+[shutdown contract](guide.md#execution-failure-and-shutdown) for local cancellation
+and upstream-session limits. Normal client disconnects still allow background
+execution and persistence.
+
+SDK 1.1.5 still provides `EventQueueLegacy`, but documents its future removal.
+Replacing one queue constructor or changing the handler's parent class is not a
+complete migration: the legacy queue manager, consumer, cancellation, subscription,
+and output aggregation paths are coupled. Retain the pinned implementation until
+a deliberate SDK upgrade or a separately reviewed migration replaces these paths.
+Before accepting an SDK version that removes legacy interfaces, prove parity for
+identity isolation, output/extension negotiation, cancel idempotency, first-terminal
+persistence, nonblocking sends, subscription, and disconnect/shutdown behavior on
+Python 3.11–3.14 with both memory and SQLite stores. Do not copy the SDK's queue
+implementation into this repository merely to suppress the deprecation.
+
 ## Contract Honesty
 
 Machine-readable discovery surfaces must reflect actual runtime behavior:

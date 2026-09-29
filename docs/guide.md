@@ -217,6 +217,31 @@ The package declares `sqlalchemy[asyncio]` so standalone installs such as `uv to
 
 Published package metadata also enforces the security floors `click>=8.3.3` and `pyasn1>=0.6.4`. These apply to standalone wheel/sdist installs as well as repository environments; no separate uv constraint configuration is needed.
 
+### Execution Failure and Shutdown
+
+An unhandled execution error writes `FAILED` directly to the task store using the
+original request identity, then closes the producer queue and removes its runtime
+registration. An already persisted terminal task is never overwritten. If storage
+is unavailable, cleanup still runs, but a durable failure state cannot be promised.
+This also covers failures before the first task event; ordinary provider errors
+continue to use the executor's existing error events.
+
+At application shutdown, the handler rejects new execution setup and waits for
+setup already in progress to register its producers. It cancels and awaits local
+producers, marks interrupted nonterminal executions `FAILED` when storage is
+available, and drains/cancels tracked background consumers and cleanup tasks before
+closing outbound clients, the OpenCode HTTP client, state stores, and the database
+engine. Cleanup of the remaining resources is attempted even if a close operation
+fails. Shutdown is idempotent and does not wait for model generation to finish,
+though executor cleanup and storage I/O must still complete. Supervisor shutdown
+budgets must allow that cleanup; a hard process kill cannot provide these guarantees.
+
+This policy cancels adapter execution, not the independently running OpenCode
+session. To request a best-effort upstream session abort, use `CancelTask` before
+stopping the service. That explicit cancel path retains its `CANCELED` state and
+idempotency. An SSE client disconnect alone does not trigger application shutdown:
+the producer continues in the background and persists its remaining output.
+
 ### SQLite Persistence Hardening
 
 File-backed SQLite databases are hardened at startup and on every new connection on POSIX systems:

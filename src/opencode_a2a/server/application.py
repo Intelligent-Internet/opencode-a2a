@@ -9,16 +9,11 @@ from typing import TYPE_CHECKING, Any, cast
 import uvicorn
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventConsumer, EventQueueLegacy
-from a2a.server.request_handlers.default_request_handler import (
-    TERMINAL_TASK_STATES,
-    LegacyRequestHandler,
-)
 from a2a.server.request_handlers.response_helpers import agent_card_to_dict
 from a2a.server.routes.common import DefaultServerCallContextBuilder
 from a2a.server.routes.rest_dispatcher import RestDispatcher
 from a2a.server.tasks import ResultAggregator, TaskManager
 from a2a.types import (
-    AgentCard,
     Artifact,
     CancelTaskRequest,
     GetTaskRequest,
@@ -46,7 +41,7 @@ from a2a.utils.errors import (
     A2AError,
     ErrorMapping,
 )
-from a2a.utils.task import apply_history_length, validate_history_length
+from a2a.utils.task import apply_history_length
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
@@ -88,6 +83,7 @@ from ..output_modes import (
 )
 from ..profile.runtime import build_runtime_profile
 from ..protocol_versions import A2A_PROTOCOL_VERSION
+from ..task_states import TERMINAL_TASK_STATES
 from ..trace_context import install_log_record_factory
 from .agent_card import (
     _CHAT_OUTPUT_MODES,
@@ -96,6 +92,7 @@ from .agent_card import (
 from .client_manager import A2AClientManager
 from .context_helpers import AuthenticatedIdentityUser
 from .database import build_database_engine
+from .handler_lifecycle import ManagedLegacyRequestHandler
 from .lifespan import build_lifespan
 from .middleware import (
     build_agent_card_etag,
@@ -234,46 +231,15 @@ def _parse_rest_send_message_request(body: bytes):
 
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Awaitable, Callable
+    from collections.abc import AsyncIterator, Callable
 
-    from a2a.server.agent_execution import AgentExecutor, RequestContextBuilder
     from a2a.server.context import ServerCallContext
     from a2a.server.request_handlers.request_handler import RequestHandler
     from a2a.server.routes.common import ServerCallContextBuilder
-    from a2a.server.tasks import (
-        PushNotificationConfigStore,
-        PushNotificationSender,
-        TaskStore,
-    )
 
 
-class OpencodeRequestHandler(LegacyRequestHandler):
-    """Custom request handler to gracefully handle client disconnects and prevent dead loops."""
-
-    def __init__(  # noqa: PLR0913
-        self,
-        agent_executor: AgentExecutor,
-        task_store: TaskStore,
-        agent_card: AgentCard,
-        queue_manager: Any | None = None,
-        push_config_store: PushNotificationConfigStore | None = None,
-        push_sender: PushNotificationSender | None = None,
-        request_context_builder: RequestContextBuilder | None = None,
-        extended_agent_card: AgentCard | None = None,
-        extended_card_modifier: Callable[[AgentCard, ServerCallContext], Awaitable[AgentCard]]
-        | None = None,
-    ) -> None:
-        super().__init__(
-            agent_executor=agent_executor,
-            task_store=task_store,
-            agent_card=agent_card,
-            queue_manager=queue_manager,
-            push_config_store=push_config_store,
-            push_sender=push_sender,
-            request_context_builder=request_context_builder,
-            extended_agent_card=extended_agent_card,
-            extended_card_modifier=extended_card_modifier,
-        )
+class OpencodeRequestHandler(ManagedLegacyRequestHandler):
+    """Preserve adapter contracts around the SDK's legacy execution pipeline."""
 
     @staticmethod
     def _task_store_failure_message(operation: str) -> str:
@@ -522,11 +488,8 @@ class OpencodeRequestHandler(LegacyRequestHandler):
         context=None,
     ) -> Task | None:
         try:
-            validate_history_length(params)
-            task = await self.task_store.get(params.id, context)
-            if not task:
-                raise TaskNotFoundError()
-            return self._apply_task_output_negotiation(apply_history_length(task, params), context)
+            task = await super().on_get_task(params, context)
+            return self._apply_task_output_negotiation(task, context) if task is not None else None
         except TaskStoreOperationError as exc:
             raise self._task_store_server_error(exc) from exc
 
@@ -682,6 +645,8 @@ class OpencodeRequestHandler(LegacyRequestHandler):
                     self._validate_task_id_match(task_id, event.id)
                 await self._send_push_notification_if_needed(task_id, event)
                 yield event
+            if producer_task.done() and not producer_task.cancelled():
+                producer_task.result()
             stream_completed = True
         except TaskStoreOperationError as exc:
             logger.exception(
@@ -793,6 +758,8 @@ class OpencodeRequestHandler(LegacyRequestHandler):
                 except asyncio.CancelledError:
                     pass
 
+        if producer_task.done() and not producer_task.cancelled():
+            producer_task.result()
         if not result:
             raise InternalError()
 
@@ -970,6 +937,7 @@ def create_app(settings: Settings) -> FastAPI:
     extended_card_etag = build_agent_card_etag(extended_agent_card)
     persistence_summary = describe_lightweight_persistence_backend(settings)
     lifespan = build_lifespan(
+        request_handler=handler,
         database_engine=database_engine,
         task_store_runtime=task_store_runtime,
         runtime_state_runtime=runtime_state_runtime,

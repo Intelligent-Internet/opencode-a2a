@@ -74,6 +74,7 @@ flowchart TD
 ### Server Layer
 
 - `server/application.py`: app assembly, route wiring, request handler customization, and top-level lifecycle integration
+- `server/handler_lifecycle.py`: legacy SDK producer ownership, direct failure persistence, setup admission, and handler shutdown
 - `server/middleware.py`: auth, protocol negotiation, payload/body guards, logging, and response decoration
 - `server/agent_card.py` / `server/openapi.py`: machine-readable contract publication
 - `server/rest_tasks.py`: SDK-owned REST task routes plus adapter-specific list behavior
