@@ -159,6 +159,11 @@ def test_coverage_policy_tracks_overall_and_critical_file_thresholds() -> None:
     assert "--cov-report=json:.coverage.json" in PYPROJECT_TEXT
 
 
+def test_ruff_enables_security_rules_for_shipped_code() -> None:
+    assert 'select = ["E", "F", "I", "B", "UP", "S"]' in PYPROJECT_TEXT
+    assert '"tests/**" = ["S"]' in PYPROJECT_TEXT
+
+
 def test_thin_wrapper_finder_keeps_static_analysis_scope() -> None:
     assert "ast.parse" in THIN_WRAPPER_FINDER_TEXT
     assert "--max-callers" in THIN_WRAPPER_FINDER_TEXT
