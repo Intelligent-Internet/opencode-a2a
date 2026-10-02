@@ -39,6 +39,8 @@ dependencies = [
     "pyasn1>=0.6.4",
     "sqlalchemy[asyncio]>=2.0,<3.0",
     "sse-starlette>=2.1,<4.0",
+    # urllib3: PYSEC-2026-4175/4176/4177 (via requests <- google-api-core <- a2a-sdk).
+    "urllib3>=2.8.0",
     "uvicorn>=0.29,<1.0",
 ]
 
