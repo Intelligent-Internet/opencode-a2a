@@ -17,7 +17,7 @@ Executable scripts live in this directory. This file is the entry index for the 
 - [`dependency_health.sh`](./dependency_health.sh): development dependency review entrypoint (`sync`/`pip check` + outdated + dev audit), while blocking CI/publish audits focus on runtime dependencies
 - [`check_coverage.py`](./check_coverage.py): enforces the overall coverage floor and per-file minimums for critical modules
 - [`find_thin_wrappers.py`](./find_thin_wrappers.py): static analysis helper that reports local functions with low caller counts and flags likely thin forwarding wrappers for manual abstraction review
-- [`lint.sh`](./lint.sh): lint helper
+- [`lint.sh`](./lint.sh): lint entrypoint used by CI; runs the repository `pre-commit` pipeline and **rejects hook-generated rewrites** instead of retrying them, so an unformatted or un-fixed commit cannot pass the gate
 - [`smoke_test_built_cli.sh`](./smoke_test_built_cli.sh): built-artifact smoke test for the released CLI runtime; defaults to the only local wheel, supports explicit wheel/sdist paths, and rejects ambiguous local artifact selection
 
 ## Notes
@@ -25,5 +25,6 @@ Executable scripts live in this directory. This file is the entry index for the 
 - `doctor.sh` and `dependency_health.sh` intentionally remain separate entrypoints and share common prerequisites through [`health_common.sh`](./health_common.sh).
 - `doctor.sh` covers the default local validation baseline, while `dependency_health.sh` remains focused on standalone dependency review and audit flow.
 - `doctor.sh` stops early when `pre-commit` rewrites files so you can review the changes and rerun `doctor.sh` from the updated worktree.
+- `lint.sh` shares the same working-tree fingerprint check through [`health_common.sh`](./health_common.sh): auto-fixing hooks (`trailing-whitespace`, `end-of-file-fixer`, `ruff --fix`, `ruff format`) make the gate fail instead of being masked by a retry.
 - [`.github/dependabot.yml`](../.github/dependabot.yml) prefers a single weekly grouped Dependabot PR for `uv`, while `dependency_health.sh` remains the explicit review/audit entrypoint.
 - Repository-owned compatibility probes remain separate from the default regression path. See [`../docs/conformance.md`](../docs/conformance.md).
