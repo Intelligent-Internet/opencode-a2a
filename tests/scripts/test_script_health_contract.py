@@ -30,6 +30,7 @@ def test_doctor_keeps_local_regression_scope() -> None:
     assert 'source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/health_common.sh"' in DOCTOR_TEXT
     assert 'run_shared_repo_health_prerequisites "doctor"' in DOCTOR_TEXT
     assert "repo_state_fingerprint" in DOCTOR_TEXT
+    assert "doctor_repo_state_fingerprint" not in DOCTOR_TEXT
     assert "run_doctor_fix_phase()" in DOCTOR_TEXT
     assert "run_doctor_verify_phase()" in DOCTOR_TEXT
     assert "run_doctor_package_phase()" in DOCTOR_TEXT
