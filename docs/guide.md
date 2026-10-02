@@ -215,7 +215,7 @@ Empty SQLite URLs, `:memory:` URLs, and `mode=memory` URIs explicitly use `Stati
 
 The package declares `sqlalchemy[asyncio]` so standalone installs such as `uv tool install opencode-a2a` include `greenlet`, which is required by the async database engine. SQLAlchemy 2.1 no longer installs `greenlet` by default; declaring the extra in package metadata keeps wheel installs independent of the repository's `uv.lock`.
 
-Published package metadata also enforces the security floors `click>=8.3.3`, `pyasn1>=0.6.4`, and `urllib3>=2.8.0`. These apply to standalone wheel/sdist installs as well as repository environments; no separate uv constraint configuration is needed.
+Published package metadata also enforces the security floors `click>=8.3.3` and `pyasn1>=0.6.4`. These apply to standalone wheel/sdist installs as well as repository environments; no separate uv constraint configuration is needed.
 
 Unhandled execution errors and shutdown interruptions persist `FAILED` when storage is available, preserving existing terminal states. Shutdown drains buffered output before closing clients and stores. SSE disconnects allow execution to continue; use `CancelTask` to request an upstream abort before stopping the application.
 
