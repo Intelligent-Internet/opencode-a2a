@@ -213,10 +213,6 @@ The runtime configures local durability-oriented SQLite connection settings (`WA
 
 Empty SQLite URLs, `:memory:` URLs, and `mode=memory` URIs explicitly use `StaticPool` to share one database connection across checkouts. This preserves the existing ephemeral database behavior when SQLAlchemy changes its automatic pool selection. File-backed databases retain SQLAlchemy's default connection pool and the file hardening described below.
 
-The package declares `sqlalchemy[asyncio]` so standalone installs such as `uv tool install opencode-a2a` include `greenlet`, which is required by the async database engine. SQLAlchemy no longer installs `greenlet` by default; declaring the extra in package metadata keeps wheel installs independent of the repository's `uv.lock`.
-
-Published package metadata also enforces the explicit security floors for transitive runtime dependencies; the authoritative list is declared in `pyproject.toml`. These apply to standalone wheel/sdist installs as well as repository environments; no separate uv constraint configuration is needed.
-
 Unhandled execution errors and shutdown interruptions persist `FAILED` when storage is available, preserving existing terminal states. Shutdown drains buffered output before closing clients and stores. SSE disconnects allow execution to continue; use `CancelTask` to request an upstream abort before stopping the application.
 
 ### SQLite Persistence Hardening
@@ -364,7 +360,7 @@ Current behavior:
 - `all_jsonrpc_methods` is the runtime truth for the current deployment.
 - The current SDK-owned core JSON-RPC surface includes `GetExtendedAgentCard` and `tasks/pushNotificationConfig/*`.
 - The current SDK-owned REST surface also includes `GET /tasks` and the task push notification config routes.
-- The SDK-owned core JSON-RPC method set follows the pinned `a2a-sdk` release and is locked by repository tests; review that surface deliberately when upgrading the SDK.
+- The SDK-owned core JSON-RPC method set is locked by repository tests; review that surface deliberately when upgrading the SDK.
 - Push notification config routes/methods are currently exposed only because they are part of the SDK-owned core surface. This runtime does not configure a push config store or push sender, so operations return the A2A 1.0 `PushNotificationNotSupportedError` contract: HTTP `400` for REST and JSON-RPC code `-32003`.
 
 When `A2A_ENABLE_SESSION_SHELL=false`, `opencode.sessions.shell` is omitted from `all_jsonrpc_methods` and exposed only through `extensions.conditionally_available_methods`.

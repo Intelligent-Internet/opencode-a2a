@@ -11,22 +11,20 @@ This document defines the compatibility promises `opencode-a2a` currently uphold
 
 This is the single canonical place where the supported upstream OpenCode version line is declared. Keep it updated together with the live integration smoke check (`./scripts/live_opencode_smoke.sh`) and do not duplicate the version line elsewhere.
 
-The repository currently pins one concrete SDK release in `pyproject.toml` within that v1 line. Upgrade the SDK deliberately rather than relying on floating dependency resolution. The SDK-owned core JSON-RPC method set follows that pinned release and is locked by repository tests so SDK upgrades trigger an explicit compatibility review.
+The SDK-owned core JSON-RPC method set follows the supported SDK line and is locked by repository tests so SDK upgrades trigger an explicit compatibility review.
 
-### SDK and Dependency Review
+### SDK and Adapter Review
 
-The [SDK 1.1.2 to 1.1.5 changes](https://github.com/a2aproject/a2a-python/compare/v1.1.2...v1.1.5) include cross-event-loop locking fixes, task-list ordering fixes, and protobuf 7 support. The adapter's reviewed integration boundaries are:
+The [SDK 1.1.2 to 1.1.5 changes](https://github.com/a2aproject/a2a-python/compare/v1.1.2...v1.1.5) include cross-event-loop locking fixes and task-list ordering fixes. The adapter's reviewed integration boundaries are:
 
 | Boundary | Decision and regression evidence |
 | --- | --- |
 | `DatabaseTaskStoreCompat` | Retained: SDK `DatabaseTaskStore.save` still performs an unconditional ORM merge. The adapter needs an atomic first-terminal-state-wins guard; task-store tests cover shape drift, ORM conversion parity, and independent store instances. |
 | Legacy stored task conversion | Retained for SDK-owned persisted rows. This does not restore legacy A2A 0.3 wire support. |
-| Request-handler hooks and queue lifecycle | Retained for output negotiation, cancel idempotency, and persistence after client disconnect. Handler regressions exercise these behaviors against the pinned SDK; private hooks remain an SDK upgrade review boundary. |
+| Request-handler hooks and queue lifecycle | Retained for output negotiation, cancel idempotency, and persistence after client disconnect. Handler regressions exercise these behaviors against the SDK; private hooks remain an SDK upgrade review boundary. |
 | Outbound header forwarding | Uses the SDK `service_parameters` channel. Client transport tests check the final HTTP request, including authentication and tracing headers. |
-| Protobuf | The supported `protobuf` range is declared in `pyproject.toml`. The default CI exercises the locked release; a separate Python 3.11 job installs the supported protobuf 6 release and disables uv synchronization throughout the test process tree, so nested protocol probes also exercise protobuf 6. SDK 1.1.5 removes the former protobuf 7 blocker, so the obsolete Dependabot ignore is removed. |
-| Security floors | Upstream metadata can permit older, vulnerable releases of transitive runtime dependencies, so the package declares explicit floors for them; the authoritative list is `pyproject.toml`. They are runtime requirements so wheel and sdist installs enforce them without uv-specific constraints. Installed-metadata tests protect the SQLAlchemy asyncio extra. |
 
-The missing-import typing overrides for `google.protobuf.*` and `jsonrpc.*` remain limited to those third-party modules. Runtime support is validated by the SDK and transport regressions, not inferred from the typing overrides. Ruff's local pre-commit hooks run through `uv run --locked --extra dev`, so `uv.lock` is the single version source for linting and formatting.
+The missing-import typing overrides for `google.protobuf.*` and `jsonrpc.*` remain limited to those third-party modules. Runtime support is validated by the SDK and transport regressions, not inferred from the typing overrides.
 
 ## Contract Honesty
 
