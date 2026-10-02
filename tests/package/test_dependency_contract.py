@@ -17,7 +17,7 @@ def _runtime_requirement(name: str) -> Requirement:
 
 @pytest.mark.parametrize(
     ("name", "unsafe_version", "safe_version"),
-    [("click", "8.3.2", "8.3.3"), ("pyasn1", "0.6.3", "0.6.4")],
+    [("click", "8.3.2", "8.3.3"), ("pyasn1", "0.6.3", "0.6.4"), ("urllib3", "2.7.0", "2.8.0")],
 )
 def test_installed_metadata_enforces_security_floors(
     name: str, unsafe_version: str, safe_version: str
