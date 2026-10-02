@@ -293,8 +293,7 @@ def _parse_int(raw_value: str, *, field: str) -> int:
             message=f"{error_field} must be an integer.",
         ),
     )
-    assert parsed is not None
-    return parsed
+    return cast(int, parsed)
 
 
 def _parse_bool(raw_value: str | None, *, field: str, default: bool) -> bool:

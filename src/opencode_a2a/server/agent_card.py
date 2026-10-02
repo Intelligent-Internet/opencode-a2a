@@ -276,7 +276,8 @@ def _build_agent_extensions(
             ),
         ),
     ]
-    assert tuple(ext.uri for ext in public_extensions) == PUBLIC_EXTENSION_URIS
+    if tuple(ext.uri for ext in public_extensions) != PUBLIC_EXTENSION_URIS:
+        raise RuntimeError("Agent Card public extension URIs drifted from the declared contract")
     if not include_detailed_contracts:
         return public_extensions
 
@@ -342,9 +343,10 @@ def _build_agent_extensions(
             params=wire_contract_params,
         ),
     ]
-    assert (
-        tuple(ext.uri for ext in authenticated_only_extensions) == AUTHENTICATED_ONLY_EXTENSION_URIS
-    )
+    if tuple(ext.uri for ext in authenticated_only_extensions) != AUTHENTICATED_ONLY_EXTENSION_URIS:
+        raise RuntimeError(
+            "Agent Card authenticated extension URIs drifted from the declared contract"
+        )
     return [*public_extensions, *authenticated_only_extensions]
 
 

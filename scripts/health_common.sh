@@ -21,3 +21,17 @@ run_shared_repo_health_prerequisites() {
   echo "[${label}] verify dependency compatibility"
   uv pip check
 }
+
+# Fingerprint of tracked and untracked working-tree state. Used to detect
+# whether a tool rewrote repository files instead of only reporting on them.
+repo_state_fingerprint() {
+  {
+    git diff --no-ext-diff --binary --cached -- .
+    git diff --no-ext-diff --binary -- .
+    while IFS= read -r -d '' path; do
+      printf 'untracked %s\n' "$path"
+      cat "$path"
+      printf '\n'
+    done < <(git ls-files --others --exclude-standard -z)
+  } | git hash-object --stdin
+}

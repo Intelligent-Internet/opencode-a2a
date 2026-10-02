@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -11,6 +11,7 @@ from ...auth import (
     request_has_capability,
 )
 from ...contracts.extensions import WORKSPACE_CONTROL_ERROR_BUSINESS_CODES
+from ...opencode_upstream_client import UpstreamContractError
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import invalid_params_error
 from ..models import JSONRPCRequest
@@ -316,7 +317,7 @@ async def handle_workspace_control_request(
         )
         if request_error is not None:
             return request_error
-        assert request_body is not None
+        request_body = cast(dict[str, Any], request_body)
         request_validation_error = _validate_workspace_request(
             context,
             base_request.id,
@@ -336,8 +337,7 @@ async def handle_workspace_control_request(
         if method_key == "create_workspace":
             return await context.upstream_client.create_workspace(request_body or {})
         if method_key == "remove_workspace":
-            assert workspace_id is not None
-            return await context.upstream_client.remove_workspace(workspace_id)
+            return await context.upstream_client.remove_workspace(cast(str, workspace_id))
         if method_key == "list_worktrees":
             return await context.upstream_client.list_worktrees()
         if method_key == "create_worktree":
@@ -357,7 +357,8 @@ async def handle_workspace_control_request(
     )
     if upstream_error is not None:
         return upstream_error
-    assert raw_result is not None
+    if raw_result is None:
+        raise UpstreamContractError("OpenCode workspace control returned no payload")
 
     try:
         result = _normalize_response_payload(method_key, raw_result)
