@@ -24,6 +24,7 @@ from a2a.utils.errors import InvalidParamsError, UnsupportedOperationError
 from opencode_a2a.server.application import OpencodeRequestHandler
 from opencode_a2a.server.lifespan import build_lifespan
 from opencode_a2a.server.task_store import build_task_store_runtime
+from opencode_a2a.trace_context import TraceContext, bind_trace_context, get_current_trace_context
 from tests.support.settings import make_settings
 
 
@@ -115,6 +116,94 @@ async def test_message_send_to_terminal_task_is_unsupported(store):
         with pytest.raises(UnsupportedOperationError, match="TASK_STATE_COMPLETED"):
             await handler.on_message_send(_request("terminal-task"), context)
         execute.assert_not_awaited()
+    finally:
+        await handler.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_direct_message_response_releases_active_task(store, streaming):
+    async def execute(context, queue):
+        await queue.enqueue_event(
+            Message(
+                message_id="direct-response",
+                context_id=context.context_id,
+                role=Role.ROLE_AGENT,
+                parts=[Part(text="direct response")],
+            )
+        )
+
+    handler = _handler(store, execute)
+    try:
+        if streaming:
+            events = [event async for event in handler.on_message_send_stream(_request())]
+            assert len(events) == 1
+            assert isinstance(events[0], Message)
+        else:
+            result = await handler.on_message_send(_request())
+            assert isinstance(result, Message)
+        await asyncio.sleep(0)
+        assert not handler._running_agents
+    finally:
+        await handler.aclose()
+
+
+@pytest.mark.asyncio
+async def test_follow_up_message_uses_sender_contextvars(store):
+    from a2a.server.tasks import TaskUpdater
+
+    class _FollowUpExecutor:
+        def __init__(self) -> None:
+            self.seen_trace_ids: list[str | None] = []
+
+        async def execute(self, context, queue):  # noqa: ANN001
+            trace_context = get_current_trace_context()
+            self.seen_trace_ids.append(
+                trace_context.trace_id if trace_context is not None else None
+            )
+            if context.current_task is not None:
+                updater = TaskUpdater(queue, context.task_id, context.context_id)
+                await updater.complete()
+                return
+            task = Task(
+                id=context.task_id,
+                context_id=context.context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED),
+                history=[context.message],
+            )
+            await queue.enqueue_event(task)
+            updater = TaskUpdater(queue, task.id, task.context_id)
+            await updater.update_status(
+                TaskState.TASK_STATE_INPUT_REQUIRED,
+                message=updater.new_agent_message([Part(text="more input required")]),
+            )
+
+    executor = _FollowUpExecutor()
+    handler = _handler(store, executor.execute)
+    first_trace_id = "1" * 32
+    second_trace_id = "2" * 32
+    try:
+        with bind_trace_context(
+            TraceContext(
+                traceparent=f"00-{first_trace_id}-{'0' * 16}-01",
+                trace_id=first_trace_id,
+            )
+        ):
+            first = await handler.on_message_send(_request(), _context())
+        assert first.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+
+        follow_up = _request(first.id)
+        follow_up.message.message_id = "follow-up-message"
+        follow_up.message.context_id = first.context_id
+        with bind_trace_context(
+            TraceContext(
+                traceparent=f"00-{second_trace_id}-{'0' * 16}-01",
+                trace_id=second_trace_id,
+            )
+        ):
+            second = await handler.on_message_send(follow_up, _context())
+        assert second.status.state == TaskState.TASK_STATE_COMPLETED
+        assert executor.seen_trace_ids == [first_trace_id, second_trace_id]
     finally:
         await handler.aclose()
 

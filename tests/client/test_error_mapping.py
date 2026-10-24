@@ -16,6 +16,7 @@ from a2a.utils.errors import (
     TaskNotFoundError,
     VersionNotSupportedError,
 )
+from google.protobuf.json_format import ParseError
 
 from opencode_a2a.client.error_mapping import (
     map_a2a_error,
@@ -219,6 +220,13 @@ def test_map_operation_error_transport_and_timeout_variants() -> None:
 
 def test_map_agent_card_error_json_variant() -> None:
     mapped = map_agent_card_error(FakeA2AClientJSONError("invalid json"))
+
+    assert isinstance(mapped, A2APeerProtocolError)
+    assert mapped.error_code == "invalid_agent_card"
+
+
+def test_map_agent_card_error_protobuf_parse_error() -> None:
+    mapped = map_agent_card_error(ParseError("invalid protobuf payload"))
 
     assert isinstance(mapped, A2APeerProtocolError)
     assert mapped.error_code == "invalid_agent_card"
