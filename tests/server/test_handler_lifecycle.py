@@ -19,7 +19,7 @@ from a2a.types import (
     TaskState,
     TaskStatus,
 )
-from a2a.utils.errors import InvalidParamsError
+from a2a.utils.errors import InvalidParamsError, UnsupportedOperationError
 
 from opencode_a2a.server.application import OpencodeRequestHandler
 from opencode_a2a.server.lifespan import build_lifespan
@@ -94,6 +94,27 @@ async def test_unhandled_producer_failure_persists_failed_and_releases_queue(sto
         assert await store.get(task_id, _context("other")) is None
         assert not handler._running_agents
         assert await handler._queue_manager.get(task_id) is None
+    finally:
+        await handler.aclose()
+
+
+@pytest.mark.asyncio
+async def test_message_send_to_terminal_task_is_unsupported(store):
+    context = _context()
+    await store.save(
+        Task(
+            id="terminal-task",
+            context_id="ctx",
+            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        ),
+        context,
+    )
+    execute = AsyncMock()
+    handler = _handler(store, execute)
+    try:
+        with pytest.raises(UnsupportedOperationError, match="TASK_STATE_COMPLETED"):
+            await handler.on_message_send(_request("terminal-task"), context)
+        execute.assert_not_awaited()
     finally:
         await handler.aclose()
 

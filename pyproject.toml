@@ -25,7 +25,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP",
 ]
 dependencies = [
-    "a2a-sdk==1.1.5",
+    "a2a-sdk==1.2.3",
     "aiosqlite>=0.20,<1.0",
     # certifi: PYSEC-2026-4320 (via httpx and requests <- google-api-core <- a2a-sdk).
     "certifi>=2026.10.19",
@@ -48,7 +48,7 @@ dependencies = [
 
 [project.optional-dependencies]
 migrations = [
-    "a2a-sdk[db-cli]==1.1.5",
+    "a2a-sdk[db-cli]==1.2.3",
 ]
 dev = [
     # filelock / virtualenv: development-only security floors (via pre-commit).

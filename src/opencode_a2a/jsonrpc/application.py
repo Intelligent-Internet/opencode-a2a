@@ -373,7 +373,11 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
 
         try:
             params = body.get("params", {})
-            specific_request = ParseDict(params, model_class())
+            specific_request = ParseDict(
+                params,
+                model_class(),
+                ignore_unknown_fields=True,
+            )
             if canonical_method in {"SendMessage", "SendStreamingMessage"}:
                 validate_send_message_request(specific_request)
         except Exception as exc:

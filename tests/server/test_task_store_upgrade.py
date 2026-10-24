@@ -124,6 +124,11 @@ async def test_upgrade_preserves_contents_owner_and_is_repeatable(tmp_path: Path
     with closing(sqlite3.connect(path)) as connection:
         after_first = connection.execute("SELECT * FROM tasks").fetchall()
         assert connection.execute("SELECT protocol_version FROM tasks").fetchone() == ("1.0",)
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert {"task_events", "task_versions"} <= tables
 
     restarted = build_task_store_runtime(settings)
     try:

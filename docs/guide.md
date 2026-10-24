@@ -9,6 +9,7 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
   - JSON-RPC (`POST /`)
 - Agent Card exposes both HTTP+JSON and JSON-RPC through `supportedInterfaces`.
 - HTTP+JSON REST endpoints are served at the root path (e.g. `/message:send`, `/tasks`). A2A 1.0 negotiates protocol version via the `A2A-Version` header, not a URL prefix, so the URL path carries no version segment.
+- Successful HTTP+JSON responses use `application/a2a+json`. Request payloads and examples remain JSON, while REST errors keep the AIP-193 `application/json` envelope.
 - Breaking change for earlier releases: versions through v1.1.2 served the HTTP+JSON surface under a `/v1` prefix. Deployments upgrading from those releases must repoint clients, reverse proxies, and any `/v1`-prefixed routes to the root paths.
 - The public Agent Card is intentionally slimmed to the minimum discovery surface; per-extension disclosure policy is defined in [`extension-specifications.md`](./extension-specifications.md).
 - Detailed provider-private contracts are served through the authenticated extended card endpoint `/extendedAgentCard`.

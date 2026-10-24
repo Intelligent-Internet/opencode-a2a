@@ -15,13 +15,16 @@ The SDK-owned core JSON-RPC method set follows the supported SDK line and is loc
 
 ### SDK and Adapter Review
 
-The [SDK 1.1.2 to 1.1.5 changes](https://github.com/a2aproject/a2a-python/compare/v1.1.2...v1.1.5) include cross-event-loop locking fixes and task-list ordering fixes. The adapter's reviewed integration boundaries are:
+The [SDK 1.1.5 to 1.2.3 changes](https://github.com/a2aproject/a2a-python/compare/v1.1.5...v1.2.3) include keyset `ListTasks` pagination, `application/a2a+json` REST success responses, forward-compatible request parsing, additive cluster tables, push-notification failure isolation, and request-context propagation fixes. The adapter's reviewed integration boundaries are:
 
 | Boundary | Decision and regression evidence |
 | --- | --- |
-| `DatabaseTaskStoreCompat` | Retained: SDK `DatabaseTaskStore.save` still performs an unconditional ORM merge. The adapter needs an atomic first-terminal-state-wins guard; task-store tests cover shape drift, ORM conversion parity, and independent store instances. |
+| REST success media type | Adopted: successful HTTP+JSON responses use `application/a2a+json`, including adapter-owned `/message:send` and `/tasks` routes. REST error envelopes remain AIP-193 JSON. Transport and OpenAPI tests lock both runtime headers and documented response media types. |
+| JSON-RPC and REST request parsing | Adopted: unknown request fields are ignored for forward compatibility, matching SDK 1.2 behavior. Adapter-specific rejection of legacy `content`, lowercase role, and `kind`/`type` part shapes remains intentional. |
+| Terminal task follow-up | Adopted: SDK now raises `UnsupportedOperationError` with the named terminal `TaskState`; handler regressions lock this behavior for both memory and database stores. |
+| `DatabaseTaskStoreCompat` | Retained: SDK `DatabaseTaskStore.save` still performs an unconditional ORM merge. The adapter needs an atomic first-terminal-state-wins guard. SDK 1.2 keyset page tokens are delegated through the wrapper; task-store tests cover shape drift, ORM conversion parity, and independent store instances. |
 | Legacy stored task conversion | Retained for SDK-owned persisted rows. This does not restore legacy A2A 0.3 wire support. |
-| Request-handler hooks and queue lifecycle | Retained for output negotiation, cancel idempotency, and persistence after client disconnect. Handler regressions exercise these behaviors against the SDK; private hooks remain an SDK upgrade review boundary. |
+| Request-handler hooks and queue lifecycle | Retained for output negotiation, cancel idempotency, and persistence after client disconnect. Handler regressions cover SDK 1.2 direct-message completion, context propagation, and push-sender failure isolation; private hooks remain an SDK upgrade review boundary. |
 | Outbound header forwarding | Uses the SDK `service_parameters` channel. Client transport tests check the final HTTP request, including authentication and tracing headers. |
 
 The missing-import typing overrides for `google.protobuf.*` and `jsonrpc.*` remain limited to those third-party modules. Runtime support is validated by the SDK and transport regressions, not inferred from the typing overrides.
@@ -105,6 +108,8 @@ Task-store behavior that should remain stable for clients:
 - adapter-managed migrations only own adapter state tables; SDK-managed task schema remains SDK-owned
 
 The supported persistence profile is one application process using its own local SQLite database. Multiple Uvicorn workers or application replicas must not share that SQLite file. PostgreSQL and other SQLAlchemy dialects are not supported deployment targets; any apparent dialect compatibility is implementation latitude rather than a public promise.
+
+SDK migration revision `b5e3d1c8a2f7` adds `task_versions` and `task_events` for the SDK's clustered stores. This runtime keeps the single-process `DatabaseTaskStore` profile and does not adopt cluster mode; the migration is additive and does not change existing `tasks` rows.
 
 ## Extension Stability
 

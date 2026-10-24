@@ -257,6 +257,7 @@ async def test_list_tasks_route_returns_paginated_results(monkeypatch) -> None:
         )
 
         assert first_page.status_code == 200
+        assert first_page.headers["content-type"].split(";", 1)[0] == "application/a2a+json"
         first_payload = first_page.json()
         assert first_payload["totalSize"] == 2
         assert first_payload["pageSize"] == 1
@@ -826,6 +827,17 @@ def test_openapi_rest_message_routes_include_schema_and_examples() -> None:
         assert "message_with_file_input" in examples
 
 
+def test_openapi_rest_success_responses_use_a2a_json_media_type() -> None:
+    app = create_app(make_settings(test_bearer_token="test-token"))
+    paths = app.openapi()["paths"]
+
+    for path in ("/message:send", "/tasks", "/tasks/{id}", "/tasks/{id}:cancel"):
+        method = "post" if path == "/message:send" or path.endswith(":cancel") else "get"
+        content = paths[path][method]["responses"]["200"]["content"]
+        assert "application/a2a+json" in content
+        assert "application/json" not in content
+
+
 def test_openapi_jsonrpc_examples_include_core_message_methods() -> None:
     app = create_app(make_settings(test_bearer_token="test-token"))
     openapi = app.openapi()
@@ -1174,10 +1186,65 @@ async def test_dual_stack_send_accepts_transport_native_payloads(monkeypatch) ->
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         rest_resp = await client.post("/message:send", headers=headers, json=rest_payload)
         assert rest_resp.status_code == 200
+        assert rest_resp.headers["content-type"].split(";", 1)[0] == "application/a2a+json"
 
         rpc_resp = await client.post("/", headers=headers, json=rpc_payload)
         assert rpc_resp.status_code == 200
         assert rpc_resp.json().get("error") is None
+
+
+@pytest.mark.asyncio
+async def test_core_transports_ignore_unknown_request_fields(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(make_settings(test_bearer_token="test-token"))
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+
+    jsonrpc_payload = _jsonrpc_message_send_payload("unknown jsonrpc field")
+    jsonrpc_payload["params"]["futureParam"] = {"ignored": True}
+    rest_payload = {
+        "message": {
+            "messageId": "m-rest-future",
+            "role": "ROLE_USER",
+            "parts": [{"text": "unknown rest field"}],
+        },
+        "futureField": {"ignored": True},
+    }
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        jsonrpc_response = await client.post("/", headers=headers, json=jsonrpc_payload)
+        rest_response = await client.post("/message:send", headers=headers, json=rest_payload)
+
+    assert jsonrpc_response.status_code == 200
+    assert jsonrpc_response.json().get("error") is None
+    assert rest_response.status_code == 200
+    assert rest_response.headers["content-type"].split(";", 1)[0] == "application/a2a+json"
+
+
+@pytest.mark.asyncio
+async def test_sdk_get_task_success_uses_a2a_json_media_type(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(
+        make_settings(test_bearer_token="test-token", a2a_task_store_backend="memory")
+    )
+    task = _task_for_listing(
+        task_id="task-media-type",
+        context_id="ctx-media-type",
+        timestamp=datetime.now(UTC).isoformat(),
+    )
+    await app.state.task_store.save(task, _authenticated_task_context())
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token", "A2A-Version": "1.0"}
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/tasks/task-media-type", headers=headers)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].split(";", 1)[0] == "application/a2a+json"
 
 
 @pytest.mark.asyncio

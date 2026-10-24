@@ -106,6 +106,7 @@ from .request_parsing import (
     _parse_json_body,
     validate_send_message_request,
 )
+from .rest_responses import A2AJSONResponse
 from .rest_tasks import build_list_tasks_route
 from .runtime_limits import StreamBudgetExceeded, apply_stream_budget
 from .state_store import (
@@ -222,7 +223,11 @@ def _parse_rest_send_message_request(body: bytes):
                             "such as text, raw, url, or data."
                         )
                     )
-    request = ParseDict(payload, SendMessageRequest())
+    request = ParseDict(
+        payload,
+        SendMessageRequest(),
+        ignore_unknown_fields=True,
+    )
     try:
         validate_send_message_request(request)
     except ValueError as exc:
@@ -976,7 +981,7 @@ def create_app(settings: Settings) -> FastAPI:
                 return SendMessageResponse(message=task_or_message)
 
             response = await rest_dispatcher._handle_non_streaming(request, _handler)
-            return JSONResponse(content=MessageToDict(response))
+            return A2AJSONResponse(content=MessageToDict(response))
         except Exception as error:  # noqa: BLE001
             return _rest_error_response(
                 request=request,
@@ -1014,9 +1019,19 @@ def create_app(settings: Settings) -> FastAPI:
             )
 
     app.add_api_route(AGENT_CARD_WELL_KNOWN_PATH, public_agent_card_route, methods=["GET"])
-    app.add_api_route("/message:send", rest_message_send_route, methods=["POST"])
+    app.add_api_route(
+        "/message:send",
+        rest_message_send_route,
+        methods=["POST"],
+        response_class=A2AJSONResponse,
+    )
     app.add_api_route("/message:stream", rest_message_send_stream_route, methods=["POST"])
-    app.add_api_route("/tasks/{id}:cancel", rest_dispatcher.on_cancel_task, methods=["POST"])
+    app.add_api_route(
+        "/tasks/{id}:cancel",
+        rest_dispatcher.on_cancel_task,
+        methods=["POST"],
+        response_class=A2AJSONResponse,
+    )
     app.add_api_route(
         "/tasks/{id}:subscribe",
         rest_subscribe_route,
@@ -1029,7 +1044,12 @@ def create_app(settings: Settings) -> FastAPI:
         methods=["POST"],
         operation_id="subscribe_to_task_post",
     )
-    app.add_api_route("/tasks/{id}", rest_dispatcher.on_get_task, methods=["GET"])
+    app.add_api_route(
+        "/tasks/{id}",
+        rest_dispatcher.on_get_task,
+        methods=["GET"],
+        response_class=A2AJSONResponse,
+    )
 
     async def push_notifications_unsupported_route(request: Request) -> JSONResponse:
         return _rest_error_response(
@@ -1064,6 +1084,7 @@ def create_app(settings: Settings) -> FastAPI:
             context_builder=context_builder.build,
         ),
         methods=["GET"],
+        response_class=A2AJSONResponse,
     )
     app.add_api_route(
         EXTENDED_AGENT_CARD_PATH,

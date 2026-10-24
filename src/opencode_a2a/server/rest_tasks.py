@@ -33,6 +33,7 @@ from ..parsing import (
 from ..parsing import (
     parse_timestamp_field as parse_shared_timestamp_field,
 )
+from .rest_responses import A2AJSONResponse
 from .task_store import TaskStoreOperationError
 
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ def build_list_tasks_route(
                 status_code=500,
             )
 
-        return JSONResponse(
+        return A2AJSONResponse(
             {
                 "tasks": [
                     _serialize_task(
