@@ -5,10 +5,15 @@ from collections.abc import AsyncGenerator, Mapping
 from contextlib import aclosing
 from typing import Any, cast
 
+from a2a.server.agent_execution import (
+    RequestContext,
+    RequestContextBuilder,
+    SimpleRequestContextBuilder,
+)
 from a2a.server.cluster import VersionedTaskStore
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
-from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.server.tasks.task_store import TaskStore
 from a2a.types import (
     CancelTaskRequest,
@@ -42,6 +47,7 @@ from ..metadata_access import extract_namespaced_value
 from ..output_modes import (
     annotate_output_negotiation_metadata,
     apply_accepted_output_modes,
+    canonicalize_stream_artifacts,
     normalize_accepted_output_modes,
 )
 from ..task_states import TERMINAL_TASK_STATES
@@ -60,7 +66,45 @@ logger = logging.getLogger(__name__)
 TASK_STORE_ERROR_TYPE = "TASK_STORE_UNAVAILABLE"
 
 
-class OpencodeRequestHandler(DefaultRequestHandler):
+def _accepted_output_modes_from_params(params: Any) -> tuple[str, ...] | None:
+    configuration = getattr(params, "configuration", None)
+    return normalize_accepted_output_modes(configuration)
+
+
+class OutputModeAwareRequestContextBuilder(RequestContextBuilder):
+    """Record negotiated output modes before the SDK persists a new task."""
+
+    def __init__(
+        self,
+        inner: RequestContextBuilder,
+        output_modes: TaskOutputModeRegistry,
+    ) -> None:
+        self._inner = inner
+        self._output_modes = output_modes
+
+    async def build(
+        self,
+        context: ServerCallContext,
+        params: SendMessageRequest | None = None,
+        task_id: str | None = None,
+        context_id: str | None = None,
+        task: Task | None = None,
+    ) -> RequestContext:
+        request_context = await self._inner.build(
+            context=context,
+            params=params,
+            task_id=task_id,
+            context_id=context_id,
+            task=task,
+        )
+        if params is not None and request_context.task_id:
+            accepted = _accepted_output_modes_from_params(params)
+            if accepted is not None:
+                self._output_modes.remember(request_context.task_id, accepted)
+        return request_context
+
+
+class OpencodeRequestHandler(DefaultRequestHandlerV2):
     """Adapter contract on top of the SDK v2 active-task lifecycle."""
 
     def __init__(
@@ -81,11 +125,21 @@ class OpencodeRequestHandler(DefaultRequestHandler):
             )
         else:
             negotiated_store = NegotiatingTaskStore(task_store, self._output_modes)
+        request_context_builder = kwargs.pop("request_context_builder", None)
+        if request_context_builder is None:
+            request_context_builder = SimpleRequestContextBuilder(
+                should_populate_referred_tasks=False,
+                task_store=None,
+            )
         super().__init__(
             agent_executor=agent_executor,
             task_store=negotiated_store,
             agent_card=agent_card,
             event_stream=event_stream,
+            request_context_builder=OutputModeAwareRequestContextBuilder(
+                request_context_builder,
+                self._output_modes,
+            ),
             **kwargs,
         )
 
@@ -105,8 +159,7 @@ class OpencodeRequestHandler(DefaultRequestHandler):
 
     @staticmethod
     def _accepted_output_modes_from_params(params: Any) -> tuple[str, ...] | None:
-        configuration = getattr(params, "configuration", None)
-        return normalize_accepted_output_modes(configuration)
+        return _accepted_output_modes_from_params(params)
 
     def _modes_for_task(
         self,
@@ -134,19 +187,6 @@ class OpencodeRequestHandler(DefaultRequestHandler):
         if isinstance(event, Message):
             return event.task_id or None
         return getattr(event, "task_id", None) or None
-
-    async def _setup_active_task(
-        self,
-        params: SendMessageRequest,
-        call_context: ServerCallContext,
-    ):
-        active_task, request_context = await super()._setup_active_task(params, call_context)
-        task_id = getattr(request_context, "task_id", None)
-        if isinstance(task_id, str) and task_id:
-            accepted = self._accepted_output_modes_from_params(params)
-            if accepted is not None:
-                self._output_modes.remember(task_id, accepted)
-        return active_task, request_context
 
     async def on_get_task(
         self,
@@ -200,7 +240,7 @@ class OpencodeRequestHandler(DefaultRequestHandler):
         context: ServerCallContext,
     ) -> Task | None:
         try:
-            task = await task_store_get(self._versioned_store, params.id, context)
+            task = await task_store_get(self.task_store, params.id, context)
             if task is None:
                 raise TaskNotFoundError
             if task.status.state == TaskState.TASK_STATE_CANCELED:
@@ -219,7 +259,7 @@ class OpencodeRequestHandler(DefaultRequestHandler):
             modes = self._modes_for_task(result.id, task=result)
             return cast(Task, self._negotiate(result, modes))
         except TaskNotCancelableError:
-            refreshed = await task_store_get(self._versioned_store, params.id, context)
+            refreshed = await task_store_get(self.task_store, params.id, context)
             if refreshed is not None and refreshed.status.state == TaskState.TASK_STATE_CANCELED:
                 modes = self._modes_for_task(refreshed.id, task=refreshed)
                 return cast(Task, self._negotiate(refreshed, modes))
@@ -233,7 +273,7 @@ class OpencodeRequestHandler(DefaultRequestHandler):
         context: ServerCallContext,
     ) -> AsyncGenerator[Event, None]:
         try:
-            task = await task_store_get(self._versioned_store, params.id, context)
+            task = await task_store_get(self.task_store, params.id, context)
             if task is None:
                 raise TaskNotFoundError
             if task.status.state in TERMINAL_TASK_STATES:
@@ -377,6 +417,8 @@ class OpencodeRequestHandler(DefaultRequestHandler):
             result = await super().on_message_send(params, context)
         except TaskStoreOperationError as exc:
             raise self._task_store_server_error(exc) from exc
+        if isinstance(result, Task):
+            result = canonicalize_stream_artifacts(result)
         task_id = getattr(result, "id", None) or params.message.task_id or ""
         modes = self._modes_for_task(
             task_id,

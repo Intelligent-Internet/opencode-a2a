@@ -1332,6 +1332,75 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
         assert payload["error"]["code"] == -32602
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "field"),
+    [
+        (
+            {
+                "messageId": "m-content",
+                "role": "ROLE_USER",
+                "content": [{"text": "hello"}],
+            },
+            "message.content",
+        ),
+        (
+            {
+                "messageId": "m-role",
+                "role": "user",
+                "parts": [{"text": "hello"}],
+            },
+            "message.role",
+        ),
+        (
+            {
+                "messageId": "m-part",
+                "role": "ROLE_USER",
+                "parts": [{"file": {"uri": "file:///tmp/input.txt"}}],
+            },
+            "message.parts[0]",
+        ),
+    ],
+)
+async def test_payload_shape_guard_covers_both_transports(
+    monkeypatch,
+    message: dict,
+    field: str,
+) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(make_settings(test_bearer_token="test-token"))
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        rest_response = await client.post(
+            "/message:send",
+            headers=headers,
+            json={"message": message},
+        )
+        rpc_response = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "SendMessage",
+                "params": {"message": message},
+            },
+        )
+
+    assert rest_response.status_code == 400
+    rest_error = rest_response.json()["error"]
+    assert rest_error["details"][0]["reason"] == "INVALID_PARAMS"
+    assert rest_error["details"][0]["metadata"]["field"] == field
+    assert rpc_response.status_code == 200
+    rpc_error = rpc_response.json()["error"]
+    assert rpc_error["code"] == -32602
+    assert rpc_error["data"]["field"] == f"params.{field}"
+
+
 def _rest_message_payload() -> dict:
     return {
         "message": {

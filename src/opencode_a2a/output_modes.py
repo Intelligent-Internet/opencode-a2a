@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Collection, Iterable, Mapping
 from typing import Any, cast
 
-from a2a.server.events import EventConsumer
-from a2a.server.tasks import ResultAggregator, TaskManager
 from a2a.types import (
     Artifact,
     Message,
     Part,
     Task,
     TaskArtifactUpdateEvent,
-    TaskState,
     TaskStatusUpdateEvent,
 )
 from google.protobuf.json_format import MessageToDict
@@ -215,149 +211,23 @@ def _extract_artifact_stream_block_type(artifact: Artifact | None) -> str | None
     return block_type.strip() if isinstance(block_type, str) and block_type.strip() else None
 
 
-def _canonicalize_artifact_event(
-    event: TaskArtifactUpdateEvent,
-    text_buffers: dict[str, str],
-) -> TaskArtifactUpdateEvent:
-    artifact = event.artifact
-    if artifact is None or not artifact.parts:
-        return event
+def canonicalize_stream_artifacts(task: Task) -> Task:
+    """Compact append-only stream chunks before task persistence."""
 
-    block_type = _extract_artifact_stream_block_type(artifact)
-    if block_type is None:
-        return event
-
-    updated = clone_proto(event)
-    updated.append = False
-
-    part = artifact.parts[0]
-    artifact_id = artifact.artifact_id
-    if block_type in {"text", "reasoning"} and part.HasField("text"):
-        previous = text_buffers.get(artifact_id, "")
-        full_text = part.text if not event.append else f"{previous}{part.text}"
-        text_buffers[artifact_id] = full_text
-        canonical_part = clone_proto(part)
-        canonical_part.text = full_text
-        updated.artifact.CopyFrom(replace_artifact_parts(artifact, [canonical_part]))
-        return updated
-
-    if block_type == "tool_call":
-        updated.artifact.CopyFrom(replace_artifact_parts(artifact, [clone_proto(part)]))
-        return updated
-
-    return event
-
-
-class NegotiatingResultAggregator(ResultAggregator):
-    def __init__(
-        self,
-        task_manager: TaskManager,
-        accepted_output_modes: Iterable[str] | None,
-    ) -> None:
-        super().__init__(task_manager)
-        self._accepted_output_modes = normalize_accepted_output_modes(accepted_output_modes)
-        self._canonical_text_buffers: dict[str, str] = {}
-
-    def _transform_event(self, event: Any) -> Any | None:
-        negotiated_event = apply_accepted_output_modes(event, self._accepted_output_modes)
-        if negotiated_event is None:
-            return None
-        return annotate_output_negotiation_metadata(negotiated_event, self._accepted_output_modes)
-
-    def _transform_persisted_event(self, event: Any) -> Any:
-        if not isinstance(event, TaskArtifactUpdateEvent):
-            return event
-        return _canonicalize_artifact_event(event, self._canonical_text_buffers)
-
-    async def _persist_output_negotiation_metadata(self, event: Any) -> None:
-        if not isinstance(event, TaskArtifactUpdateEvent):
-            return
-
-        accepted_output_modes = extract_accepted_output_modes_from_metadata(event.metadata)
-        if accepted_output_modes is None:
-            return
-
-        task = await self.task_manager.ensure_task(event)
-        merged_metadata = merge_output_negotiation_metadata(task.metadata, accepted_output_modes)
-        if merged_metadata == task.metadata:
-            return
-        task.metadata = merged_metadata
-        await self.task_manager._save_task(task)
-
-    async def consume_and_emit(self, consumer: EventConsumer):  # noqa: ANN201
-        async for event in consumer.consume_all():
-            transformed_event = self._transform_event(event)
-            if transformed_event is None:
-                continue
-            persisted_event = self._transform_persisted_event(transformed_event)
-            await self._persist_output_negotiation_metadata(persisted_event)
-            await self.task_manager.process(persisted_event)
-            yield transformed_event
-
-    async def consume_all(self, consumer: EventConsumer) -> Task | Message | None:
-        async for event in consumer.consume_all():
-            transformed_event = self._transform_event(event)
-            if transformed_event is None:
-                continue
-            if isinstance(transformed_event, Message):
-                self._message = transformed_event
-                return transformed_event
-            persisted_event = self._transform_persisted_event(transformed_event)
-            await self._persist_output_negotiation_metadata(persisted_event)
-            await self.task_manager.process(persisted_event)
-        return await self.task_manager.get_task()
-
-    async def consume_and_break_on_interrupt(
-        self,
-        consumer: EventConsumer,
-        blocking: bool = True,
-        event_callback=None,  # noqa: ANN001
-    ) -> tuple[Task | Message | None, bool, asyncio.Task | None]:
-        event_stream = consumer.consume_all()
-        interrupted = False
-        bg_task: asyncio.Task | None = None
-        async for event in event_stream:
-            transformed_event = self._transform_event(event)
-            if transformed_event is None:
-                continue
-            if isinstance(transformed_event, Message):
-                self._message = transformed_event
-                return transformed_event, False, None
-            persisted_event = self._transform_persisted_event(transformed_event)
-            await self._persist_output_negotiation_metadata(persisted_event)
-            await self.task_manager.process(persisted_event)
-
-            should_interrupt = False
-            is_auth_required = (
-                isinstance(transformed_event, Task | TaskStatusUpdateEvent)
-                and transformed_event.status.state == TaskState.TASK_STATE_AUTH_REQUIRED
-            )
-            if is_auth_required or not blocking:
-                should_interrupt = True
-
-            if should_interrupt:
-                bg_task = asyncio.create_task(
-                    self._continue_consuming(event_stream, event_callback)
-                )
-                interrupted = True
-                break
-
-        return await self.task_manager.get_task(), interrupted, bg_task
-
-    async def _continue_consuming(
-        self,
-        event_stream,
-        event_callback=None,  # noqa: ANN001
-    ) -> None:
-        async for event in event_stream:
-            transformed_event = self._transform_event(event)
-            if transformed_event is None:
-                continue
-            persisted_event = self._transform_persisted_event(transformed_event)
-            await self._persist_output_negotiation_metadata(persisted_event)
-            await self.task_manager.process(persisted_event)
-            if event_callback:
-                await event_callback()
+    updated = clone_proto(task)
+    for artifact in updated.artifacts:
+        if not artifact.parts:
+            continue
+        block_type = _extract_artifact_stream_block_type(artifact)
+        if block_type in {"text", "reasoning"} and all(
+            part.HasField("text") for part in artifact.parts
+        ):
+            canonical_part = clone_proto(artifact.parts[0])
+            canonical_part.text = "".join(part.text for part in artifact.parts)
+            artifact.CopyFrom(replace_artifact_parts(artifact, [canonical_part]))
+        elif block_type == "tool_call" and len(artifact.parts) > 1:
+            artifact.CopyFrom(replace_artifact_parts(artifact, [clone_proto(artifact.parts[-1])]))
+    return updated
 
 
 def _filter_task(task: Task, accepted_output_modes: Collection[str]) -> Task:

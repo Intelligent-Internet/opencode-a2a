@@ -17,13 +17,12 @@ from a2a.types import (
     Message,
     Part,
     Role,
-    SendMessageRequest,
     SubscribeToTaskRequest,
     UnsupportedOperationError,
 )
 from a2a.utils.errors import InvalidRequestError
 from fastapi import Request
-from google.protobuf.json_format import MessageToDict, ParseError
+from google.protobuf.json_format import ParseError
 
 import opencode_a2a.server.application as app_module
 from opencode_a2a.a2a_protocol import CORE_JSONRPC_METHODS
@@ -42,7 +41,6 @@ from opencode_a2a.server.application import (
     OpencodeRequestHandler,
     _configure_logging,
     _normalize_log_level,
-    _parse_rest_send_message_request,
     _rest_error_response,
     create_app,
 )
@@ -230,88 +228,6 @@ def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
             ],
         }
     }
-
-    parsed = _parse_rest_send_message_request(
-        json.dumps(
-            {
-                "message": {
-                    "messageId": "msg-2",
-                    "role": "ROLE_USER",
-                    "parts": [{"text": "hello from rest"}],
-                },
-                "configuration": {"returnImmediately": True},
-            }
-        ).encode("utf-8")
-    )
-    assert isinstance(parsed, SendMessageRequest)
-    assert MessageToDict(parsed) == {
-        "message": {
-            "messageId": "msg-2",
-            "role": "ROLE_USER",
-            "parts": [{"text": "hello from rest"}],
-        },
-        "configuration": {"returnImmediately": True},
-    }
-    with pytest.raises(InvalidRequestError, match="REST message payload must be a JSON object"):
-        _parse_rest_send_message_request(b"[]")
-    with pytest.raises(InvalidRequestError, match="message is required"):
-        _parse_rest_send_message_request(b"{}")
-    with pytest.raises(InvalidRequestError, match="message.messageId is required"):
-        _parse_rest_send_message_request(
-            json.dumps(
-                {
-                    "message": {
-                        "role": "ROLE_USER",
-                        "parts": [{"text": "hello"}],
-                    }
-                }
-            ).encode("utf-8")
-        )
-    with pytest.raises(
-        InvalidRequestError,
-        match="REST message payload must use message.parts, not message.content.",
-    ):
-        _parse_rest_send_message_request(
-            json.dumps(
-                {
-                    "message": {
-                        "messageId": "msg-legacy",
-                        "role": "ROLE_USER",
-                        "content": [{"text": "hello from rest"}],
-                    }
-                }
-            ).encode("utf-8")
-        )
-    with pytest.raises(
-        InvalidRequestError,
-        match="REST message payload must use ROLE_\\* values for message.role.",
-    ):
-        _parse_rest_send_message_request(
-            json.dumps(
-                {
-                    "message": {
-                        "messageId": "msg-legacy",
-                        "role": "user",
-                        "parts": [{"text": "hello from rest"}],
-                    }
-                }
-            ).encode("utf-8")
-        )
-    with pytest.raises(
-        InvalidRequestError,
-        match="message.parts\\[0\\] must use direct Part fields such as text, raw, url, or data.",
-    ):
-        _parse_rest_send_message_request(
-            json.dumps(
-                {
-                    "message": {
-                        "messageId": "msg-legacy",
-                        "role": "ROLE_USER",
-                        "parts": [{"file": {"uri": "file:///tmp/report.txt"}}],
-                    }
-                }
-            ).encode("utf-8")
-        )
 
 
 def test_agent_card_helper_builders_cover_optional_branches() -> None:
@@ -644,7 +560,7 @@ async def test_auth_health_lifespan_and_openapi_cache(monkeypatch, caplog) -> No
 
 
 @pytest.mark.asyncio
-async def test_rest_adapter_routes_and_preconsume_error() -> None:
+async def test_rest_adapter_public_stream_route_delegates_to_handler() -> None:
     handler = MagicMock()
     adapter = RestDispatcher(request_handler=handler)
 
@@ -656,18 +572,6 @@ async def test_rest_adapter_routes_and_preconsume_error() -> None:
         _request("/tasks/x:subscribe", method="GET", path_params={"id": "x"})
     )
     assert response is not None
-
-    class _BrokenRequest:
-        async def body(self) -> bytes:
-            raise ValueError("broken body")
-
-    with pytest.raises(
-        InvalidRequestError, match="Failed to pre-consume request body: broken body"
-    ):
-        await adapter._handle_streaming(  # pyright: ignore[reportAttributeAccessIssue]
-            _BrokenRequest(),
-            lambda _context: _stream(None, _context),
-        )
 
 
 @pytest.mark.asyncio

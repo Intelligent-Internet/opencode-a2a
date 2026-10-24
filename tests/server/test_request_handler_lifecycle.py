@@ -13,6 +13,7 @@ from a2a.server.tasks import TaskUpdater
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
+    Artifact,
     CancelTaskRequest,
     GetTaskRequest,
     Message,
@@ -21,14 +22,18 @@ from a2a.types import (
     SendMessageRequest,
     SubscribeToTaskRequest,
     Task,
+    TaskArtifactUpdateEvent,
     TaskState,
     TaskStatus,
 )
 from a2a.utils.errors import TaskNotFoundError, UnsupportedOperationError
 
+from opencode_a2a.contracts.extensions import STREAMING_EXTENSION_URI
+from opencode_a2a.output_modes import extract_accepted_output_modes_from_metadata
 from opencode_a2a.server.request_handler import OpencodeRequestHandler
 from opencode_a2a.server.task_store import (
     build_task_store_runtime,
+    task_store_get,
     task_store_save,
 )
 from opencode_a2a.trace_context import TraceContext, bind_trace_context, get_current_trace_context
@@ -170,6 +175,114 @@ async def test_direct_message_releases_active_task(runtime, streaming: bool) -> 
             result = await handler.on_message_send(_request(), _context())
             assert isinstance(result, Message)
         await _wait_for_active_tasks_to_release(handler)
+    finally:
+        await handler.aclose()
+
+
+@pytest.mark.asyncio
+async def test_generated_task_persists_output_modes_through_public_context_builder(runtime) -> None:
+    async def execute(context, queue):  # noqa: ANN001
+        await queue.enqueue_event(
+            Task(
+                id=context.task_id,
+                context_id=context.context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED),
+                history=[context.message],
+            )
+        )
+        await TaskUpdater(queue, context.task_id, context.context_id).complete()
+
+    handler = _handler(runtime, execute)
+    params = _request()
+    params.configuration.accepted_output_modes.extend(["text/plain"])
+    try:
+        result = await handler.on_message_send(params, _context())
+        assert isinstance(result, Task)
+        read_context = _context()
+        read_context.requested_extensions.add(STREAMING_EXTENSION_URI)
+        stored = await handler.on_get_task(GetTaskRequest(id=result.id), read_context)
+        assert stored is not None
+        assert extract_accepted_output_modes_from_metadata(stored.metadata) == ("text/plain",)
+    finally:
+        await handler.aclose()
+
+
+@pytest.mark.asyncio
+async def test_v2_lifecycle_compacts_appended_artifacts_and_persists_terminal_metadata(
+    runtime,
+) -> None:
+    async def execute(context, queue):  # noqa: ANN001
+        task = Task(
+            id=context.task_id,
+            context_id=context.context_id,
+            status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED),
+            history=[context.message],
+        )
+        await queue.enqueue_event(task)
+        artifact_id = f"{context.task_id}:stream:text"
+        metadata = {
+            "shared": {
+                "stream": {
+                    "block_type": "text",
+                    "message_id": "stream-message",
+                }
+            }
+        }
+        await queue.enqueue_event(
+            TaskArtifactUpdateEvent(
+                task_id=context.task_id,
+                context_id=context.context_id,
+                artifact=Artifact(
+                    artifact_id=artifact_id,
+                    parts=[Part(text="hello ")],
+                    metadata=metadata,
+                ),
+                append=False,
+                last_chunk=False,
+            )
+        )
+        await queue.enqueue_event(
+            TaskArtifactUpdateEvent(
+                task_id=context.task_id,
+                context_id=context.context_id,
+                artifact=Artifact(
+                    artifact_id=artifact_id,
+                    parts=[Part(text="world")],
+                    metadata=metadata,
+                ),
+                append=True,
+                last_chunk=False,
+            )
+        )
+        await TaskUpdater(queue, context.task_id, context.context_id).update_status(
+            TaskState.TASK_STATE_COMPLETED,
+            metadata={
+                "shared": {
+                    "usage": {
+                        "input_tokens": 9,
+                        "output_tokens": 3,
+                        "total_tokens": 12,
+                    }
+                }
+            },
+        )
+
+    handler = _handler(runtime, execute)
+    try:
+        result = await handler.on_message_send(_request(), _context())
+        assert isinstance(result, Task)
+        raw_task = await task_store_get(handler.task_store, result.id, _context())
+        assert raw_task is not None
+        assert raw_task.metadata["shared"]["usage"]["total_tokens"] == 12
+        read_context = _context()
+        read_context.requested_extensions.add(STREAMING_EXTENSION_URI)
+        stored = await handler.on_get_task(GetTaskRequest(id=result.id), read_context)
+        assert stored is not None
+        assert len(stored.artifacts) == 1
+        assert stored.artifacts[0].parts[0].text == "hello world"
+        assert stored.metadata["shared"]["usage"]["total_tokens"] == 12
+        assert len(result.artifacts) == 1
+        assert result.artifacts[0].parts[0].text == "hello world"
     finally:
         await handler.aclose()
 

@@ -150,6 +150,13 @@ async def test_output_negotiation_metadata_is_persisted() -> None:
     assert restored is not None
     assert extract_accepted_output_modes_from_metadata(restored.metadata) == ("text/plain",)
 
+    task.status.state = TaskState.TASK_STATE_COMPLETED
+    await store.save(task, ServerCallContext())
+    assert registry.resolve(task.id) is None
+    restored = await store.get(task.id, ServerCallContext())
+    assert restored is not None
+    assert extract_accepted_output_modes_from_metadata(restored.metadata) == ("text/plain",)
+
 
 @pytest.mark.asyncio
 async def test_task_store_wraps_backend_failures() -> None:

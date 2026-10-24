@@ -75,8 +75,9 @@ flowchart TD
 
 - `server/application.py`: app assembly, route wiring, request handler customization, and top-level lifecycle integration
 - `server/middleware.py`: auth, protocol negotiation, payload/body guards, logging, and response decoration
+- `server/request_handler.py`: SDK v2 request lifecycle plus adapter output-mode and extension policy
+- `server/task_store.py`: SDK task-store construction and output-mode persistence adapter
 - `server/agent_card.py` / `server/openapi.py`: machine-readable contract publication
-- `server/rest_tasks.py`: SDK-owned REST task routes plus adapter-specific list behavior
 
 ### Execution Layer
 

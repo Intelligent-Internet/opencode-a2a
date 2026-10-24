@@ -10,7 +10,6 @@ from a2a.server.request_handlers.response_helpers import agent_card_to_dict
 from a2a.server.routes.common import DefaultServerCallContextBuilder
 from a2a.server.routes.rest_dispatcher import RestDispatcher
 from a2a.types import (
-    InvalidRequestError,
     SendMessageRequest,
     SubscribeToTaskRequest,
 )
@@ -21,7 +20,7 @@ from a2a.utils.errors import (
 )
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
-from google.protobuf.json_format import ParseDict, ParseError
+from google.protobuf.json_format import ParseError
 from pydantic_settings import BaseSettings
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -61,10 +60,6 @@ from .openapi import (
     _patch_jsonrpc_openapi_contract,
 )
 from .request_handler import OpencodeRequestHandler
-from .request_parsing import (
-    _parse_json_body,
-    validate_send_message_request,
-)
 from .rest_responses import A2AJSONResponse
 from .runtime_limits import StreamBudgetExceeded, apply_stream_budget
 from .state_store import (
@@ -153,43 +148,6 @@ def _rest_error_response(
         ),
         status_code=500,
     )
-
-
-def _parse_rest_send_message_request(body: bytes):
-    payload = _parse_json_body(body)
-    if payload is None:
-        raise InvalidRequestError(message="REST message payload must be a JSON object.")
-    message = payload.get("message")
-    if isinstance(message, dict):
-        if "content" in message:
-            raise InvalidRequestError(
-                message="REST message payload must use message.parts, not message.content."
-            )
-        role = message.get("role")
-        if isinstance(role, str) and role in {"user", "agent"}:
-            raise InvalidRequestError(
-                message="REST message payload must use ROLE_* values for message.role."
-            )
-        parts = message.get("parts")
-        if isinstance(parts, list):
-            for index, part in enumerate(parts):
-                if isinstance(part, dict) and ("kind" in part or "type" in part or "file" in part):
-                    raise InvalidRequestError(
-                        message=(
-                            f"message.parts[{index}] must use direct Part fields "
-                            "such as text, raw, url, or data."
-                        )
-                    )
-    request = ParseDict(
-        payload,
-        SendMessageRequest(),
-        ignore_unknown_fields=True,
-    )
-    try:
-        validate_send_message_request(request)
-    except ValueError as exc:
-        raise InvalidRequestError(message=str(exc)) from exc
-    return request
 
 
 if TYPE_CHECKING:

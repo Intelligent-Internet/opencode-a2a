@@ -28,9 +28,11 @@ from sqlalchemy.engine import make_url
 from ..config import Settings
 from ..output_modes import (
     annotate_output_negotiation_metadata,
+    canonicalize_stream_artifacts,
     extract_accepted_output_modes_from_metadata,
     normalize_accepted_output_modes,
 )
+from ..task_states import TERMINAL_TASK_STATES
 from .context_helpers import normalize_server_call_context
 from .database import build_database_engine, redact_database_url_for_logs
 
@@ -69,13 +71,6 @@ class TaskOutputModeRegistry:
     def clear(self, task_id: str) -> None:
         self._modes.pop(task_id, None)
 
-    def adopt_from_metadata(self, task_id: str, task: Task) -> None:
-        if task_id in self._modes:
-            return
-        modes = extract_accepted_output_modes_from_metadata(task.metadata)
-        if modes is not None:
-            self._modes[task_id] = modes
-
 
 class NegotiatingVersionedTaskStore(VersionedTaskStore):
     """Public VersionedTaskStore wrapper that persists output negotiation metadata."""
@@ -108,11 +103,12 @@ class NegotiatingVersionedTaskStore(VersionedTaskStore):
     ) -> TaskVersion:
         await self._ensure_initialized()
         normalized_context = _normalize_task_store_context(context)
-        accepted = self._output_modes.resolve(task.id, task)
-        negotiated_task = annotate_output_negotiation_metadata(task, accepted)
+        canonical_task = canonicalize_stream_artifacts(task)
+        accepted = self._output_modes.resolve(task.id, canonical_task)
+        negotiated_task = annotate_output_negotiation_metadata(canonical_task, accepted)
         negotiated_event = annotate_output_negotiation_metadata(event, accepted)
         try:
-            return await self._inner.save(
+            saved_version = await self._inner.save(
                 cast(Task, negotiated_task),
                 event=cast(Event | None, negotiated_event),
                 prev=prev,
@@ -127,6 +123,9 @@ class NegotiatingVersionedTaskStore(VersionedTaskStore):
             raise
         except Exception as exc:
             raise TaskStoreOperationError("save", task.id) from exc
+        if task.status.state in TERMINAL_TASK_STATES:
+            self._output_modes.clear(task.id)
+        return saved_version
 
     async def get(
         self,
@@ -142,8 +141,6 @@ class NegotiatingVersionedTaskStore(VersionedTaskStore):
             raise
         except Exception as exc:
             raise TaskStoreOperationError("get", task_id) from exc
-        if stored is not None:
-            self._output_modes.adopt_from_metadata(task_id, stored.task)
         return stored
 
     async def list(
@@ -187,8 +184,9 @@ class NegotiatingTaskStore(TaskStore):
 
     async def save(self, task: Task, context: ServerCallContext) -> None:
         normalized_context = _normalize_task_store_context(context)
-        accepted = self._output_modes.resolve(task.id, task)
-        negotiated_task = annotate_output_negotiation_metadata(task, accepted)
+        canonical_task = canonicalize_stream_artifacts(task)
+        accepted = self._output_modes.resolve(task.id, canonical_task)
+        negotiated_task = annotate_output_negotiation_metadata(canonical_task, accepted)
         try:
             await self._inner.save(cast(Task, negotiated_task), normalized_context)
         except TaskStoreOperationError:
@@ -197,6 +195,8 @@ class NegotiatingTaskStore(TaskStore):
             raise
         except Exception as exc:
             raise TaskStoreOperationError("save", task.id) from exc
+        if task.status.state in TERMINAL_TASK_STATES:
+            self._output_modes.clear(task.id)
 
     async def get(self, task_id: str, context: ServerCallContext) -> Task | None:
         try:
@@ -207,8 +207,6 @@ class NegotiatingTaskStore(TaskStore):
             raise
         except Exception as exc:
             raise TaskStoreOperationError("get", task_id) from exc
-        if task is not None:
-            self._output_modes.adopt_from_metadata(task_id, task)
         return task
 
     async def list(
