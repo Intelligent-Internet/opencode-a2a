@@ -29,6 +29,19 @@ The [SDK 1.1.5 to 1.2.3 changes](https://github.com/a2aproject/a2a-python/compar
 
 The missing-import typing overrides for `google.protobuf.*` and `jsonrpc.*` remain limited to those third-party modules. Runtime support is validated by the SDK and transport regressions, not inferred from the typing overrides.
 
+### Intentional SDK Private Seams
+
+The adapter uses SDK public interfaces wherever they preserve the repository contract. The remaining private seams are explicit and regression-bounded:
+
+| Seam | Why it remains |
+| --- | --- |
+| REST stream routes call `RestDispatcher._handle_streaming` | Repository-owned request validation, version negotiation, and error shaping must run before SDK SSE framing. The SDK public REST route reapplies its own version validator and would bypass those adapter contracts. Stream budget behavior is tested through both REST and JSON-RPC transports. |
+| `ManagedLegacyRequestHandler` hooks | The repository still needs legacy queue startup, disconnect draining, and shutdown ordering that `DefaultRequestHandlerV2` does not expose equivalently. Replacing it is tracked by #533 and requires preserving output negotiation, cancel, subscribe, disconnect, and shutdown contracts. |
+| `DatabaseTaskStoreCompat` | The adapter needs atomic first-terminal-state-wins persistence and legacy-to-v1 task conversion. The SDK does not expose an equivalent CAS operation on the default `DatabaseTaskStore`; the compat layer fail-fast checks the ORM shape and has migration/concurrency regressions. |
+| JSON-RPC dispatcher overrides | `opencode.*` extension methods and repository error redaction require explicit method registration and error adaptation. Core method schemas and response helpers remain SDK-owned. |
+
+These seams are treated as SDK upgrade review boundaries: every SDK upgrade must rerun shape/migration tests, handler lifecycle tests, transport media-type tests, and conformance probes.
+
 ## Contract Honesty
 
 Machine-readable discovery surfaces must reflect actual runtime behavior:

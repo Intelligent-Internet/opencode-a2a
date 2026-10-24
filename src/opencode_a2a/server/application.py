@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, cast
 import uvicorn
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventConsumer, EventQueueLegacy
+from a2a.server.request_handlers.request_handler import RequestHandler
 from a2a.server.request_handlers.response_helpers import agent_card_to_dict
 from a2a.server.routes.common import DefaultServerCallContextBuilder
 from a2a.server.routes.rest_dispatcher import RestDispatcher
@@ -236,11 +237,9 @@ def _parse_rest_send_message_request(body: bytes):
 
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable
+    from collections.abc import AsyncIterator
 
     from a2a.server.context import ServerCallContext
-    from a2a.server.request_handlers.request_handler import RequestHandler
-    from a2a.server.routes.common import ServerCallContextBuilder
 
 
 class OpencodeRequestHandler(ManagedLegacyRequestHandler):
@@ -823,43 +822,55 @@ class IdentityAwareCallContextBuilder(DefaultServerCallContextBuilder):
         return context
 
 
-class BudgetedRestDispatcher(RestDispatcher):
-    """REST dispatcher that applies streaming output budgets to SSE streams."""
+class StreamBudgetedRequestHandler:
+    """Apply repository stream budgets through the public RequestHandler API."""
 
     def __init__(
         self,
         request_handler: RequestHandler,
-        context_builder: ServerCallContextBuilder,
         *,
         stream_budget_max_bytes: int,
         stream_budget_max_duration_seconds: float,
         stream_budget_idle_timeout_seconds: float,
     ) -> None:
-        super().__init__(
-            request_handler=request_handler,
-            context_builder=context_builder,
-        )
+        self._request_handler = request_handler
         self._stream_budget_max_bytes = stream_budget_max_bytes
         self._stream_budget_max_duration_seconds = stream_budget_max_duration_seconds
         self._stream_budget_idle_timeout_seconds = stream_budget_idle_timeout_seconds
 
-    async def _handle_streaming(
-        self,
-        request: Request,
-        handler_func: Callable[[ServerCallContext], AsyncIterator[Any]],
-    ) -> Any:
-        async def budgeted_handler(
-            context: ServerCallContext,
-        ) -> AsyncIterator[Any]:
-            async for item in apply_stream_budget(
-                aiter(handler_func(context)),
-                max_bytes=self._stream_budget_max_bytes,
-                max_duration_seconds=self._stream_budget_max_duration_seconds,
-                idle_timeout_seconds=self._stream_budget_idle_timeout_seconds,
-            ):
-                yield item
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._request_handler, name)
 
-        return await super()._handle_streaming(request, budgeted_handler)
+    def _apply_budget(
+        self,
+        stream: AsyncIterator[Any],
+    ) -> AsyncIterator[Any]:
+        return apply_stream_budget(
+            stream,
+            max_bytes=self._stream_budget_max_bytes,
+            max_duration_seconds=self._stream_budget_max_duration_seconds,
+            idle_timeout_seconds=self._stream_budget_idle_timeout_seconds,
+        )
+
+    async def on_message_send_stream(
+        self,
+        params: SendMessageRequest,
+        context: ServerCallContext,
+    ) -> AsyncIterator[Any]:
+        async for item in self._apply_budget(
+            self._request_handler.on_message_send_stream(params, context)
+        ):
+            yield item
+
+    async def on_subscribe_to_task(
+        self,
+        params: SubscribeToTaskRequest,
+        context: ServerCallContext,
+    ) -> AsyncIterator[Any]:
+        async for item in self._apply_budget(
+            self._request_handler.on_subscribe_to_task(params, context)
+        ):
+            yield item
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -936,12 +947,18 @@ def create_app(settings: Settings) -> FastAPI:
         stream_budget_idle_timeout_seconds=settings.a2a_stream_idle_timeout_seconds,
         methods=jsonrpc_methods,
     )
-    rest_dispatcher = BudgetedRestDispatcher(
-        request_handler=handler,
+    rest_request_handler = cast(
+        RequestHandler,
+        StreamBudgetedRequestHandler(
+            handler,
+            stream_budget_max_bytes=settings.a2a_stream_max_bytes,
+            stream_budget_max_duration_seconds=settings.a2a_stream_max_duration_seconds,
+            stream_budget_idle_timeout_seconds=settings.a2a_stream_idle_timeout_seconds,
+        ),
+    )
+    rest_dispatcher = RestDispatcher(
+        request_handler=rest_request_handler,
         context_builder=context_builder,
-        stream_budget_max_bytes=settings.a2a_stream_max_bytes,
-        stream_budget_max_duration_seconds=settings.a2a_stream_max_duration_seconds,
-        stream_budget_idle_timeout_seconds=settings.a2a_stream_idle_timeout_seconds,
     )
     public_card_etag = build_agent_card_etag(agent_card)
     extended_card_etag = build_agent_card_etag(extended_agent_card)
@@ -993,9 +1010,10 @@ def create_app(settings: Settings) -> FastAPI:
 
             async def _handler(context):  # noqa: ANN001
                 params = _parse_rest_send_message_request(await request.body())
-                async for event in handler.on_message_send_stream(params, context):
+                async for event in rest_request_handler.on_message_send_stream(params, context):
                     yield MessageToDict(proto_utils.to_stream_response(event))
 
+            # The SDK exposes no public replacement for this pre-SSE error framing.
             return await rest_dispatcher._handle_streaming(request, _handler)
         except Exception as error:  # noqa: BLE001
             return _rest_error_response(
@@ -1008,9 +1026,10 @@ def create_app(settings: Settings) -> FastAPI:
 
             async def _handler(context):
                 params = SubscribeToTaskRequest(id=request.path_params["id"])
-                async for event in handler.on_subscribe_to_task(params, context):
+                async for event in rest_request_handler.on_subscribe_to_task(params, context):
                     yield MessageToDict(proto_utils.to_stream_response(event))
 
+            # Retain repository version/auth semantics around the SDK SSE framing.
             return await rest_dispatcher._handle_streaming(request, _handler)
         except Exception as error:  # noqa: BLE001 - mirrors SDK rest_stream_error_handler
             return _rest_error_response(

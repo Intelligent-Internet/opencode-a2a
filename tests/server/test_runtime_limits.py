@@ -5,12 +5,15 @@ from typing import Any
 
 import httpx
 import pytest
-from a2a.types import TaskState
+from a2a.types import Task, TaskState, TaskStatus
+from a2a.utils.proto_utils import to_stream_response
+from google.protobuf.json_format import MessageToDict
 
 from opencode_a2a.server.runtime_limits import (
     SlidingWindowRateLimiter,
     StreamBudgetExceeded,
     apply_stream_budget,
+    json_event_size,
 )
 from tests.server.test_transport_contract import (
     _authenticated_task_context,
@@ -29,6 +32,17 @@ class FakeClock:
 
     def advance(self, seconds: float) -> None:
         self.value += seconds
+
+
+def test_json_event_size_matches_serialized_proto_event() -> None:
+    task = Task(
+        id="task-size",
+        context_id="ctx-size",
+        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+    )
+    serialized = MessageToDict(to_stream_response(task))
+
+    assert json_event_size(task) == json_event_size(serialized)
 
 
 class IdleTerminatingChatClient(DummyChatOpencodeUpstreamClient):
