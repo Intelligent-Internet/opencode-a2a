@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -355,7 +355,7 @@ async def handle_session_lifecycle_request(
                 )
                 result = {"items": _normalize_session_status_items(raw_result)}
             elif method == context.method_get_session:
-                assert session_id is not None
+                session_id = cast(str, session_id)
                 raw_result = await context.upstream_client.get_session(
                     session_id,
                     **routing_kwargs,
@@ -367,7 +367,7 @@ async def handle_session_lifecycle_request(
                     )
                 result = {"item": item}
             elif method == context.method_get_session_children:
-                assert session_id is not None
+                session_id = cast(str, session_id)
                 raw_result = await context.upstream_client.list_child_sessions(
                     session_id,
                     **routing_kwargs,
@@ -381,14 +381,14 @@ async def handle_session_lifecycle_request(
                     ]
                 }
             elif method == context.method_get_session_todo:
-                assert session_id is not None
+                session_id = cast(str, session_id)
                 raw_result = await context.upstream_client.get_session_todo(
                     session_id,
                     **routing_kwargs,
                 )
                 result = {"items": _normalize_todo_items(raw_result)}
             elif method == context.method_get_session_diff:
-                assert session_id is not None
+                session_id = cast(str, session_id)
                 query = {"messageID": message_id} if message_id else None
                 raw_result = await context.upstream_client.get_session_diff(
                     session_id,
@@ -397,8 +397,8 @@ async def handle_session_lifecycle_request(
                 )
                 result = {"items": _normalize_diff_items(raw_result)}
             elif method == context.method_get_session_message:
-                assert session_id is not None
-                assert message_id is not None
+                session_id = cast(str, session_id)
+                message_id = cast(str, message_id)
                 raw_result = await context.upstream_client.get_message(
                     session_id,
                     message_id,
@@ -412,7 +412,7 @@ async def handle_session_lifecycle_request(
                     )
                 result = {"item": item}
             elif method == context.method_fork_session:
-                assert session_id is not None
+                session_id = cast(str, session_id)
                 raw_result = await context.upstream_client.fork_session(
                     session_id,
                     request=fork_request,
@@ -422,14 +422,14 @@ async def handle_session_lifecycle_request(
                 forked_session_id = item["id"]
                 result = {"item": item}
             elif method == context.method_share_session:
-                assert session_id is not None
+                session_id = cast(str, session_id)
                 raw_result = await context.upstream_client.share_session(
                     session_id,
                     **routing_kwargs,
                 )
                 result = {"item": _normalize_session_summary(raw_result)}
             elif method == context.method_summarize_session:
-                assert session_id is not None
+                session_id = cast(str, session_id)
                 raw_result = await context.upstream_client.summarize_session(
                     session_id,
                     request=summarize_request,
@@ -439,7 +439,7 @@ async def handle_session_lifecycle_request(
                     raise ValueError("Upstream summarize response must be a boolean")
                 result = {"ok": raw_result, "session_id": session_id}
             elif method == context.method_revert_session:
-                assert session_id is not None
+                session_id = cast(str, session_id)
                 raw_result = await context.upstream_client.revert_session(
                     session_id,
                     request=revert_request,
@@ -447,20 +447,21 @@ async def handle_session_lifecycle_request(
                 )
                 result = {"item": _normalize_session_summary(raw_result)}
             elif method == context.method_unrevert_session:
-                assert session_id is not None
+                session_id = cast(str, session_id)
                 raw_result = await context.upstream_client.unrevert_session(
                     session_id,
                     **routing_kwargs,
                 )
                 result = {"item": _normalize_session_summary(raw_result)}
-            else:
-                assert method == context.method_unshare_session
-                assert session_id is not None
+            elif method == context.method_unshare_session:
+                session_id = cast(str, session_id)
                 raw_result = await context.upstream_client.unshare_session(
                     session_id,
                     **routing_kwargs,
                 )
                 result = {"item": _normalize_session_summary(raw_result)}
+            else:
+                raise UpstreamContractError(f"Unsupported session lifecycle method: {method}")
 
             await session_claim.finalize()
             if forked_session_id is not None and identity:

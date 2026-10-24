@@ -3,12 +3,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from functools import partial
-from typing import Any
+from typing import Any, cast
 
 from starlette.requests import Request
 from starlette.responses import Response
 
 from ...contracts.extensions import SESSION_QUERY_ERROR_BUSINESS_CODES
+from ...opencode_upstream_client import UpstreamContractError
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import invalid_params_error, session_not_found_error
 from ..methods import (
@@ -97,18 +98,17 @@ async def handle_session_query_request(
                 params=query,
                 **routing_kwargs,
             )
-        assert session_id is not None
         list_messages_kwargs: dict[str, Any] = {"params": query}
         if workspace_id is not None:
             list_messages_kwargs["workspace_id"] = workspace_id
         return await context.upstream_client.list_messages(
-            session_id,
+            cast(str, session_id),
             **list_messages_kwargs,
         )
 
     on_not_found: Callable[[], Response] | None = None
     if base_request.method == context.method_get_session_messages:
-        assert session_id is not None
+        session_id = cast(str, session_id)
         on_not_found = partial(
             context.error_response,
             base_request.id,
@@ -126,7 +126,8 @@ async def handle_session_query_request(
     )
     if upstream_error is not None:
         return upstream_error
-    assert raw_result is not None
+    if raw_result is None:
+        raise UpstreamContractError("OpenCode session query returned no payload")
 
     try:
         if base_request.method == context.method_list_sessions:
@@ -150,7 +151,7 @@ async def handle_session_query_request(
                 mapped.append(task)
         items: list[dict[str, Any]] = _apply_session_query_limit(mapped, limit=limit)
     else:
-        assert session_id is not None
+        session_id = cast(str, session_id)
         mapped = []
         for item in raw_items:
             message = _as_a2a_message(session_id, item)

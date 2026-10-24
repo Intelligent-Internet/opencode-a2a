@@ -27,6 +27,7 @@ from ..execution.metrics import emit_metric
 from ..jsonrpc.error_responses import (
     adapt_jsonrpc_error,
     build_http_error_body,
+    invalid_params_error,
     version_not_supported_error,
 )
 from ..jsonrpc.models import JSONRPCError
@@ -133,6 +134,39 @@ def _is_http_json_rest_path(path: str) -> bool:
     carried in the A2A-Version header instead.
     """
     return path.startswith("/message:") or path.startswith("/tasks")
+
+
+def _message_shape_violation(message: object) -> tuple[str, str] | None:
+    if not isinstance(message, dict):
+        return None
+    if "content" in message:
+        return "message.content", "message.content is not supported; use message.parts"
+    role = message.get("role")
+    if isinstance(role, str) and role in {"user", "agent"}:
+        return "message.role", "message.role must use ROLE_* values"
+    parts = message.get("parts")
+    if isinstance(parts, list):
+        for index, part in enumerate(parts):
+            if isinstance(part, dict) and ("kind" in part or "type" in part or "file" in part):
+                return (
+                    f"message.parts[{index}]",
+                    f"message.parts[{index}] must use direct Part fields "
+                    "such as text, raw, url, or data",
+                )
+    return None
+
+
+def _jsonrpc_message_payload(payload: object) -> object | None:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("method") not in {"SendMessage", "SendStreamingMessage"}:
+        return None
+    params = payload.get("params")
+    return params.get("message") if isinstance(params, dict) else None
+
+
+def _rest_message_payload(payload: object) -> object | None:
+    return payload.get("message") if isinstance(payload, dict) else None
 
 
 def _resolve_rate_limit_key(request: Request) -> str:
@@ -551,18 +585,20 @@ def install_runtime_middlewares(
                 _REQUEST_BODY_BYTES.reset(token)
 
     @app.middleware("http")
-    async def guard_rest_payload_shape(request: Request, call_next):
+    async def guard_message_payload_shape(request: Request, call_next):
         token: Token | None = None
-        if request.method != "POST" or request.url.path not in {
-            "/message:send",
-            "/message:stream",
-        }:
+        if request.method != "POST":
+            return await call_next(request)
+
+        is_rest_message = request.url.path in {"/message:send", "/message:stream"}
+        is_jsonrpc = request.url.path == "/"
+        if not is_rest_message and not is_jsonrpc:
             return await call_next(request)
 
         try:
             body, token = await _get_request_body(request)
             payload = _parse_json_body(body)
-            if _looks_like_jsonrpc_envelope(payload):
+            if is_rest_message and _looks_like_jsonrpc_envelope(payload):
                 return JSONResponse(
                     build_http_error_body(
                         status_code=400,
@@ -577,6 +613,42 @@ def install_runtime_middlewares(
                         metadata={"path": request.url.path},
                     ),
                     status_code=400,
+                )
+            message = _rest_message_payload(payload) if is_rest_message else None
+            if is_jsonrpc:
+                message = _jsonrpc_message_payload(payload)
+            violation = _message_shape_violation(message)
+            if violation is not None:
+                field, message_text = violation
+                if is_rest_message:
+                    return JSONResponse(
+                        build_http_error_body(
+                            status_code=400,
+                            status="INVALID_ARGUMENT",
+                            message=message_text,
+                            reason="INVALID_PARAMS",
+                            metadata={"field": field},
+                        ),
+                        status_code=400,
+                    )
+                return JSONResponse(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": _extract_jsonrpc_request_id(payload),
+                        "error": cast(
+                            JSONRPCError,
+                            adapt_jsonrpc_error(
+                                invalid_params_error(
+                                    message_text,
+                                    data={
+                                        "type": "INVALID_FIELD",
+                                        "field": f"params.{field}",
+                                    },
+                                )
+                            ),
+                        ).model_dump(mode="json", exclude_none=True),
+                    },
+                    status_code=200,
                 )
             return await call_next(request)
         except _RequestBodyTooLargeError as error:

@@ -15,16 +15,29 @@ The SDK-owned core JSON-RPC method set follows the supported SDK line and is loc
 
 ### SDK and Adapter Review
 
-The [SDK 1.1.2 to 1.1.5 changes](https://github.com/a2aproject/a2a-python/compare/v1.1.2...v1.1.5) include cross-event-loop locking fixes and task-list ordering fixes. The adapter's reviewed integration boundaries are:
+The adapter's reviewed SDK integration boundaries are:
 
 | Boundary | Decision and regression evidence |
 | --- | --- |
-| `DatabaseTaskStoreCompat` | Retained: SDK `DatabaseTaskStore.save` still performs an unconditional ORM merge. The adapter needs an atomic first-terminal-state-wins guard; task-store tests cover shape drift, ORM conversion parity, and independent store instances. |
-| Legacy stored task conversion | Retained for SDK-owned persisted rows. This does not restore legacy A2A 0.3 wire support. |
-| Request-handler hooks and queue lifecycle | Retained for output negotiation, cancel idempotency, and persistence after client disconnect. Handler regressions exercise these behaviors against the SDK; private hooks remain an SDK upgrade review boundary. |
+| REST success media type | Adopted: successful HTTP+JSON responses use `application/a2a+json`, including adapter-owned `/message:send` and `/tasks` routes. REST error envelopes remain AIP-193 JSON. Transport and OpenAPI tests lock both runtime headers and documented response media types. |
+| JSON-RPC and REST request parsing | Adopted: unknown request fields are ignored for forward compatibility, matching SDK parsing behavior. Shared middleware rejects cross-transport envelopes plus legacy `content`, lowercase role, and `kind`/`type`/`file` part shapes before either transport dispatches. |
+| Terminal task follow-up | Adopted: SDK now raises `UnsupportedOperationError` with the named terminal `TaskState`; handler regressions lock this behavior for both memory and database stores. |
+| Versioned database task lifecycle | Adopted: database mode uses `VersionedDatabaseTaskStore` with SDK optimistic-concurrency control and `DatabaseTaskEventStream` for persisted event replay. The adapter no longer carries `GuardedTaskStore`, `DatabaseTaskStoreCompat`, or a private SQL terminal-write policy. |
+| Legacy stored task conversion | Retained only at the SDK migration boundary for SDK-owned persisted rows. This does not restore legacy A2A 0.3 wire support. |
+| Request-handler lifecycle | Adopted: `OpencodeRequestHandler` extends SDK `DefaultRequestHandlerV2` and uses the public `RequestContextBuilder` extension point for output-mode persistence. Active-task execution, queueing, cancellation, subscription, direct-Message completion, and shutdown draining stay in the SDK lifecycle. |
 | Outbound header forwarding | Uses the SDK `service_parameters` channel. Client transport tests check the final HTTP request, including authentication and tracing headers. |
 
 The missing-import typing overrides for `google.protobuf.*` and `jsonrpc.*` remain limited to those third-party modules. Runtime support is validated by the SDK and transport regressions, not inferred from the typing overrides.
+
+### Intentional SDK Private Seams
+
+Core REST routes, task persistence, and the request-handler lifecycle now use SDK public interfaces. The remaining seams are explicit and regression-bounded:
+
+| Seam | Why it remains |
+| --- | --- |
+| JSON-RPC dispatcher overrides | `opencode.*` extension methods and repository error redaction require explicit method registration and error adaptation. Core method schemas and response helpers remain SDK-owned. |
+
+The repository still wraps public request-handler streams to enforce byte, duration, and idle budgets, but it no longer subclasses `RestDispatcher` or calls `_handle_streaming`. Shape and transport checks run in middleware before dispatch. Every SDK upgrade must rerun shape/migration tests, handler lifecycle tests, transport media-type tests, and conformance probes.
 
 ## Contract Honesty
 
@@ -74,7 +87,7 @@ Changes to those surfaces should be treated as compatibility-sensitive and shoul
 Service-level behavior layered on top of those core methods should also be declared explicitly when interoperability depends on it. Current examples:
 
 - `SubscribeToTask` rejection with `UnsupportedOperationError` for terminal tasks
-- first-terminal-state-wins task persistence policy
+- SDK versioned task persistence with compare-and-swap conflict detection
 - task-scoped `acceptedOutputModes` negotiation persistence across send / stream / get / subscribe
 - request-body rejection behavior for oversized transport payloads
 
@@ -99,12 +112,15 @@ Task durability is deployment-dependent:
 
 Task-store behavior that should remain stable for clients:
 
-- once a task reaches a terminal state, later conflicting writes are dropped on a first-terminal-state-wins basis
+- concurrent task mutations are serialized by the SDK versioned-store compare-and-swap contract; stale writers receive `ConcurrentTaskModificationError`
+- the v2 request handler rejects follow-up messages to terminal tasks and does not persist mutations after their terminal event
 - task-store I/O failures are surfaced as stable service errors instead of leaking backend-specific exceptions
 - accepted output-mode negotiation for a task is persisted with the task so later reads keep the same filtered output contract
 - adapter-managed migrations only own adapter state tables; SDK-managed task schema remains SDK-owned
 
 The supported persistence profile is one application process using its own local SQLite database. Multiple Uvicorn workers or application replicas must not share that SQLite file. PostgreSQL and other SQLAlchemy dialects are not supported deployment targets; any apparent dialect compatibility is implementation latitude rather than a public promise.
+
+The SDK task-store migration adds `task_versions` and `task_events`. This runtime adopts those stores even in its supported single-process profile so task writes and event replay follow the SDK lifecycle; the migration is additive and does not change existing `tasks` rows.
 
 ## Extension Stability
 

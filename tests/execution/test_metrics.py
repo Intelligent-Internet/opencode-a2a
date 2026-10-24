@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
+from a2a.server.context import ServerCallContext
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
@@ -57,42 +59,35 @@ def test_metrics_registry_renders_counters_gauges_and_labels() -> None:
 
 @pytest.mark.asyncio
 async def test_stream_request_metrics_track_total_and_active(caplog) -> None:
-    class _FakeAggregator:
-        async def consume_and_emit(self, _consumer):
-            yield Task(
-                id="task-1",
-                context_id="ctx-1",
+    async def execute(context, queue):  # noqa: ANN001
+        await queue.enqueue_event(
+            Task(
+                id=context.task_id,
+                context_id=context.context_id,
                 status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
             )
-            await asyncio.sleep(10)
+        )
+        await asyncio.Event().wait()
 
-    class _TestHandler(OpencodeRequestHandler):
-        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
-            del params, context
-            queue = AsyncMock()
-            producer_task = asyncio.create_task(asyncio.sleep(10))
-            return MagicMock(), "task-1", queue, _FakeAggregator(), producer_task
-
-        async def _cleanup_producer(self, producer_task, task_id):  # noqa: ANN001
-            del task_id
-            producer_task.cancel()
-            try:
-                await producer_task
-            except asyncio.CancelledError:
-                pass
-
-    handler = _TestHandler(
-        agent_executor=MagicMock(),
+    handler = OpencodeRequestHandler(
+        agent_executor=SimpleNamespace(execute=execute, cancel=AsyncMock()),
         task_store=InMemoryTaskStore(),
+        event_stream=None,
         agent_card=_agent_card(),
     )
 
-    with caplog.at_level(logging.DEBUG, logger="opencode_a2a.execution.executor"):
-        stream = handler.on_message_send_stream(_make_message_send_params())
-        first_event = await anext(stream)
-        assert isinstance(first_event, Task)
-        await stream.aclose()
-        await asyncio.sleep(0)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="opencode_a2a.execution.executor"):
+            stream = handler.on_message_send_stream(
+                _make_message_send_params(),
+                ServerCallContext(),
+            )
+            first_event = await anext(stream)
+            assert isinstance(first_event, Task)
+            await stream.aclose()
+            await asyncio.sleep(0)
+    finally:
+        await handler.aclose()
 
     messages = [record.message for record in caplog.records]
     assert any("metric=a2a_stream_requests_total" in message for message in messages)

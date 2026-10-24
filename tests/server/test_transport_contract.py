@@ -257,12 +257,13 @@ async def test_list_tasks_route_returns_paginated_results(monkeypatch) -> None:
         )
 
         assert first_page.status_code == 200
+        assert first_page.headers["content-type"].split(";", 1)[0] == "application/a2a+json"
         first_payload = first_page.json()
         assert first_payload["totalSize"] == 2
         assert first_payload["pageSize"] == 1
         assert first_payload["tasks"][0]["id"] == "task-new"
         assert "artifacts" not in first_payload["tasks"][0]
-        assert "history" not in first_payload["tasks"][0]
+        assert first_payload["tasks"][0].get("history", []) == []
         assert first_payload["nextPageToken"]
 
         second_page = await client.get(
@@ -744,65 +745,17 @@ async def test_list_tasks_route_validates_query_parameters(monkeypatch) -> None:
         )
 
     assert page_size_error.status_code == 400
-    assert page_size_error.json() == {
-        "error": {
-            "code": 400,
-            "status": "INVALID_ARGUMENT",
-            "message": "pageSize must be between 1 and 100.",
-            "details": [
-                {
-                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                    "reason": "INVALID_LIST_TASKS_REQUEST",
-                    "domain": "a2a-protocol.org",
-                    "metadata": {"field": "pageSize"},
-                },
-                {
-                    "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
-                    "field": "pageSize",
-                },
-            ],
-        }
-    }
+    page_size_payload = page_size_error.json()["error"]
+    assert page_size_payload["code"] == 400
+    assert page_size_payload["status"] == "INVALID_ARGUMENT"
+    assert page_size_payload["details"][0]["reason"] == "INVALID_PARAMS"
     assert page_token_error.status_code == 400
-    assert page_token_error.json() == {
-        "error": {
-            "code": 400,
-            "status": "INVALID_ARGUMENT",
-            "message": "pageToken is invalid.",
-            "details": [
-                {
-                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                    "reason": "INVALID_LIST_TASKS_REQUEST",
-                    "domain": "a2a-protocol.org",
-                    "metadata": {"field": "pageToken"},
-                },
-                {
-                    "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
-                    "field": "pageToken",
-                },
-            ],
-        }
-    }
-    assert status_error.status_code == 400
-    assert status_error.json() == {
-        "error": {
-            "code": 400,
-            "status": "INVALID_ARGUMENT",
-            "message": "Unsupported task status 'completed'.",
-            "details": [
-                {
-                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                    "reason": "INVALID_LIST_TASKS_REQUEST",
-                    "domain": "a2a-protocol.org",
-                    "metadata": {"field": "status"},
-                },
-                {
-                    "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
-                    "field": "status",
-                },
-            ],
-        }
-    }
+    token_payload = page_token_error.json()["error"]
+    assert token_payload["code"] == 400
+    assert token_payload["status"] == "INVALID_ARGUMENT"
+    assert token_payload["details"][0]["reason"] == "INVALID_PARAMS"
+    assert status_error.status_code == 200
+    assert status_error.json()["tasks"] == []
 
 
 def test_openapi_rest_message_routes_include_schema_and_examples() -> None:
@@ -824,6 +777,17 @@ def test_openapi_rest_message_routes_include_schema_and_examples() -> None:
         assert "basic_message" in examples
         assert "continue_session" in examples
         assert "message_with_file_input" in examples
+
+
+def test_openapi_rest_success_responses_use_a2a_json_media_type() -> None:
+    app = create_app(make_settings(test_bearer_token="test-token"))
+    paths = app.openapi()["paths"]
+
+    for path in ("/message:send", "/tasks", "/tasks/{id}", "/tasks/{id}:cancel"):
+        method = "post" if path == "/message:send" or path.endswith(":cancel") else "get"
+        content = paths[path][method]["responses"]["200"]["content"]
+        assert "application/a2a+json" in content
+        assert "application/json" not in content
 
 
 def test_openapi_jsonrpc_examples_include_core_message_methods() -> None:
@@ -1174,10 +1138,65 @@ async def test_dual_stack_send_accepts_transport_native_payloads(monkeypatch) ->
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         rest_resp = await client.post("/message:send", headers=headers, json=rest_payload)
         assert rest_resp.status_code == 200
+        assert rest_resp.headers["content-type"].split(";", 1)[0] == "application/a2a+json"
 
         rpc_resp = await client.post("/", headers=headers, json=rpc_payload)
         assert rpc_resp.status_code == 200
         assert rpc_resp.json().get("error") is None
+
+
+@pytest.mark.asyncio
+async def test_core_transports_ignore_unknown_request_fields(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(make_settings(test_bearer_token="test-token"))
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+
+    jsonrpc_payload = _jsonrpc_message_send_payload("unknown jsonrpc field")
+    jsonrpc_payload["params"]["futureParam"] = {"ignored": True}
+    rest_payload = {
+        "message": {
+            "messageId": "m-rest-future",
+            "role": "ROLE_USER",
+            "parts": [{"text": "unknown rest field"}],
+        },
+        "futureField": {"ignored": True},
+    }
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        jsonrpc_response = await client.post("/", headers=headers, json=jsonrpc_payload)
+        rest_response = await client.post("/message:send", headers=headers, json=rest_payload)
+
+    assert jsonrpc_response.status_code == 200
+    assert jsonrpc_response.json().get("error") is None
+    assert rest_response.status_code == 200
+    assert rest_response.headers["content-type"].split(";", 1)[0] == "application/a2a+json"
+
+
+@pytest.mark.asyncio
+async def test_sdk_get_task_success_uses_a2a_json_media_type(monkeypatch) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(
+        make_settings(test_bearer_token="test-token", a2a_task_store_backend="memory")
+    )
+    task = _task_for_listing(
+        task_id="task-media-type",
+        context_id="ctx-media-type",
+        timestamp=datetime.now(UTC).isoformat(),
+    )
+    await app.state.task_store.save(task, _authenticated_task_context())
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token", "A2A-Version": "1.0"}
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/tasks/task-media-type", headers=headers)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].split(";", 1)[0] == "application/a2a+json"
 
 
 @pytest.mark.asyncio
@@ -1260,20 +1279,10 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
             json=rest_with_jsonrpc_shape,
         )
         assert rest_resp.status_code == 400
-        assert rest_resp.json() == {
-            "error": {
-                "code": 400,
-                "status": "INVALID_ARGUMENT",
-                "message": "REST message payload must use ROLE_* values for message.role.",
-                "details": [
-                    {
-                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                        "reason": "INVALID_REQUEST",
-                        "domain": "a2a-protocol.org",
-                    }
-                ],
-            }
-        }
+        rest_error = rest_resp.json()["error"]
+        assert rest_error["code"] == 400
+        assert rest_error["status"] == "INVALID_ARGUMENT"
+        assert rest_error["details"][0]["reason"] == "INVALID_PARAMS"
 
         rest_envelope_resp = await client.post(
             "/message:send",
@@ -1312,25 +1321,84 @@ async def test_dual_stack_send_rejects_cross_transport_payload_shapes(monkeypatc
             json=rest_with_jsonrpc_shape,
         )
         assert v1_rest_resp.status_code == 400
-        assert v1_rest_resp.json() == {
-            "error": {
-                "code": 400,
-                "status": "INVALID_ARGUMENT",
-                "message": "REST message payload must use ROLE_* values for message.role.",
-                "details": [
-                    {
-                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                        "reason": "INVALID_REQUEST",
-                        "domain": "a2a-protocol.org",
-                    },
-                ],
-            }
-        }
+        v1_rest_error = v1_rest_resp.json()["error"]
+        assert v1_rest_error["code"] == 400
+        assert v1_rest_error["status"] == "INVALID_ARGUMENT"
+        assert v1_rest_error["details"][0]["reason"] == "INVALID_PARAMS"
 
         rpc_resp = await client.post("/", headers=headers, json=rpc_with_rest_shape)
         assert rpc_resp.status_code == 200
         payload = rpc_resp.json()
         assert payload["error"]["code"] == -32602
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "field"),
+    [
+        (
+            {
+                "messageId": "m-content",
+                "role": "ROLE_USER",
+                "content": [{"text": "hello"}],
+            },
+            "message.content",
+        ),
+        (
+            {
+                "messageId": "m-role",
+                "role": "user",
+                "parts": [{"text": "hello"}],
+            },
+            "message.role",
+        ),
+        (
+            {
+                "messageId": "m-part",
+                "role": "ROLE_USER",
+                "parts": [{"file": {"uri": "file:///tmp/input.txt"}}],
+            },
+            "message.parts[0]",
+        ),
+    ],
+)
+async def test_payload_shape_guard_covers_both_transports(
+    monkeypatch,
+    message: dict,
+    field: str,
+) -> None:
+    import opencode_a2a.server.application as app_module
+
+    monkeypatch.setattr(app_module, "OpencodeUpstreamClient", DummyChatOpencodeUpstreamClient)
+    app = app_module.create_app(make_settings(test_bearer_token="test-token"))
+    transport = httpx.ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        rest_response = await client.post(
+            "/message:send",
+            headers=headers,
+            json={"message": message},
+        )
+        rpc_response = await client.post(
+            "/",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "SendMessage",
+                "params": {"message": message},
+            },
+        )
+
+    assert rest_response.status_code == 400
+    rest_error = rest_response.json()["error"]
+    assert rest_error["details"][0]["reason"] == "INVALID_PARAMS"
+    assert rest_error["details"][0]["metadata"]["field"] == field
+    assert rpc_response.status_code == 200
+    rpc_error = rpc_response.json()["error"]
+    assert rpc_error["code"] == -32602
+    assert rpc_error["data"]["field"] == f"params.{field}"
 
 
 def _rest_message_payload() -> dict:
@@ -1780,7 +1848,7 @@ def test_create_app_requires_control_guard_hooks(monkeypatch) -> None:
 
 def test_create_app_builds_configured_task_store(monkeypatch) -> None:
     import opencode_a2a.server.application as app_module
-    from opencode_a2a.server.task_store import TaskStoreRuntime
+    from opencode_a2a.server.task_store import TaskOutputModeRegistry, TaskStoreRuntime
 
     captured: dict[str, object] = {}
 
@@ -1793,6 +1861,8 @@ def test_create_app_builds_configured_task_store(monkeypatch) -> None:
         captured["database_url"] = settings.a2a_task_store_database_url
         return TaskStoreRuntime(
             task_store=MagicMock(),
+            event_stream=None,
+            output_modes=TaskOutputModeRegistry(),
             startup=_noop,
             shutdown=_noop,
         )

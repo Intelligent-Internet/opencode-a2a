@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -177,11 +178,18 @@ def main() -> int:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     results, card = run_probes(args.base_url.rstrip("/"), token)
     failures = [result for result in results if result["status"] == "failed"]
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        parser.error("git executable is required to record the repository commit")
     report = {
         "schema_version": 1,
         "scope": "repository-owned-a2a-1.0-compatibility-probes",
         "sut_url": args.base_url,
-        "repo_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        # The git executable is resolved via shutil.which and invoked with a
+        # fixed argument list, so this is not untrusted input execution.
+        "repo_commit": subprocess.check_output(  # noqa: S603
+            [git_executable, "rev-parse", "HEAD"], text=True
+        ).strip(),
         "summary": {
             "passed": len(results) - len(failures),
             "failed": len(failures),

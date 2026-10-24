@@ -1,29 +1,43 @@
 from __future__ import annotations
 
-import asyncio
-import logging
-from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
+from a2a.server.cluster import (
+    ConcurrentTaskModificationError,
+    DatabaseTaskEventStream,
+    LegacyTaskStoreAdapter,
+    StoredTask,
+    TaskEventStream,
+    TaskVersion,
+    VersionedDatabaseTaskStore,
+    VersionedTaskStore,
+)
 from a2a.server.context import ServerCallContext
+from a2a.server.events import Event
+from a2a.server.tasks.copying_task_store import CopyingTaskStoreAdapter
 from a2a.server.tasks.database_task_store import DatabaseTaskStore
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.server.tasks.task_store import TaskStore
 from a2a.types import ListTasksRequest, ListTasksResponse, Task
+from a2a.utils.errors import A2AError
+from sqlalchemy import inspect
 from sqlalchemy.engine import make_url
 
 from ..config import Settings
+from ..output_modes import (
+    annotate_output_negotiation_metadata,
+    canonicalize_stream_artifacts,
+    extract_accepted_output_modes_from_metadata,
+    normalize_accepted_output_modes,
+)
 from ..task_states import TERMINAL_TASK_STATES
 from .context_helpers import normalize_server_call_context
 from .database import build_database_engine, redact_database_url_for_logs
-from .task_store_sdk_compat import DatabaseTaskStoreCompat
 
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncEngine
-
-logger = logging.getLogger(__name__)
+_SDK_TASK_COLUMNS = frozenset({"owner", "last_updated", "protocol_version"})
+_SDK_TASK_INDEX = "idx_tasks_owner_last_updated"
 
 
 class TaskStoreOperationError(RuntimeError):
@@ -34,244 +48,198 @@ class TaskStoreOperationError(RuntimeError):
         super().__init__(f"Task store {operation} failed for task_id={target}")
 
 
-@dataclass(frozen=True)
-class TaskPersistenceDecision:
-    persist: bool
-    reason: str | None = None
+class TaskOutputModeRegistry:
+    """Request-scoped output modes, persisted into Task metadata by the store wrapper."""
+
+    def __init__(self) -> None:
+        self._modes: dict[str, tuple[str, ...]] = {}
+
+    def remember(self, task_id: str, accepted_output_modes: Any) -> None:
+        normalized = normalize_accepted_output_modes(accepted_output_modes)
+        if normalized is None:
+            self._modes.pop(task_id, None)
+            return
+        self._modes[task_id] = normalized
+
+    def resolve(self, task_id: str, task: Task | None = None) -> tuple[str, ...] | None:
+        if task_id in self._modes:
+            return self._modes[task_id]
+        if task is None:
+            return None
+        return extract_accepted_output_modes_from_metadata(task.metadata)
+
+    def clear(self, task_id: str) -> None:
+        self._modes.pop(task_id, None)
 
 
-class TaskWritePolicy(ABC):
-    @abstractmethod
-    def evaluate(
+class NegotiatingVersionedTaskStore(VersionedTaskStore):
+    """Public VersionedTaskStore wrapper that persists output negotiation metadata."""
+
+    def __init__(
         self,
-        *,
-        existing: Task | None,
-        incoming: Task,
-    ) -> TaskPersistenceDecision: ...
-
-
-class FirstTerminalStateWinsPolicy(TaskWritePolicy):
-    """Treat terminal task snapshots as immutable once persisted."""
-
-    def evaluate(
-        self,
-        *,
-        existing: Task | None,
-        incoming: Task,
-    ) -> TaskPersistenceDecision:
-        if existing is None or existing.status.state not in TERMINAL_TASK_STATES:
-            return TaskPersistenceDecision(persist=True)
-        if incoming.status.state != existing.status.state:
-            return TaskPersistenceDecision(
-                persist=False,
-                reason="state_overwrite_after_terminal_persistence",
-            )
-        if incoming != existing:
-            return TaskPersistenceDecision(
-                persist=False,
-                reason="late_mutation_after_terminal_persistence",
-            )
-        return TaskPersistenceDecision(persist=True)
-
-
-class TaskStoreDecorator(TaskStore):
-    def __init__(self, inner: TaskStore) -> None:
+        inner: VersionedTaskStore,
+        output_modes: TaskOutputModeRegistry,
+    ) -> None:
         self._inner = inner
+        self._output_modes = output_modes
+        self._initialized = False
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._inner, name)
+    async def _ensure_initialized(self) -> None:
+        if self._initialized:
+            return
+        initialize = getattr(self._inner, "initialize", None)
+        if callable(initialize):
+            await initialize()
+        self._initialized = True
 
     async def save(
         self,
         task: Task,
-        context: ServerCallContext | None = None,
-    ) -> None:
-        await self._inner.save(task, _normalize_task_store_context(context))
-
-    async def get(
-        self,
-        task_id: str,
-        context: ServerCallContext | None = None,
-    ) -> Task | None:
-        return await self._inner.get(task_id, _normalize_task_store_context(context))
-
-    async def list(
-        self,
-        params: ListTasksRequest,
-        context: ServerCallContext | None = None,
-    ) -> ListTasksResponse:
-        return await self._inner.list(params, _normalize_task_store_context(context))
-
-    async def delete(
-        self,
-        task_id: str,
-        context: ServerCallContext | None = None,
-    ) -> None:
-        await self._inner.delete(task_id, _normalize_task_store_context(context))
-
-
-class TaskStoreOperationWrappingDecorator(TaskStoreDecorator):
-    async def save(
-        self,
-        task: Task,
-        context: ServerCallContext | None = None,
-    ) -> None:
+        *,
+        event: Event | None,
+        prev: Task | None,
+        prev_version: TaskVersion,
+        context: ServerCallContext,
+    ) -> TaskVersion:
+        await self._ensure_initialized()
         normalized_context = _normalize_task_store_context(context)
+        canonical_task = canonicalize_stream_artifacts(task)
+        accepted = self._output_modes.resolve(task.id, canonical_task)
+        negotiated_task = annotate_output_negotiation_metadata(canonical_task, accepted)
+        negotiated_event = annotate_output_negotiation_metadata(event, accepted)
         try:
-            await self._inner.save(task, normalized_context)
+            saved_version = await self._inner.save(
+                cast(Task, negotiated_task),
+                event=cast(Event | None, negotiated_event),
+                prev=prev,
+                prev_version=prev_version,
+                context=normalized_context,
+            )
         except TaskStoreOperationError:
+            raise
+        except ConcurrentTaskModificationError:
+            raise
+        except A2AError:
             raise
         except Exception as exc:
             raise TaskStoreOperationError("save", task.id) from exc
+        if task.status.state in TERMINAL_TASK_STATES:
+            self._output_modes.clear(task.id)
+        return saved_version
 
     async def get(
         self,
         task_id: str,
-        context: ServerCallContext | None = None,
-    ) -> Task | None:
-        normalized_context = _normalize_task_store_context(context)
+        context: ServerCallContext,
+    ) -> StoredTask | None:
+        await self._ensure_initialized()
         try:
-            return await self._inner.get(task_id, normalized_context)
+            stored = await self._inner.get(task_id, _normalize_task_store_context(context))
         except TaskStoreOperationError:
+            raise
+        except A2AError:
             raise
         except Exception as exc:
             raise TaskStoreOperationError("get", task_id) from exc
+        return stored
 
     async def list(
         self,
         params: ListTasksRequest,
-        context: ServerCallContext | None = None,
+        context: ServerCallContext,
+    ) -> ListTasksResponse:
+        await self._ensure_initialized()
+        try:
+            return await self._inner.list(params, _normalize_task_store_context(context))
+        except TaskStoreOperationError:
+            raise
+        except A2AError:
+            raise
+        except Exception as exc:
+            raise TaskStoreOperationError("list", None) from exc
+
+    async def delete(self, task_id: str, context: ServerCallContext) -> None:
+        await self._ensure_initialized()
+        try:
+            await self._inner.delete(task_id, _normalize_task_store_context(context))
+        except TaskStoreOperationError:
+            raise
+        except A2AError:
+            raise
+        except Exception as exc:
+            raise TaskStoreOperationError("delete", task_id) from exc
+        self._output_modes.clear(task_id)
+
+
+class NegotiatingTaskStore(TaskStore):
+    """TaskStore wrapper for process-local stores that persists output modes."""
+
+    def __init__(
+        self,
+        inner: TaskStore,
+        output_modes: TaskOutputModeRegistry,
+    ) -> None:
+        self._inner = inner
+        self._output_modes = output_modes
+
+    async def save(self, task: Task, context: ServerCallContext) -> None:
+        normalized_context = _normalize_task_store_context(context)
+        canonical_task = canonicalize_stream_artifacts(task)
+        accepted = self._output_modes.resolve(task.id, canonical_task)
+        negotiated_task = annotate_output_negotiation_metadata(canonical_task, accepted)
+        try:
+            await self._inner.save(cast(Task, negotiated_task), normalized_context)
+        except TaskStoreOperationError:
+            raise
+        except A2AError:
+            raise
+        except Exception as exc:
+            raise TaskStoreOperationError("save", task.id) from exc
+        if task.status.state in TERMINAL_TASK_STATES:
+            self._output_modes.clear(task.id)
+
+    async def get(self, task_id: str, context: ServerCallContext) -> Task | None:
+        try:
+            task = await self._inner.get(task_id, _normalize_task_store_context(context))
+        except TaskStoreOperationError:
+            raise
+        except A2AError:
+            raise
+        except Exception as exc:
+            raise TaskStoreOperationError("get", task_id) from exc
+        return task
+
+    async def list(
+        self,
+        params: ListTasksRequest,
+        context: ServerCallContext,
     ) -> ListTasksResponse:
         try:
             return await self._inner.list(params, _normalize_task_store_context(context))
         except TaskStoreOperationError:
             raise
+        except A2AError:
+            raise
         except Exception as exc:
             raise TaskStoreOperationError("list", None) from exc
 
-    async def delete(
-        self,
-        task_id: str,
-        context: ServerCallContext | None = None,
-    ) -> None:
-        normalized_context = _normalize_task_store_context(context)
+    async def delete(self, task_id: str, context: ServerCallContext) -> None:
         try:
-            await self._inner.delete(task_id, normalized_context)
+            await self._inner.delete(task_id, _normalize_task_store_context(context))
         except TaskStoreOperationError:
+            raise
+        except A2AError:
             raise
         except Exception as exc:
             raise TaskStoreOperationError("delete", task_id) from exc
-
-
-class PolicyAwareTaskStore(TaskStoreDecorator):
-    def __init__(
-        self,
-        inner: TaskStore,
-        *,
-        write_policy: TaskWritePolicy | None = None,
-    ) -> None:
-        super().__init__(inner)
-        self._write_policy = write_policy or FirstTerminalStateWinsPolicy()
-        self._save_lock = asyncio.Lock()
-
-    async def save(
-        self,
-        task: Task,
-        context: ServerCallContext | None = None,
-    ) -> None:
-        normalized_context = _normalize_task_store_context(context)
-        raw_task_store = unwrap_task_store(self._inner)
-        if isinstance(raw_task_store, DatabaseTaskStore):
-            await self._save_database_task(raw_task_store, task, normalized_context)
-            return
-        await self._save_with_read_before_write(task, normalized_context)
-
-    async def _save_with_read_before_write(
-        self,
-        task: Task,
-        context: ServerCallContext,
-    ) -> None:
-        async with self._save_lock:
-            existing = await self._inner.get(task.id, context)
-            decision = self._write_policy.evaluate(existing=existing, incoming=task)
-            self._log_terminal_persistence_decision(
-                existing=existing,
-                incoming=task,
-                decision=decision,
-            )
-            if not decision.persist:
-                return
-            await self._inner.save(task, context)
-
-    async def _save_database_task(
-        self,
-        task_store: DatabaseTaskStore,
-        task: Task,
-        context: ServerCallContext,
-    ) -> None:
-        compat = DatabaseTaskStoreCompat(task_store)
-        try:
-            if await compat.atomic_save(task, context):
-                return
-            existing = await compat.load_task(task.id, context)
-            decision = self._write_policy.evaluate(existing=existing, incoming=task)
-            self._log_terminal_persistence_decision(
-                existing=existing,
-                incoming=task,
-                decision=decision,
-            )
-            if not decision.persist:
-                return
-            if (
-                existing is not None
-                and existing.status.state in TERMINAL_TASK_STATES
-                and existing == task
-            ):
-                return
-            raise RuntimeError(
-                "Atomic task persistence was skipped without an authoritative terminal task."
-            )
-        except TaskStoreOperationError:
-            raise
-        except Exception as exc:
-            raise TaskStoreOperationError("save", task.id) from exc
-
-    def _log_terminal_persistence_decision(
-        self,
-        *,
-        existing: Task | None,
-        incoming: Task,
-        decision: TaskPersistenceDecision,
-    ) -> None:
-        if existing is None or existing.status.state not in TERMINAL_TASK_STATES:
-            return
-        logger.warning(
-            "Received task persistence after terminal state task_id=%s existing_state=%s "
-            "incoming_state=%s persist=%s reason=%s",
-            incoming.id,
-            existing.status.state,
-            incoming.status.state,
-            decision.persist,
-            decision.reason or "accepted_duplicate",
-        )
-
-
-class GuardedTaskStore(PolicyAwareTaskStore):
-    def __init__(
-        self,
-        inner: TaskStore,
-        *,
-        write_policy: TaskWritePolicy | None = None,
-    ) -> None:
-        super().__init__(
-            TaskStoreOperationWrappingDecorator(inner),
-            write_policy=write_policy,
-        )
+        self._output_modes.clear(task_id)
 
 
 @dataclass(slots=True)
 class TaskStoreRuntime:
-    task_store: TaskStore
+    task_store: TaskStore | VersionedTaskStore
+    event_stream: TaskEventStream | None
+    output_modes: TaskOutputModeRegistry
     startup: Callable[[], Awaitable[None]]
     shutdown: Callable[[], Awaitable[None]]
 
@@ -280,27 +248,42 @@ async def _noop() -> None:
     return None
 
 
+def as_versioned_task_store(
+    task_store: TaskStore | VersionedTaskStore,
+) -> VersionedTaskStore:
+    if isinstance(task_store, VersionedTaskStore):
+        return task_store
+    return LegacyTaskStoreAdapter(task_store)
+
+
 def build_task_store_runtime(
     settings: Settings,
     *,
-    engine: AsyncEngine | None = None,
+    engine: Any | None = None,
 ) -> TaskStoreRuntime:
+    output_modes = TaskOutputModeRegistry()
     if settings.a2a_task_store_backend == "memory":
         return TaskStoreRuntime(
-            task_store=GuardedTaskStore(InMemoryTaskStore()),
+            task_store=CopyingTaskStoreAdapter(InMemoryTaskStore()),
+            event_stream=None,
+            output_modes=output_modes,
             startup=_noop,
             shutdown=_noop,
         )
 
     resolved_engine = engine or build_database_engine(settings)
-    raw_task_store = DatabaseTaskStore(engine=resolved_engine)
-    task_store = GuardedTaskStore(raw_task_store)
+    task_store = VersionedDatabaseTaskStore(
+        engine=resolved_engine,
+        create_table=True,
+        table_name="tasks",
+    )
+    raw_task_store = cast(DatabaseTaskStore, task_store.as_task_store)
+    event_stream = DatabaseTaskEventStream(engine=resolved_engine)
 
     async def _startup() -> None:
-        compat = DatabaseTaskStoreCompat(raw_task_store)
-        await compat.validate_schema()
-        await compat.initialize()
-        await compat.migrate_legacy_rows()
+        await _validate_database_shape(raw_task_store)
+        await task_store.initialize()
+        await event_stream.initialize()
 
     async def _shutdown() -> None:
         if engine is None:
@@ -308,16 +291,50 @@ def build_task_store_runtime(
 
     return TaskStoreRuntime(
         task_store=task_store,
+        event_stream=event_stream,
+        output_modes=output_modes,
         startup=_startup,
         shutdown=_shutdown,
     )
 
 
+async def _validate_database_shape(task_store: DatabaseTaskStore) -> None:
+    database_url = redact_database_url_for_logs(
+        task_store.engine.url.render_as_string(hide_password=True)
+    )
+    async with task_store.engine.begin() as conn:
+        await conn.run_sync(
+            lambda sync_conn: _validate_sdk_task_table(
+                sync_conn,
+                database_url=database_url,
+            )
+        )
+
+
+def _validate_sdk_task_table(connection: Any, *, database_url: str) -> None:
+    inspector = inspect(connection)
+    if "tasks" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("tasks")}
+    missing_columns = sorted(_SDK_TASK_COLUMNS - columns)
+    if missing_columns:
+        raise RuntimeError(
+            f"SDK task store schema is incomplete at {database_url}; missing columns: "
+            f"{', '.join(missing_columns)}. Run the upgraded SDK migration before startup."
+        )
+    indexes = {index["name"] for index in inspector.get_indexes("tasks")}
+    if _SDK_TASK_INDEX not in indexes:
+        raise RuntimeError(
+            f"SDK task store schema is incomplete at {database_url}; missing index: "
+            f"{_SDK_TASK_INDEX}. Run the upgraded SDK migration before startup."
+        )
+
+
 def build_task_store(
     settings: Settings,
     *,
-    engine: AsyncEngine | None = None,
-) -> TaskStore:
+    engine: Any | None = None,
+) -> TaskStore | VersionedTaskStore:
     return build_task_store_runtime(settings, engine=engine).task_store
 
 
@@ -334,27 +351,73 @@ def describe_lightweight_persistence_backend(settings: Settings) -> dict[str, st
     return summary
 
 
-def unwrap_task_store(task_store: TaskStore) -> TaskStore:
-    inner = getattr(task_store, "_inner", None)
-    if isinstance(inner, TaskStore):
+def unwrap_task_store(task_store: TaskStore | VersionedTaskStore) -> TaskStore | VersionedTaskStore:
+    if isinstance(task_store, VersionedDatabaseTaskStore):
+        return task_store.as_task_store
+    if isinstance(task_store, NegotiatingVersionedTaskStore):
+        return unwrap_task_store(task_store._inner)
+    inner = getattr(task_store, "_store", None)
+    if isinstance(inner, TaskStore | VersionedTaskStore):
         return unwrap_task_store(inner)
     return task_store
+
+
+async def initialize_task_store(task_store: TaskStore | VersionedTaskStore) -> None:
+    initialize = getattr(task_store, "initialize", None)
+    if callable(initialize):
+        await initialize()
+
+
+async def task_store_snapshot(
+    task_store: TaskStore | VersionedTaskStore,
+    task_id: str,
+    context: ServerCallContext | None = None,
+) -> StoredTask | None:
+    return await as_versioned_task_store(task_store).get(
+        task_id,
+        _normalize_task_store_context(context),
+    )
+
+
+async def task_store_get(
+    task_store: TaskStore | VersionedTaskStore,
+    task_id: str,
+    context: ServerCallContext | None = None,
+) -> Task | None:
+    stored = await task_store_snapshot(task_store, task_id, context)
+    return stored.task if stored is not None else None
+
+
+async def task_store_save(
+    task_store: TaskStore | VersionedTaskStore,
+    task: Task,
+    context: ServerCallContext | None = None,
+) -> TaskVersion:
+    await initialize_task_store(task_store)
+    normalized_context = _normalize_task_store_context(context)
+    versioned_store = as_versioned_task_store(task_store)
+    stored = await versioned_store.get(task.id, normalized_context)
+    return await versioned_store.save(
+        task,
+        event=None,
+        prev=stored.task if stored is not None else None,
+        prev_version=stored.version if stored is not None else TaskVersion.MISSING,
+        context=normalized_context,
+    )
+
+
+async def task_store_delete(
+    task_store: TaskStore | VersionedTaskStore,
+    task_id: str,
+    context: ServerCallContext | None = None,
+) -> None:
+    await as_versioned_task_store(task_store).delete(
+        task_id,
+        _normalize_task_store_context(context),
+    )
 
 
 def _normalize_task_store_context(
     context: ServerCallContext | None,
 ) -> ServerCallContext:
     return normalize_server_call_context(context)
-
-
-async def initialize_task_store(task_store: TaskStore) -> None:
-    raw_task_store = unwrap_task_store(task_store)
-    if isinstance(raw_task_store, DatabaseTaskStore):
-        compat = DatabaseTaskStoreCompat(raw_task_store)
-        await compat.validate_schema()
-        await compat.initialize()
-        await compat.migrate_legacy_rows()
-        return
-    initialize = getattr(task_store, "initialize", None)
-    if callable(initialize):
-        await initialize()

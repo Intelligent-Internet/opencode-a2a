@@ -7,6 +7,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ...contracts.extensions import PROVIDER_DISCOVERY_ERROR_BUSINESS_CODES
+from ...opencode_upstream_client import UpstreamContractError
 from ..dispatch import ExtensionHandlerContext
 from ..error_responses import invalid_params_error
 from ..methods import (
@@ -93,7 +94,8 @@ async def handle_provider_discovery_request(
     )
     if upstream_error is not None:
         return upstream_error
-    assert raw_result is not None
+    if raw_result is None:
+        raise UpstreamContractError("OpenCode provider discovery returned no payload")
 
     try:
         raw_providers, default_by_provider, connected = _extract_provider_catalog(raw_result)

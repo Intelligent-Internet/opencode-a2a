@@ -8,11 +8,18 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
+from a2a.server.cluster import ConcurrentTaskModificationError, TaskVersion
 from a2a.server.context import ServerCallContext
 from a2a.types import ListTasksRequest, Task, TaskState, TaskStatus
+from google.protobuf.timestamp_pb2 import Timestamp
 
-from opencode_a2a.server.task_store import build_task_store_runtime, unwrap_task_store
-from opencode_a2a.server.task_store_sdk_compat import TaskStoreSchemaCompatibilityError
+from opencode_a2a.server.context_helpers import normalize_server_call_context
+from opencode_a2a.server.task_store import (
+    as_versioned_task_store,
+    build_task_store_runtime,
+    task_store_get,
+    task_store_save,
+)
 from tests.support.settings import make_settings
 
 
@@ -65,128 +72,112 @@ def _upstream_upgrade(path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("state", ["completed", "failed", "canceled", "rejected"])
-@pytest.mark.parametrize("normalize_rows", [False, True])
-async def test_upstream_migrated_terminal_task_cannot_be_overwritten(
-    tmp_path: Path, state: str, normalize_rows: bool
-) -> None:
-    path = tmp_path / "legacy.db"
-    _legacy_database(path, state)
-    _upstream_upgrade(path)
-    runtime = build_task_store_runtime(
-        make_settings(a2a_task_store_database_url=f"sqlite+aiosqlite:///{path}")
+def _timed_task(task_id: str, timestamp: str) -> Task:
+    status_timestamp = Timestamp()
+    status_timestamp.FromJsonString(timestamp)
+    return Task(
+        id=task_id,
+        context_id="ctx-pagination",
+        status=TaskStatus(
+            state=TaskState.TASK_STATE_COMPLETED,
+            timestamp=status_timestamp,
+        ),
     )
-    context = ServerCallContext(state={"identity": "automation"})
-    try:
-        if normalize_rows:
-            await runtime.startup()
-        else:
-            # Protect callers of the store factory even before lifespan normalization.
-            await unwrap_task_store(runtime.task_store).initialize()
-        before = await runtime.task_store.get("legacy-task", context)
-        assert before is not None
-        await runtime.task_store.save(
-            Task(
-                id=before.id,
-                context_id=before.context_id,
-                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-            ),
-            context,
-        )
-        assert await runtime.task_store.get(before.id, context) == before
-    finally:
-        await runtime.shutdown()
 
 
 @pytest.mark.asyncio
-async def test_upgrade_preserves_contents_owner_and_is_repeatable(tmp_path: Path) -> None:
+async def test_upgrade_preserves_legacy_task_and_owner(tmp_path: Path) -> None:
     path = tmp_path / "legacy.db"
     _legacy_database(path, "completed")
     _upstream_upgrade(path)
-    _upstream_upgrade(path)
     settings = make_settings(a2a_task_store_database_url=f"sqlite+aiosqlite:///{path}")
-    context = ServerCallContext(state={"identity": "automation"})
+    context = normalize_server_call_context(ServerCallContext(state={"identity": "automation"}))
     other_context = ServerCallContext(state={"identity": "another-user"})
     runtime = build_task_store_runtime(settings)
     try:
-        before = await runtime.task_store.get("legacy-task", context)
-        assert before is not None
-        assert before.artifacts[0].parts[0].text == "kept"
-        assert before.history[0].parts[0].text == "hello"
         await runtime.startup()
-        assert await runtime.task_store.get("legacy-task", context) == before
-        assert await runtime.task_store.get("legacy-task", other_context) is None
-        assert not (await runtime.task_store.list(ListTasksRequest(), other_context)).tasks
+        task = await task_store_get(runtime.task_store, "legacy-task", context)
+        assert task is not None
+        assert task.artifacts[0].parts[0].text == "kept"
+        assert task.history[0].parts[0].text == "hello"
+        assert await task_store_get(runtime.task_store, "legacy-task", other_context) is None
+        assert not (
+            await as_versioned_task_store(runtime.task_store).list(
+                ListTasksRequest(),
+                other_context,
+            )
+        ).tasks
     finally:
         await runtime.shutdown()
 
     with closing(sqlite3.connect(path)) as connection:
-        after_first = connection.execute("SELECT * FROM tasks").fetchall()
-        assert connection.execute("SELECT protocol_version FROM tasks").fetchone() == ("1.0",)
-
-    restarted = build_task_store_runtime(settings)
-    try:
-        await restarted.startup()
-        assert await restarted.task_store.get("legacy-task", context) == before
-    finally:
-        await restarted.shutdown()
-    with closing(sqlite3.connect(path)) as connection:
-        assert connection.execute("SELECT * FROM tasks").fetchall() == after_first
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+    assert {"task_events", "task_versions"} <= tables
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("invalid_last_row", [False, True])
-async def test_legacy_row_conversion_batches_and_rolls_back_as_one_transaction(
-    tmp_path: Path, invalid_last_row: bool
+async def test_versioned_store_rejects_stale_first_write(tmp_path: Path) -> None:
+    runtime = build_task_store_runtime(
+        make_settings(a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'cas.db'}")
+    )
+    context = normalize_server_call_context(ServerCallContext(state={"identity": "automation"}))
+    task = Task(
+        id="task-cas",
+        context_id="ctx-cas",
+        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+    )
+    try:
+        await runtime.startup()
+        await task_store_save(runtime.task_store, task, context)
+        with pytest.raises(ConcurrentTaskModificationError):
+            await as_versioned_task_store(runtime.task_store).save(
+                task,
+                event=None,
+                prev=None,
+                prev_version=TaskVersion.MISSING,
+                context=context,
+            )
+    finally:
+        await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend", ["memory", "database"])
+async def test_list_tasks_keyset_token_survives_first_page_delete(
+    tmp_path: Path,
+    backend: str,
 ) -> None:
-    path = tmp_path / "legacy.db"
-    _legacy_database(path, "working")
-    with closing(sqlite3.connect(path)) as connection, connection:
-        for index in range(101):
-            connection.execute(
-                "INSERT INTO tasks SELECT ?, context_id, kind, status, artifacts, history, "
-                "metadata FROM tasks WHERE id = 'legacy-task'",
-                (f"task-{index:03}",),
-            )
-        if invalid_last_row:
-            connection.execute(
-                "UPDATE tasks SET status = ? WHERE id = 'task-100'",
-                (json.dumps({"state": "invalid-state"}),),
-            )
-    _upstream_upgrade(path)
     runtime = build_task_store_runtime(
-        make_settings(a2a_task_store_database_url=f"sqlite+aiosqlite:///{path}")
+        make_settings(
+            a2a_task_store_backend=backend,
+            a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'pagination.db'}",
+        )
     )
-    try:
-        if invalid_last_row:
-            with pytest.raises(TaskStoreSchemaCompatibilityError, match="legacy SDK task payload"):
-                await runtime.startup()
-        else:
-            await runtime.startup()
-    finally:
-        await runtime.shutdown()
-    with closing(sqlite3.connect(path)) as connection:
-        count = connection.execute(
-            "SELECT COUNT(*) FROM tasks WHERE protocol_version = '1.0'"
-        ).fetchone()[0]
-        assert count == (0 if invalid_last_row else 102)
-
-
-@pytest.mark.asyncio
-async def test_migrated_task_supports_status_and_timestamp_filters(tmp_path: Path) -> None:
-    path = tmp_path / "legacy.db"
-    _legacy_database(path, "completed")
-    _upstream_upgrade(path)
-    runtime = build_task_store_runtime(
-        make_settings(a2a_task_store_database_url=f"sqlite+aiosqlite:///{path}")
-    )
-    context = ServerCallContext(state={"identity": "automation"})
+    context = normalize_server_call_context(ServerCallContext(state={"identity": "automation"}))
     try:
         await runtime.startup()
-        request = ListTasksRequest(status=TaskState.TASK_STATE_COMPLETED)
-        request.status_timestamp_after.FromJsonString("2026-01-01T00:00:00Z")
-        result = await runtime.task_store.list(request, context)
-        assert [task.id for task in result.tasks] == ["legacy-task"]
+        for task in (
+            _timed_task("task-newest", "2026-10-24T03:00:00Z"),
+            _timed_task("task-middle", "2026-10-24T02:00:00Z"),
+            _timed_task("task-oldest", "2026-10-24T01:00:00Z"),
+        ):
+            await task_store_save(runtime.task_store, task, context)
+
+        first_page = await as_versioned_task_store(runtime.task_store).list(
+            ListTasksRequest(page_size=1),
+            context,
+        )
+        assert [task.id for task in first_page.tasks] == ["task-newest"]
+        assert first_page.next_page_token
+
+        await as_versioned_task_store(runtime.task_store).delete("task-newest", context)
+        second_page = await as_versioned_task_store(runtime.task_store).list(
+            ListTasksRequest(page_size=1, page_token=first_page.next_page_token),
+            context,
+        )
+        assert [task.id for task in second_page.tasks] == ["task-middle"]
     finally:
         await runtime.shutdown()

@@ -4,9 +4,11 @@ from pathlib import Path
 
 import httpx
 import pytest
+from a2a.server.context import ServerCallContext
 from a2a.types import Task, TaskState, TaskStatus
 
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
+from opencode_a2a.server.task_store import task_store_get, task_store_save
 from tests.support.session_extensions import _extension_headers
 from tests.support.settings import make_settings
 
@@ -163,7 +165,8 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
         executor = _executor_from_app(app1)
         upstream_client = app1.state._jsonrpc_app._upstream_client
 
-        await task_store.save(_task("task-1"))
+        context = ServerCallContext(state={"identity": "automation"})
+        await task_store_save(task_store, _task("task-1"), context)
         session_id, pending = await executor._session_manager.get_or_create_session(
             identity="user-1",
             context_id="ctx-1",
@@ -188,7 +191,7 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
         task_store = _task_store_from_app(app2)
         executor = _executor_from_app(app2)
 
-        restored_task = await task_store.get("task-1")
+        restored_task = await task_store_get(task_store, "task-1", context)
         assert restored_task is not None
         assert restored_task.id == "task-1"
 

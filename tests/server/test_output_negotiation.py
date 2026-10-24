@@ -4,8 +4,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a2a.server.context import ServerCallContext
-from a2a.server.events import EventConsumer, InMemoryQueueManager
-from a2a.server.tasks import TaskManager
 from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
@@ -23,6 +21,7 @@ from a2a.types import (
     TaskStatusUpdateEvent,
     UnsupportedOperationError,
 )
+from google.protobuf.json_format import MessageToDict
 
 from opencode_a2a.a2a_utils import make_data_part
 from opencode_a2a.contracts.extensions import (
@@ -32,10 +31,10 @@ from opencode_a2a.contracts.extensions import (
     STREAMING_EXTENSION_URI,
 )
 from opencode_a2a.output_modes import (
-    NegotiatingResultAggregator,
     annotate_output_negotiation_metadata,
     apply_accepted_output_modes,
     build_output_negotiation_metadata,
+    canonicalize_stream_artifacts,
     extract_accepted_output_modes_from_metadata,
     normalize_accepted_output_modes,
 )
@@ -228,190 +227,39 @@ def test_annotate_output_negotiation_metadata_preserves_existing_event_metadata(
     assert annotated_artifact.metadata["shared"]["stream"]["block_type"] == "text"
 
 
-@pytest.mark.asyncio
-async def test_negotiating_result_aggregator_persists_metadata_for_artifact_first_flow() -> None:
-    store = _store()
-    task_manager = TaskManager(
-        context=ServerCallContext(),
-        task_id="task-artifact-first",
-        context_id="ctx-artifact-first",
-        task_store=store,
-        initial_message=None,
-    )
-    aggregator = NegotiatingResultAggregator(task_manager, ["text/plain"])
-    queue = await InMemoryQueueManager().create_or_tap("task-artifact-first")
-
-    await queue.enqueue_event(
-        TaskArtifactUpdateEvent(
-            task_id="task-artifact-first",
-            context_id="ctx-artifact-first",
-            artifact=Artifact(
-                artifact_id="artifact-1",
-                parts=[Part(text="hello")],
+def test_canonicalize_stream_artifacts_compacts_text_and_keeps_latest_tool_call() -> None:
+    task = Task(
+        id="task-stream",
+        context_id="ctx-stream",
+        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+        artifacts=[
+            Artifact(
+                artifact_id="text",
+                parts=[Part(text="hello "), Part(text="world")],
+                metadata={"shared": {"stream": {"block_type": "text"}}},
             ),
-            append=False,
-            last_chunk=False,
-        )
-    )
-    await queue.enqueue_event(
-        TaskStatusUpdateEvent(
-            task_id="task-artifact-first",
-            context_id="ctx-artifact-first",
-            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
-        )
-    )
-
-    result, interrupted, bg_task = await aggregator.consume_and_break_on_interrupt(
-        EventConsumer(queue),
-        blocking=False,
-    )
-
-    assert interrupted is True
-    assert isinstance(result, Task)
-    assert bg_task is not None
-    assert extract_accepted_output_modes_from_metadata(result.metadata) == ("text/plain",)
-    assert result.artifacts is not None
-    assert [artifact.artifact_id for artifact in result.artifacts] == ["artifact-1"]
-
-    await bg_task
-    stored = await store.get("task-artifact-first", ServerCallContext())
-    assert stored is not None
-    assert extract_accepted_output_modes_from_metadata(stored.metadata) == ("text/plain",)
-
-
-@pytest.mark.asyncio
-async def test_negotiating_result_aggregator_compacts_stream_artifacts_for_persistence() -> None:
-    store = _store()
-    task_manager = TaskManager(
-        context=ServerCallContext(),
-        task_id="task-stream-compact",
-        context_id="ctx-stream-compact",
-        task_store=store,
-        initial_message=None,
-    )
-    aggregator = NegotiatingResultAggregator(task_manager, None)
-    queue = await InMemoryQueueManager().create_or_tap("task-stream-compact")
-    stream_metadata = {
-        "shared": {
-            "stream": {
-                "block_type": "text",
-                "message_id": "msg-stream-1",
-            }
-        }
-    }
-
-    await queue.enqueue_event(
-        TaskArtifactUpdateEvent(
-            task_id="task-stream-compact",
-            context_id="ctx-stream-compact",
-            artifact=Artifact(
-                artifact_id="task-stream-compact:stream:text",
-                parts=[Part(text="hello ")],
-                metadata=stream_metadata,
+            Artifact(
+                artifact_id="tool",
+                parts=[
+                    make_data_part({"state": "running"}),
+                    make_data_part({"state": "completed"}),
+                ],
+                metadata={"shared": {"stream": {"block_type": "tool_call"}}},
             ),
-            append=False,
-            last_chunk=False,
-        )
-    )
-    await queue.enqueue_event(
-        TaskArtifactUpdateEvent(
-            task_id="task-stream-compact",
-            context_id="ctx-stream-compact",
-            artifact=Artifact(
-                artifact_id="task-stream-compact:stream:text",
-                parts=[Part(text="world")],
-                metadata=stream_metadata,
+            Artifact(
+                artifact_id="static",
+                parts=[Part(text="first"), Part(text="second")],
             ),
-            append=True,
-            last_chunk=False,
-        )
-    )
-    await queue.enqueue_event(
-        TaskStatusUpdateEvent(
-            task_id="task-stream-compact",
-            context_id="ctx-stream-compact",
-            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
-        )
+        ],
     )
 
-    result = await aggregator.consume_all(EventConsumer(queue))
+    canonical = canonicalize_stream_artifacts(task)
 
-    assert isinstance(result, Task)
-    assert result.artifacts is not None
-    assert len(result.artifacts) == 1
-    assert result.artifacts[0].artifact_id == "task-stream-compact:stream:text"
-    assert result.artifacts[0].parts[0].text == "hello world"
-
-    stored = await store.get("task-stream-compact", ServerCallContext())
-    assert stored is not None
-    assert len(stored.artifacts) == 1
-    assert stored.artifacts[0].artifact_id == "task-stream-compact:stream:text"
-    assert stored.artifacts[0].parts[0].text == "hello world"
-
-
-@pytest.mark.asyncio
-async def test_negotiating_result_aggregator_persists_terminal_usage_with_final_artifact() -> None:
-    store = _store()
-    task_manager = TaskManager(
-        context=ServerCallContext(),
-        task_id="task-stream-terminal-contract",
-        context_id="ctx-stream-terminal-contract",
-        task_store=store,
-        initial_message=None,
-    )
-    aggregator = NegotiatingResultAggregator(task_manager, None)
-    queue = await InMemoryQueueManager().create_or_tap("task-stream-terminal-contract")
-    stream_metadata = {
-        "shared": {
-            "stream": {
-                "block_type": "text",
-                "message_id": "msg-stream-usage-1",
-            }
-        }
-    }
-
-    await queue.enqueue_event(
-        TaskArtifactUpdateEvent(
-            task_id="task-stream-terminal-contract",
-            context_id="ctx-stream-terminal-contract",
-            artifact=Artifact(
-                artifact_id="task-stream-terminal-contract:stream:text",
-                parts=[Part(text="final answer")],
-                metadata=stream_metadata,
-            ),
-            append=False,
-            last_chunk=True,
-        )
-    )
-    await queue.enqueue_event(
-        TaskStatusUpdateEvent(
-            task_id="task-stream-terminal-contract",
-            context_id="ctx-stream-terminal-contract",
-            status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
-            metadata={
-                "shared": {
-                    "usage": {
-                        "input_tokens": 9,
-                        "output_tokens": 3,
-                        "total_tokens": 12,
-                    }
-                }
-            },
-        )
-    )
-
-    result = await aggregator.consume_all(EventConsumer(queue))
-
-    assert isinstance(result, Task)
-    assert result.artifacts is not None
-    assert result.artifacts[0].parts[0].text == "final answer"
-    assert result.metadata["shared"]["usage"]["total_tokens"] == 12
-
-    stored = await store.get("task-stream-terminal-contract", ServerCallContext())
-    assert stored is not None
-    assert stored.artifacts is not None
-    assert stored.artifacts[0].parts[0].text == "final answer"
-    assert stored.metadata["shared"]["usage"]["total_tokens"] == 12
+    assert len(canonical.artifacts[0].parts) == 1
+    assert canonical.artifacts[0].parts[0].text == "hello world"
+    assert len(canonical.artifacts[1].parts) == 1
+    assert MessageToDict(canonical.artifacts[1].parts[0])["data"]["state"] == "completed"
+    assert len(canonical.artifacts[2].parts) == 2
 
 
 @pytest.mark.asyncio
@@ -425,7 +273,10 @@ async def test_on_get_task_applies_persisted_output_negotiation() -> None:
         agent_card=_agent_card(),
     )
 
-    result = await handler.on_get_task(GetTaskRequest(id="task-get"))
+    result = await handler.on_get_task(
+        GetTaskRequest(id="task-get"),
+        ServerCallContext(),
+    )
 
     assert result is not None
     assert extract_accepted_output_modes_from_metadata(result.metadata) == ("text/plain",)
@@ -450,7 +301,10 @@ async def test_subscribe_terminal_task_is_unsupported_before_output_negotiation(
     )
 
     with pytest.raises(UnsupportedOperationError):
-        async for _event in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-resub")):
+        async for _event in handler.on_subscribe_to_task(
+            SubscribeToTaskRequest(id="task-resub"),
+            ServerCallContext(),
+        ):
             pass
 
 

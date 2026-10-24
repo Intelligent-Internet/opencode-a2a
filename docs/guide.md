@@ -9,6 +9,7 @@ This guide covers configuration, authentication, API behavior, streaming re-subs
   - JSON-RPC (`POST /`)
 - Agent Card exposes both HTTP+JSON and JSON-RPC through `supportedInterfaces`.
 - HTTP+JSON REST endpoints are served at the root path (e.g. `/message:send`, `/tasks`). A2A 1.0 negotiates protocol version via the `A2A-Version` header, not a URL prefix, so the URL path carries no version segment.
+- Successful HTTP+JSON responses use `application/a2a+json`. Request payloads and examples remain JSON, while REST errors keep the AIP-193 `application/json` envelope.
 - Breaking change for earlier releases: versions through v1.1.2 served the HTTP+JSON surface under a `/v1` prefix. Deployments upgrading from those releases must repoint clients, reverse proxies, and any `/v1`-prefixed routes to the root paths.
 - The public Agent Card is intentionally slimmed to the minimum discovery surface; per-extension disclosure policy is defined in [`extension-specifications.md`](./extension-specifications.md).
 - Detailed provider-private contracts are served through the authenticated extended card endpoint `/extendedAgentCard`.
@@ -235,7 +236,7 @@ Deployment requirements:
 
 The runtime automatically applies lightweight schema migrations for its custom state tables and records the applied version in `a2a_schema_version`. Schema-version writes are idempotent across concurrent first-start races, pending preferred-session claims now persist absolute `expires_at` timestamps, legacy rows without `expires_at` are pruned during migration instead of being reconstructed from historical TTL assumptions, and the built-in path currently targets the local SQLite deployment profile without requiring Alembic.
 
-Database-backed task persistence also keeps the existing first-terminal-state-wins contract while tightening the SQLite path with an atomic terminal-write guard instead of relying only on process-local read-before-write checks.
+Database-backed task persistence uses the SDK `VersionedDatabaseTaskStore`: writes are ordered by version, stale writers fail with `ConcurrentTaskModificationError`, and events are recorded in the SDK `task_events` table for replay by `DatabaseTaskEventStream`. The supported deployment remains one application process with its own SQLite database.
 
 At startup, the runtime logs a concise persistence summary covering the active backend, the redacted database URL when applicable, the shared persistence scope, and whether the SQLite local durability profile is active.
 
@@ -1340,7 +1341,7 @@ If an SSE connection drops, use `GET /tasks/{task_id}:subscribe` to re-subscribe
 - Upstream interruption is best-effort: if upstream returns 404, network errors, or other HTTP errors, A2A cancellation still completes with `TaskState.TASK_STATE_CANCELED`.
 - Idempotency contract: repeated `CancelTask` on an already `canceled` task returns the current terminal task state without error.
 - Terminal subscribe contract: calling `SubscribeToTask` or `GET /tasks/{task_id}:subscribe` on a terminal task returns `UnsupportedOperationError`, as required by A2A 1.0.
-- Terminal persistence contract: once a terminal task snapshot is persisted, this service treats it as immutable. Producers must emit final text and artifact updates before the terminal event, and any final usage or stream metadata must be attached to that terminal event itself. Late terminal-state mutations are rejected by the task-store write policy.
+- Terminal lifecycle contract: the v2 handler treats a persisted terminal task as non-resumable and rejects follow-up messages and subscriptions; cancellation is rejected except for the documented idempotent response for an already `canceled` task. Producers must emit final text and artifact updates before the terminal event, and any final usage or stream metadata must be attached to that terminal event itself.
 - The cancellation idempotency enhancement is also declared under machine-readable `service_behaviors`. Terminal-task subscription rejection remains a core A2A 1.0 rule and is therefore not republished as a custom enhancement.
 - The service records process-local metrics for authenticated Prometheus scraping at `GET /metrics`; `A2A_METRICS_ENABLED=false` disables the endpoint. At `A2A_LOG_LEVEL=DEBUG`, the same updates are emitted as lightweight metric log records (`logger=opencode_a2a.execution.executor`):
   - `a2a_stream_requests_total`

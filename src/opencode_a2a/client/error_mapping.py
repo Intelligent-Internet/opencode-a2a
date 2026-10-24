@@ -22,6 +22,7 @@ from a2a.utils.errors import (
     UnsupportedOperationError,
     VersionNotSupportedError,
 )
+from google.protobuf.json_format import ParseError
 
 from .errors import (
     A2AAgentUnavailableError,
@@ -236,6 +237,11 @@ def map_operation_error(
 def map_agent_card_error(
     exc: AgentCardResolutionError | httpx.TimeoutException | httpx.TransportError | Exception,
 ) -> A2AClientError:
+    if isinstance(exc, ParseError):
+        return A2APeerProtocolError(
+            "Remote A2A peer returned an invalid agent card payload",
+            error_code="invalid_agent_card",
+        )
     if isinstance(exc, AgentCardResolutionError):
         if exc.status_code is not None:
             return map_http_error("agent-card/fetch", exc)
