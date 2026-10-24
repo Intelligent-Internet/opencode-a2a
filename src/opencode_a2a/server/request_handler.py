@@ -161,6 +161,8 @@ class OpencodeRequestHandler(DefaultRequestHandler):
             return None
         modes = self._modes_for_task(params.id, task=task)
         negotiated = self._negotiate(task, modes)
+        if not isinstance(negotiated, Task):
+            return None
         filtered = filter_negotiated_extensions_from_payload(
             negotiated,
             requested_extensions_from_call_context(context),

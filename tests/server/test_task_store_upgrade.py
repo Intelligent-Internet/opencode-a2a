@@ -121,9 +121,7 @@ async def test_upgrade_preserves_legacy_task_and_owner(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_versioned_store_rejects_stale_first_write(tmp_path: Path) -> None:
     runtime = build_task_store_runtime(
-        make_settings(
-            a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'cas.db'}"
-        )
+        make_settings(a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'cas.db'}")
     )
     context = normalize_server_call_context(ServerCallContext(state={"identity": "automation"}))
     task = Task(

@@ -684,7 +684,7 @@ async def test_push_notification_routes_are_explicitly_unsupported(monkeypatch) 
         response = await client.post(
             "/tasks/task-1/pushNotificationConfigs",
             headers={"Authorization": "Bearer test-token"},
-                json={"taskId": "task-1", "url": "https://example.com/hook"},
+            json={"taskId": "task-1", "url": "https://example.com/hook"},
         )
 
     assert response.status_code == 400
@@ -698,7 +698,7 @@ async def test_push_notification_routes_are_explicitly_unsupported(monkeypatch) 
                     "@type": "type.googleapis.com/google.rpc.ErrorInfo",
                     "reason": "PUSH_NOTIFICATION_NOT_SUPPORTED",
                     "domain": "a2a-protocol.org",
-                        "metadata": {},
+                    "metadata": {},
                 }
             ],
         }
@@ -786,8 +786,8 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
         del params, context
         return Message(
             message_id="m-server",
-                role=Role.ROLE_AGENT,
-                parts=[Part(text="server reply")],
+            role=Role.ROLE_AGENT,
+            parts=[Part(text="server reply")],
         )
 
     def _stream_failure(params, context=None):  # noqa: ANN001

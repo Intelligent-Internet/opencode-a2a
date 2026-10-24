@@ -582,8 +582,7 @@ def install_runtime_middlewares(
             body, token = await _get_request_body(request)
             payload = _parse_json_body(body)
             if is_rest_message and (
-                _looks_like_jsonrpc_envelope(payload)
-                or _looks_like_legacy_message_payload(payload)
+                _looks_like_jsonrpc_envelope(payload) or _looks_like_legacy_message_payload(payload)
             ):
                 return JSONResponse(
                     build_http_error_body(

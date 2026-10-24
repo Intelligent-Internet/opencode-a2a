@@ -162,8 +162,7 @@ async def test_direct_message_releases_active_task(runtime, streaming: bool) -> 
     try:
         if streaming:
             events = [
-                event
-                async for event in handler.on_message_send_stream(_request(), _context())
+                event async for event in handler.on_message_send_stream(_request(), _context())
             ]
             assert len(events) == 1
             assert isinstance(events[0], Message)

@@ -108,9 +108,10 @@ def test_describe_persistence_backend() -> None:
 
 
 def test_redact_database_url_for_logs() -> None:
-    assert redact_database_url_for_logs(
-        "sqlite+aiosqlite:///tasks.db?token=secret&pool_size=5"
-    ) == "sqlite+aiosqlite:/tasks.db?token=%2A%2A%2A&pool_size=5"
+    assert (
+        redact_database_url_for_logs("sqlite+aiosqlite:///tasks.db?token=secret&pool_size=5")
+        == "sqlite+aiosqlite:/tasks.db?token=%2A%2A%2A&pool_size=5"
+    )
 
 
 @pytest.mark.asyncio
