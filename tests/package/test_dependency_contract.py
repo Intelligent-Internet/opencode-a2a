@@ -1,6 +1,7 @@
 from importlib.metadata import requires
 
 from packaging.requirements import Requirement
+from packaging.version import Version
 
 
 def _runtime_requirement(name: str) -> Requirement:
@@ -17,3 +18,8 @@ def _runtime_requirement(name: str) -> Requirement:
 def test_installed_metadata_requests_sqlalchemy_asyncio() -> None:
     requirement = _runtime_requirement("sqlalchemy")
     assert "asyncio" in requirement.extras
+
+
+def test_installed_metadata_requests_certifi_security_floor() -> None:
+    requirement = _runtime_requirement("certifi")
+    assert Version("2026.10.19") in requirement.specifier
