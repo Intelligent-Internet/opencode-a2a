@@ -137,12 +137,15 @@ it becomes a trust concern.
 
 ### Release Integrity
 
-Every GitHub Release must ship a `SHA256SUMS` checksum manifest alongside the
-wheel and sdist artifacts so consumers can verify artifact integrity
-independently of the registry. `.github/workflows/publish.yml` regenerates
-`dist/SHA256SUMS` at publish time from the built assets (sorted by basename,
-`sha256sum -c` compatible) and uploads it as a release asset; existing assets
-are skipped idempotently.
+Every GitHub Release must ship a `SHA256SUMS` checksum manifest and a CycloneDX
+runtime SBOM alongside the wheel and sdist artifacts so consumers can verify
+artifact integrity and inspect the shipped component set independently of the
+registry. `.github/workflows/publish.yml` builds and audits artifacts in a
+read-only job, generates `dist/SHA256SUMS` from the build outputs (sorted by
+basename, `sha256sum -c` compatible), and transfers them to separate PyPI and
+GitHub Release jobs with only their required write permissions. Each publish
+job verifies the checksums before uploading; existing release assets are
+skipped idempotently.
 
 ## End-to-End Mapping: Remote A2A Input → OpenCode Side Effects
 

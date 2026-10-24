@@ -14,6 +14,7 @@ This repository wraps OpenCode as an A2A runtime. It exposes A2A HTTP+JSON and J
 - LLM provider keys are consumed by the `opencode` process. Prompt injection or indirect exfiltration attempts may still expose sensitive values.
 - Payload logging is opt-in. When `A2A_LOG_PAYLOADS=true`, operators should treat logs as potentially sensitive operational data.
 - This project does not ship host bootstrap or process-manager wrappers as an official product capability. Operators remain responsible for file permissions, secret storage, service users, and supervisor-specific hardening.
+- Release artifacts are built in a read-only job, audited, and checksummed before separate least-privilege PyPI and GitHub Release jobs can upload them. Releases include a CycloneDX runtime SBOM.
 
 ## Threat Model
 

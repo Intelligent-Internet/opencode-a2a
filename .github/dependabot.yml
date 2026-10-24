@@ -6,11 +6,70 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
     commit-message:
       prefix: "deps"
     labels:
       - "dependencies"
     groups:
-      uv-all-updates:
+      a2a-sdk:
+        patterns:
+          - "a2a-sdk"
+      runtime-framework:
+        patterns:
+          - "fastapi"
+          - "pydantic"
+          - "pydantic-settings"
+          - "sse-starlette"
+          - "starlette"
+          - "uvicorn"
+      tooling-and-transitive:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "a2a-sdk"
+          - "fastapi"
+          - "pydantic"
+          - "pydantic-settings"
+          - "sse-starlette"
+          - "starlette"
+          - "uvicorn"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+    groups:
+      pre-commit-hooks:
         patterns:
           - "*"

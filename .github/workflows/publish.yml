@@ -25,29 +25,30 @@ concurrency:
   group: publish-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  id-token: write
+permissions: {}
 
 jobs:
-  publish:
-    name: Build and Publish Release Artifacts
+  build-and-audit:
+    name: Build and Audit Release Artifacts
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6; pragma: allowlist secret
         with:
           fetch-depth: 0
+          persist-credentials: false
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6; pragma: allowlist secret
         with:
           python-version: "3.13"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7; pragma: allowlist secret
         with:
           enable-cache: false
 
@@ -60,13 +61,33 @@ jobs:
           --output-file /tmp/runtime-requirements.txt >/dev/null
 
       - name: Run runtime dependency vulnerability audit
-        run: uv run pip-audit --requirement /tmp/runtime-requirements.txt
+        run: >
+          uv run pip-audit --requirement /tmp/runtime-requirements.txt
+          --disable-pip --require-hashes --strict
+
+      - name: Export development requirements for vulnerability audit
+        run: >
+          uv export --format requirements.txt --extra dev --no-dev --locked --no-emit-project
+          --output-file /tmp/dev-requirements.txt >/dev/null
+
+      - name: Run development dependency vulnerability audit
+        run: >
+          uv run pip-audit --requirement /tmp/dev-requirements.txt
+          --disable-pip --require-hashes --strict
+
+      - name: Run build dependency vulnerability audit
+        run: >
+          uv run pip-audit --requirement requirements-build.txt
+          --disable-pip --require-hashes --strict
 
       - name: Clean previous build artifacts
         run: rm -rf build dist
 
       - name: Build package artifacts
-        run: uv build --no-sources
+        run: >
+          uv build --no-sources --force-pep517
+          --build-constraints requirements-build.txt
+          --require-hashes
 
       - name: Verify published version matches tag
         env:
@@ -101,14 +122,89 @@ jobs:
       - name: Smoke test sdist artifact
         run: bash ./scripts/smoke_test_built_cli.sh dist/opencode_a2a-*.tar.gz
 
+      - name: Generate runtime SBOM
+        run: >
+          uv run pip-audit --requirement /tmp/runtime-requirements.txt
+          --disable-pip --require-hashes --strict
+          --format cyclonedx-json --output dist/opencode-a2a.cdx.json
+
+      - name: Generate release checksums
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+
+          dist_dir = Path("dist")
+          assets = sorted(
+              path
+              for path in dist_dir.iterdir()
+              if path.is_file() and path.name != "SHA256SUMS"
+          )
+          lines = [
+              f"{hashlib.sha256(asset.read_bytes()).hexdigest()}  {asset.name}"
+              for asset in assets
+          ]
+          (dist_dir / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload verified release artifacts
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5; pragma: allowlist secret
+        with:
+          name: release-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-pypi:
+    name: Publish Verified Artifacts to PyPI
+    needs: build-and-audit
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_to_pypi }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download verified release artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5; pragma: allowlist secret
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Verify release checksums
+        run: cd dist && sha256sum -c SHA256SUMS
+
+      - name: Prepare PyPI distribution set
+        run: |
+          mkdir -p pypi-dist
+          cp dist/*.whl dist/*.tar.gz pypi-dist/
+
       - name: Publish to PyPI
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_to_pypi }}
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1; pragma: allowlist secret
+        with:
+          packages-dir: pypi-dist
+
+  sync-release:
+    name: Sync Verified GitHub Release
+    needs: build-and-audit
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.sync_github_release }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download verified release artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5; pragma: allowlist secret
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Verify release checksums
+        run: cd dist && sha256sum -c SHA256SUMS
 
       - name: Sync GitHub Release
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.sync_github_release }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
@@ -146,30 +242,11 @@ jobs:
 
           ensure_release
 
-          python - <<'PY'
-          import hashlib
-          from pathlib import Path
-
-          dist_dir = Path("dist")
-          lines = []
-          for asset in sorted(
-              (
-                  path
-                  for path in dist_dir.iterdir()
-                  if path.is_file() and path.name.endswith((".whl", ".tar.gz"))
-              ),
-              key=lambda item: item.name,
-          ):
-              digest = hashlib.sha256(asset.read_bytes()).hexdigest()
-              lines.append(f"{digest}  {asset.name}")
-          (dist_dir / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
-          PY
-
           mapfile -t existing_assets < <(
             retry 3 5 gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name'
           )
 
-          for asset in dist/*.tar.gz dist/*.whl dist/SHA256SUMS; do
+          for asset in dist/*.tar.gz dist/*.whl dist/*.cdx.json dist/SHA256SUMS; do
             asset_name="$(basename "$asset")"
             if printf '%s\n' "${existing_assets[@]}" | grep -Fxq "$asset_name"; then
               echo "Release asset already present: $asset_name"

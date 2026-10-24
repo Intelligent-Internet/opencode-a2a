@@ -1,7 +1,23 @@
-name: Review Development Dependencies
+name: Review Dependency Health
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/dependabot.yml"
+      - ".pre-commit-config.yaml"
+      - "pyproject.toml"
+      - "requirements-build.txt"
+      - "uv.lock"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/dependabot.yml"
+      - ".pre-commit-config.yaml"
+      - "pyproject.toml"
+      - "requirements-build.txt"
+      - "uv.lock"
   schedule:
     # 03:00 UTC on day-of-month 1
     - cron: "0 3 1 * *"
@@ -11,22 +27,35 @@ permissions:
 
 jobs:
   dependency-health:
-    name: Audit Development Dependencies
+    name: Audit Development and Build Dependencies
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6; pragma: allowlist secret
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6; pragma: allowlist secret
         with:
           python-version: "3.13"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7; pragma: allowlist secret
         with:
           enable-cache: false
 
       - name: Run dependency health checks
         run: bash ./scripts/dependency_health.sh
+        env:
+          DEPENDENCY_AUDIT_OUTPUT_DIR: dependency-audit
+
+      - name: Upload dependency audit reports
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5; pragma: allowlist secret
+        with:
+          name: dependency-audit
+          path: dependency-audit/
+          if-no-files-found: warn
+          retention-days: 30
