@@ -10,10 +10,24 @@ from pathlib import Path
 import pytest
 from a2a.server.context import ServerCallContext
 from a2a.types import ListTasksRequest, Task, TaskState, TaskStatus
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from opencode_a2a.server.task_store import build_task_store_runtime, unwrap_task_store
 from opencode_a2a.server.task_store_sdk_compat import TaskStoreSchemaCompatibilityError
 from tests.support.settings import make_settings
+
+
+def _timed_task(task_id: str, timestamp: str) -> Task:
+    status_timestamp = Timestamp()
+    status_timestamp.FromJsonString(timestamp)
+    return Task(
+        id=task_id,
+        context_id="ctx-pagination",
+        status=TaskStatus(
+            state=TaskState.TASK_STATE_COMPLETED,
+            timestamp=status_timestamp,
+        ),
+    )
 
 
 def _legacy_database(path: Path, state: str) -> None:
@@ -193,5 +207,41 @@ async def test_migrated_task_supports_status_and_timestamp_filters(tmp_path: Pat
         request.status_timestamp_after.FromJsonString("2026-01-01T00:00:00Z")
         result = await runtime.task_store.list(request, context)
         assert [task.id for task in result.tasks] == ["legacy-task"]
+    finally:
+        await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend", ["memory", "database"])
+async def test_list_tasks_keyset_token_survives_first_page_delete(
+    tmp_path: Path,
+    backend: str,
+) -> None:
+    runtime = build_task_store_runtime(
+        make_settings(
+            a2a_task_store_backend=backend,
+            a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'pagination.db'}",
+        )
+    )
+    context = ServerCallContext(state={"identity": "automation"})
+    try:
+        await runtime.startup()
+        for task in (
+            _timed_task("task-newest", "2026-10-24T03:00:00Z"),
+            _timed_task("task-middle", "2026-10-24T02:00:00Z"),
+            _timed_task("task-oldest", "2026-10-24T01:00:00Z"),
+        ):
+            await runtime.task_store.save(task, context)
+
+        first_page = await runtime.task_store.list(ListTasksRequest(page_size=1), context)
+        assert [task.id for task in first_page.tasks] == ["task-newest"]
+        assert first_page.next_page_token
+
+        await runtime.task_store.delete("task-newest", context)
+        second_page = await runtime.task_store.list(
+            ListTasksRequest(page_size=1, page_token=first_page.next_page_token),
+            context,
+        )
+        assert [task.id for task in second_page.tasks] == ["task-middle"]
     finally:
         await runtime.shutdown()
