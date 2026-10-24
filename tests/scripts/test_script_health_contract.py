@@ -8,6 +8,7 @@ DOCTOR_TEXT = Path("scripts/doctor.sh").read_text()
 CONFORMANCE_TEXT = Path("scripts/conformance.sh").read_text()
 DEPENDENCY_HEALTH_TEXT = Path("scripts/dependency_health.sh").read_text()
 HEALTH_COMMON_TEXT = Path("scripts/health_common.sh").read_text()
+HEALTH_COMMON_PATH = Path("scripts/health_common.sh").resolve()
 LINT_TEXT = Path("scripts/lint.sh").read_text()
 SMOKE_TEST_TEXT = Path("scripts/smoke_test_built_cli.sh").read_text()
 COVERAGE_GATE_TEXT = Path("scripts/check_coverage.py").read_text()
@@ -24,6 +25,39 @@ def test_shared_repo_health_prerequisites_live_in_common_helper() -> None:
     assert 'echo "[${label}] verify dependency compatibility"' in HEALTH_COMMON_TEXT
     assert "uv sync --all-extras --frozen" in HEALTH_COMMON_TEXT
     assert "uv pip check" in HEALTH_COMMON_TEXT
+
+
+def test_repo_state_fingerprint_tracks_tracked_and_untracked_changes(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("tracked-v1")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True)
+
+    def fingerprint() -> str:
+        return subprocess.check_output(
+            [
+                "bash",
+                "-c",
+                'source "$1"; repo_state_fingerprint',
+                "_",
+                str(HEALTH_COMMON_PATH),
+            ],
+            cwd=tmp_path,
+            text=True,
+        ).strip()
+
+    initial = fingerprint()
+    tracked.write_text("tracked-v2")
+    tracked_changed = fingerprint()
+    assert tracked_changed != initial
+
+    untracked = tmp_path / "untracked.txt"
+    untracked.write_text("untracked-v1")
+    untracked_added = fingerprint()
+    assert untracked_added != tracked_changed
+
+    untracked.write_text("untracked-v2")
+    assert fingerprint() != untracked_added
 
 
 def test_doctor_keeps_local_regression_scope() -> None:
