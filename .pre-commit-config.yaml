@@ -1,13 +1,13 @@
 minimum_pre_commit_version: 4.5.1
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: 2c9f875913ee60ca25ce70243dc24d5b6415598c # frozen: v4.6.0 # pragma: allowlist secret
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.11.0.1
+    rev: 745eface02aef23e168a8afb6b5737818efbea95 # frozen: v0.11.0.1 # pragma: allowlist secret
     hooks:
       - id: shellcheck
         args: ["--severity=error"]
@@ -28,7 +28,7 @@ repos:
         types_or: [python, pyi, jupyter, markdown]
         require_serial: true
   - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.5.0
+    rev: 01886c8a910c64595c47f186ca1ffc0b77fa5458 # frozen: v1.5.0 # pragma: allowlist secret
     hooks:
       - id: detect-secrets
         args: ["--baseline", ".secrets.baseline"]

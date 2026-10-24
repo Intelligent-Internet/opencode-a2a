@@ -47,7 +47,7 @@ Run the default validation baseline before opening a PR:
 bash ./scripts/doctor.sh
 ```
 
-`doctor.sh` is the primary repository validation entrypoint. It currently runs locked-environment sync, dependency compatibility checks, `pre-commit`, `mypy`, `pytest`, the repository coverage gate, package build, and a built-wheel smoke test.
+`doctor.sh` is the primary repository validation entrypoint. It currently runs locked-environment sync, dependency compatibility checks, `pre-commit`, `mypy`, `pytest`, the repository coverage gate, a hash-locked PEP 517 package build, and a built-wheel smoke test.
 
 Ruff runs with the `S` (flake8-bandit) security rules enabled for shipped code. `tests/**` is exempt from `S` because test modules intentionally use asserts and fake credentials; do not widen that exemption beyond `tests/**`.
 
@@ -57,6 +57,10 @@ If you change shell scripts, also run `bash -n` on each modified script, for exa
 bash -n scripts/doctor.sh
 bash -n scripts/lint.sh
 ```
+
+If you change `[build-system]` in `pyproject.toml`, update
+`build-requirements/requirements.txt` in the same change. Release validation
+builds with that hash-pinned constraint file.
 
 Repository-owned black-box compatibility probes stay outside the default regression baseline. Run them when transport or A2A protocol behavior changes:
 
