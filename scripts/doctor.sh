@@ -48,7 +48,7 @@ run_doctor_package_phase() {
   echo "[doctor] build release artifacts"
   rm -f dist/opencode_a2a-*.whl dist/opencode_a2a-*.tar.gz
   uv build --no-sources --force-pep517 \
-    --build-constraints requirements-build.txt \
+    --build-constraints build-requirements/requirements.txt \
     --require-hashes
 
   echo "[doctor] smoke test built wheel"

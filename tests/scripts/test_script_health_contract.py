@@ -16,13 +16,14 @@ HEALTH_COMMON_TEXT = Path("scripts/health_common.sh").read_text()
 HEALTH_COMMON_PATH = Path("scripts/health_common.sh").resolve()
 LINT_TEXT = Path("scripts/lint.sh").read_text()
 SMOKE_TEST_TEXT = Path("scripts/smoke_test_built_cli.sh").read_text()
+RELEASE_TAG_SCRIPT_PATH = Path("scripts/validate_release_tag.sh").resolve()
 COVERAGE_GATE_TEXT = Path("scripts/check_coverage.py").read_text()
 THIN_WRAPPER_FINDER_TEXT = Path("scripts/find_thin_wrappers.py").read_text()
 SCRIPTS_INDEX_TEXT = Path("scripts/README.md").read_text()
 PYPROJECT_TEXT = Path("pyproject.toml").read_text()
 DEPENDABOT_TEXT = Path(".github/dependabot.yml").read_text()
 PRECOMMIT_TEXT = Path(".pre-commit-config.yaml").read_text()
-BUILD_REQUIREMENTS_TEXT = Path("requirements-build.txt").read_text()
+BUILD_REQUIREMENTS_TEXT = Path("build-requirements/requirements.txt").read_text()
 WORKFLOW_TEXTS = {
     path: path.read_text() for path in sorted(Path(".github/workflows").glob("*.yml"))
 }
@@ -70,6 +71,76 @@ def test_repo_state_fingerprint_tracks_tracked_and_untracked_changes(tmp_path: P
     assert fingerprint() != untracked_added
 
 
+def test_release_tag_validation_requires_existing_tag_at_checkout(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("release")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-qm",
+            "release",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "tag",
+            "-a",
+            "-m",
+            "release",
+            "v1.2.3",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    def validate(tag: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(RELEASE_TAG_SCRIPT_PATH), tag],
+            cwd=tmp_path,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    assert validate("v1.2.3").returncode == 0
+    assert validate("release/v1").returncode == 1
+    assert validate("v9.9.9").returncode == 1
+
+    tracked.write_text("next")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-qm",
+            "next",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+    mismatch = validate("v1.2.3")
+    assert mismatch.returncode == 1
+    assert "does not point to the checked-out commit" in mismatch.stderr
+
+
 def test_doctor_keeps_local_regression_scope() -> None:
     assert 'source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/health_common.sh"' in DOCTOR_TEXT
     assert 'run_shared_repo_health_prerequisites "doctor"' in DOCTOR_TEXT
@@ -87,7 +158,7 @@ def test_doctor_keeps_local_regression_scope() -> None:
     assert "uv run pytest" in DOCTOR_TEXT
     assert "uv run python ./scripts/check_coverage.py" in DOCTOR_TEXT
     assert "uv build --no-sources --force-pep517" in DOCTOR_TEXT
-    assert "--build-constraints requirements-build.txt" in DOCTOR_TEXT
+    assert "--build-constraints build-requirements/requirements.txt" in DOCTOR_TEXT
     assert "--require-hashes" in DOCTOR_TEXT
     assert "bash ./scripts/smoke_test_built_cli.sh dist/opencode_a2a-*.whl" in DOCTOR_TEXT
     assert "uv pip list --outdated" not in DOCTOR_TEXT
@@ -114,7 +185,7 @@ def test_dependency_health_keeps_dependency_review_scope() -> None:
     assert "--strict" in DEPENDENCY_HEALTH_TEXT
     assert "DEPENDENCY_AUDIT_OUTPUT_DIR" in DEPENDENCY_HEALTH_TEXT
     assert "--format json" in DEPENDENCY_HEALTH_TEXT
-    assert 'run_dependency_audit "build" "requirements-build.txt" "build"' in (
+    assert 'run_dependency_audit "build" "build-requirements/requirements.txt" "build"' in (
         DEPENDENCY_HEALTH_TEXT
     )
     assert "uv run pytest" not in DEPENDENCY_HEALTH_TEXT
@@ -137,11 +208,14 @@ def test_dependabot_configuration_separates_critical_and_routine_updates() -> No
     assert 'package-ecosystem: "uv"' in DEPENDABOT_TEXT
     assert 'package-ecosystem: "github-actions"' in DEPENDABOT_TEXT
     assert 'package-ecosystem: "pre-commit"' in DEPENDABOT_TEXT
-    assert "cooldown:" in DEPENDABOT_TEXT
+    assert 'package-ecosystem: "pip"' in DEPENDABOT_TEXT
+    assert 'directory: "/build-requirements"' in DEPENDABOT_TEXT
+    assert DEPENDABOT_TEXT.count("cooldown:") == 4
     assert "semver-major-days: 30" in DEPENDABOT_TEXT
     assert "a2a-sdk:" in DEPENDABOT_TEXT
     assert "runtime-framework:" in DEPENDABOT_TEXT
     assert "tooling-and-transitive:" in DEPENDABOT_TEXT
+    assert "build-system:" in DEPENDABOT_TEXT
     assert "uv-all-updates" not in DEPENDABOT_TEXT
 
 
@@ -163,6 +237,7 @@ def test_pre_commit_hooks_are_pinned_to_immutable_commits() -> None:
 
     assert revisions
     assert all(re.fullmatch(r"[0-9a-f]{40}", revision) for revision in revisions)
+    assert PRECOMMIT_TEXT.count("# frozen: v") == len(revisions)
 
 
 def test_build_dependencies_are_pinned_with_hashes() -> None:
@@ -203,10 +278,12 @@ def test_release_workflow_separates_privileged_publish_from_audited_build() -> N
     assert "needs: build-and-audit" in publish_text
     assert "publish-pypi:" in publish_text
     assert "sync-release:" in publish_text
+    assert "needs.publish-pypi.result" in publish_text
     assert "persist-credentials: false" in publish_text
     assert "contents: read" in publish_text
     assert "contents: write" in publish_text
     assert "id-token: write" in publish_text
+    assert 'bash ./scripts/validate_release_tag.sh "${RELEASE_TAG}"' in publish_text
     assert "Verify release checksums" in publish_text
     assert "packages-dir: pypi-dist" in publish_text
     assert "cyclonedx-json" in publish_text
@@ -216,7 +293,7 @@ def test_dependency_review_runs_for_dependency_manifest_changes() -> None:
     review_text = WORKFLOW_TEXTS[Path(".github/workflows/dependency-review.yml")]
     assert "pull_request:" in review_text
     assert '      - "pyproject.toml"' in review_text
-    assert '      - "requirements-build.txt"' in review_text
+    assert '      - "build-requirements/requirements.txt"' in review_text
     assert '      - "uv.lock"' in review_text
     assert "Upload dependency audit reports" in review_text
 

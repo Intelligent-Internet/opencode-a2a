@@ -73,3 +73,22 @@ updates:
       pre-commit-hooks:
         patterns:
           - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/build-requirements"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+    groups:
+      build-system:
+        patterns:
+          - "*"

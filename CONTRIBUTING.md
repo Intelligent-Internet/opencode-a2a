@@ -59,8 +59,8 @@ bash -n scripts/lint.sh
 ```
 
 If you change `[build-system]` in `pyproject.toml`, update
-`requirements-build.txt` in the same change. Release validation builds with
-that hash-pinned constraint file.
+`build-requirements/requirements.txt` in the same change. Release validation
+builds with that hash-pinned constraint file.
 
 Repository-owned black-box compatibility probes stay outside the default regression baseline. Run them when transport or A2A protocol behavior changes:
 

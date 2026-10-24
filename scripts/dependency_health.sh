@@ -38,4 +38,4 @@ run_dependency_audit() {
 }
 
 run_dependency_audit "dev" "${dev_requirements}" "dev"
-run_dependency_audit "build" "requirements-build.txt" "build"
+run_dependency_audit "build" "build-requirements/requirements.txt" "build"

@@ -36,21 +36,26 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6; pragma: allowlist secret
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6; pragma: allowlist secret
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.13"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7; pragma: allowlist secret
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: false
+
+      - name: Verify release tag matches checkout
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+        run: bash ./scripts/validate_release_tag.sh "${RELEASE_TAG}"
 
       - name: Run default regression baseline
         run: bash ./scripts/doctor.sh
@@ -77,7 +82,7 @@ jobs:
 
       - name: Run build dependency vulnerability audit
         run: >
-          uv run pip-audit --requirement requirements-build.txt
+          uv run pip-audit --requirement build-requirements/requirements.txt
           --disable-pip --require-hashes --strict
 
       - name: Clean previous build artifacts
@@ -86,7 +91,7 @@ jobs:
       - name: Build package artifacts
         run: >
           uv build --no-sources --force-pep517
-          --build-constraints requirements-build.txt
+          --build-constraints build-requirements/requirements.txt
           --require-hashes
 
       - name: Verify published version matches tag
@@ -148,7 +153,7 @@ jobs:
           PY
 
       - name: Upload verified release artifacts
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5; pragma: allowlist secret
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: release-dist
           path: dist/
@@ -165,7 +170,7 @@ jobs:
 
     steps:
       - name: Download verified release artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5; pragma: allowlist secret
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: release-dist
           path: dist
@@ -179,21 +184,29 @@ jobs:
           cp dist/*.whl dist/*.tar.gz pypi-dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1; pragma: allowlist secret
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           packages-dir: pypi-dist
 
   sync-release:
     name: Sync Verified GitHub Release
-    needs: build-and-audit
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.sync_github_release }}
+    needs:
+      - build-and-audit
+      - publish-pypi
+    if: >-
+      ${{
+        always()
+        && needs.build-and-audit.result == 'success'
+        && (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped')
+        && (github.event_name != 'workflow_dispatch' || inputs.sync_github_release)
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
       - name: Download verified release artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5; pragma: allowlist secret
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: release-dist
           path: dist
