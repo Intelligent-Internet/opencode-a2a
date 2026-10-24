@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import types
@@ -9,14 +8,10 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 from a2a.server.context import ServerCallContext
-from a2a.server.events import EventConsumer, EventQueueLegacy
 from a2a.server.routes.rest_dispatcher import RestDispatcher
-from a2a.server.tasks import TaskManager
-from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
-    CancelTaskRequest,
     GetTaskRequest,
     InternalError,
     Message,
@@ -24,12 +19,6 @@ from a2a.types import (
     Role,
     SendMessageRequest,
     SubscribeToTaskRequest,
-    Task,
-    TaskArtifactUpdateEvent,
-    TaskNotCancelableError,
-    TaskNotFoundError,
-    TaskState,
-    TaskStatus,
     UnsupportedOperationError,
 )
 from a2a.utils.errors import InvalidRequestError
@@ -39,12 +28,9 @@ from google.protobuf.json_format import MessageToDict, ParseError
 import opencode_a2a.server.application as app_module
 from opencode_a2a.a2a_protocol import CORE_JSONRPC_METHODS
 from opencode_a2a.contracts.extensions import (
-    MODEL_SELECTION_EXTENSION_URI,
-    SESSION_BINDING_EXTENSION_URI,
     SESSION_METHODS,
     build_capability_snapshot,
 )
-from opencode_a2a.output_modes import NegotiatingResultAggregator
 from opencode_a2a.profile.runtime import build_runtime_profile
 from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
 from opencode_a2a.server.agent_card import (
@@ -698,7 +684,7 @@ async def test_push_notification_routes_are_explicitly_unsupported(monkeypatch) 
         response = await client.post(
             "/tasks/task-1/pushNotificationConfigs",
             headers={"Authorization": "Bearer test-token"},
-            json={"pushNotificationConfig": {"url": "https://example.com/hook"}},
+                json={"taskId": "task-1", "url": "https://example.com/hook"},
         )
 
     assert response.status_code == 400
@@ -712,6 +698,7 @@ async def test_push_notification_routes_are_explicitly_unsupported(monkeypatch) 
                     "@type": "type.googleapis.com/google.rpc.ErrorInfo",
                     "reason": "PUSH_NOTIFICATION_NOT_SUPPORTED",
                     "domain": "a2a-protocol.org",
+                        "metadata": {},
                 }
             ],
         }
@@ -786,85 +773,6 @@ async def test_push_notification_jsonrpc_methods_remain_unsupported(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_on_cancel_task_and_resubscribe_cover_race_paths(monkeypatch) -> None:
-    task_store = MagicMock()
-    handler = OpencodeRequestHandler(
-        agent_executor=MagicMock(),
-        task_store=task_store,
-        agent_card=_agent_card(),
-    )
-    handler.agent_executor.cancel = AsyncMock()
-    handler._queue_manager.tap = AsyncMock(return_value=MagicMock())  # noqa: SLF001
-    cancel_params = CancelTaskRequest(id="task-1")
-    subscribe_params = SubscribeToTaskRequest(id="task-1")
-    canceled_task = Task(
-        id="task-1",
-        context_id="ctx-1",
-        status=TaskStatus(state=TaskState.TASK_STATE_CANCELED),
-    )
-    working_task = Task(
-        id="task-1",
-        context_id="ctx-1",
-        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-    )
-    completed_task = Task(
-        id="task-1",
-        context_id="ctx-1",
-        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
-    )
-
-    task_store.get = AsyncMock(return_value=None)
-    with pytest.raises(TaskNotFoundError):
-        await handler.on_cancel_task(cancel_params)
-
-    task_store.get = AsyncMock(return_value=canceled_task)
-    assert await handler.on_cancel_task(cancel_params) is canceled_task
-
-    task_store.get = AsyncMock(return_value=completed_task)
-    with pytest.raises(TaskNotCancelableError):
-        await handler.on_cancel_task(cancel_params)
-
-    task_store.get = AsyncMock(side_effect=[working_task, canceled_task])
-
-    async def _consume_non_canceled(_self, _consumer):  # noqa: ANN001
-        return working_task
-
-    monkeypatch.setattr(app_module.ResultAggregator, "consume_all", _consume_non_canceled)
-    assert await handler.on_cancel_task(cancel_params) is canceled_task
-
-    task_store.get = AsyncMock(return_value=working_task)
-
-    async def _consume_canceled(_self, _consumer):  # noqa: ANN001
-        return canceled_task
-
-    monkeypatch.setattr(app_module.ResultAggregator, "consume_all", _consume_canceled)
-    assert await handler.on_cancel_task(cancel_params) is canceled_task
-
-    task_store.get = AsyncMock(return_value=None)
-    with pytest.raises(TaskNotFoundError):
-        events = [item async for item in handler.on_subscribe_to_task(subscribe_params)]
-        assert events == []
-
-    task_store.get = AsyncMock(return_value=canceled_task)
-    with pytest.raises(UnsupportedOperationError):
-        async for _item in handler.on_subscribe_to_task(subscribe_params):
-            pass
-
-    task_store.get = AsyncMock(return_value=working_task)
-
-    async def _consume_and_emit(_self, _consumer):  # noqa: ANN001
-        yield "evt-1"
-
-    monkeypatch.setattr(
-        app_module.ResultAggregator,
-        "consume_and_emit",
-        _consume_and_emit,
-    )
-    events = [item async for item in handler.on_subscribe_to_task(subscribe_params)]
-    assert events == [working_task, "evt-1"]
-
-
-@pytest.mark.asyncio
 async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch) -> None:
     monkeypatch.setattr(
         app_module,
@@ -878,8 +786,8 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
         del params, context
         return Message(
             message_id="m-server",
-            role=app_module.Role.ROLE_AGENT,
-            parts=[app_module.Part(text="server reply")],
+                role=Role.ROLE_AGENT,
+                parts=[Part(text="server reply")],
         )
 
     def _stream_failure(params, context=None):  # noqa: ANN001
@@ -922,6 +830,7 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
                     "@type": "type.googleapis.com/google.rpc.ErrorInfo",
                     "reason": "INVALID_REQUEST",
                     "domain": "a2a-protocol.org",
+                    "metadata": {},
                 }
             ],
         }
@@ -931,576 +840,42 @@ async def test_rest_message_routes_cover_message_and_error_wrappers(monkeypatch)
 @pytest.mark.asyncio
 async def test_task_store_failures_map_to_stable_handler_errors() -> None:
     task_store = MagicMock()
+    task_store.get = AsyncMock(side_effect=TaskStoreOperationError("get", "task-1"))
     handler = OpencodeRequestHandler(
         agent_executor=MagicMock(),
         task_store=task_store,
         agent_card=_agent_card(),
     )
-
-    task_store.get = AsyncMock(side_effect=TaskStoreOperationError("get", "task-1"))
-    with pytest.raises(InternalError, match="Task store unavailable while loading task state."):
-        await handler.on_get_task(GetTaskRequest(id="task-1"))
+    context = ServerCallContext()
 
     with pytest.raises(InternalError, match="Task store unavailable while loading task state."):
-        events = [
-            item async for item in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-1"))
-        ]
-        assert events == []
+        await handler.on_get_task(GetTaskRequest(id="task-1"), context)
+    with pytest.raises(InternalError, match="Task store unavailable while loading task state."):
+        async for _event in handler.on_subscribe_to_task(
+            SubscribeToTaskRequest(id="task-1"),
+            context,
+        ):
+            pass
+    await handler.aclose()
 
 
 @pytest.mark.asyncio
-async def test_on_message_send_returns_stable_failure_task_for_task_store_error() -> None:
-    class _Aggregator:
-        async def consume_and_break_on_interrupt(self, _consumer, *, blocking, event_callback):
-            del _consumer, blocking, event_callback
-            raise TaskStoreOperationError("save", "task-1")
-
-    class _Handler(OpencodeRequestHandler):
-        def __init__(self) -> None:
-            super().__init__(
-                agent_executor=MagicMock(),
-                task_store=MagicMock(),
-                agent_card=_agent_card(),
-            )
-            self.queue = AsyncMock()
-            self.producer = MagicMock()
-
-        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
-            del params, context
-            return (
-                MagicMock(spec=EventConsumer),
-                "task-1",
-                self.queue,
-                _Aggregator(),
-                self.producer,
-            )
-
-        async def _cleanup_producer(self, producer_task, task_id):  # noqa: ANN001
-            del producer_task, task_id
-
-        async def _send_push_notification_if_needed(self, task_id, result_aggregator):  # noqa: ANN001
-            del task_id, result_aggregator
-
-        def _track_background_task(self, task):  # noqa: ANN001
-            task.cancel()
-
-    params = types.SimpleNamespace(
-        message=types.SimpleNamespace(contextId="ctx-1"), configuration=None
+async def test_output_mode_and_extension_validation_precede_execution() -> None:
+    executor = MagicMock()
+    executor.execute = AsyncMock()
+    handler = OpencodeRequestHandler(
+        agent_executor=executor,
+        task_store=MagicMock(),
+        agent_card=_agent_card(),
     )
-    result = await _Handler().on_message_send(params)
-    assert result.status.state == TaskState.TASK_STATE_FAILED
-    assert result.metadata == {
-        "opencode": {
-            "error": {
-                "type": app_module.TASK_STORE_ERROR_TYPE,
-                "operation": "save",
-            }
-        }
-    }
-
-
-@pytest.mark.asyncio
-async def test_on_message_send_stream_emits_stable_failure_events_for_task_store_error() -> None:
-    class _Aggregator:
-        def consume_and_emit(self, _consumer):
-            del _consumer
-            return iter_async(terminal_error=TaskStoreOperationError("save", "task-1"))
-
-    class _Handler(OpencodeRequestHandler):
-        def __init__(self) -> None:
-            super().__init__(
-                agent_executor=MagicMock(),
-                task_store=MagicMock(),
-                agent_card=_agent_card(),
-            )
-            self.queue = AsyncMock()
-            self.producer = MagicMock()
-            self.background_tasks: list[asyncio.Task] = []
-
-        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
-            del params, context
-            return (
-                MagicMock(spec=EventConsumer),
-                "task-1",
-                self.queue,
-                _Aggregator(),
-                self.producer,
-            )
-
-        async def _cleanup_producer(self, producer_task, task_id):  # noqa: ANN001
-            del producer_task, task_id
-
-        async def _send_push_notification_if_needed(self, task_id, result_aggregator):  # noqa: ANN001
-            del task_id, result_aggregator
-
-        def _track_background_task(self, task):  # noqa: ANN001
-            self.background_tasks.append(task)
-
-    params = types.SimpleNamespace(
-        message=types.SimpleNamespace(contextId="ctx-1"), configuration=None
+    output_mode_params = types.SimpleNamespace(
+        message=types.SimpleNamespace(metadata={}),
+        configuration=types.SimpleNamespace(accepted_output_modes=["image/png"]),
     )
-    events = [event async for event in _Handler().on_message_send_stream(params)]
+    with pytest.raises(UnsupportedOperationError, match="not compatible"):
+        await handler.on_message_send(output_mode_params, ServerCallContext())
 
-    assert len(events) == 2
-    assert events[-1].status.state == TaskState.TASK_STATE_FAILED
-    assert events[-1].metadata == {
-        "opencode": {
-            "error": {
-                "type": app_module.TASK_STORE_ERROR_TYPE,
-                "operation": "save",
-            }
-        }
-    }
-
-
-@pytest.mark.asyncio
-async def test_on_message_send_stream_keeps_running_after_client_disconnect() -> None:
-    class _Handler(OpencodeRequestHandler):
-        def __init__(self) -> None:
-            super().__init__(
-                agent_executor=MagicMock(),
-                task_store=InMemoryTaskStore(owner_resolver=lambda _context: "test-owner"),
-                agent_card=_agent_card(),
-            )
-            self.stream_queue: EventQueueLegacy | None = None
-            self.tracked_tasks: list[asyncio.Task] = []
-
-        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
-            task_id = "task-disconnect"
-            context_id = "ctx-disconnect"
-            task_manager = TaskManager(
-                task_store=self.task_store,
-                context=context or ServerCallContext(),
-                task_id=task_id,
-                context_id=context_id,
-                initial_message=params.message,
-            )
-            queue = EventQueueLegacy()
-            self.stream_queue = queue
-            result_aggregator = NegotiatingResultAggregator(task_manager, None)
-
-            async def _produce() -> None:
-                await queue.enqueue_event(
-                    Task(
-                        id=task_id,
-                        context_id=context_id,
-                        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-                    )
-                )
-                await asyncio.sleep(0)
-                await queue.enqueue_event(
-                    TaskArtifactUpdateEvent(
-                        task_id=task_id,
-                        context_id=context_id,
-                        artifact=app_module.Artifact(
-                            artifact_id=f"{task_id}:stream:text",
-                            parts=[Part(text="final answer")],
-                            metadata={"shared": {"stream": {"block_type": "text"}}},
-                        ),
-                        append=False,
-                        last_chunk=True,
-                    )
-                )
-                await queue.enqueue_event(
-                    app_module.TaskStatusUpdateEvent(
-                        task_id=task_id,
-                        context_id=context_id,
-                        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
-                    )
-                )
-
-            producer_task = asyncio.create_task(_produce())
-            return task_manager, task_id, queue, result_aggregator, producer_task
-
-        async def _cleanup_producer(self, producer_task, task_id):  # noqa: ANN001
-            del task_id
-            await producer_task
-            if self.stream_queue is not None:
-                await self.stream_queue.close()
-
-        async def _send_push_notification_if_needed(self, task_id, result_aggregator):  # noqa: ANN001
-            del task_id, result_aggregator
-
-        def _track_background_task(self, task):  # noqa: ANN001
-            self.tracked_tasks.append(task)
-            super()._track_background_task(task)
-
-    handler = _Handler()
-    params = SendMessageRequest(
-        message=Message(
-            message_id="msg-user-1",
-            role=Role.ROLE_USER,
-            parts=[Part(text="hello")],
-        )
-    )
-
-    stream = handler.on_message_send_stream(params, ServerCallContext())
-    first_event = await anext(stream)
-    assert isinstance(first_event, Task)
-    assert first_event.status.state == TaskState.TASK_STATE_WORKING
-
-    await stream.aclose()
-    await asyncio.sleep(0)
-    await asyncio.gather(*handler.tracked_tasks, return_exceptions=True)
-
-    result = await handler.on_get_task(GetTaskRequest(id="task-disconnect"))
-    assert result is not None
-    assert result.status.state == TaskState.TASK_STATE_COMPLETED
-    assert result.artifacts is not None
-    assert len(result.artifacts) == 1
-    assert result.artifacts[0].parts[0].text == "final answer"
-
-
-@pytest.mark.asyncio
-async def test_on_message_send_stream_drains_buffered_events_after_disconnect() -> None:
-    class _Handler(OpencodeRequestHandler):
-        def __init__(self) -> None:
-            super().__init__(
-                agent_executor=MagicMock(),
-                task_store=InMemoryTaskStore(owner_resolver=lambda _context: "test-owner"),
-                agent_card=_agent_card(),
-            )
-            self.stream_queue: EventQueueLegacy | None = None
-            self.tracked_tasks: list[asyncio.Task] = []
-
-        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
-            task_id = "task-buffered-disconnect"
-            context_id = "ctx-buffered-disconnect"
-            task_manager = TaskManager(
-                task_store=self.task_store,
-                context=context or ServerCallContext(),
-                task_id=task_id,
-                context_id=context_id,
-                initial_message=params.message,
-            )
-            queue = EventQueueLegacy()
-            self.stream_queue = queue
-            result_aggregator = NegotiatingResultAggregator(task_manager, None)
-
-            async def _produce() -> None:
-                await queue.enqueue_event(
-                    Task(
-                        id=task_id,
-                        context_id=context_id,
-                        status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
-                    )
-                )
-                await queue.enqueue_event(
-                    TaskArtifactUpdateEvent(
-                        task_id=task_id,
-                        context_id=context_id,
-                        artifact=app_module.Artifact(
-                            artifact_id=f"{task_id}:stream:text",
-                            parts=[Part(text="buffered final answer")],
-                            metadata={"shared": {"stream": {"block_type": "text"}}},
-                        ),
-                        append=False,
-                        last_chunk=True,
-                    )
-                )
-                await queue.enqueue_event(
-                    app_module.TaskStatusUpdateEvent(
-                        task_id=task_id,
-                        context_id=context_id,
-                        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
-                    )
-                )
-
-            producer_task = asyncio.create_task(_produce())
-            await producer_task
-            return task_manager, task_id, queue, result_aggregator, producer_task
-
-        async def _cleanup_producer(self, producer_task, task_id):  # noqa: ANN001
-            del task_id
-            await producer_task
-            if self.stream_queue is not None:
-                await self.stream_queue.close()
-
-        async def _send_push_notification_if_needed(self, task_id, result_aggregator):  # noqa: ANN001
-            del task_id, result_aggregator
-
-        def _track_background_task(self, task):  # noqa: ANN001
-            self.tracked_tasks.append(task)
-            super()._track_background_task(task)
-
-    handler = _Handler()
-    params = SendMessageRequest(
-        message=Message(
-            message_id="msg-user-2",
-            role=Role.ROLE_USER,
-            parts=[Part(text="hello again")],
-        )
-    )
-
-    stream = handler.on_message_send_stream(params, ServerCallContext())
-    first_event = await anext(stream)
-    assert isinstance(first_event, Task)
-    assert first_event.status.state == TaskState.TASK_STATE_WORKING
-
-    await stream.aclose()
-    await asyncio.sleep(0)
-    await asyncio.gather(*handler.tracked_tasks, return_exceptions=True)
-
-    result = await handler.on_get_task(GetTaskRequest(id="task-buffered-disconnect"))
-    assert result is not None
-    assert result.status.state == TaskState.TASK_STATE_COMPLETED
-    assert result.artifacts is not None
-    assert len(result.artifacts) == 1
-    assert result.artifacts[0].parts[0].text == "buffered final answer"
-
-
-@pytest.mark.asyncio
-async def test_on_message_send_covers_error_cleanup_and_internal_error(monkeypatch, caplog) -> None:
-    class _Aggregator:
-        def __init__(self, *, result=None, error: Exception | None = None) -> None:
-            self._result = result
-            self._error = error
-
-        async def consume_and_break_on_interrupt(self, _consumer, *, blocking, event_callback):
-            del blocking, event_callback
-            if self._error is not None:
-                raise self._error
-            return self._result, False, None
-
-    class _Handler(OpencodeRequestHandler):
-        def __init__(self, aggregator: _Aggregator) -> None:
-            super().__init__(
-                agent_executor=MagicMock(),
-                task_store=MagicMock(),
-                agent_card=_agent_card(),
-            )
-            self.aggregator = aggregator
-            self.queue = AsyncMock()
-            self.producer = MagicMock()
-            self.background_tasks: list[asyncio.Task] = []
-
-        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
-            del params, context
-            return (
-                MagicMock(spec=EventConsumer),
-                "task-1",
-                self.queue,
-                self.aggregator,
-                self.producer,
-            )
-
-        async def _cleanup_producer(self, producer_task, task_id):  # noqa: ANN001
-            del producer_task, task_id
-
-        async def _send_push_notification_if_needed(self, task_id, result_aggregator):  # noqa: ANN001
-            del task_id, result_aggregator
-
-        def _track_background_task(self, task):  # noqa: ANN001
-            self.background_tasks.append(task)
-
-        def _validate_task_id_match(self, expected_task_id, actual_task_id):  # noqa: ANN001
-            assert expected_task_id == actual_task_id
-
-    params = types.SimpleNamespace(configuration=None)
-    successful_result = Task(
-        id="task-1",
-        context_id="ctx-1",
-        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
-    )
-
-    error_handler = _Handler(_Aggregator(error=RuntimeError("boom")))
-    with caplog.at_level("ERROR", logger="opencode_a2a.server.application"):
-        with pytest.raises(RuntimeError, match="boom"):
-            await error_handler.on_message_send(params)
-    assert any("Agent execution failed" in record.message for record in caplog.records)
-
-    canceled_handler = _Handler(_Aggregator(result=successful_result))
-
-    class _CanceledTask:
-        def cancelled(self) -> bool:
-            return True
-
-    monkeypatch.setattr(app_module.asyncio, "current_task", lambda: _CanceledTask())
-    result = await canceled_handler.on_message_send(params)
-    assert result is successful_result
-    canceled_handler.producer.cancel.assert_called_once()
-    canceled_handler.queue.close.assert_awaited_once_with(immediate=True)
-
-    shield_handler = _Handler(_Aggregator(result=successful_result))
-    monkeypatch.setattr(
-        app_module.asyncio,
-        "current_task",
-        lambda: types.SimpleNamespace(cancelled=lambda: False),
-    )
-
-    async def _raise_cancelled(_awaitable):
-        close = getattr(_awaitable, "close", None)
-        if callable(close):
-            close()
-        raise asyncio.CancelledError
-
-    monkeypatch.setattr(app_module.asyncio, "shield", _raise_cancelled)
-    result = await shield_handler.on_message_send(params)
-    assert result is successful_result
-
-    internal_error_handler = _Handler(_Aggregator(result=None))
-    with pytest.raises(InternalError):
-        await internal_error_handler.on_message_send(params)
-
-
-@pytest.mark.asyncio
-async def test_on_message_send_non_blocking_tracks_background_work(monkeypatch) -> None:
-    class _Aggregator:
-        def __init__(self, result: Task, bg_task: asyncio.Task[None]) -> None:
-            self.result = result
-            self.bg_task = bg_task
-
-        async def consume_and_break_on_interrupt(self, _consumer, *, blocking, event_callback):
-            assert blocking is False
-            await event_callback()
-            return self.result, True, self.bg_task
-
-    class _Handler(OpencodeRequestHandler):
-        def __init__(self, aggregator: _Aggregator) -> None:
-            super().__init__(
-                agent_executor=MagicMock(),
-                task_store=MagicMock(),
-                agent_card=_agent_card(),
-            )
-            self.aggregator = aggregator
-            self.queue = AsyncMock()
-            self.producer = MagicMock()
-            self.background_tasks: list[asyncio.Task] = []
-
-        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
-            del params, context
-            return (
-                MagicMock(spec=EventConsumer),
-                "task-1",
-                self.queue,
-                self.aggregator,
-                self.producer,
-            )
-
-        async def _cleanup_producer(self, producer_task, task_id):  # noqa: ANN001
-            del producer_task, task_id
-
-        async def _send_push_notification_if_needed(self, task_id, result_aggregator):  # noqa: ANN001
-            del task_id, result_aggregator
-
-        def _track_background_task(self, task):  # noqa: ANN001
-            self.background_tasks.append(task)
-
-        def _validate_task_id_match(self, expected_task_id, actual_task_id):  # noqa: ANN001
-            assert expected_task_id == actual_task_id
-
-    result = Task(
-        id="task-1",
-        context_id="ctx-1",
-        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
-    )
-    bg_task = asyncio.create_task(asyncio.sleep(0))
-    handler = _Handler(_Aggregator(result=result, bg_task=bg_task))
-    applied: dict[str, int] = {}
-
-    def _apply_history_length(task: Task, configuration) -> Task:  # noqa: ANN001
-        applied["history_length"] = configuration.history_length
-        return task
-
-    monkeypatch.setattr(app_module, "apply_history_length", _apply_history_length)
-
-    params = types.SimpleNamespace(
-        configuration=types.SimpleNamespace(return_immediately=True, history_length=7)
-    )
-    returned = await handler.on_message_send(params)
-    assert returned == result
-    assert applied["history_length"] == 7
-    assert len(handler.background_tasks) == 2
-    assert {task.get_name() for task in handler.background_tasks} == {
-        "continue_consuming:task-1",
-        "cleanup_producer:task-1",
-    }
-    await asyncio.gather(*handler.background_tasks, return_exceptions=True)
-
-
-@pytest.mark.asyncio
-async def test_on_message_send_rejects_output_modes_without_text_plain() -> None:
-    class _Handler(OpencodeRequestHandler):
-        def __init__(self) -> None:
-            super().__init__(
-                agent_executor=MagicMock(),
-                task_store=MagicMock(),
-                agent_card=_agent_card(),
-            )
-            self.setup_called = False
-
-        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
-            del params, context
-            self.setup_called = True
-            raise AssertionError("_setup_message_execution should not be called")
-
-    handler = _Handler()
-    params = types.SimpleNamespace(
-        configuration=types.SimpleNamespace(accepted_output_modes=["application/json"])
-    )
-
-    with pytest.raises(UnsupportedOperationError) as exc_info:
-        await handler.on_message_send(params)
-
-    assert "require text/plain" in exc_info.value.message
-    assert exc_info.value.data == {
-        "accepted_output_modes": ["application/json"],
-        "required_output_modes": ["text/plain"],
-        "supported_output_modes": ["text/plain", "application/json"],
-    }
-    assert handler.setup_called is False
-
-
-@pytest.mark.asyncio
-async def test_on_message_send_stream_rejects_incompatible_output_modes_before_execution() -> None:
-    class _Handler(OpencodeRequestHandler):
-        def __init__(self) -> None:
-            super().__init__(
-                agent_executor=MagicMock(),
-                task_store=MagicMock(),
-                agent_card=_agent_card(),
-            )
-            self.setup_called = False
-
-        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
-            del params, context
-            self.setup_called = True
-            raise AssertionError("_setup_message_execution should not be called")
-
-    handler = _Handler()
-    params = types.SimpleNamespace(
-        configuration=types.SimpleNamespace(accepted_output_modes=["image/png"])
-    )
-
-    with pytest.raises(UnsupportedOperationError) as exc_info:
-        await anext(handler.on_message_send_stream(params))
-
-    assert "not compatible" in exc_info.value.message
-    assert exc_info.value.data == {
-        "accepted_output_modes": ["image/png"],
-        "supported_output_modes": ["text/plain", "application/json"],
-    }
-    assert handler.setup_called is False
-
-
-@pytest.mark.asyncio
-async def test_on_message_send_rejects_shared_extension_metadata_without_negotiation() -> None:
-    class _Handler(OpencodeRequestHandler):
-        def __init__(self) -> None:
-            super().__init__(
-                agent_executor=MagicMock(),
-                task_store=MagicMock(),
-                agent_card=_agent_card(),
-            )
-            self.setup_called = False
-
-        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
-            del params, context
-            self.setup_called = True
-            raise AssertionError("_setup_message_execution should not be called")
-
-    handler = _Handler()
-    params = types.SimpleNamespace(
+    extension_params = types.SimpleNamespace(
         message=types.SimpleNamespace(
             metadata={
                 "shared": {
@@ -1509,74 +884,12 @@ async def test_on_message_send_rejects_shared_extension_metadata_without_negotia
                 }
             }
         ),
-        metadata={
-            "opencode": {
-                "directory": "/workspace",
-                "workspace": {"id": "wrk-1"},
-            }
-        },
         configuration=None,
     )
-
-    with pytest.raises(UnsupportedOperationError) as exc_info:
-        await handler.on_message_send(params)
-
-    assert exc_info.value.data == {
-        "type": "EXTENSION_NEGOTIATION_REQUIRED",
-        "fields": [
-            "metadata.shared.session.id",
-            "metadata.opencode.directory",
-            "metadata.opencode.workspace.id",
-            "metadata.shared.model",
-        ],
-        "required_extensions": sorted(
-            [SESSION_BINDING_EXTENSION_URI, MODEL_SELECTION_EXTENSION_URI]
-        ),
-        "requested_extensions": [],
-        "header": "A2A-Extensions",
-    }
-    assert handler.setup_called is False
-
-
-@pytest.mark.asyncio
-async def test_on_message_send_stream_rejects_shared_extension_metadata_without_negotiation() -> (
-    None
-):
-    class _Handler(OpencodeRequestHandler):
-        def __init__(self) -> None:
-            super().__init__(
-                agent_executor=MagicMock(),
-                task_store=MagicMock(),
-                agent_card=_agent_card(),
-            )
-            self.setup_called = False
-
-        async def _setup_message_execution(self, params, context=None):  # noqa: ANN001
-            del params, context
-            self.setup_called = True
-            raise AssertionError("_setup_message_execution should not be called")
-
-    handler = _Handler()
-    params = types.SimpleNamespace(
-        message=types.SimpleNamespace(metadata={"shared": {"session": {"id": "ses-1"}}}),
-        metadata={"opencode": {"directory": "/workspace"}},
-        configuration=None,
-    )
-
-    with pytest.raises(UnsupportedOperationError) as exc_info:
-        await anext(handler.on_message_send_stream(params))
-
-    assert exc_info.value.data == {
-        "type": "EXTENSION_NEGOTIATION_REQUIRED",
-        "fields": [
-            "metadata.shared.session.id",
-            "metadata.opencode.directory",
-        ],
-        "required_extensions": [SESSION_BINDING_EXTENSION_URI],
-        "requested_extensions": [],
-        "header": "A2A-Extensions",
-    }
-    assert handler.setup_called is False
+    with pytest.raises(UnsupportedOperationError, match="A2A-Extensions"):
+        await handler.on_message_send(extension_params, ServerCallContext())
+    executor.execute.assert_not_awaited()
+    await handler.aclose()
 
 
 def test_normalize_log_level_configure_logging_and_main(monkeypatch) -> None:

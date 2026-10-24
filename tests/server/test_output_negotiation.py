@@ -425,7 +425,10 @@ async def test_on_get_task_applies_persisted_output_negotiation() -> None:
         agent_card=_agent_card(),
     )
 
-    result = await handler.on_get_task(GetTaskRequest(id="task-get"))
+    result = await handler.on_get_task(
+        GetTaskRequest(id="task-get"),
+        ServerCallContext(),
+    )
 
     assert result is not None
     assert extract_accepted_output_modes_from_metadata(result.metadata) == ("text/plain",)
@@ -450,7 +453,10 @@ async def test_subscribe_terminal_task_is_unsupported_before_output_negotiation(
     )
 
     with pytest.raises(UnsupportedOperationError):
-        async for _event in handler.on_subscribe_to_task(SubscribeToTaskRequest(id="task-resub")):
+        async for _event in handler.on_subscribe_to_task(
+            SubscribeToTaskRequest(id="task-resub"),
+            ServerCallContext(),
+        ):
             pass
 
 

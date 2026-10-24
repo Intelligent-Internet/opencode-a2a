@@ -28,6 +28,12 @@ from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from typing import Any, NoReturn
 
+from a2a.utils.errors import (
+    A2A_ERROR_MAPPING,
+    A2A_ERROR_REASONS,
+    A2AError,
+    ErrorMapping,
+)
 from a2a.utils.proto_utils import to_stream_response
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import Message as ProtoMessage
@@ -122,12 +128,20 @@ class SlidingWindowRateLimiter:
         del self._entries[stale_key]
 
 
-class StreamBudgetExceeded(Exception):
+class StreamBudgetExceeded(A2AError):
     """Raised when a streaming response exceeds its configured budget."""
 
     def __init__(self, reason: str) -> None:
-        super().__init__(f"{STREAM_BUDGET_ERROR_MESSAGE}: {reason}")
         self.reason = reason
+        super().__init__(message=f"{STREAM_BUDGET_ERROR_MESSAGE}: {reason}")
+
+
+A2A_ERROR_MAPPING[StreamBudgetExceeded] = ErrorMapping(
+    429,
+    "RESOURCE_EXHAUSTED",
+    "STREAM_BUDGET_EXCEEDED",
+)
+A2A_ERROR_REASONS[StreamBudgetExceeded] = "STREAM_BUDGET_EXCEEDED"
 
 
 def json_event_size(item: Any) -> int:

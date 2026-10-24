@@ -27,6 +27,7 @@ from ..execution.metrics import emit_metric
 from ..jsonrpc.error_responses import (
     adapt_jsonrpc_error,
     build_http_error_body,
+    invalid_params_error,
     version_not_supported_error,
 )
 from ..jsonrpc.models import JSONRPCError
@@ -133,6 +134,22 @@ def _is_http_json_rest_path(path: str) -> bool:
     carried in the A2A-Version header instead.
     """
     return path.startswith("/message:") or path.startswith("/tasks")
+
+
+def _looks_like_legacy_message_payload(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    message = payload.get("message")
+    return isinstance(message, dict) and "content" in message
+
+
+def _looks_like_legacy_jsonrpc_message_payload(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("method") not in {"SendMessage", "SendStreamingMessage"}:
+        return False
+    params = payload.get("params")
+    return isinstance(params, dict) and _looks_like_legacy_message_payload(params)
 
 
 def _resolve_rate_limit_key(request: Request) -> str:
@@ -551,18 +568,23 @@ def install_runtime_middlewares(
                 _REQUEST_BODY_BYTES.reset(token)
 
     @app.middleware("http")
-    async def guard_rest_payload_shape(request: Request, call_next):
+    async def guard_message_payload_shape(request: Request, call_next):
         token: Token | None = None
-        if request.method != "POST" or request.url.path not in {
-            "/message:send",
-            "/message:stream",
-        }:
+        if request.method != "POST":
+            return await call_next(request)
+
+        is_rest_message = request.url.path in {"/message:send", "/message:stream"}
+        is_jsonrpc = request.url.path == "/"
+        if not is_rest_message and not is_jsonrpc:
             return await call_next(request)
 
         try:
             body, token = await _get_request_body(request)
             payload = _parse_json_body(body)
-            if _looks_like_jsonrpc_envelope(payload):
+            if is_rest_message and (
+                _looks_like_jsonrpc_envelope(payload)
+                or _looks_like_legacy_message_payload(payload)
+            ):
                 return JSONResponse(
                     build_http_error_body(
                         status_code=400,
@@ -577,6 +599,23 @@ def install_runtime_middlewares(
                         metadata={"path": request.url.path},
                     ),
                     status_code=400,
+                )
+            if is_jsonrpc and _looks_like_legacy_jsonrpc_message_payload(payload):
+                return JSONResponse(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": _extract_jsonrpc_request_id(payload),
+                        "error": cast(
+                            JSONRPCError,
+                            adapt_jsonrpc_error(
+                                invalid_params_error(
+                                    "params.message.content is not supported",
+                                    data={"type": "INVALID_FIELD", "field": "message.content"},
+                                )
+                            ),
+                        ).model_dump(mode="json", exclude_none=True),
+                    },
+                    status_code=200,
                 )
             return await call_next(request)
         except _RequestBodyTooLargeError as error:
