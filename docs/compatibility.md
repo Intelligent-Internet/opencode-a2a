@@ -15,12 +15,12 @@ The SDK-owned core JSON-RPC method set follows the supported SDK line and is loc
 
 ### SDK and Adapter Review
 
-The [SDK 1.1.5 to 1.2.3 changes](https://github.com/a2aproject/a2a-python/compare/v1.1.5...v1.2.3) include keyset `ListTasks` pagination, `application/a2a+json` REST success responses, forward-compatible request parsing, additive cluster tables, push-notification failure isolation, and request-context propagation fixes. The adapter's reviewed integration boundaries are:
+The adapter's reviewed SDK integration boundaries are:
 
 | Boundary | Decision and regression evidence |
 | --- | --- |
 | REST success media type | Adopted: successful HTTP+JSON responses use `application/a2a+json`, including adapter-owned `/message:send` and `/tasks` routes. REST error envelopes remain AIP-193 JSON. Transport and OpenAPI tests lock both runtime headers and documented response media types. |
-| JSON-RPC and REST request parsing | Adopted: unknown request fields are ignored for forward compatibility, matching SDK 1.2 behavior. Shared middleware rejects cross-transport envelopes plus legacy `content`, lowercase role, and `kind`/`type`/`file` part shapes before either transport dispatches. |
+| JSON-RPC and REST request parsing | Adopted: unknown request fields are ignored for forward compatibility, matching SDK parsing behavior. Shared middleware rejects cross-transport envelopes plus legacy `content`, lowercase role, and `kind`/`type`/`file` part shapes before either transport dispatches. |
 | Terminal task follow-up | Adopted: SDK now raises `UnsupportedOperationError` with the named terminal `TaskState`; handler regressions lock this behavior for both memory and database stores. |
 | Versioned database task lifecycle | Adopted: database mode uses `VersionedDatabaseTaskStore` with SDK optimistic-concurrency control and `DatabaseTaskEventStream` for persisted event replay. The adapter no longer carries `GuardedTaskStore`, `DatabaseTaskStoreCompat`, or a private SQL terminal-write policy. |
 | Legacy stored task conversion | Retained only at the SDK migration boundary for SDK-owned persisted rows. This does not restore legacy A2A 0.3 wire support. |
@@ -120,7 +120,7 @@ Task-store behavior that should remain stable for clients:
 
 The supported persistence profile is one application process using its own local SQLite database. Multiple Uvicorn workers or application replicas must not share that SQLite file. PostgreSQL and other SQLAlchemy dialects are not supported deployment targets; any apparent dialect compatibility is implementation latitude rather than a public promise.
 
-SDK migration revision `b5e3d1c8a2f7` adds `task_versions` and `task_events`. This runtime adopts those SDK stores even in its supported single-process profile so task writes and event replay follow the SDK lifecycle; the migration is additive and does not change existing `tasks` rows.
+The SDK task-store migration adds `task_versions` and `task_events`. This runtime adopts those stores even in its supported single-process profile so task writes and event replay follow the SDK lifecycle; the migration is additive and does not change existing `tasks` rows.
 
 ## Extension Stability
 
