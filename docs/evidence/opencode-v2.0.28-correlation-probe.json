@@ -1,0 +1,79 @@
+{
+  "evidence_type": "sanitized live upstream observation",
+  "upstream_version": "2.0.28",
+  "model": "openai/gpt-6-luna-fast",
+  "adapter_used": false,
+  "workspace": "fresh temporary workspace",
+  "event_subscription_status": 200,
+  "event_subscription_ready_before_admission": true,
+  "session_permissions_denied": [
+    "external_directory",
+    "bash",
+    "edit",
+    "write"
+  ],
+  "prompt_observations": {
+    "delivery": "queue",
+    "inputs": ["A", "B"],
+    "second_input_submitted_after_first_step_started": true,
+    "admission_receipt_ids_match_input_ids": [true, true],
+    "delivered_inbox_ids_match_input_ids": [true, true],
+    "projected_user_messages": 2,
+    "projected_user_message_ids_match_input_ids": true,
+    "assistant_messages": 2,
+    "both_expected_sentinel_strings_were_found_in_assistant_history": [true, true],
+    "terminal_events": 1,
+    "terminal_event_type": "session.execution.succeeded",
+    "terminal_event_properties": ["sessionID"],
+    "terminal_event_has_input_id": false,
+    "assistant_message_has_input_link_field": false
+  },
+  "admission_retry_and_pending_cancel": {
+    "same_id_retry_returned_same_receipt": true,
+    "undelivered_input_delete_status": 204,
+    "deleted_input_remained_pending": false
+  },
+  "after_volatile_sse_disconnect": {
+    "event_feed_closed_during_execution": false,
+    "experimental_session_log_status": 200,
+    "sse_data_frames": 1,
+    "event_types": ["log.synced"]
+  },
+  "sanitized_event_trace": [
+    {"type": "session.inbox.enqueued", "inbox": "CANCELLED", "properties": ["inboxID", "item", "sessionID"]},
+    {"type": "session.inbox.cancelled", "inbox": "CANCELLED", "properties": ["inboxID", "sessionID"]},
+    {"type": "session.inbox.enqueued", "inbox": "A", "properties": ["inboxID", "item", "sessionID"]},
+    {"type": "session.execution.started", "properties": ["sessionID"]},
+    {"type": "session.instructions.updated", "properties": ["delta", "sessionID"]},
+    {"type": "session.inbox.delivered", "inbox": "A", "properties": ["inboxID", "sessionID"]},
+    {"type": "session.step.started", "properties": ["agent", "assistantMessageID", "model", "sessionID", "started"]},
+    {"type": "session.reasoning.started", "properties": ["assistantMessageID", "ordinal", "sessionID", "state"]},
+    {"type": "session.inbox.enqueued", "inbox": "B", "properties": ["inboxID", "item", "sessionID"]},
+    {"type": "session.reasoning.ended", "properties": ["assistantMessageID", "ordinal", "sessionID", "state", "text"]},
+    {"type": "session.text.started", "properties": ["assistantMessageID", "ordinal", "sessionID"]},
+    {"type": "session.text.delta", "properties": ["assistantMessageID", "delta", "ordinal", "sessionID"]},
+    {"type": "session.text.ended", "properties": ["assistantMessageID", "ordinal", "sessionID", "state", "text"]},
+    {"type": "session.step.streamed", "properties": ["assistantMessageID", "sessionID"]},
+    {"type": "session.step.ended", "properties": ["assistantMessageID", "cost", "finish", "providerState", "sessionID", "tokens"]},
+    {"type": "session.usage.updated", "properties": ["cost", "sessionID", "tokens"]},
+    {"type": "session.inbox.delivered", "inbox": "B", "properties": ["inboxID", "sessionID"]},
+    {"type": "session.step.started", "properties": ["agent", "assistantMessageID", "model", "sessionID", "started"]},
+    {"type": "session.reasoning.started", "properties": ["assistantMessageID", "ordinal", "sessionID", "state"]},
+    {"type": "session.reasoning.ended", "properties": ["assistantMessageID", "ordinal", "sessionID", "state", "text"]},
+    {"type": "session.text.started", "properties": ["assistantMessageID", "ordinal", "sessionID"]},
+    {"type": "session.text.delta", "properties": ["assistantMessageID", "delta", "ordinal", "sessionID"]},
+    {"type": "session.text.delta", "properties": ["assistantMessageID", "delta", "ordinal", "sessionID"]},
+    {"type": "session.text.ended", "properties": ["assistantMessageID", "ordinal", "sessionID", "state", "text"]},
+    {"type": "session.step.streamed", "properties": ["assistantMessageID", "sessionID"]},
+    {"type": "session.step.ended", "properties": ["assistantMessageID", "cost", "finish", "providerState", "sessionID", "tokens"]},
+    {"type": "session.usage.updated", "properties": ["cost", "sessionID", "tokens"]},
+    {"type": "session.execution.succeeded", "properties": ["sessionID"]}
+  ],
+  "redactions": [
+    "API credential and Basic-auth password",
+    "temporary workspace and session IDs",
+    "prompt text, assistant text, reasoning text, and sentinel strings",
+    "raw event payloads"
+  ],
+  "scope_note": "One controlled upstream run only; this is not a general API guarantee or an A2A execution acceptance test."
+}
