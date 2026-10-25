@@ -50,6 +50,9 @@ state is necessary: previously saved grants are not trusted by this profile.
 
 Only sessions created by this running gateway are executable. Unknown,
 preexisting, imported, child, or post-restart session IDs cannot be adopted.
+Preferred-session reuse additionally requires an existing owner binding under
+the ownership lock; knowing a freshly allocated but not-yet-bound ID cannot
+claim it before its creating request commits ownership.
 Persistent task history remains queryable after restart, but execution requires
 a new context/session. Follow-up in a healthy live session retains context.
 Execution uses the configured workspace only. Per-request location changes,
