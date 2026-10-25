@@ -50,7 +50,7 @@ class ExecutionOutcome:
 @dataclass(frozen=True)
 class PromptSubmission:
     receipt: PromptReceipt
-    outcome: ExecutionOutcome
+    outcome: ExecutionOutcome | None
 
 
 @dataclass(frozen=True)

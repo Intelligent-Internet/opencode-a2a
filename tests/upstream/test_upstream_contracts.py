@@ -54,6 +54,7 @@ async def test_submit_prompt_separates_v1_receipt_from_terminal_outcome(monkeypa
 
     submission = await client.submit_prompt("ses-1", "input")
 
+    assert submission.outcome is not None
     assert submission.receipt.session.id == "ses-1"
     assert submission.receipt.message_id is None
     assert submission.outcome.state == ExecutionState.COMPLETED
@@ -89,6 +90,7 @@ async def test_submit_prompt_preserves_terminal_v1_error_in_outcome(monkeypatch)
 
     submission = await client.submit_prompt("ses-1", "input")
 
+    assert submission.outcome is not None
     assert submission.outcome.state == ExecutionState.FAILED
     assert submission.outcome.error_state == ExecutionState.FAILED
     assert submission.outcome.error_type == "UPSTREAM_BAD_REQUEST"

@@ -1,5 +1,6 @@
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from a2a.server.agent_execution import RequestContext
@@ -20,6 +21,7 @@ from opencode_a2a.execution.stream_events import _extract_token_usage, _extract_
 from opencode_a2a.execution.stream_state import _StreamOutputState
 from opencode_a2a.server.context_helpers import normalize_server_call_context
 from opencode_a2a.task_states import TERMINAL_TASK_STATES
+from opencode_a2a.upstream.contracts import PromptReceipt, PromptSubmission, SessionRef
 from tests.support.helpers import (
     DummyEventQueue,
     make_request_context,
@@ -42,6 +44,43 @@ def _is_terminal_status_event(event: TaskStatusUpdateEvent) -> bool:
     return (
         event.status.state in TERMINAL_TASK_STATES
         or event.status.state == TaskState.TASK_STATE_AUTH_REQUIRED
+    )
+
+
+@pytest.mark.asyncio
+async def test_receipt_only_prompt_submission_fails_without_resending() -> None:
+    client = DummyStreamingClient(stream_events_payload=[], response_text="")
+    submit_prompt = AsyncMock(
+        return_value=PromptSubmission(
+            receipt=PromptReceipt(session=SessionRef("ses-1")),
+            outcome=None,
+        )
+    )
+    send_message = AsyncMock()
+    client.submit_prompt = submit_prompt
+    client.send_message = send_message
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-receipt-only",
+            context_id="ctx-receipt-only",
+            text="hello",
+        ),
+        queue,
+    )
+
+    failed_tasks = [
+        event
+        for event in queue.events
+        if isinstance(event, Task) and event.status.state == TaskState.TASK_STATE_FAILED
+    ]
+    assert submit_prompt.await_count == 1
+    send_message.assert_not_awaited()
+    assert len(failed_tasks) == 1
+    assert (
+        "asynchronous observation is not supported" in failed_tasks[0].status.message.parts[0].text
     )
 
 

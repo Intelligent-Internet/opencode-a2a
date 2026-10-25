@@ -22,7 +22,11 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from ..opencode_upstream_client import UpstreamConcurrencyLimitError, UpstreamContractError
+from ..opencode_upstream_client import (
+    OpencodeMessage,
+    UpstreamConcurrencyLimitError,
+    UpstreamContractError,
+)
 from ..upstream.contracts import (
     ExecutionOutcome,
     PromptSubmission,
@@ -160,15 +164,20 @@ class ExecutionCoordinator:
                     if callable(submit_prompt)
                     else None
                 )
-                response = (
-                    submission.outcome
-                    if isinstance(submission, PromptSubmission)
-                    else await self._executor._client.send_message(
+                response: ExecutionOutcome | OpencodeMessage
+                if isinstance(submission, PromptSubmission):
+                    if submission.outcome is None:
+                        raise RuntimeError(
+                            "Upstream accepted the prompt without a terminal outcome; "
+                            "asynchronous observation is not supported"
+                        )
+                    response = submission.outcome
+                else:
+                    response = await self._executor._client.send_message(
                         self._session_id,
                         prompt_text,
                         **prompt_kwargs,
                     )
-                )
 
                 if self._pending_preferred_claim:
                     await self._executor._session_manager.finalize_preferred_session_binding(
