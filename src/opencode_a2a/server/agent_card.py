@@ -68,8 +68,8 @@ def _build_agent_card_description(
     base = (settings.a2a_description or "").strip() or "OpenCode A2A runtime."
     if settings.opencode_api_version == "v2":
         return (
-            f"{base} OpenCode V2 session transport is experimental; A2A prompt execution and "
-            "OpenCode-specific extensions are not implemented."
+            f"{base} Only internal experimental OpenCode V2 session transport exists; "
+            "A2A message execution and OpenCode-specific extensions are unsupported."
         )
     if not include_detailed_contracts:
         public_parts: list[str] = [
@@ -364,15 +364,13 @@ def _build_agent_skills(
     if settings.opencode_api_version == "v2":
         return [
             AgentSkill(
-                id="v2-session-transport",
-                name="OpenCode V2 Session Transport",
+                id="a2a-execution-unavailable",
+                name="A2A Execution Status",
                 description=(
-                    "Experimental upstream session transport for adapter integrations; "
-                    "no A2A session or prompt operation is currently available."
+                    "Informational only: internal experimental OpenCode V2 session transport "
+                    "exists, but no A2A message or session operation is available."
                 ),
-                input_modes=list(_JSON_RPC_MODES),
-                output_modes=list(_JSON_RPC_MODES),
-                tags=["experimental", "transport"],
+                tags=["status"],
             )
         ]
     if not include_detailed_contracts:
@@ -550,7 +548,7 @@ def build_agent_card(
         default_input_modes=list(_CHAT_INPUT_MODES),
         default_output_modes=list(_CHAT_OUTPUT_MODES),
         capabilities=AgentCapabilities(
-            streaming=True,
+            streaming=settings.opencode_api_version == "v1",
             extended_agent_card=True,
             extensions=(
                 []

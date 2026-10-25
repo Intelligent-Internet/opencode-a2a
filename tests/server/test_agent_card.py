@@ -67,15 +67,20 @@ def test_v2_agent_card_does_not_advertise_unimplemented_chat_or_extensions() -> 
         include_detailed_contracts=True,
     )
 
-    assert "session transport is experimental" in card.description
+    assert "Only internal experimental OpenCode V2 session transport exists" in card.description
     assert (
-        "prompt execution and OpenCode-specific extensions are not implemented" in card.description
+        "A2A message execution and OpenCode-specific extensions are unsupported" in card.description
     )
+    assert card.capabilities.streaming is False
+    assert extended_card.capabilities.streaming is False
     assert card.capabilities.extensions == []
     assert extended_card.capabilities.extensions == []
-    assert [skill.id for skill in card.skills] == ["v2-session-transport"]
-    assert [skill.id for skill in extended_card.skills] == ["v2-session-transport"]
-    assert "no A2A session or prompt operation is currently available" in card.skills[0].description
+    for v2_card in (card, extended_card):
+        assert [skill.id for skill in v2_card.skills] == ["a2a-execution-unavailable"]
+        skill = v2_card.skills[0]
+        assert "no A2A message or session operation is available" in skill.description
+        assert skill.input_modes == []
+        assert skill.output_modes == []
 
 
 def test_agent_card_declares_optional_basic_auth_when_configured() -> None:
