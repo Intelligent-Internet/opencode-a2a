@@ -287,6 +287,9 @@ def test_release_workflow_separates_privileged_publish_from_audited_build() -> N
     assert "Verify release checksums" in publish_text
     assert "packages-dir: pypi-dist" in publish_text
     assert "cyclonedx-json" in publish_text
+    assert 'dist_dir.glob("*.whl")' in publish_text
+    assert 'dist_dir.glob("*.tar.gz")' in publish_text
+    assert 'dist_dir.glob("*.cdx.json")' in publish_text
 
 
 def test_dependency_review_runs_for_dependency_manifest_changes() -> None:

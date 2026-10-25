@@ -141,9 +141,12 @@ jobs:
 
           dist_dir = Path("dist")
           assets = sorted(
-              path
-              for path in dist_dir.iterdir()
-              if path.is_file() and path.name != "SHA256SUMS"
+              (
+                  *dist_dir.glob("*.whl"),
+                  *dist_dir.glob("*.tar.gz"),
+                  *dist_dir.glob("*.cdx.json"),
+              ),
+              key=lambda path: path.name,
           )
           lines = [
               f"{hashlib.sha256(asset.read_bytes()).hexdigest()}  {asset.name}"
