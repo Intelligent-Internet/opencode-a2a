@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import AsyncIterator
 
 from a2a.types import (
     TaskArtifactUpdateEvent,
@@ -6,7 +7,16 @@ from a2a.types import (
 )
 from google.protobuf.json_format import MessageToDict
 
+from opencode_a2a.execution.stream_events import _extract_token_usage, normalize_v1_event
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
+from opencode_a2a.upstream.contracts import (
+    ExecutionOutcome,
+    ExecutionState,
+    ExecutionUpdate,
+    PromptReceipt,
+    PromptSubmission,
+    SessionRef,
+)
 from tests.support.helpers import (
     DummyEventQueue,
 )
@@ -75,6 +85,38 @@ class DummyStreamingClient(InterruptRequestClientMixin):
             raw=self._response_raw,
         )
 
+    async def submit_prompt(
+        self,
+        session_id: str,
+        text: str | None = None,
+        *,
+        parts: list[dict] | None = None,
+        directory: str | None = None,
+        workspace_id: str | None = None,
+        model_override: dict[str, str] | None = None,
+        timeout_override=None,  # noqa: ANN001
+    ) -> PromptSubmission:
+        del workspace_id
+        message = await self.send_message(
+            session_id,
+            text,
+            parts=parts,
+            directory=directory,
+            model_override=model_override,
+            timeout_override=timeout_override,
+        )
+        return PromptSubmission(
+            receipt=PromptReceipt(session=SessionRef(session_id)),
+            outcome=ExecutionOutcome(
+                session=SessionRef(session_id),
+                state=ExecutionState.COMPLETED,
+                output=message.text,
+                message_id=message.message_id,
+                usage=_extract_token_usage(message.raw),
+                response=message.raw,
+            ),
+        )
+
     async def stream_events(self, stop_event=None, *, directory: str | None = None):  # noqa: ANN001
         del directory
         for index, event in enumerate(self._stream_events_payload):
@@ -90,6 +132,25 @@ class DummyStreamingClient(InterruptRequestClientMixin):
             for event in self._stream_events_payload
         ):
             yield {"type": "session.idle", "properties": {"sessionID": "ses-1"}}
+
+    async def stream_updates(
+        self,
+        stop_event: asyncio.Event | None = None,
+        *,
+        directory: str | None = None,
+        workspace_id: str | None = None,
+    ) -> AsyncIterator[ExecutionUpdate]:
+        del workspace_id
+        async for event in self.stream_events(
+            stop_event,
+            directory=directory,
+        ):
+            update = normalize_v1_event(
+                event,
+                log_limit=self.settings.a2a_log_body_limit,
+            )
+            if update is not None:
+                yield update
 
 
 def _event(
