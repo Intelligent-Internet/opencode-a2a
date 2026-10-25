@@ -69,12 +69,22 @@ def test_v2_agent_card_does_not_advertise_unimplemented_chat_or_extensions() -> 
 
     assert "Only internal experimental OpenCode V2 session transport exists" in card.description
     assert (
-        "A2A message execution and OpenCode-specific extensions are unsupported" in card.description
+        "A2A SendMessage and SendStreamingMessage fail fast before any upstream request"
+        in card.description
     )
+    assert "default input/output modes are required SDK schema fields" in card.description
     assert card.capabilities.streaming is False
     assert extended_card.capabilities.streaming is False
     assert card.capabilities.extensions == []
     assert extended_card.capabilities.extensions == []
+    assert [
+        (item.protocol_binding, item.protocol_version) for item in card.supported_interfaces
+    ] == [
+        ("HTTP+JSON", "1.0"),
+        ("JSONRPC", "1.0"),
+    ]
+    assert card.default_input_modes == ["text/plain", "application/octet-stream"]
+    assert card.default_output_modes == ["text/plain", "application/json"]
     for v2_card in (card, extended_card):
         assert [skill.id for skill in v2_card.skills] == ["a2a-execution-unavailable"]
         skill = v2_card.skills[0]

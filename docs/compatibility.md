@@ -5,16 +5,47 @@ This document defines the compatibility promises `opencode-a2a` currently uphold
 ## Runtime Support
 
 - Python versions: 3.11, 3.12, 3.13, 3.14
-- A2A SDK line: `1.x.y`
+- A2A Python SDK: `a2a-sdk==1.2.3` (SDK package version; not an OpenCode API version)
 - Supported A2A protocol line: `1.0`
 - OpenCode runtime line: `1.18.x` (verified with `1.18.19`)
 
 OpenCode V2 is an opt-in, experimental session-transport slice selected with
 `OPENCODE_API_VERSION=v2`. It implements `/api/info`, `/api/location`, and
 session create/get/list transport only; A2A prompt execution and all
-OpenCode-specific JSON-RPC extensions remain unavailable. V1 stays the
-default, and the adapter does not auto-detect or fall back between versions.
-The V2 session transport was exercised against OpenCode `2.0.28`; that
+OpenCode-specific JSON-RPC extensions remain unavailable. This remains an
+explicit safety gate, not a claim that V2 prompt execution works.
+
+The V2 selector is **OpenCode's upstream HTTP API version**, not "A2A SDK V2".
+The runtime continues to expose A2A protocol 1.0 interfaces. Its V2 Agent Card
+contains no extension declarations and retains only an informational execution
+status skill. The A2A Python SDK card contract used here requires populated
+default input/output mode fields and a skill entry; those required card fields
+are not a claim that V2 accepts A2A messages. `SendMessage` enters the SDK task
+lifecycle and returns a failed task with the fail-closed explanation before
+session creation or prompt submission. `SendStreamingMessage` is rejected as
+unsupported because the card declares `streaming=false`. Neither path makes an
+upstream HTTP request. Direct
+`opencode.*` JSON-RPC calls return `-32601 Method not found` without an upstream
+HTTP request. The same extension hiding applies to shared interrupt callbacks.
+
+| Capability family | OpenCode API V1 (`1.18.x`, verified `1.18.19`) | OpenCode API V2 (`2.0.28` session-transport exercise only) |
+| --- | --- | --- |
+| A2A protocol interfaces | HTTP+JSON and JSON-RPC, protocol `1.0`; current core behavior | Interfaces remain protocol `1.0`; message send/stream fails before upstream HTTP |
+| Shared session/model/stream/interrupt extensions | Declared and implemented as documented | Omitted from cards/OpenAPI; direct calls are unsupported |
+| `opencode.sessions.*` (17 catalog methods) | Supported; `opencode.sessions.shell` is deployment-conditional | Omitted and rejected before upstream HTTP |
+| Provider/model discovery (2 methods) | Supported | Omitted and rejected before upstream HTTP |
+| Project/workspace/worktree (9 methods) | Project discovery stable; workspace/worktree discovery experimental; five mutations deployment-conditional | Omitted and rejected before upstream HTTP |
+| Interrupt recovery (2 methods) | Adapter-local and caller-scoped | Omitted and rejected before upstream HTTP |
+| `a2a.interrupt.*` callbacks (3 methods) | Supported through the shared interrupt extension | Omitted and rejected before upstream HTTP |
+| Internal V2 session transport | Not applicable | `/api/info`, `/api/location`, session create/get/list only; exercised against `2.0.28`, not a model execution test |
+
+V2 support does **not** claim A2A execution, task-scoped cancellation,
+permission/form interventions, request-scoped model overrides, structured tool
+execution, or outbound `a2a_call` support. `2.0.28` evidence is limited to
+session transport; no V2 model-backed acceptance run is claimed.
+
+V1 stays the default, and the adapter does not auto-detect or fall back between
+versions. The V2 session transport was exercised against OpenCode `2.0.28`; that
 experimental check does not add V2 to the supported runtime line above.
 OpenCode V2 allows `external_directory` by default. Before any future release of
 V2 prompt execution, operators must configure an explicit restrictive upstream

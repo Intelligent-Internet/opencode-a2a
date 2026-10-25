@@ -5,17 +5,10 @@ from typing import Any
 from ...profile.runtime import RuntimeProfile
 from ...protocol_versions import A2A_PROTOCOL_VERSION, normalize_protocol_version
 from . import catalog, identifiers
-from .capabilities import JsonRpcCapabilitySnapshot, build_capability_snapshot
-
-DECLARED_EXTENSION_URIS: tuple[str, ...] = (
-    identifiers.SESSION_BINDING_EXTENSION_URI,
-    identifiers.MODEL_SELECTION_EXTENSION_URI,
-    identifiers.STREAMING_EXTENSION_URI,
-    identifiers.SESSION_MANAGEMENT_EXTENSION_URI,
-    identifiers.PROVIDER_DISCOVERY_EXTENSION_URI,
-    identifiers.WORKSPACE_CONTROL_EXTENSION_URI,
-    identifiers.INTERRUPT_RECOVERY_EXTENSION_URI,
-    identifiers.INTERRUPT_CALLBACK_EXTENSION_URI,
+from .capabilities import (
+    JsonRpcCapabilitySnapshot,
+    OpenCodeApiVersion,
+    build_capability_snapshot,
 )
 
 
@@ -115,7 +108,11 @@ def _build_method_retention_records(
     }
 
 
-def _build_extension_retention() -> dict[str, dict[str, Any]]:
+def _build_extension_retention(
+    capability_snapshot: JsonRpcCapabilitySnapshot,
+) -> dict[str, dict[str, Any]]:
+    if not capability_snapshot.extensions_enabled:
+        return {}
     return {
         identifiers.SESSION_BINDING_EXTENSION_URI: _build_retention_record(
             surface="core-runtime-metadata",
@@ -163,6 +160,8 @@ def _build_method_retention(
         surface="core",
         retention="required",
     )
+    if not capability_snapshot.extensions_enabled:
+        return method_retention
     method_retention.update(
         _build_method_retention_records(
             [method for key, method in catalog.SESSION_METHODS.items() if key != "shell"],
@@ -224,6 +223,8 @@ def build_compatibility_profile_params(
     runtime_profile: RuntimeProfile,
     supported_protocol_versions: tuple[str, ...] | list[str] | None = None,
     default_protocol_version: str | None = None,
+    capability_snapshot: JsonRpcCapabilitySnapshot | None = None,
+    upstream_api_version: OpenCodeApiVersion = "v1",
 ) -> dict[str, Any]:
     (
         declared_protocol_version,
@@ -238,7 +239,10 @@ def build_compatibility_profile_params(
         supported_protocol_versions=declared_supported_protocol_versions,
         default_protocol_version=declared_default_protocol_version,
     )
-    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    capability_snapshot = capability_snapshot or build_capability_snapshot(
+        runtime_profile=runtime_profile,
+        upstream_api_version=upstream_api_version,
+    )
     service_behaviors = build_service_behavior_contract_params()
     return {
         **runtime_profile.summary_dict(protocol_version=declared_protocol_version),
@@ -246,7 +250,7 @@ def build_compatibility_profile_params(
         "supported_protocol_versions": declared_supported_protocol_versions,
         "protocol_compatibility": protocol_compatibility,
         "core": _build_core_contract_surface(),
-        "extension_retention": _build_extension_retention(),
+        "extension_retention": _build_extension_retention(capability_snapshot),
         "method_retention": _build_method_retention(capability_snapshot),
         "service_behaviors": service_behaviors,
         "consumer_guidance": [
@@ -350,6 +354,8 @@ def build_wire_contract_params(
     runtime_profile: RuntimeProfile,
     supported_protocol_versions: tuple[str, ...] | list[str] | None = None,
     default_protocol_version: str | None = None,
+    capability_snapshot: JsonRpcCapabilitySnapshot | None = None,
+    upstream_api_version: OpenCodeApiVersion = "v1",
 ) -> dict[str, Any]:
     (
         declared_protocol_version,
@@ -364,7 +370,10 @@ def build_wire_contract_params(
         supported_protocol_versions=declared_supported_protocol_versions,
         default_protocol_version=declared_default_protocol_version,
     )
-    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    capability_snapshot = capability_snapshot or build_capability_snapshot(
+        runtime_profile=runtime_profile,
+        upstream_api_version=upstream_api_version,
+    )
     service_behaviors = build_service_behavior_contract_params()
 
     return {
@@ -381,7 +390,7 @@ def build_wire_contract_params(
             "conditionally_available_methods": (
                 capability_snapshot.conditionally_available_methods()
             ),
-            "extension_uris": list(DECLARED_EXTENSION_URIS),
+            "extension_uris": list(capability_snapshot.declared_extension_uris),
         },
         "all_jsonrpc_methods": capability_snapshot.supported_jsonrpc_methods(),
         "service_behaviors": service_behaviors,
