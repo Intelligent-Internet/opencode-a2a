@@ -1,0 +1,59 @@
+{
+  "scope": "V2 is the default API; execution remains disabled without explicit exclusive acknowledgement; V1 requires explicit selection",
+  "source_tree_sha256": ["9650ee76", "46b5a371", "e45794c3", "0e900489", "8f806438", "9808a3e5", "b26385aa", "b1c8e4da"],
+  "source_hash_method": "Concatenate digest groups. Input: sorted src/opencode_a2a/**/*.py; relative path, NUL, file bytes, NUL",
+  "versions": {
+    "opencode_v1": "1.18.19",
+    "opencode_v2": "2.0.28",
+    "a2a_sdk": "1.2.3",
+    "observed_model": "openai/gpt-6-luna-fast"
+  },
+  "configuration": {
+    "default_api": "v2",
+    "default_v2_execution": "disabled",
+    "explicit_v1": "OPENCODE_API_VERSION=v1",
+    "explicit_v2_execution": "OPENCODE_V2_EXECUTION=exclusive",
+    "automatic_detection_or_fallback": false,
+    "private_deployment_preconditions_unchanged": true
+  },
+  "deterministic_validation": {
+    "doctor_command": "bash ./scripts/doctor.sh",
+    "tests_passed": 1026,
+    "tests_failed": 0,
+    "line_coverage_percent": 92.67,
+    "lint_format_typing_coverage_build_wheel_smoke": "PASS",
+    "conformance_passed": 8,
+    "conformance_failed": 0,
+    "environment_selection_and_disabled_execution_http_tests": "PASS"
+  },
+  "fresh_live_validation": {
+    "v1_explicit_selection_auth_extensions_and_real_model_streaming_smoke": "PASS",
+    "v2_omitted_api_selector_session_transport_and_disabled_execution_setting": "PASS",
+    "v2_native_namespace_and_execution_probe": "PASS within its recorded subset",
+    "v2_gateway_api_selector_omitted": true,
+    "v2_exclusive_acknowledgement_explicit": true,
+    "v2_rest_jsonrpc_stream_unary_followup_and_persisted_terminal": "PASS",
+    "v2_concurrent_sessions_serialization_local_queued_and_active_cancel": "PASS",
+    "v2_read_allow_reject_question_string_multiselect_and_callback_denials": "PASS",
+    "v2_session_ownership_workspace_metadata_and_external_directory_denials": "PASS",
+    "v2_prompt_admissions": 14,
+    "v2_global_event_connections": 1,
+    "v2_negative_scenarios": [
+      "gap", "lost-terminal", "lost-admission", "provider-failure",
+      "intervention-gap", "expired-intervention"
+    ],
+    "v2_negative_scenarios_passed": 6,
+    "v2_each_negative_admissions": 1,
+    "v2_each_negative_event_connections": 1,
+    "v2_negative_false_success_or_resubmission": false,
+    "live_reasoning_blocks": "NOT VERIFIED"
+  },
+  "reproduction": {
+    "v1": "OPENCODE_BIN=<pinned-1.18.19-binary> OPENCODE_CONFIG_CONTENT='{\"model\":\"openai/gpt-6-luna-fast\"}' bash scripts/live_opencode_smoke.sh",
+    "v2_session": "bash scripts/live_opencode_v2_session_smoke.sh",
+    "v2_execution_and_faults": "docs/v2-exclusive-execution.md#reproduce-the-live-evidence"
+  },
+  "limitations": "Private gateway-exclusive single-flight deployment only; no unrestricted sessions or transparent recovery; unsupported capabilities remain unchanged",
+  "historical_evidence": "v2-exclusive-acceptance.json describes the earlier V1-default source; it is not an exact-source claim for this default switch",
+  "redactions": ["Credentials", "Raw prompts/model output", "Opaque session/task/request IDs", "Runtime paths and PIDs"]
+}

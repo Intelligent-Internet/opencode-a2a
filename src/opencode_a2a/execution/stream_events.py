@@ -7,6 +7,14 @@ from typing import Any
 
 from a2a.types import TaskState
 
+from ..upstream.contracts import (
+    ExecutionOutcome,
+    ExecutionState,
+    ExecutionUpdate,
+    Intervention,
+    SessionRef,
+    UpdateKind,
+)
 from .stream_state import BlockType
 from .upstream_error_translator import (
     _format_inband_upstream_error,
@@ -541,3 +549,102 @@ def _extract_tool_part_payload(part: Mapping[str, Any]) -> dict[str, Any] | None
     if not payload:
         return None
     return payload
+
+
+def normalize_v1_event(event: Mapping[str, Any], *, log_limit: int = 0) -> ExecutionUpdate | None:
+    """Decode a V1 event into the protocol-neutral execution update contract."""
+    _log_stream_event_debug(event, limit=log_limit)
+    event_type = event.get("type")
+    props = event.get("properties")
+    if not isinstance(event_type, str) or not isinstance(props, Mapping):
+        return None
+
+    part_value = props.get("part")
+    part = part_value if isinstance(part_value, Mapping) else {}
+    session_id = _extract_event_session_id(event)
+    message_id = _extract_stream_message_id(part, props)
+    part_id = _extract_stream_part_id(part, props)
+    part_type = _extract_stream_part_type(part, props)
+    role = _normalize_role(part.get("role") or props.get("role"))
+    delta_value = props.get("delta")
+    delta = delta_value if isinstance(delta_value, str) else None
+    field_value = props.get("field")
+    delta_field = field_value if isinstance(field_value, str) else None
+
+    kind = UpdateKind.OTHER
+    if event_type == "message.part.updated":
+        kind = UpdateKind.PART_UPDATED
+    elif event_type == "message.part.delta":
+        kind = UpdateKind.PART_DELTA
+
+    error = _extract_upstream_error_from_event(event)
+    signal = _extract_stream_terminal_signal(event)
+    terminal = None
+    if signal is not None:
+        terminal = ExecutionOutcome(
+            session=SessionRef(session_id or ""),
+            state=_execution_state(signal.state),
+            output="",
+            error_type=signal.error_type,
+            error_message=signal.message,
+            error_state=_execution_state(signal.state),
+            upstream_status=signal.upstream_status,
+        )
+
+    asked = _extract_interrupt_asked_event(event)
+    intervention = (
+        Intervention(
+            request_id=asked["request_id"],
+            type=asked["interrupt_type"],
+            details=asked["details"],
+        )
+        if asked is not None
+        else None
+    )
+    resolved = _extract_interrupt_resolved_event(event)
+    progress = _extract_progress_metadata(part, props) if isinstance(part_value, Mapping) else None
+
+    return ExecutionUpdate(
+        kind=kind,
+        session_id=session_id,
+        message_id=message_id,
+        part_id=part_id,
+        part_type=part_type,
+        role=role,
+        delta_field=delta_field,
+        delta=delta,
+        snapshot=_extract_stream_snapshot_text(part),
+        tool_payload=_extract_tool_part_payload(part),
+        progress=progress,
+        progress_identity=(_build_progress_identity(part, props) if progress is not None else None),
+        usage=_extract_token_usage(event),
+        error_type=error.error_type if error is not None else None,
+        error_message=error.message if error is not None else None,
+        error_state=_execution_state(error.state) if error is not None else None,
+        upstream_status=error.upstream_status if error is not None else None,
+        terminal=terminal,
+        intervention=intervention,
+        resolved_request_id=resolved["request_id"] if resolved is not None else None,
+        resolved_intervention_type=(resolved["interrupt_type"] if resolved is not None else None),
+        resolution=resolved["resolution"] if resolved is not None else None,
+    )
+
+
+def _execution_state(state: TaskState) -> ExecutionState:
+    if state == TaskState.TASK_STATE_COMPLETED:
+        return ExecutionState.COMPLETED
+    if state == TaskState.TASK_STATE_CANCELED:
+        return ExecutionState.CANCELLED
+    if state == TaskState.TASK_STATE_AUTH_REQUIRED:
+        return ExecutionState.AUTH_REQUIRED
+    return ExecutionState.FAILED
+
+
+def _task_state_from_execution_state(state: ExecutionState) -> TaskState:
+    if state == ExecutionState.COMPLETED:
+        return TaskState.TASK_STATE_COMPLETED
+    if state == ExecutionState.CANCELLED:
+        return TaskState.TASK_STATE_CANCELED
+    if state == ExecutionState.AUTH_REQUIRED:
+        return TaskState.TASK_STATE_AUTH_REQUIRED
+    return TaskState.TASK_STATE_FAILED

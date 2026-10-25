@@ -202,6 +202,9 @@ def test_cli_serve_help_prints_serve_specific_examples(
     help_text = capsys.readouterr().out
     assert "Run the OpenCode A2A service. A2A Protocol 1.0 only." in help_text
     assert "A2A_STATIC_AUTH_CREDENTIALS" in help_text
+    assert "v2 (default) or explicit v1 compatibility mode" in help_text
+    assert "V2 execution requires explicit exclusive opt-in" in help_text
+    assert "OPENCODE_API_VERSION=v1" in help_text
     assert "opencode serve --hostname 127.0.0.1 --port 4096" in help_text
     assert "A2A_CLIENT_BEARER_TOKEN=peer-token" not in help_text
     serve_mock.assert_not_called()

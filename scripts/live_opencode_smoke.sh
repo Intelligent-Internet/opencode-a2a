@@ -110,11 +110,16 @@ a2a_port="${LIVE_SMOKE_A2A_PORT:-$(free_port)}"
 upstream_url="http://127.0.0.1:${upstream_port}"
 a2a_url="http://127.0.0.1:${a2a_port}"
 upstream_username="opencode"
-# Non-secret throwaway credential for the isolated smoke instance only.
-upstream_password="live-smoke-password"  # pragma: allowlist secret
-a2a_bearer_token="live-smoke-token"  # pragma: allowlist secret
+upstream_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+a2a_bearer_token="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 
-run_dir="$(mktemp -d)"
+umask 077
+mkdir -p /tmp/opencode
+run_dir="$(mktemp -d /tmp/opencode/v1-live-smoke.XXXXXX)"
+upstream_curl_config="${run_dir}/upstream-curl.conf"
+a2a_curl_config="${run_dir}/a2a-curl.conf"
+printf 'user = "%s:%s"\n' "${upstream_username}" "${upstream_password}" >"${upstream_curl_config}"
+printf 'header = "Authorization: Bearer %s"\n' "${a2a_bearer_token}" >"${a2a_curl_config}"
 opencode_home="${run_dir}/opencode-home"
 workspace_dir="${run_dir}/workspace"
 adapter_dir="${run_dir}/adapter"
@@ -134,6 +139,7 @@ cleanup() {
     wait "${upstream_pid}" >/dev/null 2>&1 || true
   fi
   if [[ "${LIVE_SMOKE_KEEP_ARTIFACTS:-0}" == "1" ]]; then
+    rm -f "${upstream_curl_config}" "${a2a_curl_config}"
     echo "[live-smoke] artifacts kept at ${run_dir}"
   else
     rm -rf "${run_dir}"
@@ -168,7 +174,7 @@ for _ in $(seq 1 60); do
     cat "${upstream_log}" >&2
     exit 1
   fi
-  if curl -fsS --max-time 5 -u "${upstream_username}:${upstream_password}" \
+  if curl --config "${upstream_curl_config}" -fsS --max-time 5 \
     "${upstream_url}/doc" >/dev/null 2>&1; then
     upstream_ready="1"
     break
@@ -189,6 +195,7 @@ if [[ ! -x "${adapter_bin}" ]]; then
   exit 1
 fi
 
+OPENCODE_API_VERSION=v1 \
 OPENCODE_BASE_URL="${upstream_url}" \
 OPENCODE_WORKSPACE_ROOT="${workspace_dir}" \
 OPENCODE_AUTH_USERNAME="${upstream_username}" \
@@ -208,7 +215,7 @@ for _ in $(seq 1 60); do
     cat "${adapter_log}" >&2
     exit 1
   fi
-  if curl -fsS --max-time 5 -H "Authorization: Bearer ${a2a_bearer_token}" \
+  if curl --config "${a2a_curl_config}" -fsS --max-time 5 \
     "${a2a_url}/health" >/dev/null 2>&1; then
     a2a_ready="1"
     break
@@ -222,12 +229,11 @@ if [[ -z "${a2a_ready}" ]]; then
 fi
 echo "[live-smoke] adapter ready"
 
-auth_header="Authorization: Bearer ${a2a_bearer_token}"
 extension_header="A2A-Extensions: urn:opencode-a2a:extension:session-management:v1, urn:opencode-a2a:extension:workspace-control:v1, urn:opencode-a2a:extension:provider-discovery:v1"
 
 jsonrpc_probe() {
   local payload="$1"
-  curl -sS --max-time 30 -H "${auth_header}" -H "${extension_header}" \
+  curl --config "${a2a_curl_config}" -sS --max-time 30 -H "${extension_header}" \
     -H "Content-Type: application/json" \
     -d "${payload}" "${a2a_url}/"
 }
@@ -264,7 +270,7 @@ echo "[live-smoke] PASS: opencode.sessions.status"
 if [[ "${LIVE_SMOKE_SKIP_PROMPT:-0}" != "1" ]]; then
   echo "[live-smoke] probe: streaming prompt round-trip"
   curl -sS -N \
-    -H "${auth_header}" \
+    --config "${a2a_curl_config}" \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","id":10,"method":"SendStreamingMessage","params":{"message":{"messageId":"live-smoke-msg","role":"ROLE_USER","parts":[{"text":"Reply with exactly: smoke-ok"}]}}}' \
     "${a2a_url}/" --max-time 180 >"${stream_result}"
@@ -273,7 +279,25 @@ if [[ "${LIVE_SMOKE_SKIP_PROMPT:-0}" != "1" ]]; then
     tail -c 2000 "${stream_result}" >&2
     exit 1
   fi
-  if ! grep -q 'smoke-ok' "${stream_result}"; then
+  if ! python3 - "${stream_result}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+blocks = {}
+for line in Path(sys.argv[1]).read_text().splitlines():
+    if not line.startswith("data:"):
+        continue
+    event = json.loads(line[5:]).get("result", {}).get("artifactUpdate", {})
+    artifact = event.get("artifact", {})
+    identity = artifact.get("artifactId")
+    if identity is None:
+        continue
+    text = "".join(part.get("text", "") for part in artifact.get("parts", []))
+    blocks[identity] = blocks.get(identity, "") + text if event.get("append") else text
+raise SystemExit(0 if "smoke-ok" in "\n".join(blocks.values()) else 1)
+PY
+  then
     echo "[live-smoke] FAIL: streaming prompt reply did not contain the expected text" >&2
     tail -c 2000 "${stream_result}" >&2
     exit 1

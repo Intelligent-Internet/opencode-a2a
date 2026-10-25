@@ -4,7 +4,7 @@ from typing import Any
 
 from ...profile.runtime import RuntimeProfile
 from . import catalog, identifiers, public_params
-from .capabilities import build_capability_snapshot
+from .capabilities import JsonRpcCapabilitySnapshot, build_capability_snapshot
 from .contract_docs import build_method_contract_docs
 
 
@@ -19,11 +19,18 @@ def build_session_management_extension_params(
     *,
     runtime_profile: RuntimeProfile,
     context_id_prefix: str,
+    capability_snapshot: JsonRpcCapabilitySnapshot | None = None,
 ) -> dict[str, Any]:
-    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    capability_snapshot = capability_snapshot or build_capability_snapshot(
+        runtime_profile=runtime_profile
+    )
     methods = capability_snapshot.session_management_methods()
-    read_methods = dict(catalog.SESSION_READ_METHODS)
-    mutation_methods = dict(catalog.SESSION_MUTATION_METHODS)
+    read_methods = (
+        dict(catalog.SESSION_READ_METHODS) if capability_snapshot.extensions_enabled else {}
+    )
+    mutation_methods = (
+        dict(catalog.SESSION_MUTATION_METHODS) if capability_snapshot.extensions_enabled else {}
+    )
     control_methods = capability_snapshot.session_control_methods()
     active_session_methods = set(methods.values())
     pagination_applies_to: list[str] = []
@@ -77,11 +84,19 @@ def build_session_management_extension_params(
 def build_interrupt_recovery_extension_params(
     *,
     runtime_profile: RuntimeProfile,
+    capability_snapshot: JsonRpcCapabilitySnapshot | None = None,
 ) -> dict[str, Any]:
+    capability_snapshot = capability_snapshot or build_capability_snapshot(
+        runtime_profile=runtime_profile
+    )
+    methods = (
+        dict(catalog.INTERRUPT_RECOVERY_METHODS) if capability_snapshot.extensions_enabled else {}
+    )
     return {
-        "methods": dict(catalog.INTERRUPT_RECOVERY_METHODS),
+        "methods": methods,
         "method_contracts": build_method_contract_docs(
-            catalog.INTERRUPT_RECOVERY_METHOD_CONTRACTS.values()
+            catalog.INTERRUPT_RECOVERY_METHOD_CONTRACTS.values(),
+            active_methods=set(methods.values()),
         ),
         "supported_metadata": [],
         "provider_private_metadata": [],
@@ -129,11 +144,19 @@ def build_interrupt_recovery_extension_params(
 def build_provider_discovery_extension_params(
     *,
     runtime_profile: RuntimeProfile,
+    capability_snapshot: JsonRpcCapabilitySnapshot | None = None,
 ) -> dict[str, Any]:
+    capability_snapshot = capability_snapshot or build_capability_snapshot(
+        runtime_profile=runtime_profile
+    )
+    methods = (
+        dict(catalog.PROVIDER_DISCOVERY_METHODS) if capability_snapshot.extensions_enabled else {}
+    )
     return {
-        "methods": dict(catalog.PROVIDER_DISCOVERY_METHODS),
+        "methods": methods,
         "method_contracts": build_method_contract_docs(
-            catalog.PROVIDER_DISCOVERY_METHOD_CONTRACTS.values()
+            catalog.PROVIDER_DISCOVERY_METHOD_CONTRACTS.values(),
+            active_methods=set(methods.values()),
         ),
         "supported_metadata": ["opencode.directory", "opencode.workspace.id"],
         "provider_private_metadata": ["opencode.directory", "opencode.workspace.id"],
@@ -190,8 +213,11 @@ def build_provider_discovery_extension_params(
 def build_workspace_control_extension_params(
     *,
     runtime_profile: RuntimeProfile,
+    capability_snapshot: JsonRpcCapabilitySnapshot | None = None,
 ) -> dict[str, Any]:
-    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+    capability_snapshot = capability_snapshot or build_capability_snapshot(
+        runtime_profile=runtime_profile
+    )
     methods = capability_snapshot.workspace_control_methods()
     active_workspace_methods = set(methods.values())
 

@@ -16,6 +16,13 @@ Provider-private contract note:
 - Shared `metadata.shared.*` contracts are intended to remain low-risk and transportable.
 - Compatibility and wire-contract URIs are descriptive metadata contracts, not activatable runtime capabilities.
 - URI path segments identify the contract, not its auth or disclosure tier; public-vs-extended disclosure is controlled by Agent Card and OpenAPI surfaces.
+- These declarations describe the V1 extension contract. With `OPENCODE_API_VERSION=v2`, the public and authenticated Agent Cards and OpenAPI publish no extension declarations or extension method metadata. Direct `opencode.*` and `a2a.interrupt.*` JSON-RPC calls return `-32601 Method not found` before any upstream HTTP request.
+
+OpenCode API V2 is not A2A SDK V2 and does not enable this extension index.
+V2's informational status skill and its non-empty Agent Card default modes are
+schema/discovery requirements only; they do not claim A2A message execution,
+session methods, model overrides, cancellation, or intervention support. See
+[`compatibility.md`](./compatibility.md#runtime-support) for the current matrix.
 
 ## SDK and Discovery Compatibility
 

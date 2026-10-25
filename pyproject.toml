@@ -75,6 +75,7 @@ Issues = "https://github.com/Intelligent-Internet/opencode-a2a/issues"
 [tool.ruff]
 line-length = 100
 src = ["src"]
+extend-exclude = [".worktrees"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S"]
@@ -116,6 +117,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "--cov=src/opencode_a2a --cov-report=term-missing --cov-report=json:.coverage.json --cov-fail-under=90"
+norecursedirs = [".worktrees"]
 filterwarnings = [
     "error::pytest.PytestUnhandledThreadExceptionWarning",
     "error::pytest.PytestUnraisableExceptionWarning",

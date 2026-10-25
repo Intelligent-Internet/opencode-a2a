@@ -72,6 +72,8 @@ def _build_test_static_auth_credentials(**overrides: Any) -> tuple[dict[str, Any
 
 def make_settings(**overrides: Any) -> Settings:
     base: dict[str, Any] = {
+        # Existing regression fixtures exercise V1 explicitly, not the runtime default.
+        "opencode_api_version": "v1",
         "opencode_base_url": "http://127.0.0.1:4096",
         "a2a_task_store_database_url": (
             f"sqlite+aiosqlite:///{tempfile.gettempdir()}/opencode-a2a-test-{uuid.uuid4().hex}.db"

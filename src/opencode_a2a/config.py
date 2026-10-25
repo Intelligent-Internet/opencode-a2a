@@ -37,6 +37,7 @@ WriteAccessScope = Literal[
 OutsideWorkspaceAccess = Literal["unknown", "allowed", "disallowed", "custom"]
 TaskStoreBackend = Literal["memory", "database"]
 StaticAuthScheme = Literal["bearer", "basic"]
+OpencodeApiVersion = Literal["v1", "v2"]
 
 
 def _parse_declared_list(value: Any) -> tuple[str, ...]:
@@ -148,6 +149,10 @@ class Settings(BaseSettings):
     )
 
     # OpenCode settings
+    opencode_api_version: OpencodeApiVersion = Field(default="v2", alias="OPENCODE_API_VERSION")
+    opencode_v2_execution: Literal["disabled", "exclusive"] = Field(
+        default="disabled", alias="OPENCODE_V2_EXECUTION"
+    )
     opencode_base_url: str = Field(default="http://127.0.0.1:4096", alias="OPENCODE_BASE_URL")
     opencode_workspace_root: str | None = Field(default=None, alias="OPENCODE_WORKSPACE_ROOT")
     opencode_agent: str | None = Field(default=None, alias="OPENCODE_AGENT")

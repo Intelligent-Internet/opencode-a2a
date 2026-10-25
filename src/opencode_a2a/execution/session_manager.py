@@ -103,7 +103,7 @@ class SessionManager:
 
         try:
             session_id = await task
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             async with self._registry_lock:
                 if self._inflight_session_creates.get(cache_key) is task:
                     self._inflight_session_creates.pop(cache_key, None)
@@ -151,6 +151,8 @@ class SessionManager:
         ownership_lock = await self._get_registered_lock(self._ownership_locks, session_id)
         async with ownership_lock:
             owner = await self._state_repository.get_owner(session_id=session_id)
+            if getattr(self._client, "supports_streaming_submission", False) is True and not owner:
+                raise PermissionError("Exclusive sessions require an existing owner binding")
             pending_owner = await self._state_repository.get_pending_claim(session_id=session_id)
             if owner and owner != identity:
                 raise PermissionError(f"Session {session_id} is not owned by you")
