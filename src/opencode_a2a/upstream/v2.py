@@ -83,13 +83,16 @@ class V2UpstreamAdapter(OpencodeUpstreamClient):
             raise UnsupportedUpstreamOperationError(
                 "OpenCode V2 session transport does not support V1 workspace IDs."
             )
-        return (
-            SandboxPolicy.from_settings(
-                self.settings,
-                workspace_root=self.directory,
-            ).resolve_directory(directory, default_directory=self.directory)
-            or ""
+        policy = SandboxPolicy.from_settings(
+            self.settings,
+            workspace_root=self.directory,
         )
+        resolved = policy.resolve_directory(directory, default_directory=self.directory) or ""
+        if self.prompt_execution_supported and resolved != policy.resolve_directory(
+            None, default_directory=self.directory
+        ):
+            raise ValueError("V2 exclusive execution uses one fixed configured workspace")
+        return resolved
 
     @staticmethod
     def _unwrap_data(payload: Any, *, endpoint: str) -> Any:
