@@ -82,7 +82,7 @@ async def test_exclusive_model_and_workspace_overrides_fail_before_upstream(meta
             opencode_api_version="v2",
             opencode_v2_execution="exclusive",
             opencode_workspace_root="/workspace",
-            opencode_auth_password="synthetic-upstream-password",
+            opencode_auth_password="synthetic-upstream-password",  # pragma: allowlist secret
         )
     )
     requests: list[httpx.Request] = []
