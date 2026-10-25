@@ -20,6 +20,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from ..a2a_protocol import (
     AGENT_CARD_WELL_KNOWN_PATH,
+    CORE_JSONRPC_METHODS,
     EXTENDED_AGENT_CARD_PATH,
 )
 from ..config import Settings
@@ -38,6 +39,7 @@ from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..profile.runtime import build_runtime_profile
 from ..protocol_versions import A2A_PROTOCOL_VERSION
 from ..trace_context import install_log_record_factory
+from ..upstream.v2 import V2UpstreamAdapter
 from .agent_card import (
     build_agent_card,
 )
@@ -172,7 +174,10 @@ def create_app(settings: Settings) -> FastAPI:
         settings,
         engine=database_engine,
     )
-    upstream_client = OpencodeUpstreamClient(
+    upstream_client_type = (
+        V2UpstreamAdapter if settings.opencode_api_version == "v2" else OpencodeUpstreamClient
+    )
+    upstream_client = upstream_client_type(
         settings,
         interrupt_request_repository=runtime_state_runtime.interrupt_request_repository,
     )
@@ -218,7 +223,12 @@ def create_app(settings: Settings) -> FastAPI:
         http_handler=handler,
         context_builder=context_builder,
         upstream_client=upstream_client,
-        supported_methods=capability_snapshot.supported_jsonrpc_methods(),
+        supported_methods=(
+            list(CORE_JSONRPC_METHODS)
+            if settings.opencode_api_version == "v2"
+            else capability_snapshot.supported_jsonrpc_methods()
+        ),
+        extensions_enabled=settings.opencode_api_version == "v1",
         directory_resolver=(
             partial(
                 executor._sandbox_policy.resolve_directory,

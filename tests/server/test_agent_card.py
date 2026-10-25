@@ -60,6 +60,24 @@ def test_agent_card_description_reflects_actual_transport_capabilities() -> None
     assert skills_by_id["opencode.interrupt.callback"].output_modes == ["application/json"]
 
 
+def test_v2_agent_card_does_not_advertise_unimplemented_chat_or_extensions() -> None:
+    card = build_agent_card(make_settings(opencode_api_version="v2"))
+    extended_card = build_agent_card(
+        make_settings(opencode_api_version="v2"),
+        include_detailed_contracts=True,
+    )
+
+    assert "session transport is experimental" in card.description
+    assert (
+        "prompt execution and OpenCode-specific extensions are not implemented" in card.description
+    )
+    assert card.capabilities.extensions == []
+    assert extended_card.capabilities.extensions == []
+    assert [skill.id for skill in card.skills] == ["v2-session-transport"]
+    assert [skill.id for skill in extended_card.skills] == ["v2-session-transport"]
+    assert "no A2A session or prompt operation is currently available" in card.skills[0].description
+
+
 def test_agent_card_declares_optional_basic_auth_when_configured() -> None:
     card = build_agent_card(
         make_settings(

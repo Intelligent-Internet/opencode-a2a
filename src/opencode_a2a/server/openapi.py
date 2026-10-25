@@ -244,7 +244,6 @@ def _patch_jsonrpc_openapi_contract(
     *,
     runtime_profile: RuntimeProfile,
 ) -> None:
-    del settings
     session_binding = build_session_binding_extension_params(
         runtime_profile=runtime_profile,
     )
@@ -316,6 +315,12 @@ def _patch_jsonrpc_openapi_contract(
                             ),
                         },
                     }
+                    if settings.opencode_api_version == "v2":
+                        post["description"] = (
+                            "OpenCode V2 session transport is experimental. A2A prompt "
+                            "execution and extension methods are not implemented."
+                        )
+                        post.pop("x-a2a-extension-contracts", None)
 
                     request_body = post.setdefault("requestBody", {})
                     if isinstance(request_body, dict):

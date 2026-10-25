@@ -1,8 +1,10 @@
 import httpx
 import pytest
 
+from opencode_a2a.contracts.extensions import SESSION_BINDING_EXTENSION_URI
 from opencode_a2a.protocol_versions import A2A_PROTOCOL_VERSION
 from opencode_a2a.server.application import create_app
+from opencode_a2a.upstream.v2 import V2UpstreamAdapter
 from tests.support.settings import make_settings
 
 
@@ -34,6 +36,38 @@ async def test_unsupported_method_returns_unified_error() -> None:
     assert "SendMessage" in data["supportedMethods"]
     assert "opencode.sessions.list" in data["supportedMethods"]
     assert data["protocolVersion"] == A2A_PROTOCOL_VERSION
+
+
+@pytest.mark.asyncio
+async def test_v2_rejects_unimplemented_opencode_extension_methods() -> None:
+    app = create_app(make_settings(opencode_api_version="v2"))
+    assert isinstance(app.state.upstream_client, V2UpstreamAdapter)
+    openapi = app.openapi()
+    assert "x-a2a-extension-contracts" not in openapi["paths"]["/"]["post"]
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/",
+            headers={
+                "Authorization": "Bearer test-token",
+                "A2A-Extensions": SESSION_BINDING_EXTENSION_URI,
+            },
+            json={
+                "jsonrpc": "2.0",
+                "id": 123,
+                "method": "opencode.sessions.prompt_async",
+                "params": {"sessionID": "ses-1", "parts": [{"type": "text", "text": "hello"}]},
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"]["code"] == -32601
+    assert body["error"]["message"] == "Method not found"
+    assert "opencode.sessions.prompt_async" not in body["error"]["data"]["supportedMethods"]
+    assert "opencode.sessions.list" not in body["error"]["data"]["supportedMethods"]
+    assert "A2A-Extensions" not in response.headers
 
 
 @pytest.mark.asyncio

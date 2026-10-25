@@ -494,7 +494,10 @@ def install_runtime_middlewares(
             return ()
 
         path = request.url.path
-        if path == AGENT_CARD_WELL_KNOWN_PATH:
+        supported_extensions: tuple[str, ...]
+        if settings.opencode_api_version == "v2":
+            supported_extensions = ()
+        elif path == AGENT_CARD_WELL_KNOWN_PATH:
             supported_extensions = PUBLIC_EXTENSION_URIS
         elif path == EXTENDED_AGENT_CARD_PATH:
             supported_extensions = ALL_EXTENSION_URIS

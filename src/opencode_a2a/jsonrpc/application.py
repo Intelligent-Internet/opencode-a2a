@@ -64,6 +64,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         upstream_client: OpencodeUpstreamClient,
         methods: dict[str, str],
         supported_methods: list[str],
+        extensions_enabled: bool = True,
         directory_resolver: Callable[[str | None], str | None] | None = None,
         session_claim: Callable[..., Awaitable[bool]] | None = None,
         session_claim_finalize: Callable[..., Awaitable[None]] | None = None,
@@ -76,6 +77,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         super().__init__(request_handler=http_handler, **kwargs)
         self._http_handler = http_handler
         self._upstream_client = upstream_client
+        self._extensions_enabled = extensions_enabled
         self._method_session_status = methods["status"]
         self._method_list_sessions = methods["list_sessions"]
         self._method_get_session = methods["get_session"]
@@ -421,7 +423,11 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         except Exception:
             return await super().handle_requests(request)
 
-        extension_spec = self._extension_method_registry.resolve(base_request.method)
+        extension_spec = (
+            self._extension_method_registry.resolve(base_request.method)
+            if self._extensions_enabled
+            else None
+        )
         if extension_spec is None:
             return await self._handle_core_request(
                 request,

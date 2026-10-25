@@ -9,6 +9,14 @@ This document defines the compatibility promises `opencode-a2a` currently uphold
 - Supported A2A protocol line: `1.0`
 - OpenCode runtime line: `1.18.x` (verified with `1.18.19`)
 
+OpenCode V2 is an opt-in, experimental session-transport slice selected with
+`OPENCODE_API_VERSION=v2`. It implements `/api/info`, `/api/location`, and
+session create/get/list transport only; A2A prompt execution and all
+OpenCode-specific JSON-RPC extensions remain unavailable. V1 stays the
+default, and the adapter does not auto-detect or fall back between versions.
+The V2 session transport was exercised against OpenCode `2.0.28`; that
+experimental check does not add V2 to the supported runtime line above.
+
 This is the single canonical place where the supported upstream OpenCode version line is declared. Keep it updated together with the live integration smoke check (`./scripts/live_opencode_smoke.sh`) and do not duplicate the version line elsewhere.
 
 The SDK-owned core JSON-RPC method set follows the supported SDK line and is locked by repository tests so SDK upgrades trigger an explicit compatibility review.
