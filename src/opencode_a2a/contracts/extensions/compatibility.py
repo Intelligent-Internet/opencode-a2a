@@ -244,6 +244,78 @@ def build_compatibility_profile_params(
         upstream_api_version=upstream_api_version,
     )
     service_behaviors = build_service_behavior_contract_params()
+    consumer_guidance = [
+        "Treat core A2A methods as the stable interoperability baseline for generic clients.",
+        (
+            "Treat this deployment as a single-tenant, shared-workspace coding profile; "
+            "do not assume per-consumer workspace or tenant isolation."
+        ),
+    ]
+    if capability_snapshot.extensions_enabled:
+        consumer_guidance.extend(
+            [
+                (
+                    "Treat shared model selection metadata as a stable request-scoped plugin "
+                    "surface for the main chat path; provider defaults still belong to OpenCode."
+                ),
+                (
+                    "Treat opencode.sessions.*, opencode.providers.*, opencode.models.*, "
+                    "opencode.projects.*, opencode.workspaces.*, opencode.worktrees.*, "
+                    "opencode.permissions.list, and opencode.questions.list as provider-private "
+                    "operational surfaces rather than portable A2A baseline capabilities."
+                ),
+                (
+                    "Treat a2a.interrupt.* methods as declared shared extensions and opencode.* "
+                    "methods as vendor-specific extensions that remain stable within the current "
+                    "major line."
+                ),
+                (
+                    "Treat opencode.sessions.shell as deployment-conditional and discover it from "
+                    "the declared profile and current wire contract before calling it."
+                ),
+                (
+                    "Treat opencode.workspaces.create/remove and opencode.worktrees.create/remove/"
+                    "reset as deployment-conditional operator surfaces rather than baseline "
+                    "workspace discovery methods."
+                ),
+                (
+                    "Treat opencode.workspaces.list and opencode.worktrees.list as declared "
+                    "adapter contracts over upstream experimental endpoints, not the same "
+                    "stability tier as project discovery."
+                ),
+                (
+                    "Treat opencode.permissions.list and opencode.questions.list as adapter-local, "
+                    "identity-scoped recovery views rather than upstream global pending queues."
+                ),
+            ]
+        )
+    else:
+        consumer_guidance.extend(
+            [
+                (
+                    "OpenCode API V2 currently provides internal experimental session transport "
+                    "only; A2A message execution and all shared and provider-private extensions "
+                    "are unavailable."
+                ),
+                (
+                    "Do not call model selection, interrupt callbacks, session controls, or "
+                    "a2a_call in OpenCode API V2 mode; these operations are not advertised or "
+                    "implemented."
+                ),
+            ]
+        )
+    consumer_guidance.extend(
+        [
+            (
+                "Treat declared service behaviors as stable server-level semantic "
+                "enhancements layered on top of the core A2A method baseline."
+            ),
+            (
+                "Treat protocol_compatibility as the runtime truth for which major line "
+                "is fully supported by the current deployment."
+            ),
+        ]
+    )
     return {
         **runtime_profile.summary_dict(protocol_version=declared_protocol_version),
         "default_protocol_version": declared_default_protocol_version,
@@ -253,54 +325,7 @@ def build_compatibility_profile_params(
         "extension_retention": _build_extension_retention(capability_snapshot),
         "method_retention": _build_method_retention(capability_snapshot),
         "service_behaviors": service_behaviors,
-        "consumer_guidance": [
-            "Treat core A2A methods as the stable interoperability baseline for generic clients.",
-            (
-                "Treat this deployment as a single-tenant, shared-workspace coding profile; "
-                "do not assume per-consumer workspace or tenant isolation."
-            ),
-            (
-                "Treat shared model selection metadata as a stable request-scoped plugin "
-                "surface for the main chat path; provider defaults still belong to OpenCode."
-            ),
-            (
-                "Treat opencode.sessions.*, opencode.providers.*, opencode.models.*, "
-                "opencode.projects.*, opencode.workspaces.*, opencode.worktrees.*, "
-                "opencode.permissions.list, and opencode.questions.list as provider-private "
-                "operational surfaces rather than portable A2A baseline capabilities."
-            ),
-            (
-                "Treat a2a.interrupt.* methods as declared shared extensions and opencode.* "
-                "methods as vendor-specific extensions that remain stable within the current "
-                "major line."
-            ),
-            (
-                "Treat opencode.sessions.shell as deployment-conditional and discover it from "
-                "the declared profile and current wire contract before calling it."
-            ),
-            (
-                "Treat opencode.workspaces.create/remove and opencode.worktrees.create/remove/"
-                "reset as deployment-conditional operator surfaces rather than baseline "
-                "workspace discovery methods."
-            ),
-            (
-                "Treat opencode.workspaces.list and opencode.worktrees.list as declared "
-                "adapter contracts over upstream experimental endpoints, not the same "
-                "stability tier as project discovery."
-            ),
-            (
-                "Treat opencode.permissions.list and opencode.questions.list as adapter-local, "
-                "identity-scoped recovery views rather than upstream global pending queues."
-            ),
-            (
-                "Treat declared service behaviors as stable server-level semantic "
-                "enhancements layered on top of the core A2A method baseline."
-            ),
-            (
-                "Treat protocol_compatibility as the runtime truth for which major line "
-                "is fully supported by the current deployment."
-            ),
-        ],
+        "consumer_guidance": consumer_guidance,
     }
 
 

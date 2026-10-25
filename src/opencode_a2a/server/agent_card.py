@@ -74,6 +74,15 @@ def _build_agent_card_description(
             "and OpenCode-specific extensions are unsupported. Agent Card default input/output "
             "modes are required SDK schema fields, not a claim that message execution works."
         )
+    if capability_snapshot.v2_exclusive_execution:
+        return (
+            f"{base} Experimental OpenCode 2.0.28 exclusive execution: text-only prompts, "
+            "one task per gateway-created session, parallel distinct sessions, and streaming "
+            "read-permission/question interventions. Requires a dedicated private upstream, "
+            "no external or autonomous writers, and protected configuration. Event loss "
+            "quarantines the session; no shared-session, model-override, or a2a_call support. "
+            "Unary interventions are unsupported. Single-tenant shared workspace."
+        )
     if not include_detailed_contracts:
         public_parts: list[str] = [
             base,
@@ -212,6 +221,8 @@ def _build_agent_extensions(
     interrupt_callback_extension_params = build_interrupt_callback_extension_params(
         runtime_profile=runtime_profile,
     )
+    if capability_snapshot.v2_exclusive_execution:
+        interrupt_callback_extension_params["permission_reply_values"] = ["once", "reject"]
     compatibility_profile_params = build_compatibility_profile_params(
         protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
@@ -296,7 +307,11 @@ def _build_agent_extensions(
     if tuple(ext.uri for ext in public_extensions) != PUBLIC_EXTENSION_URIS:
         raise RuntimeError("Agent Card public extension URIs drifted from the declared contract")
     if not include_detailed_contracts:
-        return public_extensions
+        return [
+            extension
+            for extension in public_extensions
+            if extension.uri in capability_snapshot.declared_extension_uris
+        ]
 
     authenticated_only_extensions = [
         AgentExtension(
@@ -364,6 +379,12 @@ def _build_agent_extensions(
         raise RuntimeError(
             "Agent Card authenticated extension URIs drifted from the declared contract"
         )
+    if capability_snapshot.v2_exclusive_execution:
+        return [
+            extension
+            for extension in [*public_extensions, *authenticated_only_extensions]
+            if extension.uri in capability_snapshot.declared_extension_uris
+        ]
     return [*public_extensions, *authenticated_only_extensions]
 
 
@@ -373,6 +394,17 @@ def _build_agent_skills(
     capability_snapshot: JsonRpcCapabilitySnapshot,
     include_detailed_contracts: bool,
 ) -> list[AgentSkill]:
+    if capability_snapshot.v2_exclusive_execution:
+        return [
+            AgentSkill(
+                id="opencode.chat.exclusive",
+                name="Exclusive OpenCode Chat",
+                description="Text chat in private, gateway-owned single-flight sessions.",
+                tags=["chat", "exclusive", "experimental"],
+                input_modes=["text/plain"],
+                output_modes=list(_CHAT_OUTPUT_MODES),
+            )
+        ]
     if not capability_snapshot.a2a_message_execution_enabled:
         return [
             AgentSkill(
@@ -517,6 +549,7 @@ def build_agent_card(
     capability_snapshot = capability_snapshot or build_capability_snapshot(
         runtime_profile=runtime_profile,
         upstream_api_version=settings.opencode_api_version,
+        v2_exclusive_execution=settings.opencode_v2_execution == "exclusive",
     )
     security_schemes: dict[str, SecurityScheme] = {}
     security_requirements: list[SecurityRequirement] = []
@@ -562,7 +595,11 @@ def build_agent_card(
                 protocol_version=A2A_PROTOCOL_VERSION,
             ),
         ],
-        default_input_modes=list(_CHAT_INPUT_MODES),
+        default_input_modes=(
+            ["text/plain"]
+            if capability_snapshot.v2_exclusive_execution
+            else list(_CHAT_INPUT_MODES)
+        ),
         default_output_modes=list(_CHAT_OUTPUT_MODES),
         capabilities=AgentCapabilities(
             streaming=capability_snapshot.streaming_enabled,

@@ -169,6 +169,7 @@ skipped idempotently.
 | R-5 | Payload logging can capture sensitive data when enabled | Accepted | Opt-in with `A2A_LOG_BODY_LIMIT` cap; treat logs as sensitive. [SECURITY.md](../SECURITY.md) |
 | R-6 | Push notification config surface exposed-but-unsupported | Accepted | A2A 1.0-specific errors are stable (REST 400 / JSON-RPC -32003); capability recovery is intentionally deferred |
 | R-7 | SQLite hardening exempts `:memory:` / `file:` URIs and non-POSIX platforms | Accepted | Plain absolute file path recommended for deployments. [guide.md](./guide.md) "SQLite Persistence Hardening" |
+| R-8 | V2 terminals are session-scoped, so shared or autonomous writers invalidate task attribution | Restricted profile only | Dedicated private network namespace, separate credentials, one gateway process, gateway-created sessions, restrictive tools/configuration, retained leases and quarantine. See [V2 exclusive execution](./v2-exclusive-execution.md). The adapter cannot certify operator network isolation. |
 
 ## Maintenance Rules
 

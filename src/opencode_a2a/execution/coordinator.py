@@ -123,6 +123,7 @@ class ExecutionCoordinator:
         self._stream_task: asyncio.Task[None] | None = None
         self._pending_preferred_claim = False
         self._session_lock: asyncio.Lock | None = None
+        self._session_lock_acquired = False
         self._session_id = ""
         self._execution_key = (task_id, context_id)
 
@@ -132,8 +133,15 @@ class ExecutionCoordinator:
             await self._register_running_request(current_task)
 
         try:
+            early_snapshot = getattr(
+                self._executor._client, "supports_streaming_submission", False
+            ) is True and (self._prepared.streaming_request or self._prepared.return_immediately)
+            if early_snapshot:
+                await self._event_queue.enqueue_event(self._build_initial_task_snapshot())
             await self._bind_session()
-            if self._prepared.streaming_request or self._prepared.return_immediately:
+            if not early_snapshot and (
+                self._prepared.streaming_request or self._prepared.return_immediately
+            ):
                 await self._event_queue.enqueue_event(self._build_initial_task_snapshot())
 
             turn_request_parts = list(self._prepared.request_parts)
@@ -156,6 +164,8 @@ class ExecutionCoordinator:
                     else user_text or None
                 )
                 prompt_kwargs = dict(send_kwargs)
+                if getattr(self._executor._client, "supports_streaming_submission", False) is True:
+                    prompt_kwargs["stream_updates_requested"] = self._prepared.streaming_request
                 if self._prepared.use_structured_parts or turn_request_parts:
                     prompt_kwargs["parts"] = turn_request_parts
 
@@ -209,6 +219,8 @@ class ExecutionCoordinator:
                     if isinstance(response, ExecutionOutcome)
                     else response.raw
                 )
+                if self._execution_key in self._executor._cancelled_requests:
+                    break
                 tool_results = await maybe_handle_tools(
                     response_payload,
                     a2a_client_manager=self._executor._a2a_client_manager,
@@ -303,6 +315,7 @@ class ExecutionCoordinator:
     async def _register_running_request(self, current_task: asyncio.Task[Any]) -> None:
         async with self._executor._lock:
             self._executor._running_requests[self._execution_key] = current_task
+            self._executor._running_event_queues[self._execution_key] = self._event_queue
             self._executor._running_stop_events[self._execution_key] = self._stop_event
             self._executor._running_identities[self._execution_key] = self._prepared.identity
 
@@ -322,6 +335,7 @@ class ExecutionCoordinator:
             self._session_id
         )
         await self._session_lock.acquire()
+        self._session_lock_acquired = True
         async with self._executor._lock:
             self._executor._running_session_ids[self._execution_key] = self._session_id
             self._executor._running_directories[self._execution_key] = self._prepared.directory
@@ -353,6 +367,8 @@ class ExecutionCoordinator:
             )
 
     async def _handle_response(self, response: Any) -> None:
+        if self._execution_key in self._executor._cancelled_requests:
+            return
         response_text = (
             response.output if isinstance(response, ExecutionOutcome) else response.text
         ) or ""
@@ -590,10 +606,13 @@ class ExecutionCoordinator:
             self._stream_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._stream_task
-        if self._session_lock and self._session_lock.locked():
+        if self._session_lock and self._session_lock_acquired:
             self._session_lock.release()
+            self._session_lock_acquired = False
         async with self._executor._lock:
             self._executor._running_requests.pop(self._execution_key, None)
+            self._executor._running_event_queues.pop(self._execution_key, None)
+            self._executor._cancelled_requests.discard(self._execution_key)
             self._executor._running_stop_events.pop(self._execution_key, None)
             self._executor._running_identities.pop(self._execution_key, None)
             self._executor._running_session_ids.pop(self._execution_key, None)

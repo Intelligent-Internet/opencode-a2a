@@ -30,6 +30,13 @@ from ..profile.runtime import RuntimeProfile
 def _build_jsonrpc_extension_openapi_description(
     capability_snapshot: JsonRpcCapabilitySnapshot | None = None,
 ) -> str:
+    if capability_snapshot is not None and capability_snapshot.v2_exclusive_execution:
+        return (
+            "Experimental V2 exclusive text execution in a private, gateway-owned single-flight "
+            "session. Shared session binding, stream hints and streaming read/question callbacks "
+            "are supported. Attachments, request-scoped models, arbitrary tools, shared writers, "
+            "unary interventions and automatic event-loss recovery are unsupported."
+        )
     if capability_snapshot is not None and not capability_snapshot.extensions_enabled:
         return (
             "A2A JSON-RPC retains the A2A protocol 1.0 method surface. With OpenCode API V2, "
@@ -259,6 +266,7 @@ def _patch_jsonrpc_openapi_contract(
     capability_snapshot = capability_snapshot or build_capability_snapshot(
         runtime_profile=runtime_profile,
         upstream_api_version=settings.opencode_api_version,
+        v2_exclusive_execution=settings.opencode_v2_execution == "exclusive",
     )
     session_binding = build_session_binding_extension_params(
         runtime_profile=runtime_profile,
@@ -334,6 +342,11 @@ def _patch_jsonrpc_openapi_contract(
                                 ),
                             },
                         }
+                        post["x-a2a-extension-contracts"] = {
+                            key: contract
+                            for key, contract in post["x-a2a-extension-contracts"].items()
+                            if capability_snapshot.supports_extension(contract["extension_uri"])
+                        }
                     else:
                         post.pop("x-a2a-extension-contracts", None)
 
@@ -349,6 +362,12 @@ def _patch_jsonrpc_openapi_contract(
                                     app_json["examples"] = (
                                         _build_jsonrpc_extension_openapi_examples()
                                     )
+                                    if capability_snapshot.v2_exclusive_execution:
+                                        for unsupported in (
+                                            "message_send_model_override",
+                                            "message_send_file_input",
+                                        ):
+                                            app_json["examples"].pop(unsupported, None)
 
             rest_post_contracts: dict[str, dict[str, Any]] = {
                 "/message:send": {
@@ -402,6 +421,16 @@ def _patch_jsonrpc_openapi_contract(
                 app_json["schema"] = {"$ref": contract["schema_ref"]}
                 if capability_snapshot.a2a_message_execution_enabled:
                     app_json["examples"] = rest_examples
+                    if capability_snapshot.v2_exclusive_execution:
+                        app_json["examples"] = {
+                            key: example
+                            for key, example in rest_examples.items()
+                            if "file" not in key and "model" not in key
+                        }
+                        rest_post["description"] += (
+                            " Exclusive private sessions only; text input, no model override. "
+                            "Unary interventions and automatic gap recovery are unsupported."
+                        )
 
         app.openapi_schema = schema
         return schema

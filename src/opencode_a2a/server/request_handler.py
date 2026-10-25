@@ -251,6 +251,18 @@ class OpencodeRequestHandler(DefaultRequestHandlerV2):
             result = await super().on_cancel_task(params, context)
             if result is None:
                 return None
+            if (
+                getattr(
+                    getattr(self.agent_executor, "_client", None),
+                    "supports_streaming_submission",
+                    False,
+                )
+                is True
+                and result.status.state != TaskState.TASK_STATE_CANCELED
+            ):
+                raise TaskNotCancelableError(
+                    message="Execution settled without proven cancellation; inspect task state"
+                )
             modes = self._modes_for_task(result.id, task=result)
             return cast(Task, self._negotiate(result, modes))
         except TaskNotCancelableError:

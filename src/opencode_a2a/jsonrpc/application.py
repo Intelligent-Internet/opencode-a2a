@@ -353,7 +353,9 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             request.state.activated_extensions = tuple(
                 value
                 for value in requested_extensions
-                if self._capability_snapshot.extensions_enabled and value in ALL_EXTENSION_URIS
+                if self._capability_snapshot.extensions_enabled
+                and value in ALL_EXTENSION_URIS
+                and self._capability_snapshot.supports_extension(value)
             )
             return JSONResponse(
                 {

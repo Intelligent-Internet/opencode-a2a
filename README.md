@@ -91,6 +91,17 @@ curl http://127.0.0.1:8000/.well-known/agent-card.json
 
 ## Capabilities
 
+The following capability list describes the default OpenCode API V1 mode. With
+`OPENCODE_API_VERSION=v2`, only internal experimental session transport is
+available: A2A message execution fails before upstream requests, streaming and
+all extensions are disabled. A separate opt-in
+[`OPENCODE_V2_EXECUTION=exclusive` profile](docs/v2-exclusive-execution.md)
+adds restricted text execution and streaming read/question interventions in a
+dedicated private instance pair. It does not support shared upstream sessions,
+arbitrary tools, model overrides, or automatic recovery after event loss. Read
+the deployment preconditions and [compatibility matrix](docs/compatibility.md#runtime-support)
+before enabling it.
+
 - A2A HTTP+JSON endpoints such as `/message:send` and `/message:stream`
 - A2A JSON-RPC support on `POST /`
 - SDK-owned A2A task surfaces such as `GET /tasks`, task push notification config routes, JSON-RPC `GetExtendedAgentCard`, and HTTP `GET /extendedAgentCard`

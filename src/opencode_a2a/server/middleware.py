@@ -490,7 +490,11 @@ def install_runtime_middlewares(
     def _resolve_activated_extensions(request: Request) -> tuple[str, ...]:
         explicit = getattr(request.state, "activated_extensions", None)
         if explicit is not None:
-            return tuple(value for value in explicit if value)
+            return tuple(
+                value
+                for value in explicit
+                if value and capability_snapshot.supports_extension(value)
+            )
 
         requested_extensions = tuple(
             get_requested_extensions(request.headers.getlist(HTTP_EXTENSION_HEADER))
@@ -512,7 +516,11 @@ def install_runtime_middlewares(
             return ()
 
         requested = frozenset(requested_extensions)
-        return tuple(value for value in supported_extensions if value in requested)
+        return tuple(
+            value
+            for value in supported_extensions
+            if value in requested and capability_snapshot.supports_extension(value)
+        )
 
     def _set_activated_extensions_header(response: Response, request: Request) -> None:
         if not (200 <= response.status_code < 400):

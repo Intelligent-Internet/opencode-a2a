@@ -103,7 +103,7 @@ class SessionManager:
 
         try:
             session_id = await task
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             async with self._registry_lock:
                 if self._inflight_session_creates.get(cache_key) is task:
                     self._inflight_session_creates.pop(cache_key, None)

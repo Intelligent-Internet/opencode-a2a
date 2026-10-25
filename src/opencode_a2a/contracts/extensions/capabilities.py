@@ -72,24 +72,42 @@ class DeploymentConditionalMethod:
 class JsonRpcCapabilitySnapshot:
     upstream_api_version: OpenCodeApiVersion
     conditional_methods: Mapping[str, DeploymentConditionalMethod]
+    v2_exclusive_execution: bool = False
 
     @property
     def extensions_enabled(self) -> bool:
-        return self.upstream_api_version == "v1"
+        return self.upstream_api_version == "v1" or self.v2_exclusive_execution
 
     @property
     def a2a_message_execution_enabled(self) -> bool:
-        return self.upstream_api_version == "v1"
+        return self.upstream_api_version == "v1" or self.v2_exclusive_execution
 
     @property
     def streaming_enabled(self) -> bool:
-        return self.upstream_api_version == "v1"
+        return self.a2a_message_execution_enabled
 
     @property
     def declared_extension_uris(self) -> tuple[str, ...]:
+        if self.v2_exclusive_execution:
+            return (
+                identifiers.SESSION_BINDING_EXTENSION_URI,
+                identifiers.STREAMING_EXTENSION_URI,
+                identifiers.INTERRUPT_RECOVERY_EXTENSION_URI,
+                identifiers.INTERRUPT_CALLBACK_EXTENSION_URI,
+            )
         return DECLARED_EXTENSION_URIS if self.extensions_enabled else ()
 
+    def supports_extension(self, uri: str) -> bool:
+        if self.upstream_api_version == "v1":
+            return True
+        return uri in self.declared_extension_uris
+
     def is_method_enabled(self, method: str) -> bool:
+        if self.v2_exclusive_execution and method in _ALL_EXTENSION_METHODS:
+            return method in {
+                *catalog.INTERRUPT_RECOVERY_METHODS.values(),
+                *catalog.INTERRUPT_CALLBACK_METHODS.values(),
+            }
         if method in _ALL_EXTENSION_METHODS and not self.extensions_enabled:
             return False
         conditional_method = self.conditional_methods.get(method)
@@ -98,7 +116,7 @@ class JsonRpcCapabilitySnapshot:
         return conditional_method.enabled
 
     def session_management_methods(self) -> dict[str, str]:
-        if not self.extensions_enabled:
+        if not self.extensions_enabled or self.v2_exclusive_execution:
             return {}
         methods = dict(catalog.SESSION_METHODS)
         if not self.is_method_enabled(catalog.SESSION_METHODS["shell"]):
@@ -108,7 +126,7 @@ class JsonRpcCapabilitySnapshot:
     def dispatch_method_bindings(self) -> dict[str, str]:
         """Return handler registry bindings; every call is still checked against this policy."""
         methods = self.session_management_methods()
-        if not self.extensions_enabled:
+        if not self.extensions_enabled or self.v2_exclusive_execution:
             methods = dict(catalog.SESSION_METHODS)
             if not self._deployment_method_enabled(catalog.SESSION_METHODS["shell"]):
                 methods.pop("shell", None)
@@ -130,7 +148,7 @@ class JsonRpcCapabilitySnapshot:
         return methods
 
     def session_control_methods(self) -> dict[str, str]:
-        if not self.extensions_enabled:
+        if not self.extensions_enabled or self.v2_exclusive_execution:
             return {}
         methods = dict(catalog.SESSION_CONTROL_METHODS)
         if not self.is_method_enabled(catalog.SESSION_CONTROL_METHODS["shell"]):
@@ -138,12 +156,14 @@ class JsonRpcCapabilitySnapshot:
         return methods
 
     def workspace_control_methods(self) -> dict[str, str]:
-        if not self.extensions_enabled:
+        if not self.extensions_enabled or self.v2_exclusive_execution:
             return {}
         return self.dispatch_workspace_control_methods()
 
     def supported_jsonrpc_methods(self) -> list[str]:
         methods = list(catalog.CORE_JSONRPC_METHODS)
+        if self.v2_exclusive_execution:
+            return [*methods, *self.extension_jsonrpc_methods()]
         if not self.extensions_enabled:
             return methods
         methods.extend(method for key, method in catalog.SESSION_METHODS.items() if key != "shell")
@@ -156,6 +176,11 @@ class JsonRpcCapabilitySnapshot:
         return methods
 
     def extension_jsonrpc_methods(self) -> list[str]:
+        if self.v2_exclusive_execution:
+            return [
+                *catalog.INTERRUPT_RECOVERY_METHODS.values(),
+                *catalog.INTERRUPT_CALLBACK_METHODS.values(),
+            ]
         if not self.extensions_enabled:
             return []
         methods = [
@@ -200,6 +225,7 @@ def build_capability_snapshot(
     *,
     runtime_profile: RuntimeProfile,
     upstream_api_version: OpenCodeApiVersion = "v1",
+    v2_exclusive_execution: bool = False,
 ) -> JsonRpcCapabilitySnapshot:
     conditional_methods = {
         catalog.SESSION_CONTROL_METHODS["shell"]: DeploymentConditionalMethod(
@@ -223,4 +249,5 @@ def build_capability_snapshot(
     return JsonRpcCapabilitySnapshot(
         upstream_api_version=upstream_api_version,
         conditional_methods=MappingProxyType(conditional_methods),
+        v2_exclusive_execution=upstream_api_version == "v2" and v2_exclusive_execution,
     )

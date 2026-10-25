@@ -180,6 +180,7 @@ def create_app(settings: Settings) -> FastAPI:
     capability_snapshot = build_capability_snapshot(
         runtime_profile=runtime_profile,
         upstream_api_version=settings.opencode_api_version,
+        v2_exclusive_execution=settings.opencode_v2_execution == "exclusive",
     )
     agent_card = build_agent_card(settings, capability_snapshot=capability_snapshot)
     extended_agent_card = build_agent_card(

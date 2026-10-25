@@ -220,14 +220,17 @@ async def test_v2_prompt_methods_fail_without_http_side_effect(
 
     client, requests = _make_client(monkeypatch, respond, workspace_root=str(workspace))
     try:
+        assert client.prompt_execution_supported is False
+        assert "input ID identifies its" in client.prompt_execution_unsupported_reason
+        assert "task-scoped active cancellation" in client.prompt_execution_unsupported_reason
         with pytest.raises(
             UnsupportedUpstreamOperationError,
-            match="prompt execution is not implemented",
+            match="does not prove a per-input terminal outcome",
         ):
             await client.send_message("ses-1", "hello")
         with pytest.raises(
             UnsupportedUpstreamOperationError,
-            match="prompt execution is not implemented",
+            match="does not prove a per-input terminal outcome",
         ):
             await client.submit_prompt("ses-1", "hello")
     finally:

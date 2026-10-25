@@ -412,6 +412,8 @@ class StreamRuntime:
             while not stop_event.is_set():
                 try:
                     stream_kwargs: dict[str, Any] = {"stop_event": stop_event}
+                    if getattr(self._client, "supports_streaming_submission", False) is True:
+                        stream_kwargs["session_id"] = session_id
                     if directory is not None:
                         stream_kwargs["directory"] = directory
                     if workspace_id is not None:

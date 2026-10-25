@@ -501,6 +501,16 @@ def test_v2_capability_snapshot_disables_every_catalogued_extension() -> None:
     assert wire_contract["all_jsonrpc_methods"] == list(catalog.CORE_JSONRPC_METHODS)
     assert compatibility_profile["extension_retention"] == {}
     assert set(compatibility_profile["method_retention"]) == set(catalog.CORE_JSONRPC_METHODS)
+    v2_guidance = " ".join(compatibility_profile["consumer_guidance"])
+    assert "OpenCode API V2 currently provides internal experimental session transport only" in (
+        v2_guidance
+    )
+    assert (
+        "A2A message execution and all shared and provider-private extensions are unavailable"
+        in v2_guidance
+    )
+    assert "request-scoped plugin surface for the main chat path" not in v2_guidance
+    assert "a2a.interrupt.* methods as declared shared extensions" not in v2_guidance
     assert all(not snapshot.is_method_enabled(method) for method in extension_methods)
 
 
