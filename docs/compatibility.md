@@ -60,6 +60,8 @@ exclusive profile's narrower evidence does not silently close those criteria.
 ### Exclusive-profile acceptance matrix
 
 Evidence is recorded in [the sanitized acceptance record](./evidence/v2-exclusive-acceptance.json).
+The upstream stack's separate [regression validation record](./evidence/v2-exclusive-upstream-validation.md)
+distinguishes its doctor and session-only checks from the author's model-backed runs.
 `PASS` applies only to the described tested subset; `NOT VERIFIED` is not a
 support claim. V1 remains the stable default. Upstream review/merge and the
 epic's final scope decision are separate from these execution results.
