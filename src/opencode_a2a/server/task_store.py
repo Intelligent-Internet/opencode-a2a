@@ -330,14 +330,6 @@ def _validate_sdk_task_table(connection: Any, *, database_url: str) -> None:
         )
 
 
-def build_task_store(
-    settings: Settings,
-    *,
-    engine: Any | None = None,
-) -> TaskStore | VersionedTaskStore:
-    return build_task_store_runtime(settings, engine=engine).task_store
-
-
 def describe_lightweight_persistence_backend(settings: Settings) -> dict[str, str]:
     summary = {
         "backend": settings.a2a_task_store_backend,
@@ -351,70 +343,16 @@ def describe_lightweight_persistence_backend(settings: Settings) -> dict[str, st
     return summary
 
 
-def unwrap_task_store(task_store: TaskStore | VersionedTaskStore) -> TaskStore | VersionedTaskStore:
-    if isinstance(task_store, VersionedDatabaseTaskStore):
-        return task_store.as_task_store
-    if isinstance(task_store, NegotiatingVersionedTaskStore):
-        return unwrap_task_store(task_store._inner)
-    inner = getattr(task_store, "_store", None)
-    if isinstance(inner, TaskStore | VersionedTaskStore):
-        return unwrap_task_store(inner)
-    return task_store
-
-
-async def initialize_task_store(task_store: TaskStore | VersionedTaskStore) -> None:
-    initialize = getattr(task_store, "initialize", None)
-    if callable(initialize):
-        await initialize()
-
-
-async def task_store_snapshot(
-    task_store: TaskStore | VersionedTaskStore,
-    task_id: str,
-    context: ServerCallContext | None = None,
-) -> StoredTask | None:
-    return await as_versioned_task_store(task_store).get(
-        task_id,
-        _normalize_task_store_context(context),
-    )
-
-
 async def task_store_get(
     task_store: TaskStore | VersionedTaskStore,
     task_id: str,
     context: ServerCallContext | None = None,
 ) -> Task | None:
-    stored = await task_store_snapshot(task_store, task_id, context)
-    return stored.task if stored is not None else None
-
-
-async def task_store_save(
-    task_store: TaskStore | VersionedTaskStore,
-    task: Task,
-    context: ServerCallContext | None = None,
-) -> TaskVersion:
-    await initialize_task_store(task_store)
-    normalized_context = _normalize_task_store_context(context)
-    versioned_store = as_versioned_task_store(task_store)
-    stored = await versioned_store.get(task.id, normalized_context)
-    return await versioned_store.save(
-        task,
-        event=None,
-        prev=stored.task if stored is not None else None,
-        prev_version=stored.version if stored is not None else TaskVersion.MISSING,
-        context=normalized_context,
-    )
-
-
-async def task_store_delete(
-    task_store: TaskStore | VersionedTaskStore,
-    task_id: str,
-    context: ServerCallContext | None = None,
-) -> None:
-    await as_versioned_task_store(task_store).delete(
+    stored = await as_versioned_task_store(task_store).get(
         task_id,
         _normalize_task_store_context(context),
     )
+    return stored.task if stored is not None else None
 
 
 def _normalize_task_store_context(

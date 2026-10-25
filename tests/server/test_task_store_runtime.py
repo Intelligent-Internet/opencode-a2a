@@ -21,14 +21,13 @@ from opencode_a2a.server.task_store import (
     NegotiatingTaskStore,
     TaskOutputModeRegistry,
     TaskStoreOperationError,
+    as_versioned_task_store,
     build_task_store_runtime,
     describe_lightweight_persistence_backend,
-    initialize_task_store,
-    task_store_delete,
     task_store_get,
-    task_store_save,
 )
 from tests.support.settings import make_settings
+from tests.support.task_store import save_task
 
 
 def _task(task_id: str, *, context_id: str = "ctx-1") -> Task:
@@ -49,9 +48,9 @@ async def test_memory_runtime_uses_sdk_copying_store_and_versioned_adapter() -> 
     assert isinstance(LegacyTaskStoreAdapter(runtime.task_store), LegacyTaskStoreAdapter)
 
     await runtime.startup()
-    await task_store_save(runtime.task_store, _task("task-1"))
+    await save_task(runtime.task_store, _task("task-1"))
     assert await task_store_get(runtime.task_store, "task-1") == _task("task-1")
-    await task_store_delete(runtime.task_store, "task-1")
+    await as_versioned_task_store(runtime.task_store).delete("task-1", ServerCallContext())
     assert await task_store_get(runtime.task_store, "task-1") is None
     await runtime.shutdown()
 
@@ -70,7 +69,7 @@ async def test_database_runtime_uses_native_versioned_store_and_event_stream(
 
     await runtime.startup()
     context = ServerCallContext(state={"identity": "automation"})
-    await task_store_save(runtime.task_store, _task("task-db"), context)
+    await save_task(runtime.task_store, _task("task-db"), context)
     assert await task_store_get(runtime.task_store, "task-db", context) == _task("task-db")
     await runtime.shutdown()
 
@@ -82,7 +81,7 @@ async def test_database_runtime_initializes_lazily_without_lifespan(tmp_path: Pa
         a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'lazy.db'}",
     )
     runtime = build_task_store_runtime(settings)
-    await task_store_save(runtime.task_store, _task("task-lazy"))
+    await save_task(runtime.task_store, _task("task-lazy"))
     assert await task_store_get(runtime.task_store, "task-lazy") == _task("task-lazy")
     await runtime.shutdown()
 
@@ -180,7 +179,7 @@ async def test_shared_engine_is_not_disposed(tmp_path: Path) -> None:
         make_settings(test_bearer_token="test-token"),
         engine=engine,
     )
-    await initialize_task_store(runtime.task_store)
+    await runtime.startup()
     await runtime.shutdown()
     async with engine.connect() as connection:
         await connection.execute(text("SELECT 1"))

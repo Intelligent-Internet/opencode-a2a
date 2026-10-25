@@ -8,9 +8,10 @@ from a2a.server.context import ServerCallContext
 from a2a.types import Task, TaskState, TaskStatus
 
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
-from opencode_a2a.server.task_store import task_store_get, task_store_save
+from opencode_a2a.server.task_store import task_store_get
 from tests.support.session_extensions import _extension_headers
 from tests.support.settings import make_settings
+from tests.support.task_store import save_task
 
 
 def _task(task_id: str, *, context_id: str = "ctx-1") -> Task:
@@ -166,7 +167,7 @@ async def test_database_backend_persists_task_session_and_interrupt_state_across
         upstream_client = app1.state._jsonrpc_app._upstream_client
 
         context = ServerCallContext(state={"identity": "automation"})
-        await task_store_save(task_store, _task("task-1"), context)
+        await save_task(task_store, _task("task-1"), context)
         session_id, pending = await executor._session_manager.get_or_create_session(
             identity="user-1",
             context_id="ctx-1",

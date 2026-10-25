@@ -34,10 +34,10 @@ from opencode_a2a.server.request_handler import OpencodeRequestHandler
 from opencode_a2a.server.task_store import (
     build_task_store_runtime,
     task_store_get,
-    task_store_save,
 )
 from opencode_a2a.trace_context import TraceContext, bind_trace_context, get_current_trace_context
 from tests.support.settings import make_settings
+from tests.support.task_store import save_task
 
 
 def _context(identity: str = "owner") -> ServerCallContext:
@@ -131,7 +131,7 @@ async def test_early_failure_persists_failed_task(runtime) -> None:
 
 @pytest.mark.asyncio
 async def test_terminal_send_is_unsupported(runtime) -> None:
-    await task_store_save(
+    await save_task(
         runtime.task_store,
         Task(
             id="terminal-task",
@@ -348,7 +348,7 @@ async def test_follow_up_message_uses_sender_contextvars(runtime) -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_is_idempotent_for_canceled_task(runtime) -> None:
-    await task_store_save(
+    await save_task(
         runtime.task_store,
         Task(
             id="canceled-task",
@@ -357,7 +357,7 @@ async def test_cancel_is_idempotent_for_canceled_task(runtime) -> None:
         ),
         _context(),
     )
-    await task_store_save(
+    await save_task(
         runtime.task_store,
         Task(
             id="canceled-task",
@@ -377,7 +377,7 @@ async def test_cancel_is_idempotent_for_canceled_task(runtime) -> None:
 
 @pytest.mark.asyncio
 async def test_subscribe_terminal_task_is_unsupported(runtime) -> None:
-    await task_store_save(
+    await save_task(
         runtime.task_store,
         Task(
             id="terminal-subscribe",

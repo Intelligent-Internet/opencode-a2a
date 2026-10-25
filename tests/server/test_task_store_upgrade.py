@@ -18,9 +18,9 @@ from opencode_a2a.server.task_store import (
     as_versioned_task_store,
     build_task_store_runtime,
     task_store_get,
-    task_store_save,
 )
 from tests.support.settings import make_settings
+from tests.support.task_store import save_task
 
 
 def _legacy_database(path: Path, state: str) -> None:
@@ -131,7 +131,7 @@ async def test_versioned_store_rejects_stale_first_write(tmp_path: Path) -> None
     )
     try:
         await runtime.startup()
-        await task_store_save(runtime.task_store, task, context)
+        await save_task(runtime.task_store, task, context)
         with pytest.raises(ConcurrentTaskModificationError):
             await as_versioned_task_store(runtime.task_store).save(
                 task,
@@ -164,7 +164,7 @@ async def test_list_tasks_keyset_token_survives_first_page_delete(
             _timed_task("task-middle", "2026-10-24T02:00:00Z"),
             _timed_task("task-oldest", "2026-10-24T01:00:00Z"),
         ):
-            await task_store_save(runtime.task_store, task, context)
+            await save_task(runtime.task_store, task, context)
 
         first_page = await as_versioned_task_store(runtime.task_store).list(
             ListTasksRequest(page_size=1),

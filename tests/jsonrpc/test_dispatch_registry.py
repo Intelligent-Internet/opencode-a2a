@@ -27,18 +27,21 @@ async def test_extension_registry_tracks_configured_methods(monkeypatch) -> None
         )
     )
 
-    registry_methods = _jsonrpc_app(app)._extension_method_registry.methods()  # noqa: SLF001
-    assert "opencode.sessions.status" in registry_methods
-    assert "opencode.sessions.list" in registry_methods
-    assert "opencode.sessions.fork" in registry_methods
-    assert "opencode.sessions.summarize" in registry_methods
-    assert "opencode.sessions.revert" in registry_methods
-    assert "opencode.sessions.unrevert" in registry_methods
-    assert "opencode.providers.list" in registry_methods
-    assert "opencode.projects.list" in registry_methods
-    assert "opencode.permissions.list" in registry_methods
-    assert "a2a.interrupt.permission.reply" in registry_methods
-    assert "opencode.sessions.shell" not in registry_methods
+    registry = _jsonrpc_app(app)._extension_method_registry  # noqa: SLF001
+    for method in (
+        "opencode.sessions.status",
+        "opencode.sessions.list",
+        "opencode.sessions.fork",
+        "opencode.sessions.summarize",
+        "opencode.sessions.revert",
+        "opencode.sessions.unrevert",
+        "opencode.providers.list",
+        "opencode.projects.list",
+        "opencode.permissions.list",
+        "a2a.interrupt.permission.reply",
+    ):
+        assert registry.resolve(method) is not None
+    assert registry.resolve("opencode.sessions.shell") is None
 
 
 @pytest.mark.asyncio

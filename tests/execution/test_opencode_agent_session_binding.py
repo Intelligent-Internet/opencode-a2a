@@ -31,7 +31,7 @@ from opencode_a2a.execution.tool_orchestration import (
     maybe_handle_tools,
     merge_streamed_tool_output,
 )
-from opencode_a2a.jsonrpc.models import JSONRPCError, JSONRPCErrorResponse
+from opencode_a2a.jsonrpc.models import JSONRPCError
 from opencode_a2a.opencode_upstream_client import OpencodeMessage
 from opencode_a2a.server.client_manager import A2AClientManager
 from opencode_a2a.trace_context import TraceContext, bind_trace_context
@@ -39,6 +39,7 @@ from tests.support.async_iterators import iter_async
 from tests.support.fake_client_errors import (
     FakeA2AClientHTTPError,
     FakeA2AClientJSONRPCError,
+    FakeJSONRPCErrorResponse,
 )
 from tests.support.helpers import (
     DummyChatOpencodeUpstreamClient,
@@ -668,7 +669,7 @@ async def test_agent_a2a_call_propagates_current_trace_headers(
 
 def test_map_a2a_tool_exception_protocol_and_unavailable_variants() -> None:
     rpc_error = FakeA2AClientJSONRPCError(
-        JSONRPCErrorResponse(
+        FakeJSONRPCErrorResponse(
             error=JSONRPCError(code=-32602, message="bad params"),
             id="req-1",
         )

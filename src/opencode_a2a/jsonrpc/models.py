@@ -24,9 +24,3 @@ class JSONRPCRequest(JSONRPCBaseModel):
     method: str
     params: dict[str, Any] | None = None
     id: str | int | None = None
-
-
-class JSONRPCErrorResponse(JSONRPCBaseModel):
-    jsonrpc: Literal["2.0"] = "2.0"
-    id: str | int | None = None
-    error: JSONRPCError

@@ -15,13 +15,13 @@ from opencode_a2a.server.runtime_limits import (
     apply_stream_budget,
     json_event_size,
 )
-from opencode_a2a.server.task_store import task_store_save
 from tests.server.test_transport_contract import (
     _authenticated_task_context,
     _task_for_listing,
 )
 from tests.support.helpers import DummyChatOpencodeUpstreamClient, make_basic_auth_header
 from tests.support.settings import make_settings
+from tests.support.task_store import save_task
 
 
 class FakeClock:
@@ -446,7 +446,7 @@ async def test_streaming_byte_budget_integration_rejects_subscribe_before_sse(mo
         a2a_stream_idle_timeout_seconds=0,
     )
     task_store = app.state.task_store
-    await task_store_save(
+    await save_task(
         task_store,
         _task_for_listing(
             task_id="task-sub",
