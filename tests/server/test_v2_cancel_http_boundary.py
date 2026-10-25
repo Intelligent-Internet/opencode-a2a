@@ -94,7 +94,8 @@ class HttpBoundary(NativeServer):
             )
         )
         self.pending.append(stream)
-        async with asyncio.timeout(2):
+        # Real SQLite startup is not the cancellation deadline under test.
+        async with asyncio.timeout(10):
             while True:
                 keys = set(executor._running_requests) - previous
                 if keys:
@@ -104,7 +105,7 @@ class HttpBoundary(NativeServer):
                         return task_id, stream
                 if stream.done():
                     raise AssertionError(f"Stream ended before execution: {(await stream).text}")
-                await asyncio.sleep(0.001)
+                await asyncio.sleep(0.01)
 
 
 @pytest_asyncio.fixture

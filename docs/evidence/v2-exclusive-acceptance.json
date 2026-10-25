@@ -127,7 +127,15 @@
     "conformance_passed": 8,
     "conformance_failed": 0,
     "default_v2_session_smoke": "PASS",
-    "v1_repository_streaming_smoke": "PASS"
+    "v1_repository_streaming_smoke": "PASS",
+    "sdk_cancel_boundary_repeats": {
+      "runs": 8,
+      "tests_per_run": 6,
+      "failures": 0,
+      "startup_budget_seconds": 10,
+      "task_store_poll_interval_seconds": 0.01,
+      "semantic_cancellation_deadlines_changed": false
+    }
   },
   "reproduction": "docs/v2-exclusive-execution.md#reproduce-the-live-evidence",
   "redactions": ["Credentials", "Raw prompts and model output", "Opaque session/task/request IDs", "Runtime paths and PIDs"]
