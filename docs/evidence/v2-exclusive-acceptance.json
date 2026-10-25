@@ -1,7 +1,7 @@
 {
   "verification_date": "2026-10-25",
-  "verified_at": "2026-10-25T18:32:49+01:00",
-  "source_tree_sha256": ["c1c629a9", "a514112e", "7a7b3716", "f840195b", "de4a6b26", "9c09b820", "980b07ab", "0f15c766"],
+  "verified_at": "2026-10-25T18:49:17+01:00",
+  "source_tree_sha256": ["ee77d8d8", "b8e0d623", "9a121f81", "344c5def", "f171a7c7", "064ca29e", "c1e146d5", "4831daa7"],
   "source_hash_method": "Concatenate public digest groups. Input: sorted src/opencode_a2a/**/*.py; relative path, NUL, file bytes, NUL",
   "scope": "Experimental private, gateway-created, single-flight sessions only; not general OpenCode V2 compatibility",
   "versions": {
@@ -46,6 +46,7 @@
     "cross_owner_task_and_callback_rejected": "PASS",
     "cross_owner_session_hijack_rejected_without_admission": "PASS",
     "outside_workspace_metadata_rejected_without_admission": "PASS",
+    "inside_root_location_changes_rejected_without_admission": "PASS",
     "real_external_directory_read_failed_without_approval_or_contents": "PASS",
     "stale_callback_rejected": "PASS",
     "observed_block_types": ["text", "tool_call"],
@@ -115,10 +116,10 @@
   },
   "deterministic_validation": {
     "doctor_command": "bash ./scripts/doctor.sh",
-    "tests_passed": 1011,
+    "tests_passed": 1012,
     "tests_failed": 0,
-    "line_coverage_percent": 92.66,
-    "qa_tested_commit": "e86042a",
+    "line_coverage_percent": 92.65,
+    "qa_tested_source": "source_tree_sha256",
     "critical_file_coverage_gates": "PASS",
     "typing_lint_format_build_wheel_smoke": "PASS",
     "conformance_passed": 8,

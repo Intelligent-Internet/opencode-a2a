@@ -52,6 +52,10 @@ Only sessions created by this running gateway are executable. Unknown,
 preexisting, imported, child, or post-restart session IDs cannot be adopted.
 Persistent task history remains queryable after restart, but execution requires
 a new context/session. Follow-up in a healthy live session retains context.
+Execution uses the configured workspace only. Per-request location changes,
+including another directory inside that root, are explicitly rejected rather
+than silently ignored when continuing a bound session. Default session-only V2
+transport retains its existing location mapping.
 
 Same-session requests serialize; different sessions may run concurrently.
 One bounded native `/api/event` connection serves the instance. Subscription
