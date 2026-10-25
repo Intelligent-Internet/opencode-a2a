@@ -1,7 +1,7 @@
 {
   "verification_date": "2026-10-25",
-  "verified_at": "2026-10-25T18:49:17+01:00",
-  "source_tree_sha256": ["ee77d8d8", "b8e0d623", "9a121f81", "344c5def", "f171a7c7", "064ca29e", "c1e146d5", "4831daa7"],
+  "verified_at": "2026-10-25T19:13:14+01:00",
+  "source_tree_sha256": ["2145b838", "3378bcf9", "6fdf60ec", "8fa483cf", "7a2f8aa1", "d9868b2a", "7459e0c8", "aec3a3bc"],
   "source_hash_method": "Concatenate public digest groups. Input: sorted src/opencode_a2a/**/*.py; relative path, NUL, file bytes, NUL",
   "scope": "Experimental private, gateway-created, single-flight sessions only; not general OpenCode V2 compatibility",
   "versions": {
@@ -82,6 +82,7 @@
     "Concurrent callbacks issue one native mutation",
     "Readiness timeout closes reader and releases stream capacity",
     "Unknown sessions and weakened permissions reject before prompt admission",
+    "Preferred IDs cannot claim a registered session before creator ownership is committed",
     "Idle registry retirement and active/quarantined execution budgets remain bounded"
   ],
   "unsupported": [
@@ -116,9 +117,9 @@
   },
   "deterministic_validation": {
     "doctor_command": "bash ./scripts/doctor.sh",
-    "tests_passed": 1012,
+    "tests_passed": 1013,
     "tests_failed": 0,
-    "line_coverage_percent": 92.65,
+    "line_coverage_percent": 92.62,
     "qa_tested_source": "source_tree_sha256",
     "critical_file_coverage_gates": "PASS",
     "typing_lint_format_build_wheel_smoke": "PASS",
