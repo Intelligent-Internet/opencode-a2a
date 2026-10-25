@@ -20,7 +20,8 @@ flowchart TD
     end
 
     subgraph Upstream["OpenCode Upstream Layer"]
-        UpstreamClient["opencode_upstream_client.py"]
+        UpstreamClient["opencode_upstream_client.py (V1 facade)"]
+        UpstreamContracts["upstream/contracts.py"]
     end
 
     subgraph Extensions["Extension / Contract Layer"]
@@ -37,7 +38,8 @@ flowchart TD
 
     Inbound --> Execution
     Inbound --> Extensions
-    Execution --> Upstream
+    Execution --> UpstreamContracts
+    UpstreamClient --> UpstreamContracts
     Inbound --> Persistence
     Execution --> Persistence
 ```
@@ -53,8 +55,9 @@ flowchart TD
    - `execution/coordinator.py`
    - `execution/stream_runtime.py`
    - `execution/tool_orchestration.py`
-5. `opencode_upstream_client.py` sends requests to the upstream OpenCode runtime.
-6. The adapter maps upstream responses back into A2A tasks, messages, artifacts, and stream events.
+5. `opencode_upstream_client.py` preserves the public V1 client facade and sends requests to the OpenCode runtime.
+6. The internal `upstream/contracts.py` separates prompt receipts, terminal outcomes, and normalized execution updates; V1 event decoding occurs before updates reach the shared stream runtime.
+7. The execution layer maps outcomes and updates into A2A tasks, messages, artifacts, and stream events.
 
 ### JSON-RPC Extension Path
 

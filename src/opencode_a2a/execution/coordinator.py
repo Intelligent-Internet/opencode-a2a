@@ -22,9 +22,23 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
-from ..opencode_upstream_client import UpstreamConcurrencyLimitError, UpstreamContractError
+from ..opencode_upstream_client import (
+    OpencodeMessage,
+    UpstreamConcurrencyLimitError,
+    UpstreamContractError,
+)
+from ..upstream.contracts import (
+    ExecutionOutcome,
+    ExecutionState,
+    PromptSubmission,
+    UpstreamAdapter,
+)
 from .event_helpers import _enqueue_artifact_update
-from .stream_events import _extract_token_usage, _extract_upstream_error_from_response
+from .stream_events import (
+    _extract_token_usage,
+    _extract_upstream_error_from_response,
+    _task_state_from_execution_state,
+)
 from .stream_state import (
     _build_output_metadata,
     _build_stream_artifact_metadata,
@@ -36,12 +50,14 @@ from .upstream_error_translator import (
     _await_stream_terminal_signal,
     _format_upstream_error,
     _StreamTerminalSignal,
+    _UpstreamInBandError,
 )
 
 if TYPE_CHECKING:
     from .executor import OpencodeAgentExecutor
 
 logger = logging.getLogger(__name__)
+_MISSING = object()
 
 
 @dataclass(frozen=True)
@@ -134,19 +150,44 @@ class ExecutionCoordinator:
                 if self._prepared.streaming_request:
                     send_kwargs["timeout_override"] = self._executor._client.stream_timeout
 
-                if not self._prepared.use_structured_parts and not turn_request_parts:
+                prompt_text = (
+                    user_text
+                    if not self._prepared.use_structured_parts and not turn_request_parts
+                    else user_text or None
+                )
+                prompt_kwargs = dict(send_kwargs)
+                if self._prepared.use_structured_parts or turn_request_parts:
+                    prompt_kwargs["parts"] = turn_request_parts
+
+                upstream: UpstreamAdapter = self._executor._client
+                submit_prompt = getattr(upstream, "submit_prompt", _MISSING)
+                response: ExecutionOutcome | OpencodeMessage
+                if submit_prompt is _MISSING:
                     response = await self._executor._client.send_message(
                         self._session_id,
-                        user_text,
-                        **send_kwargs,
+                        prompt_text,
+                        **prompt_kwargs,
                     )
                 else:
-                    response = await self._executor._client.send_message(
+                    if not callable(submit_prompt):
+                        raise UpstreamContractError(
+                            "OpenCode submit_prompt must be callable when provided"
+                        )
+                    submission = await submit_prompt(
                         self._session_id,
-                        user_text or None,
-                        parts=turn_request_parts,
-                        **send_kwargs,
+                        prompt_text,
+                        **prompt_kwargs,
                     )
+                    if not isinstance(submission, PromptSubmission):
+                        raise UpstreamContractError(
+                            "OpenCode submit_prompt must return PromptSubmission"
+                        )
+                    if submission.outcome is None:
+                        raise RuntimeError(
+                            "Upstream accepted the prompt without a terminal outcome; "
+                            "asynchronous observation is not supported"
+                        )
+                    response = submission.outcome
 
                 if self._pending_preferred_claim:
                     await self._executor._session_manager.finalize_preferred_session_binding(
@@ -156,8 +197,20 @@ class ExecutionCoordinator:
                     )
                     self._pending_preferred_claim = False
 
+                if (
+                    isinstance(response, ExecutionOutcome)
+                    and response.state != ExecutionState.COMPLETED
+                ):
+                    await self._handle_response(response)
+                    break
+
+                response_payload = (
+                    dict(response.response or {})
+                    if isinstance(response, ExecutionOutcome)
+                    else response.raw
+                )
                 tool_results = await maybe_handle_tools(
-                    response.raw,
+                    response_payload,
                     a2a_client_manager=self._executor._a2a_client_manager,
                 )
                 if tool_results:
@@ -300,18 +353,51 @@ class ExecutionCoordinator:
             )
 
     async def _handle_response(self, response: Any) -> None:
-        response_text = response.text or ""
+        response_text = (
+            response.output if isinstance(response, ExecutionOutcome) else response.text
+        ) or ""
         resolved_message_id = self._stream_state.resolve_message_id(response.message_id)
-        response_error = _extract_upstream_error_from_response(response.raw)
+        response_session_id = (
+            response.session.id if isinstance(response, ExecutionOutcome) else response.session_id
+        )
+        response_payload = (
+            dict(response.response or {})
+            if isinstance(response, ExecutionOutcome)
+            else response.raw
+        )
+        response_error: _UpstreamInBandError | None
+        if isinstance(response, ExecutionOutcome) and response.state != ExecutionState.COMPLETED:
+            response_error = _UpstreamInBandError(
+                error_type=response.error_type or "UPSTREAM_EXECUTION_ERROR",
+                state=_task_state_from_execution_state(response.state),
+                message=response.error_message or "OpenCode execution did not complete.",
+                upstream_status=response.upstream_status,
+            )
+        elif (
+            isinstance(response, ExecutionOutcome)
+            and response.error_type is not None
+            and response.error_state is not None
+            and response.error_message is not None
+        ):
+            response_error = _UpstreamInBandError(
+                error_type=response.error_type,
+                state=_task_state_from_execution_state(response.error_state),
+                message=response.error_message,
+                upstream_status=response.upstream_status,
+            )
+        else:
+            response_error = _extract_upstream_error_from_response(response_payload)
         resolved_token_usage = _merge_token_usage(
-            _extract_token_usage(response.raw),
+            response.usage
+            if isinstance(response, ExecutionOutcome)
+            else _extract_token_usage(response_payload),
             self._stream_state.token_usage,
         )
 
         logger.debug(
             "OpenCode response task_id=%s session_id=%s message_id=%s text_len=%s",
             self._task_id,
-            response.session_id,
+            response_session_id,
             resolved_message_id,
             len(response_text),
         )
@@ -331,7 +417,6 @@ class ExecutionCoordinator:
 
         if self._prepared.streaming_request:
             await self._handle_streaming_response(
-                response=response,
                 response_text=response_text,
                 resolved_message_id=resolved_message_id,
                 resolved_token_usage=resolved_token_usage,
@@ -339,7 +424,7 @@ class ExecutionCoordinator:
             return
 
         await self._handle_non_streaming_response(
-            response=response,
+            session_id=response_session_id,
             response_text=response_text,
             resolved_message_id=resolved_message_id,
             resolved_token_usage=resolved_token_usage,
@@ -348,14 +433,12 @@ class ExecutionCoordinator:
     async def _handle_streaming_response(
         self,
         *,
-        response: Any,
         response_text: str,
         resolved_message_id: str,
         resolved_token_usage: Mapping[str, Any] | None,
     ) -> None:
         from .stream_events import BlockType
 
-        del response
         if self._stream_terminal_signal is None:
             raise RuntimeError("Streaming terminal signal was not initialized")
 
@@ -439,7 +522,7 @@ class ExecutionCoordinator:
     async def _handle_non_streaming_response(
         self,
         *,
-        response: Any,
+        session_id: str,
         response_text: str,
         resolved_message_id: str,
         resolved_token_usage: Mapping[str, Any] | None,
@@ -470,7 +553,7 @@ class ExecutionCoordinator:
             history=history,
             artifacts=[artifact],
             metadata=_build_output_metadata(
-                session_id=response.session_id,
+                session_id=session_id,
                 usage=resolved_token_usage,
                 include_session_metadata=self._prepared.emit_session_metadata,
                 include_streaming_metadata=self._prepared.emit_streaming_metadata,
