@@ -24,6 +24,7 @@ from a2a.types import (
     TaskStatus,
     TaskStatusUpdateEvent,
 )
+from a2a.utils.errors import TaskNotCancelableError
 
 from ..contracts.extensions import (
     INTERRUPT_CALLBACK_EXTENSION_URI,
@@ -42,15 +43,40 @@ from ..parts.mapping import (
 )
 from ..redact import redact_absolute_paths
 from ..sandbox_policy import SandboxPolicy
+from ..upstream.contracts import ExecutionState, PromptSubmission
 from .coordinator import ExecutionCoordinator, PreparedExecution, build_session_binding_context_id
 from .event_helpers import _enqueue_artifact_update
 from .metrics import emit_metric
 from .session_manager import SessionManager
+from .stream_events import _task_state_from_execution_state
 from .stream_runtime import StreamRuntime
 
 logger = logging.getLogger(__name__)
 _TEXT_PLAIN_MEDIA_TYPE = "text/plain"
 _APPLICATION_JSON_MEDIA_TYPE = "application/json"
+
+
+def _exclusive_metadata_rejected(sources: tuple[Mapping[str, object] | None, ...]) -> bool:
+    for source in sources:
+        if source is None:
+            continue
+        shared = source.get("shared", {})
+        private = source.get("opencode", {})
+        if not isinstance(shared, Mapping) or not isinstance(private, Mapping):
+            return True
+        if "model" in shared or "workspace" in private:
+            return True
+        if "session" in shared:
+            session = shared["session"]
+            if not isinstance(session, Mapping) or not isinstance(session.get("id"), str):
+                return True
+            if not session["id"].strip():
+                return True
+        if "directory" in private:
+            directory = private["directory"]
+            if not isinstance(directory, str) or not directory.strip():
+                return True
+    return False
 
 
 class OpencodeAgentExecutor(AgentExecutor):
@@ -88,6 +114,8 @@ class OpencodeAgentExecutor(AgentExecutor):
         )
         self._lock = asyncio.Lock()
         self._running_requests: dict[tuple[str, str], asyncio.Task[Any]] = {}
+        self._running_event_queues: dict[tuple[str, str], EventQueue] = {}
+        self._cancelled_requests: set[tuple[str, str]] = set()
         self._running_stop_events: dict[tuple[str, str], asyncio.Event] = {}
         self._running_identities: dict[tuple[str, str], str] = {}
         self._running_session_ids: dict[tuple[str, str], str] = {}
@@ -105,6 +133,23 @@ class OpencodeAgentExecutor(AgentExecutor):
                 context_id=context_id or "unknown",
                 message="Missing task_id or context_id in request context",
                 state=TaskState.TASK_STATE_FAILED,
+                streaming_request=self._should_stream(context),
+            )
+            return
+
+        if not getattr(self._client, "prompt_execution_supported", True):
+            unsupported_reason = getattr(
+                self._client,
+                "prompt_execution_unsupported_reason",
+                "OpenCode prompt execution is unsupported by the selected upstream adapter.",
+            )
+            await self._emit_error(
+                event_queue,
+                task_id=task_id,
+                context_id=context_id,
+                message=unsupported_reason,
+                state=TaskState.TASK_STATE_FAILED,
+                error_type="UPSTREAM_UNSUPPORTED",
                 streaming_request=self._should_stream(context),
             )
             return
@@ -203,6 +248,23 @@ class OpencodeAgentExecutor(AgentExecutor):
             namespace="opencode",
             path=("directory",),
         )
+        if getattr(self._client, "supports_streaming_submission", False) is True and (
+            _exclusive_metadata_rejected(metadata_source_tuple)
+            or any(part.get("type") != "text" for part in request_parts)
+        ):
+            await self._emit_error(
+                event_queue,
+                task_id=task_id,
+                context_id=context_id,
+                message=(
+                    "V2 exclusive mode requires text and valid session/directory metadata, "
+                    "without model/workspace overrides."
+                ),
+                state=TaskState.TASK_STATE_FAILED,
+                error_type="UPSTREAM_UNSUPPORTED_OPERATION",
+                streaming_request=streaming_request,
+            )
+            return
 
         directory: str | None = None
         if workspace_id is None:
@@ -305,6 +367,9 @@ class OpencodeAgentExecutor(AgentExecutor):
         await coordinator.run()
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
+        if getattr(self._client, "supports_streaming_submission", False) is True:
+            await self._cancel_exclusive(context, event_queue)
+            return
         task_id = context.task_id
         context_id = context.context_id
         started_at = time.monotonic()
@@ -326,12 +391,19 @@ class OpencodeAgentExecutor(AgentExecutor):
             call_context = context.call_context
             identity = (call_context.state.get("identity") if call_context else None) or "anonymous"
 
+            execution_key = (task_id, context_id)
+            async with self._lock:
+                self._cancelled_requests.add(execution_key)
+                original_queue = self._running_event_queues.get(execution_key)
+
             event = TaskStatusUpdateEvent(
                 task_id=task_id,
                 context_id=context_id,
                 status=TaskStatus(state=TaskState.TASK_STATE_CANCELED),
             )
             await event_queue.enqueue_event(event)
+            if original_queue is not None and original_queue is not event_queue:
+                await original_queue.enqueue_event(event)
 
             execution_key = (task_id, context_id)
             async with self._lock:
@@ -420,11 +492,84 @@ class OpencodeAgentExecutor(AgentExecutor):
                         streaming_request=False,
                     )
         finally:
+            if task_id and context_id:
+                async with self._lock:
+                    if (task_id, context_id) not in self._running_requests:
+                        self._cancelled_requests.discard((task_id, context_id))
             emit_metric(
                 "a2a_cancel_duration_ms",
                 (time.monotonic() - started_at) * 1000.0,
                 abort_outcome=abort_outcome,
             )
+
+    async def _cancel_exclusive(self, context: RequestContext, event_queue: EventQueue) -> None:
+        task_id = context.task_id
+        context_id = context.context_id
+        if not task_id or not context_id:
+            raise TaskNotCancelableError(message="Cancellation requires a known task")
+        identity = (
+            context.call_context.state.get("identity") if context.call_context else None
+        ) or "anonymous"
+        key = (task_id, context_id)
+        async with self._lock:
+            owner = self._running_identities.get(key)
+            task = self._running_requests.get(key)
+            session = self._running_session_ids.get(key)
+            directory = self._running_directories.get(key)
+            original_queue = self._running_event_queues.get(key)
+        if owner is not None and owner != identity:
+            raise TaskNotCancelableError(message="Task is not cancelable by this caller")
+        if task is None or task.done():
+            # The SDK may race an execution's final queue write. Let it read that
+            # terminal result rather than raising into its failure-write path.
+            return
+        self._cancelled_requests.add(key)
+        state = TaskState.TASK_STATE_CANCELED
+        output = ""
+        diagnostic: str | None = None
+        if session is not None:
+            cancel_invocation = getattr(self._client, "cancel_invocation", None)
+            if not callable(cancel_invocation):
+                raise TaskNotCancelableError(message="Upstream has no scoped cancellation")
+            try:
+                submission = await asyncio.wait_for(
+                    cancel_invocation(session, task, directory=directory),
+                    timeout=self._cancel_abort_timeout_seconds,
+                )
+                if not isinstance(submission, PromptSubmission) or submission.outcome is None:
+                    raise RuntimeError("Cancellation lacks a settled outcome")
+                outcome = submission.outcome
+                state = _task_state_from_execution_state(outcome.state)
+                output = outcome.output if outcome.state == ExecutionState.COMPLETED else ""
+            except (TimeoutError, RuntimeError, httpx.HTTPError):
+                state = TaskState.TASK_STATE_FAILED
+                diagnostic = "Upstream cancellation is uncertain; session cannot be reused"
+        else:
+            # Cancel local waiting work before any await can grant its session lease.
+            task.cancel()
+        queues = [event_queue]
+        if original_queue is not None and original_queue is not event_queue:
+            queues.append(original_queue)
+        for queue in queues:
+            if output or diagnostic:
+                await _enqueue_artifact_update(
+                    event_queue=queue,
+                    task_id=task_id,
+                    context_id=context_id,
+                    artifact_id=f"{task_id}:cancel-settlement",
+                    part=Part(text=output or diagnostic or ""),
+                    append=False,
+                    last_chunk=True,
+                )
+            await queue.enqueue_event(
+                TaskStatusUpdateEvent(
+                    task_id=task_id,
+                    context_id=context_id,
+                    status=TaskStatus(state=state),
+                )
+            )
+        if not task.done():
+            task.cancel()
 
     async def _emit_error(
         self,
@@ -438,6 +583,8 @@ class OpencodeAgentExecutor(AgentExecutor):
         upstream_status: int | None = None,
         streaming_request: bool,
     ) -> None:
+        if (task_id, context_id) in self._cancelled_requests:
+            return
         message = redact_absolute_paths(message)
         error_message = Message(
             message_id=str(uuid.uuid4()),

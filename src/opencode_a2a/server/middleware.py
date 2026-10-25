@@ -22,7 +22,11 @@ from ..auth import (
     build_static_auth_credentials,
 )
 from ..client.network_policy import matches_allowed_host
-from ..contracts.extensions import ALL_EXTENSION_URIS, PUBLIC_EXTENSION_URIS
+from ..contracts.extensions import (
+    ALL_EXTENSION_URIS,
+    PUBLIC_EXTENSION_URIS,
+    JsonRpcCapabilitySnapshot,
+)
 from ..execution.metrics import emit_metric
 from ..jsonrpc.error_responses import (
     adapt_jsonrpc_error,
@@ -330,6 +334,7 @@ def install_runtime_middlewares(
     *,
     public_card_etag: str,
     extended_card_etag: str,
+    capability_snapshot: JsonRpcCapabilitySnapshot,
 ) -> None:
     def _requires_protocol_negotiation(request: Request) -> bool:
         if request.url.path == "/" and request.method == "POST":
@@ -485,7 +490,11 @@ def install_runtime_middlewares(
     def _resolve_activated_extensions(request: Request) -> tuple[str, ...]:
         explicit = getattr(request.state, "activated_extensions", None)
         if explicit is not None:
-            return tuple(value for value in explicit if value)
+            return tuple(
+                value
+                for value in explicit
+                if value and capability_snapshot.supports_extension(value)
+            )
 
         requested_extensions = tuple(
             get_requested_extensions(request.headers.getlist(HTTP_EXTENSION_HEADER))
@@ -494,7 +503,10 @@ def install_runtime_middlewares(
             return ()
 
         path = request.url.path
-        if path == AGENT_CARD_WELL_KNOWN_PATH:
+        supported_extensions: tuple[str, ...]
+        if not capability_snapshot.extensions_enabled:
+            supported_extensions = ()
+        elif path == AGENT_CARD_WELL_KNOWN_PATH:
             supported_extensions = PUBLIC_EXTENSION_URIS
         elif path == EXTENDED_AGENT_CARD_PATH:
             supported_extensions = ALL_EXTENSION_URIS
@@ -504,7 +516,11 @@ def install_runtime_middlewares(
             return ()
 
         requested = frozenset(requested_extensions)
-        return tuple(value for value in supported_extensions if value in requested)
+        return tuple(
+            value
+            for value in supported_extensions
+            if value in requested and capability_snapshot.supports_extension(value)
+        )
 
     def _set_activated_extensions_header(response: Response, request: Request) -> None:
         if not (200 <= response.status_code < 400):

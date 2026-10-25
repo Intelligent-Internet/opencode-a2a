@@ -29,6 +29,8 @@ Key variables to understand protocol behavior:
 
 - `A2A_STATIC_AUTH_CREDENTIALS`: required static credential registry in JSON array form. Supports multiple `bearer` / `basic` credentials, bearer-only required `principal`, optional `credential_id`, optional `capabilities`, and optional `enabled=false` for explicit disablement.
 - `OPENCODE_BASE_URL`: upstream OpenCode HTTP endpoint. Default: `http://127.0.0.1:4096`. In two-process deployments, set it explicitly.
+- `OPENCODE_API_VERSION`: upstream API selector, `v1` (default) or `v2`, unrelated to the A2A SDK version. No auto-detection or fallback. V2 alone retains session-only transport and fails A2A execution before upstream HTTP.
+- `OPENCODE_V2_EXECUTION`: `disabled` (default) or `exclusive`. The latter opts into the [restricted V2 profile](./v2-exclusive-execution.md), requires a dedicated private single-process instance pair with protected configuration and durable ownership, and does not enable general shared-session support. Read its security preconditions before selecting it.
 - `OPENCODE_WORKSPACE_ROOT`: service-level default workspace root exposed to OpenCode when clients do not request a narrower directory override.
 - `A2A_ALLOW_DIRECTORY_OVERRIDE`: controls whether clients may pass `metadata.opencode.directory`.
 - `A2A_ENABLE_SESSION_SHELL`: gates high-risk JSON-RPC method `opencode.sessions.shell`.
