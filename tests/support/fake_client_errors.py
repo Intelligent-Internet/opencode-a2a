@@ -3,6 +3,12 @@ from __future__ import annotations
 from a2a.client.errors import A2AClientError
 
 
+class FakeJSONRPCErrorResponse:
+    def __init__(self, *, error: object, id: str | int | None = None) -> None:
+        self.error = error
+        self.id = id
+
+
 class FakeA2AClientHTTPError(A2AClientError):
     def __init__(self, status_code: int, message: str) -> None:
         self.status_code = status_code

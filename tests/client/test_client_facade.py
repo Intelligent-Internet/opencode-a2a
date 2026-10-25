@@ -17,11 +17,12 @@ from opencode_a2a.client.errors import (
     A2ATimeoutError,
     A2AUnsupportedOperationError,
 )
-from opencode_a2a.jsonrpc.models import JSONRPCError, JSONRPCErrorResponse
+from opencode_a2a.jsonrpc.models import JSONRPCError
 from tests.support.fake_client_errors import (
     FakeA2AClientHTTPError,
     FakeA2AClientJSONError,
     FakeA2AClientJSONRPCError,
+    FakeJSONRPCErrorResponse,
 )
 
 
@@ -436,7 +437,7 @@ async def test_send_message_prefers_explicit_authorization_without_default_token
 async def test_send_message_maps_jsonrpc_not_supported(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    rpc_error = JSONRPCErrorResponse(
+    rpc_error = FakeJSONRPCErrorResponse(
         error=JSONRPCError(code=-32601, message="Unsupported method: SendMessage"),
         id="req-1",
     )

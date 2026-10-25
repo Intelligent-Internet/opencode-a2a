@@ -102,9 +102,6 @@ class ExtensionMethodRegistry:
                 method_map[method] = spec
         self._method_map = method_map
 
-    def methods(self) -> frozenset[str]:
-        return frozenset(self._method_map)
-
     def resolve(self, method: str) -> ExtensionMethodSpec | None:
         return self._method_map.get(method)
 

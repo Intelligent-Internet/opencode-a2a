@@ -22,7 +22,6 @@ from a2a.types import (
 )
 from a2a.utils.errors import InvalidRequestError
 from fastapi import Request
-from google.protobuf.json_format import ParseError
 
 import opencode_a2a.server.application as app_module
 from opencode_a2a.a2a_protocol import CORE_JSONRPC_METHODS
@@ -41,7 +40,6 @@ from opencode_a2a.server.application import (
     OpencodeRequestHandler,
     _configure_logging,
     _normalize_log_level,
-    _rest_error_response,
     create_app,
 )
 from opencode_a2a.server.openapi import (
@@ -157,76 +155,6 @@ def test_request_payload_helpers_cover_edge_cases() -> None:
         "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
         "maxBytes": 64,
         "actualSize": 65,
-    }
-
-
-def test_rest_message_parsing_helpers_cover_upgrade_paths() -> None:
-    request_v1 = _request("/message:send")
-    request_v1.state.a2a_protocol_version = "1.0"
-    v1_error = _rest_error_response(
-        request=request_v1,
-        error=InvalidRequestError(message="bad payload", data={"path": "/message:send"}),
-    )
-    assert v1_error.status_code == 400
-    assert json.loads(v1_error.body) == {
-        "error": {
-            "code": 400,
-            "status": "INVALID_ARGUMENT",
-            "message": "bad payload",
-            "details": [
-                {
-                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                    "reason": "INVALID_REQUEST",
-                    "domain": "a2a-protocol.org",
-                    "metadata": {"path": "/message:send"},
-                },
-                {
-                    "@type": "type.googleapis.com/opencode_a2a.HttpErrorContext",
-                    "path": "/message:send",
-                },
-            ],
-        }
-    }
-
-    request_default = _request("/message:send")
-    parse_error = _rest_error_response(
-        request=request_default,
-        error=ParseError("bad parse"),
-    )
-    assert parse_error.status_code == 400
-    assert json.loads(parse_error.body) == {
-        "error": {
-            "code": 400,
-            "status": "INVALID_ARGUMENT",
-            "message": "bad parse",
-            "details": [
-                {
-                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                    "reason": "INVALID_REQUEST",
-                    "domain": "a2a-protocol.org",
-                }
-            ],
-        }
-    }
-
-    generic_error = _rest_error_response(
-        request=request_default,
-        error=RuntimeError("boom"),
-    )
-    assert generic_error.status_code == 500
-    assert json.loads(generic_error.body) == {
-        "error": {
-            "code": 500,
-            "status": "INTERNAL",
-            "message": "unknown exception",
-            "details": [
-                {
-                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                    "reason": "INTERNAL_ERROR",
-                    "domain": "a2a-protocol.org",
-                }
-            ],
-        }
     }
 
 

@@ -35,11 +35,12 @@ from opencode_a2a.client.errors import (
     A2ATimeoutError,
     A2AUnsupportedOperationError,
 )
-from opencode_a2a.jsonrpc.models import JSONRPCError, JSONRPCErrorResponse
+from opencode_a2a.jsonrpc.models import JSONRPCError
 from tests.support.fake_client_errors import (
     FakeA2AClientHTTPError,
     FakeA2AClientJSONError,
     FakeA2AClientJSONRPCError,
+    FakeJSONRPCErrorResponse,
 )
 
 
@@ -164,19 +165,19 @@ def test_map_client_error_without_status_returns_protocol_error() -> None:
 
 def test_map_jsonrpc_error_variants() -> None:
     invalid_params_error = FakeA2AClientJSONRPCError(
-        JSONRPCErrorResponse(
+        FakeJSONRPCErrorResponse(
             error=JSONRPCError(code=-32602, message="bad params", data={"field": "limit"}),
             id="req-1",
         )
     )
     internal_error = FakeA2AClientJSONRPCError(
-        JSONRPCErrorResponse(
+        FakeJSONRPCErrorResponse(
             error=JSONRPCError(code=-32603, message="internal"),
             id="req-2",
         )
     )
     generic_error = FakeA2AClientJSONRPCError(
-        JSONRPCErrorResponse(
+        FakeJSONRPCErrorResponse(
             error=JSONRPCError(code=-32000, message="generic"),
             id="req-3",
         )

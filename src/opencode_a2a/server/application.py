@@ -13,14 +13,8 @@ from a2a.types import (
     SendMessageRequest,
     SubscribeToTaskRequest,
 )
-from a2a.utils.errors import (
-    A2A_REST_ERROR_MAPPING,
-    A2AError,
-    ErrorMapping,
-)
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
-from google.protobuf.json_format import ParseError
 from pydantic_settings import BaseSettings
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -40,7 +34,6 @@ from ..execution.metrics import render_prometheus_metrics
 from ..jsonrpc.application import (
     OpencodeSessionManagementJSONRPCApplication,
 )
-from ..jsonrpc.error_responses import build_http_error_body
 from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..profile.runtime import build_runtime_profile
 from ..protocol_versions import A2A_PROTOCOL_VERSION
@@ -61,7 +54,7 @@ from .openapi import (
 )
 from .request_handler import OpencodeRequestHandler
 from .rest_responses import A2AJSONResponse
-from .runtime_limits import StreamBudgetExceeded, apply_stream_budget
+from .runtime_limits import apply_stream_budget
 from .state_store import (
     build_runtime_state_runtime,
 )
@@ -69,86 +62,6 @@ from .task_store import (
     build_task_store_runtime,
     describe_lightweight_persistence_backend,
 )
-
-logger = logging.getLogger(__name__)
-TASK_STORE_ERROR_TYPE = "TASK_STORE_UNAVAILABLE"
-PUSH_NOTIFICATIONS_UNSUPPORTED_MESSAGE = "Push notifications are not supported by the agent"
-
-
-def _rest_error_response(
-    *,
-    request: Request,
-    error: Exception,
-) -> JSONResponse:
-    del request
-    logger_fn = logger.exception
-    logger_message = "Unexpected REST message route failure"
-
-    if isinstance(error, A2AError):
-        mapping = A2A_REST_ERROR_MAPPING.get(
-            type(error),
-            ErrorMapping(500, "INTERNAL", "INTERNAL_ERROR"),
-        )
-        message = getattr(error, "message", str(error))
-        metadata = getattr(error, "data", None) or {}
-        logger_fn = logger.error if mapping.http_code >= 500 else logger.warning
-        logger_message = (
-            f"REST message route failed status={mapping.http_code} "
-            f"reason={mapping.reason} message={message}"
-        )
-        logger_fn(logger_message)
-        return JSONResponse(
-            build_http_error_body(
-                status_code=mapping.http_code,
-                status=mapping.grpc_status,
-                message=message,
-                reason=mapping.reason,
-                metadata=metadata,
-            ),
-            status_code=mapping.http_code,
-        )
-
-    if isinstance(error, StreamBudgetExceeded):
-        logger.warning(
-            "REST stream rejected before SSE start: %s",
-            error,
-        )
-        return JSONResponse(
-            build_http_error_body(
-                status_code=429,
-                status="RESOURCE_EXHAUSTED",
-                message=str(error),
-                reason="STREAM_BUDGET_EXCEEDED",
-            ),
-            status_code=429,
-        )
-
-    if isinstance(error, ParseError):
-        message = str(error)
-        logger_fn = logger.warning
-        logger_message = f"REST message payload parse error: {message}"
-        logger_fn(logger_message)
-        return JSONResponse(
-            build_http_error_body(
-                status_code=400,
-                status="INVALID_ARGUMENT",
-                message=message,
-                reason="INVALID_REQUEST",
-            ),
-            status_code=400,
-        )
-
-    logger_fn(logger_message)
-    return JSONResponse(
-        build_http_error_body(
-            status_code=500,
-            status="INTERNAL",
-            message="unknown exception",
-            reason="INTERNAL_ERROR",
-        ),
-        status_code=500,
-    )
-
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import aclosing
 from typing import Any, cast
@@ -60,10 +59,6 @@ from .task_store import (
     TaskStoreOperationError,
     task_store_get,
 )
-
-logger = logging.getLogger(__name__)
-
-TASK_STORE_ERROR_TYPE = "TASK_STORE_UNAVAILABLE"
 
 
 def _accepted_output_modes_from_params(params: Any) -> tuple[str, ...] | None:
@@ -453,14 +448,3 @@ class OpencodeRequestHandler(DefaultRequestHandlerV2):
             raise self._task_store_server_error(exc) from exc
         finally:
             emit_stream_request_metrics(active_delta=-1.0)
-
-    @staticmethod
-    def _task_error_metadata(operation: str) -> dict[str, Any]:
-        return {
-            "opencode": {
-                "error": {
-                    "type": TASK_STORE_ERROR_TYPE,
-                    "operation": operation,
-                }
-            }
-        }
