@@ -160,6 +160,7 @@ async def test_execute_http_error_maps_to_task_error_type_and_state(
     exc = httpx.HTTPStatusError("upstream error", request=request, response=response)
 
     client = AsyncMock()
+    del client.submit_prompt
 
     async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
         del title, directory
@@ -204,6 +205,7 @@ async def test_streaming_execute_http_error_emits_status_update_with_metadata(ca
     exc = httpx.HTTPStatusError("upstream error", request=request, response=response)
 
     client = AsyncMock()
+    del client.submit_prompt
 
     async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
         del title, directory
@@ -260,6 +262,7 @@ async def test_streaming_execute_upstream_backpressure_emits_status_update_with_
     caplog,
 ) -> None:
     client = AsyncMock()
+    del client.submit_prompt
 
     async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
         del title, directory
@@ -318,6 +321,7 @@ async def test_streaming_execute_upstream_backpressure_emits_status_update_with_
 @pytest.mark.asyncio
 async def test_execute_upstream_payload_error_maps_to_task_error_type() -> None:
     client = AsyncMock()
+    del client.submit_prompt
 
     async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
         del title, directory
@@ -360,6 +364,7 @@ async def test_execute_upstream_payload_error_maps_to_task_error_type() -> None:
 @pytest.mark.asyncio
 async def test_execute_upstream_backpressure_maps_to_task_error_type() -> None:
     client = AsyncMock()
+    del client.submit_prompt
 
     async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
         del title, directory
@@ -403,6 +408,7 @@ async def test_execute_upstream_backpressure_maps_to_task_error_type() -> None:
 @pytest.mark.asyncio
 async def test_execute_response_info_error_maps_to_task_failed_state() -> None:
     client = AsyncMock()
+    del client.submit_prompt
 
     async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
         del title, directory
@@ -463,6 +469,7 @@ async def test_streaming_execute_response_info_error_emits_failed_status_and_err
     None
 ):
     client = AsyncMock()
+    del client.submit_prompt
 
     async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
         del title, directory
@@ -532,6 +539,7 @@ async def test_streaming_execute_response_info_error_emits_failed_status_and_err
 @pytest.mark.asyncio
 async def test_streaming_execute_session_error_emits_failed_status() -> None:
     client = AsyncMock()
+    del client.submit_prompt
 
     async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
         del title, directory
@@ -606,6 +614,7 @@ async def test_streaming_execute_session_error_emits_failed_status() -> None:
 @pytest.mark.asyncio
 async def test_streaming_execute_message_updated_info_error_emits_failed_status() -> None:
     client = AsyncMock()
+    del client.submit_prompt
 
     async def create_session(title: str | None = None, *, directory: str | None = None) -> str:
         del title, directory
