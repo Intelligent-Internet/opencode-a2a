@@ -192,7 +192,9 @@ async def test_v2_core_message_paths_fail_before_upstream_http(
     assert send_message.status_code == 200
     failed_task = send_message.json()["result"]["task"]
     assert failed_task["status"]["state"] == "TASK_STATE_FAILED"
-    assert "No prompt was submitted" in failed_task["status"]["message"]["parts"][0]["text"]
+    assert "OpenCode V2 prompt execution is not implemented" in (
+        failed_task["status"]["message"]["parts"][0]["text"]
+    )
     assert send_streaming.status_code == 200
     assert send_streaming.json()["error"]["message"] == "Streaming is not supported by the agent"
     assert upstream_calls == []
