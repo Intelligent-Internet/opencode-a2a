@@ -16,6 +16,10 @@ OpenCode-specific JSON-RPC extensions remain unavailable. V1 stays the
 default, and the adapter does not auto-detect or fall back between versions.
 The V2 session transport was exercised against OpenCode `2.0.28`; that
 experimental check does not add V2 to the supported runtime line above.
+OpenCode V2 allows `external_directory` by default. Before any future release of
+V2 prompt execution, operators must configure an explicit restrictive upstream
+V2 `permissions` policy. The current session-only slice does not perform model
+execution.
 
 This is the single canonical place where the supported upstream OpenCode version line is declared. Keep it updated together with the live integration smoke check (`./scripts/live_opencode_smoke.sh`) and do not duplicate the version line elsewhere.
 

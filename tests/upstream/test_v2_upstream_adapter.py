@@ -162,6 +162,52 @@ async def test_v2_requires_data_envelope_and_reports_mismatched_route(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", (401, 409))
+async def test_v2_session_http_status_errors_are_typed_without_leaking_request_data(
+    status_code: int,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    request_title = "private-session-request-title"
+    observed_requests: list[httpx.Request] = []
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/info":
+            return httpx.Response(200, json={"version": "2.0.28"})
+        observed_requests.append(request)
+        echoed_request = request.content.decode()
+        echoed_authorization = request.headers.get("authorization", "")
+        return httpx.Response(
+            status_code,
+            json={
+                "message": "upstream rejected request",
+                "request": echoed_request,
+                "authorization": echoed_authorization,
+            },
+        )
+
+    client, _ = _make_client(monkeypatch, respond, workspace_root=str(workspace))
+    try:
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await client.create_session(request_title)
+    finally:
+        await client.close()
+
+    error = exc_info.value
+    message = str(error)
+    assert error.response.status_code == status_code
+    assert error.request.url.path == "/api/session"
+    assert len(observed_requests) == 1
+    assert request_title.encode() in observed_requests[0].content
+    assert "Basic " in observed_requests[0].headers["authorization"]
+    assert request_title not in message
+    assert observed_requests[0].headers["authorization"] not in message
+    assert "test-password" not in message
+
+
+@pytest.mark.asyncio
 async def test_v2_prompt_methods_fail_without_http_side_effect(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
