@@ -37,6 +37,7 @@ from opencode_a2a.contracts.extensions import (
     build_streaming_extension_params,
     build_wire_contract_params,
     build_workspace_control_extension_params,
+    catalog,
     select_public_extension_params,
 )
 from opencode_a2a.jsonrpc.methods import SESSION_CONTEXT_PREFIX
@@ -406,6 +407,111 @@ async def test_runtime_supported_methods_align_with_capability_snapshot(
     error = response.json()["error"]
     assert error["data"]["supportedMethods"] == capability_snapshot.supported_jsonrpc_methods()
     assert error["data"]["supportedMethods"] == wire_contract["all_jsonrpc_methods"]
+
+
+def test_v1_capability_snapshot_preserves_published_method_order_and_is_immutable() -> None:
+    runtime_profile = build_runtime_profile(make_settings(test_bearer_token="test-token"))
+    snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
+
+    assert snapshot.upstream_api_version == "v1"
+    assert snapshot.supported_jsonrpc_methods() == [
+        "SendMessage",
+        "SendStreamingMessage",
+        "GetTask",
+        "ListTasks",
+        "CancelTask",
+        "CreateTaskPushNotificationConfig",
+        "GetTaskPushNotificationConfig",
+        "ListTaskPushNotificationConfigs",
+        "DeleteTaskPushNotificationConfig",
+        "SubscribeToTask",
+        "GetExtendedAgentCard",
+        "opencode.sessions.status",
+        "opencode.sessions.list",
+        "opencode.sessions.messages.list",
+        "opencode.sessions.get",
+        "opencode.sessions.children",
+        "opencode.sessions.todo",
+        "opencode.sessions.diff",
+        "opencode.sessions.messages.get",
+        "opencode.sessions.prompt_async",
+        "opencode.sessions.command",
+        "opencode.sessions.fork",
+        "opencode.sessions.share",
+        "opencode.sessions.unshare",
+        "opencode.sessions.summarize",
+        "opencode.sessions.revert",
+        "opencode.sessions.unrevert",
+        "opencode.providers.list",
+        "opencode.models.list",
+        "opencode.projects.list",
+        "opencode.projects.current",
+        "opencode.workspaces.list",
+        "opencode.worktrees.list",
+        "opencode.permissions.list",
+        "opencode.questions.list",
+        "a2a.interrupt.permission.reply",
+        "a2a.interrupt.question.reply",
+        "a2a.interrupt.question.reject",
+    ]
+    with pytest.raises(TypeError):
+        snapshot.conditional_methods["opencode.sessions.shell"] = object()
+
+
+def test_v2_capability_snapshot_disables_every_catalogued_extension() -> None:
+    runtime_profile = build_runtime_profile(make_settings(test_bearer_token="test-token"))
+    snapshot = build_capability_snapshot(
+        runtime_profile=runtime_profile,
+        upstream_api_version="v2",
+    )
+    extension_methods = {
+        *catalog.SESSION_METHODS.values(),
+        *catalog.PROVIDER_DISCOVERY_METHODS.values(),
+        *catalog.WORKSPACE_CONTROL_METHODS.values(),
+        *catalog.INTERRUPT_RECOVERY_METHODS.values(),
+        *catalog.INTERRUPT_CALLBACK_METHODS.values(),
+    }
+
+    assert snapshot.supported_jsonrpc_methods() == list(catalog.CORE_JSONRPC_METHODS)
+    assert snapshot.extension_jsonrpc_methods() == []
+    assert snapshot.declared_extension_uris == ()
+    assert set(snapshot.dispatch_method_bindings().values()) == extension_methods - set(
+        snapshot.conditional_methods
+    )
+    assert set(snapshot.conditional_methods) == {
+        catalog.SESSION_CONTROL_METHODS["shell"],
+        *catalog.WORKSPACE_MUTATION_METHODS.values(),
+    }
+    assert all(not binding.enabled for binding in snapshot.conditional_methods.values())
+    wire_contract = build_wire_contract_params(
+        protocol_version=A2A_PROTOCOL_VERSION,
+        runtime_profile=runtime_profile,
+        capability_snapshot=snapshot,
+    )
+    compatibility_profile = build_compatibility_profile_params(
+        protocol_version=A2A_PROTOCOL_VERSION,
+        runtime_profile=runtime_profile,
+        capability_snapshot=snapshot,
+    )
+    assert wire_contract["extensions"] == {
+        "jsonrpc_methods": [],
+        "conditionally_available_methods": {},
+        "extension_uris": [],
+    }
+    assert wire_contract["all_jsonrpc_methods"] == list(catalog.CORE_JSONRPC_METHODS)
+    assert compatibility_profile["extension_retention"] == {}
+    assert set(compatibility_profile["method_retention"]) == set(catalog.CORE_JSONRPC_METHODS)
+    v2_guidance = " ".join(compatibility_profile["consumer_guidance"])
+    assert "OpenCode API V2 currently provides internal experimental session transport only" in (
+        v2_guidance
+    )
+    assert (
+        "A2A message execution and all shared and provider-private extensions are unavailable"
+        in v2_guidance
+    )
+    assert "request-scoped plugin surface for the main chat path" not in v2_guidance
+    assert "a2a.interrupt.* methods as declared shared extensions" not in v2_guidance
+    assert all(not snapshot.is_method_enabled(method) for method in extension_methods)
 
 
 @pytest.mark.asyncio

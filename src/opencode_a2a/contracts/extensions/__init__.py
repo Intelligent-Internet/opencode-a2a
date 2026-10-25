@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 # ruff: noqa: F401
-from .capabilities import JsonRpcCapabilitySnapshot, build_capability_snapshot
+from .capabilities import (
+    DECLARED_EXTENSION_URIS,
+    JsonRpcCapabilitySnapshot,
+    OpenCodeApiVersion,
+    build_capability_snapshot,
+)
 from .catalog import (
     COMMAND_REQUEST_ALLOWED_FIELDS,
     INTERRUPT_CALLBACK_METHODS,
