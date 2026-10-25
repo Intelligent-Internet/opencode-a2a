@@ -253,6 +253,7 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
     public_description = _build_agent_card_description(
         settings,
         runtime_profile,
+        capability_snapshot=build_capability_snapshot(runtime_profile=runtime_profile),
         include_detailed_contracts=False,
     )
     assert "Deployment project: alpha." in public_description
@@ -262,6 +263,7 @@ def test_agent_card_helper_builders_cover_optional_branches() -> None:
     extended_description = _build_agent_card_description(
         settings,
         runtime_profile,
+        capability_snapshot=build_capability_snapshot(runtime_profile=runtime_profile),
         include_detailed_contracts=True,
     )
     assert "Deployment project: alpha." in extended_description

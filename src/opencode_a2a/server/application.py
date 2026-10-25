@@ -23,12 +23,7 @@ from ..a2a_protocol import (
     EXTENDED_AGENT_CARD_PATH,
 )
 from ..config import Settings
-from ..contracts.extensions import (
-    INTERRUPT_CALLBACK_METHODS,
-    INTERRUPT_RECOVERY_METHODS,
-    PROVIDER_DISCOVERY_METHODS,
-    build_capability_snapshot,
-)
+from ..contracts.extensions import build_capability_snapshot
 from ..execution.executor import OpencodeAgentExecutor
 from ..execution.metrics import render_prometheus_metrics
 from ..jsonrpc.application import (
@@ -38,6 +33,7 @@ from ..opencode_upstream_client import OpencodeUpstreamClient
 from ..profile.runtime import build_runtime_profile
 from ..protocol_versions import A2A_PROTOCOL_VERSION
 from ..trace_context import install_log_record_factory
+from ..upstream.v2 import V2UpstreamAdapter
 from .agent_card import (
     build_agent_card,
 )
@@ -172,13 +168,25 @@ def create_app(settings: Settings) -> FastAPI:
         settings,
         engine=database_engine,
     )
-    upstream_client = OpencodeUpstreamClient(
+    upstream_client_type = (
+        V2UpstreamAdapter if settings.opencode_api_version == "v2" else OpencodeUpstreamClient
+    )
+    upstream_client = upstream_client_type(
         settings,
         interrupt_request_repository=runtime_state_runtime.interrupt_request_repository,
     )
     client_manager = A2AClientManager(settings)
-    agent_card = build_agent_card(settings)
-    extended_agent_card = build_agent_card(settings, include_detailed_contracts=True)
+    runtime_profile = build_runtime_profile(settings)
+    capability_snapshot = build_capability_snapshot(
+        runtime_profile=runtime_profile,
+        upstream_api_version=settings.opencode_api_version,
+    )
+    agent_card = build_agent_card(settings, capability_snapshot=capability_snapshot)
+    extended_agent_card = build_agent_card(
+        settings,
+        include_detailed_contracts=True,
+        capability_snapshot=capability_snapshot,
+    )
     executor = OpencodeAgentExecutor(
         upstream_client,
         streaming_enabled=True,
@@ -202,23 +210,14 @@ def create_app(settings: Settings) -> FastAPI:
     )
 
     context_builder = IdentityAwareCallContextBuilder()
-    runtime_profile = build_runtime_profile(settings)
-    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
-
-    jsonrpc_methods = {
-        **capability_snapshot.session_management_methods(),
-        **dict(PROVIDER_DISCOVERY_METHODS),
-        **capability_snapshot.workspace_control_methods(),
-        **dict(INTERRUPT_RECOVERY_METHODS),
-        **dict(INTERRUPT_CALLBACK_METHODS),
-    }
+    jsonrpc_methods = capability_snapshot.dispatch_method_bindings()
 
     # Build JSON-RPC app (POST / by default) and attach REST endpoints (HTTP+JSON) to the same app.
     jsonrpc_app = OpencodeSessionManagementJSONRPCApplication(
         http_handler=handler,
         context_builder=context_builder,
         upstream_client=upstream_client,
-        supported_methods=capability_snapshot.supported_jsonrpc_methods(),
+        capability_snapshot=capability_snapshot,
         directory_resolver=(
             partial(
                 executor._sandbox_policy.resolve_directory,
@@ -349,12 +348,18 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.agent_executor = executor
     app.state.upstream_client = upstream_client
     app.state.a2a_client_manager = client_manager
-    _patch_jsonrpc_openapi_contract(app, settings, runtime_profile=runtime_profile)
+    _patch_jsonrpc_openapi_contract(
+        app,
+        settings,
+        runtime_profile=runtime_profile,
+        capability_snapshot=capability_snapshot,
+    )
     install_runtime_middlewares(
         app,
         settings,
         public_card_etag=public_card_etag,
         extended_card_etag=extended_card_etag,
+        capability_snapshot=capability_snapshot,
     )
 
     @app.get("/health")

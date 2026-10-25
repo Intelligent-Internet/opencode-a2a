@@ -26,6 +26,7 @@ from tests.support.settings import make_settings
 @pytest.fixture
 def mock_client():
     client = AsyncMock(spec=OpencodeUpstreamClient)
+    del client.submit_prompt
     # Define sessions to return
     sessions = ["session-1", "session-2", "session-3"]
     current_idx = 0
@@ -156,6 +157,7 @@ async def test_session_hijack_prevention(mock_client):
 @pytest.mark.asyncio
 async def test_concurrent_session_create_isolated_by_identity():
     client = AsyncMock(spec=OpencodeUpstreamClient)
+    del client.submit_prompt
     created = 0
 
     async def create_session(title=None, directory=None):
@@ -284,6 +286,7 @@ def test_owner_cache_evicts_earliest_expiring_entry_on_overflow():
 @pytest.mark.asyncio
 async def test_preferred_session_claim_is_released_on_upstream_failure():
     client = AsyncMock(spec=OpencodeUpstreamClient)
+    del client.submit_prompt
 
     async def send_message(
         session_id,
@@ -323,6 +326,7 @@ async def test_preferred_session_claim_is_released_on_upstream_failure():
 @pytest.mark.asyncio
 async def test_preferred_session_claim_is_released_on_upstream_cancellation():
     client = AsyncMock(spec=OpencodeUpstreamClient)
+    del client.submit_prompt
 
     async def send_message(
         _session_id,

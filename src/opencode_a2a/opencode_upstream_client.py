@@ -17,6 +17,14 @@ from .parts.text import extract_text_from_parts
 from .runtime_state import InterruptRequestBinding
 from .server.state_store import InterruptRequestRepository, MemoryInterruptRequestRepository
 from .trace_context import current_trace_headers
+from .upstream.contracts import (
+    ExecutionOutcome,
+    ExecutionState,
+    ExecutionUpdate,
+    PromptReceipt,
+    PromptSubmission,
+    SessionRef,
+)
 
 _UNSET = object()
 logger = logging.getLogger(__name__)
@@ -451,6 +459,24 @@ class OpencodeUpstreamClient:
                         data_lines.append(line[5:].lstrip())
                         continue
 
+    async def stream_updates(
+        self,
+        stop_event: asyncio.Event | None = None,
+        *,
+        directory: str | None = None,
+        workspace_id: str | None = None,
+    ) -> AsyncIterator[ExecutionUpdate]:
+        async for event in self.stream_events(
+            stop_event,
+            directory=directory,
+            workspace_id=workspace_id,
+        ):
+            from .execution.stream_events import normalize_v1_event
+
+            update = normalize_v1_event(event, log_limit=self._settings.a2a_log_body_limit)
+            if update is not None:
+                yield update
+
     async def create_session(
         self,
         title: str | None = None,
@@ -877,6 +903,60 @@ class OpencodeUpstreamClient:
             session_id=session_id,
             message_id=message_id,
             raw=data,
+        )
+
+    async def submit_prompt(
+        self,
+        session_id: str,
+        text: str | None = None,
+        *,
+        parts: Sequence[Mapping[str, Any]] | None = None,
+        directory: str | None = None,
+        workspace_id: str | None = None,
+        model_override: Mapping[str, Any] | None = None,
+        timeout_override: float | None | object = _UNSET,
+    ) -> PromptSubmission:
+        """Return V1's synchronous prompt result as distinct receipt and outcome values."""
+        message = await self.send_message(
+            session_id,
+            text,
+            parts=parts,
+            directory=directory,
+            workspace_id=workspace_id,
+            model_override=model_override,
+            timeout_override=timeout_override,
+        )
+        from a2a.types import TaskState
+
+        from .execution.stream_events import (
+            _extract_token_usage,
+            _extract_upstream_error_from_response,
+        )
+
+        error = _extract_upstream_error_from_response(message.raw)
+        outcome_state = ExecutionState.COMPLETED
+        if error is not None:
+            outcome_state = (
+                ExecutionState.AUTH_REQUIRED
+                if error.state == TaskState.TASK_STATE_AUTH_REQUIRED
+                else ExecutionState.CANCELLED
+                if error.state == TaskState.TASK_STATE_CANCELED
+                else ExecutionState.FAILED
+            )
+        return PromptSubmission(
+            receipt=PromptReceipt(session=SessionRef(session_id)),
+            outcome=ExecutionOutcome(
+                session=SessionRef(session_id),
+                state=outcome_state,
+                output=message.text,
+                message_id=message.message_id,
+                usage=_extract_token_usage(message.raw),
+                error_type=error.error_type if error is not None else None,
+                error_message=error.message if error is not None else None,
+                error_state=outcome_state if error is not None else None,
+                upstream_status=error.upstream_status if error is not None else None,
+                response=message.raw,
+            ),
         )
 
     async def permission_reply(

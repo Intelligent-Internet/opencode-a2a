@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import Any
 
 from a2a.server.events.event_queue import EventQueue
@@ -17,26 +18,12 @@ from a2a.types import (
 
 from ..a2a_utils import make_data_part
 from ..interrupt_request_tracker import BoundInterruptRequestTracker
+from ..upstream.contracts import ExecutionUpdate, UpdateKind
 from .event_helpers import _enqueue_artifact_update
 from .stream_events import (
     BlockType,
-    _build_progress_identity,
-    _extract_event_session_id,
-    _extract_interrupt_asked_event,
-    _extract_interrupt_resolved_event,
-    _extract_progress_metadata,
-    _extract_stream_message_id,
-    _extract_stream_part_id,
-    _extract_stream_part_type,
-    _extract_stream_session_id,
-    _extract_stream_snapshot_text,
-    _extract_stream_terminal_signal,
-    _extract_token_usage,
-    _extract_tool_part_payload,
-    _extract_upstream_error_from_event,
-    _log_stream_event_debug,
     _map_part_type_to_block_type,
-    _normalize_role,
+    _task_state_from_execution_state,
 )
 from .stream_state import (
     _build_output_metadata,
@@ -46,9 +33,31 @@ from .stream_state import (
     _StreamOutputState,
     _StreamPartState,
 )
-from .upstream_error_translator import _StreamTerminalSignal
+from .upstream_error_translator import (
+    _StreamTerminalSignal,
+    _UpstreamInBandError,
+)
 
 logger = logging.getLogger("opencode_a2a.execution.executor")
+
+
+async def _client_stream_updates(client: Any, **kwargs: Any) -> AsyncIterator[ExecutionUpdate]:
+    stream_updates = getattr(client, "stream_updates", None)
+    if callable(stream_updates) and not inspect.iscoroutinefunction(stream_updates):
+        updates = stream_updates(**kwargs)
+        if hasattr(updates, "__aiter__"):
+            async for update in updates:
+                yield update
+            return
+
+    from .stream_events import normalize_v1_event
+
+    settings = getattr(client, "settings", None)
+    log_limit = getattr(settings, "a2a_log_body_limit", 0)
+    async for event in client.stream_events(**kwargs):
+        update = normalize_v1_event(event, log_limit=log_limit)
+        if update is not None:
+            yield update
 
 
 class StreamRuntime:
@@ -262,12 +271,11 @@ class StreamRuntime:
         def _upsert_part_state(
             *,
             part_id: str,
-            part: Mapping[str, Any],
-            props: Mapping[str, Any],
+            part_type: str | None,
             role: str | None,
             message_id: str | None,
         ) -> _StreamPartState | None:
-            block_type = _map_part_type_to_block_type(_extract_stream_part_type(part, props))
+            block_type = _map_part_type_to_block_type(part_type)
             if block_type is None:
                 return None
             state = part_states.get(part_id)
@@ -368,10 +376,9 @@ class StreamRuntime:
         def _tool_chunks(
             *,
             state: _StreamPartState,
-            part: Mapping[str, Any],
+            tool_payload: Mapping[str, Any] | None,
             message_id: str | None,
         ) -> list[_NormalizedStreamChunk]:
-            tool_payload = _extract_tool_part_payload(part)
             if tool_payload is None:
                 return []
             content_key = json.dumps(
@@ -409,108 +416,102 @@ class StreamRuntime:
                         stream_kwargs["directory"] = directory
                     if workspace_id is not None:
                         stream_kwargs["workspace_id"] = workspace_id
-                    async for event in self._client.stream_events(**stream_kwargs):
+                    async for update in _client_stream_updates(
+                        self._client,
+                        **stream_kwargs,
+                    ):
                         if stop_event.is_set():
                             break
-                        _log_stream_event_debug(
-                            event,
-                            limit=max(0, self._client.settings.a2a_log_body_limit),
-                        )
-                        event_type = event.get("type")
-                        if not isinstance(event_type, str):
-                            continue
-                        props = event.get("properties")
-                        if not isinstance(props, Mapping):
-                            continue
-                        event_session_id = _extract_event_session_id(event)
-                        if event_session_id == session_id:
-                            part = props.get("part")
-                            if isinstance(part, Mapping):
-                                progress = _extract_progress_metadata(part, props)
-                                if progress is not None:
-                                    progress_identity = _build_progress_identity(part, props)
-                                    progress_key = json.dumps(
-                                        progress,
-                                        ensure_ascii=False,
-                                        sort_keys=True,
-                                        separators=(",", ":"),
+                        if update.session_id == session_id:
+                            if update.progress is not None:
+                                progress = update.progress
+                                progress_identity = update.progress_identity or "unknown"
+                                progress_key = json.dumps(
+                                    progress,
+                                    ensure_ascii=False,
+                                    sort_keys=True,
+                                    separators=(",", ":"),
+                                )
+                                if (
+                                    stream_state.register_progress(
+                                        identity=progress_identity,
+                                        content_key=progress_key,
                                     )
-                                    if (
-                                        stream_state.register_progress(
-                                            identity=progress_identity,
-                                            content_key=progress_key,
+                                    and emit_streaming_metadata
+                                ):
+                                    sequence = stream_state.next_sequence()
+                                    await event_queue.enqueue_event(
+                                        TaskStatusUpdateEvent(
+                                            task_id=task_id,
+                                            context_id=context_id,
+                                            status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
+                                            metadata=_build_output_metadata(
+                                                session_id=session_id,
+                                                stream={
+                                                    "message_id": (
+                                                        stream_state.resolve_message_id(
+                                                            update.message_id
+                                                        )
+                                                    ),
+                                                    "event_id": stream_state.build_event_id(
+                                                        sequence
+                                                    ),
+                                                    "sequence": sequence,
+                                                },
+                                                progress=dict(progress),
+                                                include_session_metadata=emit_session_metadata,
+                                                include_streaming_metadata=emit_streaming_metadata,
+                                                include_interrupt_metadata=emit_interrupt_metadata,
+                                            ),
                                         )
-                                        and emit_streaming_metadata
-                                    ):
-                                        sequence = stream_state.next_sequence()
-                                        await event_queue.enqueue_event(
-                                            TaskStatusUpdateEvent(
-                                                task_id=task_id,
-                                                context_id=context_id,
-                                                status=TaskStatus(
-                                                    state=TaskState.TASK_STATE_WORKING
-                                                ),
-                                                metadata=_build_output_metadata(
-                                                    session_id=session_id,
-                                                    stream={
-                                                        "message_id": (
-                                                            stream_state.resolve_message_id(
-                                                                _extract_stream_message_id(
-                                                                    part, props
-                                                                )
-                                                            )
-                                                        ),
-                                                        "event_id": stream_state.build_event_id(
-                                                            sequence
-                                                        ),
-                                                        "sequence": sequence,
-                                                    },
-                                                    progress=dict(progress),
-                                                    include_session_metadata=(
-                                                        emit_session_metadata
-                                                    ),
-                                                    include_streaming_metadata=(
-                                                        emit_streaming_metadata
-                                                    ),
-                                                    include_interrupt_metadata=(
-                                                        emit_interrupt_metadata
-                                                    ),
-                                                ),
-                                            )
-                                        )
-                            upstream_error = _extract_upstream_error_from_event(event)
-                            if upstream_error is not None and stream_state.upstream_error is None:
-                                stream_state.upstream_error = upstream_error
-                            signal = _extract_stream_terminal_signal(event)
-                            if signal is not None and not terminal_signal.done():
-                                terminal_signal.set_result(signal)
+                                    )
+                            if (
+                                update.error_type is not None
+                                and update.error_state is not None
+                                and update.error_message is not None
+                                and stream_state.upstream_error is None
+                            ):
+                                stream_state.upstream_error = _UpstreamInBandError(
+                                    error_type=update.error_type,
+                                    state=_task_state_from_execution_state(update.error_state),
+                                    message=update.error_message,
+                                    upstream_status=update.upstream_status,
+                                )
+                            if update.terminal is not None and not terminal_signal.done():
+                                outcome = update.terminal
+                                terminal_signal.set_result(
+                                    _StreamTerminalSignal(
+                                        state=_task_state_from_execution_state(outcome.state),
+                                        error_type=outcome.error_type,
+                                        message=outcome.error_message,
+                                        upstream_status=outcome.upstream_status,
+                                    )
+                                )
                                 stop_event.set()
-                            usage = _extract_token_usage(event)
-                            if usage is not None:
-                                stream_state.ingest_token_usage(usage)
-                            asked = _extract_interrupt_asked_event(event)
-                            if asked is not None:
-                                request_id = asked["request_id"]
+                            if update.usage is not None:
+                                stream_state.ingest_token_usage(update.usage)
+                            if update.intervention is not None:
+                                intervention = update.intervention
+                                request_id = intervention.request_id
                                 if stream_state.mark_interrupt_pending(request_id):
                                     await interrupt_requests.remember_request(
                                         request_id=request_id,
                                         session_id=session_id,
-                                        interrupt_type=asked["interrupt_type"],
+                                        interrupt_type=intervention.type,
                                         identity=identity,
                                         task_id=task_id,
                                         context_id=context_id,
-                                        details=asked["details"],
+                                        details=dict(intervention.details),
                                     )
                                     await _emit_interrupt_status(
                                         state=TaskState.TASK_STATE_INPUT_REQUIRED,
                                         request_id=request_id,
-                                        interrupt_type=asked["interrupt_type"],
+                                        interrupt_type=intervention.type,
                                         phase="asked",
-                                        details=asked["details"],
+                                        details=intervention.details,
                                     )
-                            resolved = _extract_interrupt_resolved_event(event)
-                            if resolved is not None:
-                                resolved_request_id = resolved["request_id"]
+                            if update.resolved_request_id is not None:
+                                resolved_request_id = update.resolved_request_id
                                 cleared_pending = stream_state.clear_interrupt_pending(
                                     resolved_request_id
                                 )
@@ -519,25 +520,24 @@ class StreamRuntime:
                                     await _emit_interrupt_status(
                                         state=TaskState.TASK_STATE_WORKING,
                                         request_id=resolved_request_id,
-                                        interrupt_type=resolved["interrupt_type"],
+                                        interrupt_type=(
+                                            update.resolved_intervention_type or "question"
+                                        ),
                                         phase="resolved",
-                                        resolution=resolved["resolution"],
+                                        resolution=update.resolution,
                                     )
-                        if event_type not in {"message.part.updated", "message.part.delta"}:
+                        if update.kind not in {UpdateKind.PART_UPDATED, UpdateKind.PART_DELTA}:
                             continue
-                        part = props.get("part")
-                        if not isinstance(part, Mapping):
-                            part = {}
-                        if _extract_stream_session_id(part, props) != session_id:
+                        if update.session_id != session_id:
                             continue
-                        message_id = _extract_stream_message_id(part, props)
-                        part_id = _extract_stream_part_id(part, props)
+                        message_id = update.message_id
+                        part_id = update.part_id
                         if not part_id:
                             continue
 
-                        if event_type == "message.part.delta":
-                            field = props.get("field")
-                            delta = props.get("delta")
+                        if update.kind == UpdateKind.PART_DELTA:
+                            field = update.delta_field
+                            delta = update.delta
                             if field != "text" or not isinstance(delta, str) or not delta:
                                 continue
                             state = part_states.get(part_id)
@@ -562,12 +562,10 @@ class StreamRuntime:
                                 await _emit_chunks(delta_chunks)
                             continue
 
-                        role = _normalize_role(part.get("role") or props.get("role"))
                         state = _upsert_part_state(
                             part_id=part_id,
-                            part=part,
-                            props=props,
-                            role=role,
+                            part_type=update.part_type,
+                            role=update.role,
                             message_id=message_id,
                         )
                         if state is None:
@@ -591,7 +589,7 @@ class StreamRuntime:
                                 )
                             )
 
-                        delta = props.get("delta")
+                        delta = update.delta
                         if isinstance(delta, str) and delta:
                             chunks.extend(
                                 _delta_chunks(
@@ -605,12 +603,12 @@ class StreamRuntime:
                             chunks.extend(
                                 _tool_chunks(
                                     state=state,
-                                    part=part,
+                                    tool_payload=update.tool_payload,
                                     message_id=message_id,
                                 )
                             )
                         else:
-                            snapshot_text = _extract_stream_snapshot_text(part)
+                            snapshot_text = update.snapshot
                             if snapshot_text is not None:
                                 chunks.extend(
                                     _snapshot_chunks(

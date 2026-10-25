@@ -26,6 +26,7 @@ def test_settings_missing_required():
 def test_settings_use_bounded_upstream_defaults() -> None:
     settings = make_settings()
 
+    assert settings.opencode_api_version == "v1"
     assert settings.opencode_timeout_stream == 900.0
     assert settings.opencode_max_concurrent_requests == 32
     assert settings.opencode_max_concurrent_streams == 8
@@ -149,6 +150,32 @@ def test_settings_opencode_auth_defaults_to_opencode_username_without_password()
 
     assert settings.opencode_auth_username == "opencode"
     assert settings.opencode_auth_password is None
+
+
+@pytest.mark.parametrize("version", ("v1", "v2"))
+def test_settings_accepts_explicit_opencode_api_version(version: str) -> None:
+    env = {
+        "OPENCODE_API_VERSION": version,
+        "A2A_STATIC_AUTH_CREDENTIALS": json.dumps(
+            [{"scheme": "bearer", "token": "test-token", "principal": "automation"}]
+        ),
+    }
+    with mock.patch.dict(os.environ, env, clear=True):
+        settings = Settings()
+
+    assert settings.opencode_api_version == version
+
+
+def test_settings_rejects_unknown_opencode_api_version() -> None:
+    env = {
+        "OPENCODE_API_VERSION": "auto",
+        "A2A_STATIC_AUTH_CREDENTIALS": json.dumps(
+            [{"scheme": "bearer", "token": "test-token", "principal": "automation"}]
+        ),
+    }
+    with mock.patch.dict(os.environ, env, clear=True):
+        with pytest.raises(ValidationError, match="OPENCODE_API_VERSION"):
+            Settings()
 
 
 def test_settings_opencode_auth_repr_hides_password() -> None:
