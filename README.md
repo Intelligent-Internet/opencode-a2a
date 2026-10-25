@@ -47,6 +47,13 @@ flowchart TD
 
 ## Quick Start
 
+**Breaking default change:** V2 is now the default upstream API, but A2A
+execution remains disabled until `OPENCODE_V2_EXECUTION=exclusive` is explicitly
+set under the [private deployment contract](docs/v2-exclusive-execution.md).
+This does not enable unrestricted shared sessions. Existing V1 deployments must
+set `OPENCODE_API_VERSION=v1` before upgrading; there is no automatic fallback.
+The quick start below uses that explicit V1 compatibility mode, not V2 deployment.
+
 Install the released CLI with `uv tool`:
 
 ```bash
@@ -74,6 +81,7 @@ Then start `opencode-a2a` against that upstream:
 ```bash
 DEMO_BEARER_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 A2A_STATIC_AUTH_CREDENTIALS='[{"scheme":"bearer","token":"'"${DEMO_BEARER_TOKEN}"'","principal":"automation"}]' \
+OPENCODE_API_VERSION=v1 \
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \
 A2A_TASK_STORE_DATABASE_URL=sqlite+aiosqlite:///./opencode-a2a.db \
 A2A_HOST=127.0.0.1 \
@@ -91,9 +99,9 @@ curl http://127.0.0.1:8000/.well-known/agent-card.json
 
 ## Capabilities
 
-The following capability list describes the default OpenCode API V1 mode. With
-`OPENCODE_API_VERSION=v2`, only internal experimental session transport is
-available: A2A message execution fails before upstream requests, streaming and
+The following capability list describes explicit OpenCode API V1 compatibility
+mode (`OPENCODE_API_VERSION=v1`). With the default V2 API, only internal
+experimental session transport is available: A2A message execution fails before upstream requests, streaming and
 all extensions are disabled. A separate opt-in
 [`OPENCODE_V2_EXECUTION=exclusive` profile](docs/v2-exclusive-execution.md)
 adds restricted text execution and streaming read/question interventions in a

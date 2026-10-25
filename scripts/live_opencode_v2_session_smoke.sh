@@ -206,7 +206,6 @@ async def main() -> None:
     workspace = Path(credentials["workspace"])
     settings = Settings(
         _env_file=None,
-        opencode_api_version="v2",
         opencode_base_url=credentials["base_url"],
         opencode_workspace_root=str(workspace),
         opencode_auth_username=credentials["username"],
@@ -222,6 +221,8 @@ async def main() -> None:
     )
     app = create_app(settings)
     upstream = app.state.upstream_client
+    if settings.opencode_api_version != "v2" or settings.opencode_v2_execution != "disabled":
+        raise RuntimeError("Default V2 transport must retain the execution opt-in gate")
     if not isinstance(upstream, V2UpstreamAdapter):
         raise RuntimeError("Application did not select the V2 upstream adapter")
 

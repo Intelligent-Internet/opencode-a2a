@@ -195,6 +195,7 @@ if [[ ! -x "${adapter_bin}" ]]; then
   exit 1
 fi
 
+OPENCODE_API_VERSION=v1 \
 OPENCODE_BASE_URL="${upstream_url}" \
 OPENCODE_WORKSPACE_ROOT="${workspace_dir}" \
 OPENCODE_AUTH_USERNAME="${upstream_username}" \

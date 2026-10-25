@@ -24,9 +24,16 @@ def test_settings_missing_required():
 
 
 def test_settings_use_bounded_upstream_defaults() -> None:
-    settings = make_settings()
+    with mock.patch.dict(os.environ, {}, clear=True):
+        settings = Settings(
+            _env_file=None,
+            a2a_static_auth_credentials=(
+                {"scheme": "bearer", "token": "test-token", "principal": "automation"},
+            ),
+        )
 
-    assert settings.opencode_api_version == "v1"
+    assert settings.opencode_api_version == "v2"
+    assert settings.opencode_v2_execution == "disabled"
     assert settings.opencode_timeout_stream == 900.0
     assert settings.opencode_max_concurrent_requests == 32
     assert settings.opencode_max_concurrent_streams == 8
@@ -164,6 +171,7 @@ def test_settings_accepts_explicit_opencode_api_version(version: str) -> None:
         settings = Settings()
 
     assert settings.opencode_api_version == version
+    assert settings.opencode_v2_execution == "disabled"
 
 
 def test_settings_rejects_unknown_opencode_api_version() -> None:

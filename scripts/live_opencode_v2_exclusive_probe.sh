@@ -85,7 +85,8 @@ if [[ "${V2_PROBE_A2A:-0}" == 1 ]]; then
     node /repo/scripts/probes/v2_fault_proxy.mjs
   docker exec -d --env "V2_PROBE_CASE=${V2_PROBE_CASE:-normal}" "${container}" sh -c '
     export UV_PROJECT_ENVIRONMENT=/probe/venv UV_CACHE_DIR=/probe/uv-cache
-    export OPENCODE_API_VERSION=v2 OPENCODE_V2_EXECUTION=exclusive
+    unset OPENCODE_API_VERSION
+    export OPENCODE_V2_EXECUTION=exclusive
     export OPENCODE_BASE_URL=http://127.0.0.1:4097 OPENCODE_WORKSPACE_ROOT=/probe/workspace
     export OPENCODE_TIMEOUT_STREAM=30
     if [ "${V2_PROBE_CASE}" = expired-intervention ]; then export A2A_INTERRUPT_REQUEST_TTL_SECONDS=1; fi

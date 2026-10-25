@@ -29,7 +29,7 @@ Key variables to understand protocol behavior:
 
 - `A2A_STATIC_AUTH_CREDENTIALS`: required static credential registry in JSON array form. Supports multiple `bearer` / `basic` credentials, bearer-only required `principal`, optional `credential_id`, optional `capabilities`, and optional `enabled=false` for explicit disablement.
 - `OPENCODE_BASE_URL`: upstream OpenCode HTTP endpoint. Default: `http://127.0.0.1:4096`. In two-process deployments, set it explicitly.
-- `OPENCODE_API_VERSION`: upstream API selector, `v1` (default) or `v2`, unrelated to the A2A SDK version. No auto-detection or fallback. V2 alone retains session-only transport and fails A2A execution before upstream HTTP.
+- `OPENCODE_API_VERSION`: upstream API selector, `v2` (default) or explicit `v1`, unrelated to the A2A SDK version. **Breaking default change:** existing V1 deployments must set `OPENCODE_API_VERSION=v1` before upgrading. No auto-detection or fallback. Default V2 retains session-only transport and fails A2A execution before upstream HTTP until the exclusive profile is explicitly enabled.
 - `OPENCODE_V2_EXECUTION`: `disabled` (default) or `exclusive`. The latter opts into the [restricted V2 profile](./v2-exclusive-execution.md), requires a dedicated private single-process instance pair with protected configuration and durable ownership, and does not enable general shared-session support. Read its security preconditions before selecting it.
 - `OPENCODE_WORKSPACE_ROOT`: service-level default workspace root exposed to OpenCode when clients do not request a narrower directory override.
 - `A2A_ALLOW_DIRECTORY_OVERRIDE`: controls whether clients may pass `metadata.opencode.directory`.
@@ -180,10 +180,13 @@ If your provider uses environment variables for auth, export them before startin
 
 Do not assume startup-script env vars always erase previously persisted OpenCode auth state for the deployed user. When debugging provider-auth surprises, inspect the deployed user's HOME/XDG config directories and the OpenCode files stored there before concluding that `opencode-a2a` changed the credential selection.
 
-Then start `opencode-a2a` against that explicit upstream URL:
+Then start `opencode-a2a` against that explicit upstream URL. These examples use
+explicit V1 compatibility mode. Default V2 execution requires the separate
+[exclusive deployment contract](./v2-exclusive-execution.md), not these shared-host examples:
 
 ```bash
 DEMO_BEARER_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+OPENCODE_API_VERSION=v1 \
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \
 A2A_STATIC_AUTH_CREDENTIALS='[{"scheme":"bearer","token":"'"${DEMO_BEARER_TOKEN}"'","principal":"automation"}]' \
 A2A_HOST=127.0.0.1 \
@@ -197,6 +200,7 @@ By default, the service uses a SQLite-backed durable state store:
 
 ```bash
 DEMO_BEARER_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+OPENCODE_API_VERSION=v1 \
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \
 A2A_STATIC_AUTH_CREDENTIALS='[{"scheme":"bearer","token":"'"${DEMO_BEARER_TOKEN}"'","principal":"automation"}]' \
 A2A_TASK_STORE_DATABASE_URL=sqlite+aiosqlite:///./opencode-a2a.db \

@@ -11,11 +11,17 @@ This document defines the compatibility promises `opencode-a2a` currently uphold
 - Experimental exclusive execution profile: OpenCode `2.0.28` only; see the
   [deployment contract](./v2-exclusive-execution.md).
 
-By default, OpenCode V2 is an opt-in, experimental session-transport slice selected with
-`OPENCODE_API_VERSION=v2`. It implements `/api/info`, `/api/location`, and
+OpenCode V2 is now the default upstream API, with experimental session transport
+only until execution is explicitly enabled. It implements `/api/info`, `/api/location`, and
 session create/get/list transport only; A2A prompt execution and all
 OpenCode-specific JSON-RPC extensions remain unavailable. This remains an
 explicit safety gate, not a claim that V2 prompt execution works.
+
+**Breaking default change:** existing V1 deployments must set
+`OPENCODE_API_VERSION=v1` before upgrading. There is no automatic detection or
+fallback to V1. Explicit `OPENCODE_API_VERSION=v2` remains accepted, but is no
+longer required. Default V2 is not a claim of V1 feature parity or a safe private
+deployment: the execution acknowledgement and operator preconditions still apply.
 
 The additional selector `OPENCODE_V2_EXECUTION=exclusive` enables a separately
 verified restricted profile: dedicated private upstream, gateway-created
@@ -59,11 +65,15 @@ exclusive profile's narrower evidence does not silently close those criteria.
 
 ### Exclusive-profile acceptance matrix
 
-Evidence is recorded in [the sanitized acceptance record](./evidence/v2-exclusive-acceptance.json).
+Fresh verification of default V2 and explicit V1 is recorded in
+[the default-switch acceptance record](./evidence/v2-default-acceptance.json).
+The [earlier acceptance record](./evidence/v2-exclusive-acceptance.json) describes
+the previous V1-default source and its expanded manual matrix; it is historical,
+not an exact-source claim for the changed defaults.
 The upstream stack's separate [regression validation record](./evidence/v2-exclusive-upstream-validation.md)
-distinguishes its doctor and session-only checks from the author's model-backed runs.
+distinguishes its earlier doctor and session-only checks from the author's model-backed runs.
 `PASS` applies only to the described tested subset; `NOT VERIFIED` is not a
-support claim. V1 remains the stable default. Upstream review/merge and the
+support claim. V1 remains available as explicit compatibility mode. Upstream review/merge and the
 epic's final scope decision are separate from these execution results.
 
 | Capability | V1 | V2 exclusive mode | Evidence / limitation |
@@ -191,7 +201,7 @@ input-addressable terminal status, and make active cancellation input-scoped
 (or document an enforceable exclusive-session contract). Until then, ambiguous
 or disconnected outcomes must remain fail-closed.
 
-V1 stays the default, and the adapter does not auto-detect or fall back between
+V2 is the default, and the adapter does not auto-detect or fall back between
 versions. Reproduce the V2 session-transport check with
 `bash ./scripts/live_opencode_v2_session_smoke.sh`. It is pinned to
 OpenCode `2.0.28`, verifies Basic-auth rejection plus `/api/info`, `/api/location`,

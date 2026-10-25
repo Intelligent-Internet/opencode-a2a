@@ -2,8 +2,9 @@
 
 This is a restricted, opt-in execution profile for the pinned upstream version
 in [compatibility.md](./compatibility.md#runtime-support), not general V2
-shared-session support. V1 remains the default. Selecting only
-`OPENCODE_API_VERSION=v2` still disables A2A execution.
+shared-session support. V2 is the default upstream API; V1 requires
+`OPENCODE_API_VERSION=v1`. Without `OPENCODE_V2_EXECUTION=exclusive`, A2A
+execution remains disabled even when V2 is selected by default.
 
 ## Required deployment boundary
 

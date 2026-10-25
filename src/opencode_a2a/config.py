@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     )
 
     # OpenCode settings
-    opencode_api_version: OpencodeApiVersion = Field(default="v1", alias="OPENCODE_API_VERSION")
+    opencode_api_version: OpencodeApiVersion = Field(default="v2", alias="OPENCODE_API_VERSION")
     opencode_v2_execution: Literal["disabled", "exclusive"] = Field(
         default="disabled", alias="OPENCODE_V2_EXECUTION"
     )

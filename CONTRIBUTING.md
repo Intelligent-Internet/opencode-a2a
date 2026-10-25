@@ -34,10 +34,15 @@ Then start the A2A runtime in another terminal:
 
 ```bash
 A2A_STATIC_AUTH_CREDENTIALS='[{"scheme":"bearer","token":"dev-token","principal":"automation"}]' \
+OPENCODE_API_VERSION=v1 \
 OPENCODE_BASE_URL=http://127.0.0.1:4096 \
 OPENCODE_WORKSPACE_ROOT=/abs/path/to/workspace \
 uv run opencode-a2a serve
 ```
+
+This development example explicitly selects V1 compatibility mode. V2 is the
+runtime default, but execution requires the opt-in and private deployment
+preconditions in [docs/v2-exclusive-execution.md](docs/v2-exclusive-execution.md).
 
 ## Validation
 
