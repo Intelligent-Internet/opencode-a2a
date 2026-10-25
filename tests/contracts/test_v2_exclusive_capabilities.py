@@ -14,7 +14,7 @@ async def test_exclusive_discovery_and_unsupported_calls_never_reach_upstream() 
         opencode_api_version="v2",
         opencode_v2_execution="exclusive",
         opencode_workspace_root="/workspace",
-        opencode_auth_password="synthetic-upstream-password",
+        opencode_auth_password="synthetic-upstream-password",  # pragma: allowlist secret
     )
     app = create_app(settings)
     requests: list[httpx.Request] = []

@@ -39,7 +39,7 @@ class ExecutorServer(NativeServer):
                 opencode_api_version="v2",
                 opencode_v2_execution="exclusive",
                 opencode_workspace_root="/workspace",
-                opencode_auth_password="synthetic-test-password",
+                opencode_auth_password="synthetic-test-password",  # pragma: allowlist secret
             )
         )
         monkeypatch.setattr(self.client._client, "_transport", httpx.MockTransport(self.handle))

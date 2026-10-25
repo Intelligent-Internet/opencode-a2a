@@ -23,7 +23,7 @@ class HttpBoundary(NativeServer):
                 opencode_api_version="v2",
                 opencode_v2_execution="exclusive",
                 opencode_workspace_root="/workspace",
-                opencode_auth_password="synthetic-test-password",
+                opencode_auth_password="synthetic-test-password",  # pragma: allowlist secret
                 a2a_task_store_backend="database",
                 a2a_task_store_database_url=f"sqlite+aiosqlite:///{tmp_path / 'tasks.db'}",
                 a2a_cancel_abort_timeout_seconds=0.1,

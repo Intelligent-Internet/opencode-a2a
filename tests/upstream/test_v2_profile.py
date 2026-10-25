@@ -15,7 +15,7 @@ def test_exclusive_profile_requires_private_separate_authenticated_upstream() ->
     settings = make_settings()
     with pytest.raises(ValueError, match="credentials"):
         validate_exclusive_settings(settings)
-    settings.opencode_auth_password = "test-only-upstream"
+    settings.opencode_auth_password = "test-only-upstream"  # pragma: allowlist secret
     settings.opencode_workspace_root = "/workspace"
     validate_exclusive_settings(settings)
     settings.opencode_base_url = "http://example.test:4096"
