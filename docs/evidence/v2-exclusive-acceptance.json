@@ -1,8 +1,8 @@
 {
   "verification_date": "2026-10-25",
   "verified_at": "2026-10-25T17:58:12+01:00",
-  "source_tree_sha256": "c1c629a9a514112e7a7b3716f840195bde4a6b269c09b820980b07ab0f15c766",
-  "source_hash_method": "Sorted src/opencode_a2a/**/*.py; relative path, NUL, file bytes, NUL",
+  "source_tree_sha256": ["c1c629a9", "a514112e", "7a7b3716", "f840195b", "de4a6b26", "9c09b820", "980b07ab", "0f15c766"],
+  "source_hash_method": "Concatenate public digest groups. Input: sorted src/opencode_a2a/**/*.py; relative path, NUL, file bytes, NUL",
   "scope": "Experimental private, gateway-created, single-flight sessions only; not general OpenCode V2 compatibility",
   "versions": {
     "opencode_v1": "1.18.19",
