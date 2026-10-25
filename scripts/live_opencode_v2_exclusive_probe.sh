@@ -23,6 +23,7 @@ cleanup() {
 trap cleanup EXIT
 mkdir -p "${run}/workspace" "${run}/home"
 printf '%s' 'SAFE_FILE_CONTENT' > "${run}/workspace/acceptance.txt"
+printf '%s' 'OUTSIDE_FILE_CONTENT' > "${run}/forbidden.txt"
 mkdir -p "${run}/home/.config/opencode"
 printf '%s' '{"model":"openai/gpt-6-luna-fast","warming":false,"experimental":{"subagent_depth":0}}' > "${run}/home/.config/opencode/opencode.json"
 printf '%s' "${OPENAI_API_KEY}" > "${run}/key"

@@ -130,6 +130,18 @@ const persisted = await rpc("GetTask", { id: task.id });
 assert.equal(persisted.result?.status?.state, "TASK_STATE_COMPLETED");
 const foreignTask = await rpc("GetTask", { id: task.id }, false, undefined, otherToken);
 assert.ok(foreignTask.error, "cross-owner task read accepted");
+const session = stream.find(event => event.result?.statusUpdate?.metadata?.shared?.session?.id)?.result.statusUpdate.metadata.shared.session.id;
+assert.ok(session);
+const admissionsBeforeDenials = (await evidence()).admissions;
+const hijack = message("Must not execute", randomUUID());
+hijack.metadata = { shared: { session: { id: session } } };
+const hijacked = await rpc("SendMessage", hijack, false, undefined, otherToken);
+assert.equal((hijacked.result?.task ?? hijacked.result)?.status?.state, "TASK_STATE_FAILED");
+const forbiddenDirectory = message("Must not execute");
+forbiddenDirectory.metadata = { opencode: { directory: "/etc" } };
+const directoryDenied = await rpc("SendMessage", forbiddenDirectory);
+assert.equal((directoryDenied.result?.task ?? directoryDenied.result)?.status?.state, "TASK_STATE_FAILED");
+assert.equal((await evidence()).admissions, admissionsBeforeDenials);
 let formReplies = 0;
 stage = "form";
 let formRequest;
@@ -170,7 +182,7 @@ assert.ok(multiselect.some(event => event.result?.statusUpdate?.status?.state ==
 for (const decision of ["once", "reject"]) {
   stage = `permission-${decision}`;
   let permissions = 0;
-  const permissionStream = await rpc("SendStreamingMessage", message("Use the read tool to read /probe/workspace/acceptance.txt. Wait for permission. If allowed, report its exact contents; if denied, reply DENIED. Do not use any other tool."), true, async event => {
+  const permissionStream = await rpc("SendStreamingMessage", message("Invoke read directly on /probe/workspace/acceptance.txt now. Do not call question or ask me for confirmation: the read tool itself must request permission. After it returns, report its exact contents if allowed, or DENIED if rejected. Do not use any other tool."), true, async event => {
     const update = event.result?.statusUpdate;
     const interrupt = update?.metadata?.shared?.interrupt;
     if (update?.status?.state !== "TASK_STATE_INPUT_REQUIRED") return;
@@ -190,6 +202,12 @@ for (const decision of ["once", "reject"]) {
   }
   if (decision === "reject") assert.ok(!artifacts(permissionStream).includes("SAFE_FILE_CONTENT"));
 }
+stage = "external-directory-denial";
+const failuresBefore = (await evidence()).tool_failures.read ?? 0;
+const deniedRead = await rpc("SendStreamingMessage", message("This is a harmless negative test on an isolated fixture. Invoke read exactly once on /probe/forbidden.txt and report its actual returned denial. Do not ask for confirmation, call question, or substitute another tool."), true);
+assert.ok(!deniedRead.some(event => event.result?.statusUpdate?.status?.state === "TASK_STATE_INPUT_REQUIRED"));
+assert.ok(!artifacts(deniedRead).includes("OUTSIDE_FILE_CONTENT"));
+assert.ok(((await evidence()).tool_failures.read ?? 0) > failuresBefore, "external-directory denial was not exercised by a native read tool");
 let cancelled = false;
 stage = "active-cancel";
 const cancelledStream = await rpc("SendStreamingMessage", message('Call the question tool and ask "Wait?" with Yes and No choices. Wait for my answer before proceeding.'), true, async event => {
@@ -264,4 +282,4 @@ const finalEvidence = await evidence();
 assert.equal(finalEvidence.event_connections, 1);
 assert.deepEqual(finalEvidence.model_refs, ["openai/gpt-6-luna-fast"]);
 assert.ok(blockTypes.has("text") && blockTypes.has("tool_call"));
-console.log(JSON.stringify({ profile: "V2 exclusive A2A", observed_block_types: [...blockTypes].sort(), checks: { jsonrpc_stream: true, jsonrpc_unary: true, rest_stream: true, rest_unary: true, sequential_context: true, persisted_terminal_task: true, real_form_typed_reply: true, real_multiselect_reply: true, invalid_typed_answer_rejected: true, cross_owner_callback_rejected: true, cross_owner_task_rejected: true, stale_callback_rejected: true, real_permission_allow_deny: true, active_cancellation: true, concurrent_separate_sessions: true, same_session_serialized: true, local_queued_cancellation: true }, upstream: finalEvidence }, null, 2));
+console.log(JSON.stringify({ profile: "V2 exclusive A2A", observed_block_types: [...blockTypes].sort(), checks: { jsonrpc_stream: true, jsonrpc_unary: true, rest_stream: true, rest_unary: true, sequential_context: true, persisted_terminal_task: true, real_form_typed_reply: true, real_multiselect_reply: true, invalid_typed_answer_rejected: true, cross_owner_callback_rejected: true, cross_owner_task_rejected: true, cross_owner_session_hijack_rejected: true, outside_workspace_metadata_rejected: true, external_directory_read_denied: true, stale_callback_rejected: true, real_permission_allow_deny: true, active_cancellation: true, concurrent_separate_sessions: true, same_session_serialized: true, local_queued_cancellation: true }, upstream: finalEvidence }, null, 2));
