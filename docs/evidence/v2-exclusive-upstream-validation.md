@@ -4,7 +4,7 @@ The [exclusive acceptance record](./v2-exclusive-acceptance.json) describes the
 author feature's model-backed live runs. Those model runs were not repeated for
 this upstream stack. Its production Python tree and the V1, V2 session, V2
 exclusive, and JavaScript probe harness files are byte-identical to author
-commit `4df67a0`. The production digest therefore remains the concatenated
+commit `58cd191`. The production digest is the concatenated
 `source_tree_sha256` groups recorded in that acceptance record.
 
 The upstream stack retains its foundation commits. Test-only differences mark
@@ -23,12 +23,17 @@ no scanner gates are disabled.
 | Acceptance `372b84e` before the evidence-only integration merge | `bash ./scripts/doctor.sh` | 1011 passed, 0 failed; 92.62% line coverage; the same remaining doctor gates passed |
 | Acceptance `372b84e` | `bash ./scripts/conformance.sh` | 8 passed, 0 failed |
 | Acceptance `372b84e` | `bash ./scripts/live_opencode_v2_session_smoke.sh` | Isolated OpenCode 2.0.28, invalid Basic auth rejected, identity/location/session create/get/list passed; no model prompt submitted |
+| Integration `a633808` | `bash ./scripts/doctor.sh` | 1012 passed, 0 failed; 92.65% line coverage; lint, format, secret scan, typing, coverage policy, package build and wheel smoke passed |
+| Acceptance `bbddca7` before this QA-note update | `bash ./scripts/doctor.sh` | 1012 passed, 0 failed; 92.67% line coverage; the same remaining doctor gates passed |
 
 The author acceptance record includes the later 14-admission, single-SSE run
-and its session-ownership and external-directory denial checks. Those live
+and its session-ownership, external-directory denial, and inside-root workspace
+override rejection checks. Exclusive execution uses one configured workspace;
+default V2 session-only location mapping is unchanged. Those live
 results are author evidence, not a model-backed rerun of this upstream stack.
 
 Coverage percentages above describe individual runs; they do not replace the
-author record's 92.66% observation at `e86042a`. Final-head reruns and their commit identities are
+author record's 1012-test, 92.65% observation for the `58cd191` source digest.
+Final-head reruns and their commit identities are
 reported with the integration handoff. No general shared-session V2 support,
 automatic recovery, or additional model-backed acceptance is claimed here.
