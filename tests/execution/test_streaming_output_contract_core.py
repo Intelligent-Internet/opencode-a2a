@@ -21,7 +21,13 @@ from opencode_a2a.execution.stream_events import _extract_token_usage, _extract_
 from opencode_a2a.execution.stream_state import _StreamOutputState
 from opencode_a2a.server.context_helpers import normalize_server_call_context
 from opencode_a2a.task_states import TERMINAL_TASK_STATES
-from opencode_a2a.upstream.contracts import PromptReceipt, PromptSubmission, SessionRef
+from opencode_a2a.upstream.contracts import (
+    ExecutionOutcome,
+    ExecutionState,
+    PromptReceipt,
+    PromptSubmission,
+    SessionRef,
+)
 from tests.support.helpers import (
     DummyEventQueue,
     make_request_context,
@@ -81,6 +87,108 @@ async def test_receipt_only_prompt_submission_fails_without_resending() -> None:
     assert len(failed_tasks) == 1
     assert (
         "asynchronous observation is not supported" in failed_tasks[0].status.message.parts[0].text
+    )
+
+
+@pytest.mark.parametrize(
+    ("execution_state", "task_state"),
+    [
+        (ExecutionState.FAILED, TaskState.TASK_STATE_FAILED),
+        (ExecutionState.CANCELLED, TaskState.TASK_STATE_CANCELED),
+        (ExecutionState.AUTH_REQUIRED, TaskState.TASK_STATE_AUTH_REQUIRED),
+    ],
+)
+@pytest.mark.asyncio
+async def test_non_completed_outcome_without_error_metadata_is_terminal_before_tools(
+    monkeypatch,
+    execution_state: ExecutionState,
+    task_state: TaskState,
+) -> None:
+    from opencode_a2a.execution import coordinator
+
+    tool_calls: list[dict] = []
+
+    async def record_tool_call(raw_response: dict, *, a2a_client_manager) -> None:
+        del a2a_client_manager
+        tool_calls.append(raw_response)
+
+    monkeypatch.setattr(coordinator, "maybe_handle_tools", record_tool_call)
+    client = DummyStreamingClient(stream_events_payload=[], response_text="unexpected success")
+    client.submit_prompt = AsyncMock(
+        return_value=PromptSubmission(
+            receipt=PromptReceipt(session=SessionRef("ses-1")),
+            outcome=ExecutionOutcome(
+                session=SessionRef("ses-1"),
+                state=execution_state,
+                output="unexpected success",
+                response={
+                    "parts": [
+                        {
+                            "type": "tool",
+                            "tool": "a2a_call",
+                            "callID": "call-1",
+                            "state": {"status": "calling"},
+                        }
+                    ]
+                },
+            ),
+        )
+    )
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id=f"task-outcome-{execution_state.value}",
+            context_id="ctx-outcome",
+            text="hello",
+        ),
+        queue,
+    )
+
+    failed_tasks = [
+        event
+        for event in queue.events
+        if isinstance(event, Task) and event.status.state == task_state
+    ]
+    assert len(failed_tasks) == 1
+    assert failed_tasks[0].status.message.parts[0].text == "OpenCode execution did not complete."
+    assert not any(
+        isinstance(event, Task) and event.status.state == TaskState.TASK_STATE_COMPLETED
+        for event in queue.events
+    )
+    assert tool_calls == []
+
+
+@pytest.mark.asyncio
+async def test_invalid_prompt_submission_fails_without_legacy_resend() -> None:
+    client = DummyStreamingClient(stream_events_payload=[], response_text="unused")
+    submit_prompt = AsyncMock(return_value=object())
+    send_message = AsyncMock()
+    client.submit_prompt = submit_prompt
+    client.send_message = send_message
+    executor = OpencodeAgentExecutor(client, streaming_enabled=False)
+    queue = DummyEventQueue()
+
+    await executor.execute(
+        make_request_context(
+            task_id="task-invalid-submission",
+            context_id="ctx-invalid-submission",
+            text="hello",
+        ),
+        queue,
+    )
+
+    failed_tasks = [
+        event
+        for event in queue.events
+        if isinstance(event, Task) and event.status.state == TaskState.TASK_STATE_FAILED
+    ]
+    assert submit_prompt.await_count == 1
+    send_message.assert_not_awaited()
+    assert len(failed_tasks) == 1
+    assert "submit_prompt must return PromptSubmission" in (
+        failed_tasks[0].status.message.parts[0].text
     )
 
 

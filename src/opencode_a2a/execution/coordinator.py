@@ -29,6 +29,7 @@ from ..opencode_upstream_client import (
 )
 from ..upstream.contracts import (
     ExecutionOutcome,
+    ExecutionState,
     PromptSubmission,
     UpstreamAdapter,
 )
@@ -56,6 +57,7 @@ if TYPE_CHECKING:
     from .executor import OpencodeAgentExecutor
 
 logger = logging.getLogger(__name__)
+_MISSING = object()
 
 
 @dataclass(frozen=True)
@@ -158,26 +160,34 @@ class ExecutionCoordinator:
                     prompt_kwargs["parts"] = turn_request_parts
 
                 upstream: UpstreamAdapter = self._executor._client
-                submit_prompt = getattr(upstream, "submit_prompt", None)
-                submission = (
-                    await submit_prompt(self._session_id, prompt_text, **prompt_kwargs)
-                    if callable(submit_prompt)
-                    else None
-                )
+                submit_prompt = getattr(upstream, "submit_prompt", _MISSING)
                 response: ExecutionOutcome | OpencodeMessage
-                if isinstance(submission, PromptSubmission):
+                if submit_prompt is _MISSING:
+                    response = await self._executor._client.send_message(
+                        self._session_id,
+                        prompt_text,
+                        **prompt_kwargs,
+                    )
+                else:
+                    if not callable(submit_prompt):
+                        raise UpstreamContractError(
+                            "OpenCode submit_prompt must be callable when provided"
+                        )
+                    submission = await submit_prompt(
+                        self._session_id,
+                        prompt_text,
+                        **prompt_kwargs,
+                    )
+                    if not isinstance(submission, PromptSubmission):
+                        raise UpstreamContractError(
+                            "OpenCode submit_prompt must return PromptSubmission"
+                        )
                     if submission.outcome is None:
                         raise RuntimeError(
                             "Upstream accepted the prompt without a terminal outcome; "
                             "asynchronous observation is not supported"
                         )
                     response = submission.outcome
-                else:
-                    response = await self._executor._client.send_message(
-                        self._session_id,
-                        prompt_text,
-                        **prompt_kwargs,
-                    )
 
                 if self._pending_preferred_claim:
                     await self._executor._session_manager.finalize_preferred_session_binding(
@@ -186,6 +196,13 @@ class ExecutionCoordinator:
                         session_id=self._session_id,
                     )
                     self._pending_preferred_claim = False
+
+                if (
+                    isinstance(response, ExecutionOutcome)
+                    and response.state != ExecutionState.COMPLETED
+                ):
+                    await self._handle_response(response)
+                    break
 
                 response_payload = (
                     dict(response.response or {})
@@ -348,19 +365,28 @@ class ExecutionCoordinator:
             if isinstance(response, ExecutionOutcome)
             else response.raw
         )
-        response_error = (
-            _UpstreamInBandError(
+        response_error: _UpstreamInBandError | None
+        if isinstance(response, ExecutionOutcome) and response.state != ExecutionState.COMPLETED:
+            response_error = _UpstreamInBandError(
+                error_type=response.error_type or "UPSTREAM_EXECUTION_ERROR",
+                state=_task_state_from_execution_state(response.state),
+                message=response.error_message or "OpenCode execution did not complete.",
+                upstream_status=response.upstream_status,
+            )
+        elif (
+            isinstance(response, ExecutionOutcome)
+            and response.error_type is not None
+            and response.error_state is not None
+            and response.error_message is not None
+        ):
+            response_error = _UpstreamInBandError(
                 error_type=response.error_type,
                 state=_task_state_from_execution_state(response.error_state),
                 message=response.error_message,
                 upstream_status=response.upstream_status,
             )
-            if isinstance(response, ExecutionOutcome)
-            and response.error_type is not None
-            and response.error_state is not None
-            and response.error_message is not None
-            else _extract_upstream_error_from_response(response_payload)
-        )
+        else:
+            response_error = _extract_upstream_error_from_response(response_payload)
         resolved_token_usage = _merge_token_usage(
             response.usage
             if isinstance(response, ExecutionOutcome)
