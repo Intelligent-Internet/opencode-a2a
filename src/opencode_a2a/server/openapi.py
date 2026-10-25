@@ -12,6 +12,8 @@ from ..contracts.extensions import (
     MODEL_SELECTION_EXTENSION_URI,
     SESSION_BINDING_EXTENSION_URI,
     STREAMING_EXTENSION_URI,
+    JsonRpcCapabilitySnapshot,
+    build_capability_snapshot,
     build_interrupt_callback_extension_params,
     build_model_selection_extension_params,
     build_public_interrupt_callback_extension_params,
@@ -25,7 +27,16 @@ from ..jsonrpc.models import JSONRPCRequest
 from ..profile.runtime import RuntimeProfile
 
 
-def _build_jsonrpc_extension_openapi_description() -> str:
+def _build_jsonrpc_extension_openapi_description(
+    capability_snapshot: JsonRpcCapabilitySnapshot | None = None,
+) -> str:
+    if capability_snapshot is not None and not capability_snapshot.extensions_enabled:
+        return (
+            "A2A JSON-RPC retains the A2A protocol 1.0 method surface. With OpenCode API V2, "
+            "SendMessage and SendStreamingMessage fail before any upstream request; direct "
+            "opencode.* extension calls return JSON-RPC -32601 Method not found. No OpenCode "
+            "extension contracts are advertised."
+        )
     interrupt_methods = ", ".join(sorted(INTERRUPT_CALLBACK_METHODS.values()))
     core_methods = ", ".join(CORE_JSONRPC_METHODS)
     return (
@@ -243,8 +254,12 @@ def _patch_jsonrpc_openapi_contract(
     settings: Settings,
     *,
     runtime_profile: RuntimeProfile,
+    capability_snapshot: JsonRpcCapabilitySnapshot | None = None,
 ) -> None:
-    del settings
+    capability_snapshot = capability_snapshot or build_capability_snapshot(
+        runtime_profile=runtime_profile,
+        upstream_api_version=settings.opencode_api_version,
+    )
     session_binding = build_session_binding_extension_params(
         runtime_profile=runtime_profile,
     )
@@ -276,46 +291,51 @@ def _patch_jsonrpc_openapi_contract(
                 post = root_path.get("post")
                 if isinstance(post, dict):
                     post["summary"] = "Handle A2A JSON-RPC Requests"
-                    post["description"] = _build_jsonrpc_extension_openapi_description()
-                    post["x-a2a-extension-contracts"] = {
-                        "session_binding": {
-                            "extension_uri": SESSION_BINDING_EXTENSION_URI,
-                            **build_public_session_binding_extension_params(session_binding),
-                        },
-                        "model_selection": {
-                            "extension_uri": MODEL_SELECTION_EXTENSION_URI,
-                            **select_public_extension_params(
-                                model_selection,
-                                keys=(
-                                    "metadata_field",
-                                    "behavior",
-                                    "applies_to_methods",
-                                    "supported_metadata",
-                                    "provider_private_metadata",
-                                    "fields",
+                    post["description"] = _build_jsonrpc_extension_openapi_description(
+                        capability_snapshot
+                    )
+                    if capability_snapshot.extensions_enabled:
+                        post["x-a2a-extension-contracts"] = {
+                            "session_binding": {
+                                "extension_uri": SESSION_BINDING_EXTENSION_URI,
+                                **build_public_session_binding_extension_params(session_binding),
+                            },
+                            "model_selection": {
+                                "extension_uri": MODEL_SELECTION_EXTENSION_URI,
+                                **select_public_extension_params(
+                                    model_selection,
+                                    keys=(
+                                        "metadata_field",
+                                        "behavior",
+                                        "applies_to_methods",
+                                        "supported_metadata",
+                                        "provider_private_metadata",
+                                        "fields",
+                                    ),
                                 ),
-                            ),
-                        },
-                        "streaming": {
-                            "extension_uri": STREAMING_EXTENSION_URI,
-                            **build_public_streaming_extension_params(streaming),
-                        },
-                        "interrupt_callback": {
-                            "extension_uri": INTERRUPT_CALLBACK_EXTENSION_URI,
-                            **select_public_extension_params(
-                                build_public_interrupt_callback_extension_params(
-                                    interrupt_callback
+                            },
+                            "streaming": {
+                                "extension_uri": STREAMING_EXTENSION_URI,
+                                **build_public_streaming_extension_params(streaming),
+                            },
+                            "interrupt_callback": {
+                                "extension_uri": INTERRUPT_CALLBACK_EXTENSION_URI,
+                                **select_public_extension_params(
+                                    build_public_interrupt_callback_extension_params(
+                                        interrupt_callback
+                                    ),
+                                    keys=(
+                                        "methods",
+                                        "supported_interrupt_events",
+                                        "request_id_field",
+                                        "interrupt_metadata_field",
+                                        "interrupt_fields",
+                                    ),
                                 ),
-                                keys=(
-                                    "methods",
-                                    "supported_interrupt_events",
-                                    "request_id_field",
-                                    "interrupt_metadata_field",
-                                    "interrupt_fields",
-                                ),
-                            ),
-                        },
-                    }
+                            },
+                        }
+                    else:
+                        post.pop("x-a2a-extension-contracts", None)
 
                     request_body = post.setdefault("requestBody", {})
                     if isinstance(request_body, dict):
@@ -325,7 +345,10 @@ def _patch_jsonrpc_openapi_contract(
                             app_json = content.setdefault("application/json", {})
                             if isinstance(app_json, dict):
                                 app_json["schema"] = {"$ref": "#/components/schemas/A2ARequest"}
-                                app_json["examples"] = _build_jsonrpc_extension_openapi_examples()
+                                if capability_snapshot.extensions_enabled:
+                                    app_json["examples"] = (
+                                        _build_jsonrpc_extension_openapi_examples()
+                                    )
 
             rest_post_contracts: dict[str, dict[str, Any]] = {
                 "/message:send": {
@@ -347,6 +370,14 @@ def _patch_jsonrpc_openapi_contract(
                     "schema_ref": "#/components/schemas/SendStreamingMessageRequest",
                 },
             }
+            if not capability_snapshot.a2a_message_execution_enabled:
+                v2_message_description = (
+                    "OpenCode API V2 session transport is experimental. This A2A message "
+                    "endpoint fails before any upstream request; message execution is not "
+                    "implemented."
+                )
+                for contract in rest_post_contracts.values():
+                    contract["description"] = v2_message_description
             rest_examples = _build_rest_message_openapi_examples()
             for rest_path, contract in rest_post_contracts.items():
                 rest_path_item = paths.get(rest_path)
@@ -369,7 +400,8 @@ def _patch_jsonrpc_openapi_contract(
                 if not isinstance(app_json, dict):
                     continue
                 app_json["schema"] = {"$ref": contract["schema_ref"]}
-                app_json["examples"] = rest_examples
+                if capability_snapshot.a2a_message_execution_enabled:
+                    app_json["examples"] = rest_examples
 
         app.openapi_schema = schema
         return schema

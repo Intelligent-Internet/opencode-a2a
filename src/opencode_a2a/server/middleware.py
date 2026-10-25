@@ -22,7 +22,11 @@ from ..auth import (
     build_static_auth_credentials,
 )
 from ..client.network_policy import matches_allowed_host
-from ..contracts.extensions import ALL_EXTENSION_URIS, PUBLIC_EXTENSION_URIS
+from ..contracts.extensions import (
+    ALL_EXTENSION_URIS,
+    PUBLIC_EXTENSION_URIS,
+    JsonRpcCapabilitySnapshot,
+)
 from ..execution.metrics import emit_metric
 from ..jsonrpc.error_responses import (
     adapt_jsonrpc_error,
@@ -330,6 +334,7 @@ def install_runtime_middlewares(
     *,
     public_card_etag: str,
     extended_card_etag: str,
+    capability_snapshot: JsonRpcCapabilitySnapshot,
 ) -> None:
     def _requires_protocol_negotiation(request: Request) -> bool:
         if request.url.path == "/" and request.method == "POST":
@@ -494,7 +499,10 @@ def install_runtime_middlewares(
             return ()
 
         path = request.url.path
-        if path == AGENT_CARD_WELL_KNOWN_PATH:
+        supported_extensions: tuple[str, ...]
+        if not capability_snapshot.extensions_enabled:
+            supported_extensions = ()
+        elif path == AGENT_CARD_WELL_KNOWN_PATH:
             supported_extensions = PUBLIC_EXTENSION_URIS
         elif path == EXTENDED_AGENT_CARD_PATH:
             supported_extensions = ALL_EXTENSION_URIS

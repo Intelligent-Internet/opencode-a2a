@@ -63,9 +63,17 @@ def _build_agent_card_description(
     settings: Settings,
     runtime_profile: RuntimeProfile,
     *,
+    capability_snapshot: JsonRpcCapabilitySnapshot,
     include_detailed_contracts: bool,
 ) -> str:
     base = (settings.a2a_description or "").strip() or "OpenCode A2A runtime."
+    if not capability_snapshot.a2a_message_execution_enabled:
+        return (
+            f"{base} Only internal experimental OpenCode V2 session transport exists; "
+            "A2A SendMessage and SendStreamingMessage fail fast before any upstream request, "
+            "and OpenCode-specific extensions are unsupported. Agent Card default input/output "
+            "modes are required SDK schema fields, not a claim that message execution works."
+        )
     if not include_detailed_contracts:
         public_parts: list[str] = [
             base,
@@ -172,8 +180,11 @@ def _build_workspace_control_skill_examples(*, capability_snapshot) -> list[str]
 def _build_agent_extensions(
     *,
     runtime_profile: RuntimeProfile,
+    capability_snapshot: JsonRpcCapabilitySnapshot,
     include_detailed_contracts: bool,
 ) -> list[AgentExtension]:
+    if not capability_snapshot.declared_extension_uris:
+        return []
     session_binding_extension_params = build_session_binding_extension_params(
         runtime_profile=runtime_profile,
     )
@@ -184,15 +195,19 @@ def _build_agent_extensions(
     session_management_extension_params = build_session_management_extension_params(
         runtime_profile=runtime_profile,
         context_id_prefix=SESSION_CONTEXT_PREFIX,
+        capability_snapshot=capability_snapshot,
     )
     provider_discovery_extension_params = build_provider_discovery_extension_params(
         runtime_profile=runtime_profile,
+        capability_snapshot=capability_snapshot,
     )
     workspace_control_extension_params = build_workspace_control_extension_params(
         runtime_profile=runtime_profile,
+        capability_snapshot=capability_snapshot,
     )
     interrupt_recovery_extension_params = build_interrupt_recovery_extension_params(
         runtime_profile=runtime_profile,
+        capability_snapshot=capability_snapshot,
     )
     interrupt_callback_extension_params = build_interrupt_callback_extension_params(
         runtime_profile=runtime_profile,
@@ -200,10 +215,12 @@ def _build_agent_extensions(
     compatibility_profile_params = build_compatibility_profile_params(
         protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
+        capability_snapshot=capability_snapshot,
     )
     wire_contract_params = build_wire_contract_params(
         protocol_version=A2A_PROTOCOL_VERSION,
         runtime_profile=runtime_profile,
+        capability_snapshot=capability_snapshot,
     )
 
     public_extensions = [
@@ -356,6 +373,19 @@ def _build_agent_skills(
     capability_snapshot: JsonRpcCapabilitySnapshot,
     include_detailed_contracts: bool,
 ) -> list[AgentSkill]:
+    if not capability_snapshot.a2a_message_execution_enabled:
+        return [
+            AgentSkill(
+                id="a2a-execution-unavailable",
+                name="A2A Execution Status",
+                description=(
+                    "Informational only: internal experimental OpenCode V2 session transport "
+                    "exists, but no A2A message or session operation is available. "
+                    "SendMessage and SendStreamingMessage fail before any upstream request."
+                ),
+                tags=["status"],
+            )
+        ]
     if not include_detailed_contracts:
         return [
             AgentSkill(
@@ -480,9 +510,14 @@ def build_agent_card(
     settings: Settings,
     *,
     include_detailed_contracts: bool = False,
+    capability_snapshot: JsonRpcCapabilitySnapshot | None = None,
 ) -> AgentCard:
     public_url = settings.a2a_public_url.rstrip("/")
     runtime_profile = build_runtime_profile(settings)
+    capability_snapshot = capability_snapshot or build_capability_snapshot(
+        runtime_profile=runtime_profile,
+        upstream_api_version=settings.opencode_api_version,
+    )
     security_schemes: dict[str, SecurityScheme] = {}
     security_requirements: list[SecurityRequirement] = []
     configured_auth_schemes = {
@@ -505,13 +540,12 @@ def build_agent_card(
             )
         )
         security_requirements.append(SecurityRequirement(schemes=cast(Any, {"basicAuth": {}})))
-    capability_snapshot = build_capability_snapshot(runtime_profile=runtime_profile)
-
     return AgentCard(
         name=settings.a2a_title,
         description=_build_agent_card_description(
             settings,
             runtime_profile,
+            capability_snapshot=capability_snapshot,
             include_detailed_contracts=include_detailed_contracts,
         ),
         documentation_url=settings.a2a_documentation_url,
@@ -531,10 +565,11 @@ def build_agent_card(
         default_input_modes=list(_CHAT_INPUT_MODES),
         default_output_modes=list(_CHAT_OUTPUT_MODES),
         capabilities=AgentCapabilities(
-            streaming=True,
+            streaming=capability_snapshot.streaming_enabled,
             extended_agent_card=True,
             extensions=_build_agent_extensions(
                 runtime_profile=runtime_profile,
+                capability_snapshot=capability_snapshot,
                 include_detailed_contracts=include_detailed_contracts,
             ),
         ),

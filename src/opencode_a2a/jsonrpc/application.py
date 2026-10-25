@@ -24,7 +24,7 @@ from jsonrpc.jsonrpc2 import JSONRPC20Response
 from starlette.requests import Request
 from starlette.responses import Response
 
-from ..contracts.extensions import ALL_EXTENSION_URIS
+from ..contracts.extensions import ALL_EXTENSION_URIS, JsonRpcCapabilitySnapshot
 from ..extension_negotiation import (
     requested_extensions_from_call_context,
 )
@@ -63,7 +63,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         http_handler,
         upstream_client: OpencodeUpstreamClient,
         methods: dict[str, str],
-        supported_methods: list[str],
+        capability_snapshot: JsonRpcCapabilitySnapshot,
         directory_resolver: Callable[[str | None], str | None] | None = None,
         session_claim: Callable[..., Awaitable[bool]] | None = None,
         session_claim_finalize: Callable[..., Awaitable[None]] | None = None,
@@ -76,6 +76,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         super().__init__(request_handler=http_handler, **kwargs)
         self._http_handler = http_handler
         self._upstream_client = upstream_client
+        self._capability_snapshot = capability_snapshot
         self._method_session_status = methods["status"]
         self._method_list_sessions = methods["list_sessions"]
         self._method_get_session = methods["get_session"]
@@ -109,7 +110,7 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
         self._method_reply_permission = methods["reply_permission"]
         self._method_reply_question = methods["reply_question"]
         self._method_reject_question = methods["reject_question"]
-        self._supported_methods = list(supported_methods)
+        self._supported_methods = capability_snapshot.supported_jsonrpc_methods()
         missing_control_hooks = [
             name
             for name, hook in (
@@ -350,7 +351,9 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
                 self._context_builder.build(request)
             )
             request.state.activated_extensions = tuple(
-                value for value in requested_extensions if value in ALL_EXTENSION_URIS
+                value
+                for value in requested_extensions
+                if self._capability_snapshot.extensions_enabled and value in ALL_EXTENSION_URIS
             )
             return JSONResponse(
                 {
@@ -422,6 +425,10 @@ class OpencodeSessionManagementJSONRPCApplication(JsonRpcDispatcher):
             return await super().handle_requests(request)
 
         extension_spec = self._extension_method_registry.resolve(base_request.method)
+        if extension_spec is not None and not self._capability_snapshot.is_method_enabled(
+            base_request.method
+        ):
+            extension_spec = None
         if extension_spec is None:
             return await self._handle_core_request(
                 request,
