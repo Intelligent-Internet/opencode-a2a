@@ -74,6 +74,14 @@ async def test_exclusive_discovery_and_unsupported_calls_never_reach_upstream() 
         {"shared": {"model": {"providerID": "openai", "modelID": "other"}}},
         {"shared": {"model": {"modelID": "incomplete"}}},
         {"opencode": {"workspace": {"id": "foreign"}}},
+        {"shared": {"model": {}}},
+        {"shared": {"model": None}},
+        {"shared": {"model": {"providerID": 1, "modelID": 2}}},
+        {"shared": {"session": {"id": 42}}},
+        {"shared": {"session": {"id": ""}}},
+        {"shared": []},
+        {"opencode": {"workspace": {}}},
+        {"opencode": {"directory": 42}},
     ],
 )
 async def test_exclusive_model_and_workspace_overrides_fail_before_upstream(metadata: dict) -> None:

@@ -56,6 +56,29 @@ _TEXT_PLAIN_MEDIA_TYPE = "text/plain"
 _APPLICATION_JSON_MEDIA_TYPE = "application/json"
 
 
+def _exclusive_metadata_rejected(sources: tuple[Mapping[str, object] | None, ...]) -> bool:
+    for source in sources:
+        if source is None:
+            continue
+        shared = source.get("shared", {})
+        private = source.get("opencode", {})
+        if not isinstance(shared, Mapping) or not isinstance(private, Mapping):
+            return True
+        if "model" in shared or "workspace" in private:
+            return True
+        if "session" in shared:
+            session = shared["session"]
+            if not isinstance(session, Mapping) or not isinstance(session.get("id"), str):
+                return True
+            if not session["id"].strip():
+                return True
+        if "directory" in private:
+            directory = private["directory"]
+            if not isinstance(directory, str) or not directory.strip():
+                return True
+    return False
+
+
 class OpencodeAgentExecutor(AgentExecutor):
     def __init__(
         self,
@@ -226,16 +249,17 @@ class OpencodeAgentExecutor(AgentExecutor):
             path=("directory",),
         )
         if getattr(self._client, "supports_streaming_submission", False) is True and (
-            model_provider_id is not None
-            or model_id is not None
-            or workspace_id is not None
+            _exclusive_metadata_rejected(metadata_source_tuple)
             or any(part.get("type") != "text" for part in request_parts)
         ):
             await self._emit_error(
                 event_queue,
                 task_id=task_id,
                 context_id=context_id,
-                message="V2 exclusive mode supports text only, without model/workspace overrides.",
+                message=(
+                    "V2 exclusive mode requires text and valid session/directory metadata, "
+                    "without model/workspace overrides."
+                ),
                 state=TaskState.TASK_STATE_FAILED,
                 error_type="UPSTREAM_UNSUPPORTED_OPERATION",
                 streaming_request=streaming_request,

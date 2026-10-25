@@ -99,6 +99,10 @@ cross-owner, expired, unsupported, and post-observation-loss replies reject
 before mutation. Callback eligibility is separate from native resolution events,
 so a successful answer can still produce the working transition.
 
+Unsupported model/workspace metadata is rejected by field presence, including
+empty, null, and wrong-typed values. Invalid session/directory metadata cannot
+silently fall back to a fresh session or default model/location.
+
 Unary text requests await the same proven execution outcome. **Unary
 interventions are unsupported**: an unexpected intervention fails and quarantines
 the session without approval. Rich/generic form kinds, `always` permission grants,
