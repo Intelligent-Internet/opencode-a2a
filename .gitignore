@@ -44,6 +44,7 @@ pip-delete-this-directory.txt
 # Local logs
 logs/
 run/
+.opencode/a2a/state/
 
 # Unit test / coverage reports
 htmlcov/
@@ -199,6 +200,9 @@ cython_debug/
 
 # Ruff stuff:
 .ruff_cache/
+
+# Isolated issue-scoped agent worktrees
+.worktrees/
 
 # PyPI configuration file
 .pypirc
